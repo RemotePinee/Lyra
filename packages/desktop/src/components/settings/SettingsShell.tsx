@@ -36,6 +36,14 @@ import { SkillsSettings } from "./SkillsSettings.tsx";
 import { SyncSettings } from "./SyncSettings.tsx";
 import { UsageSettings } from "./UsageSettings.tsx";
 
+/**
+ * Sections that fill the window and scroll their own panes.
+ *
+ * The model page is two lists side by side; a page-level scroller over the top would mean two
+ * scrollbars for one screen and would carry each pane's header away from the rows it labels.
+ */
+const SELF_SCROLLING = new Set<SettingsSection>(["models"]);
+
 const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon: typeof Settings2 }[] }[] = [
 	{
 		label: "基础设置",
@@ -95,7 +103,14 @@ export function SettingsShell() {
 	}, [compact, navOpen, toggleNav, dismissNav]);
 
 	return (
-		<div className="relative flex h-full bg-panel">
+		/*
+		 * The page is the palest surface here, as it is in the workspace.
+		 *
+		 * `bg-panel` put it within one step of the navigation beside it — 245 against 244 — so the
+		 * two columns read as one undifferentiated field. The workspace already answers this: the
+		 * nav is tinted and the thing you are working in is the plain page.
+		 */
+		<div className="relative flex h-full bg-shell">
 			<NavPane width={NAV_WIDTH} label="设置导航">
 				{/* Same as the workspace sidebar: separated by its tint, not by a rule. */}
 				<nav className="flex h-full w-full flex-col bg-sidebar">
@@ -177,11 +192,23 @@ export function SettingsShell() {
 
 			<main className="flex min-w-0 flex-1 flex-col">
 				<div className="h-[44px] shrink-0" />
-				<Scroller className="flex-1" fadeColor="var(--color-panel)">
+				{/*
+				 * Most sections are a column of settings and scroll as one page. A few are
+				 * two-pane layouts whose halves scroll independently — putting those inside a page
+				 * scroller as well would give the window two nested scrollbars for one screen, and
+				 * the outer one would move the pane headers out from over their own content.
+				 */}
+				{SELF_SCROLLING.has(section) ? (
+					<div className={`mx-auto flex min-h-0 w-full max-w-[900px] flex-1 flex-col pb-6 ${compact ? "px-4" : "px-9"}`}>
+						<SectionBody section={section} />
+					</div>
+				) : (
+				<Scroller className="flex-1" fadeColor="var(--color-shell)">
 					<div className={`mx-auto w-full max-w-[900px] pb-16 ${compact ? "px-4" : "px-9"}`}>
 						<SectionBody section={section} />
 					</div>
 				</Scroller>
+				)}
 			</main>
 
 			{/* Last child, for the same DOM-order reason as the chat shell's toolbar. */}

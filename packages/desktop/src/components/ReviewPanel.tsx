@@ -1,9 +1,10 @@
-import { ChevronRight, GitCompare, RefreshCw, Search } from "lucide-react";
+import { ChevronRight, GitCompare, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { WorkspaceDiffFile } from "../../electron/ipc-types.ts";
 import { DiffView } from "./DiffView.tsx";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { SearchField } from "./SearchField.tsx";
 import { iconColour, lookFor } from "./fileIcon.tsx";
 import { useApp } from "../store.ts";
 
@@ -137,14 +138,8 @@ export function ReviewPanel() {
 			) : (
 				<>
 					{files.length > 8 && (
-						<div className="flex h-8 shrink-0 items-center gap-1.5 px-2.5 pb-1">
-							<Search size={12} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
-							<input
-								value={filter}
-								onChange={(e) => setFilter(e.target.value)}
-								placeholder={`筛选 ${files.length} 个文件`}
-								className="h-full min-w-0 flex-1 bg-transparent text-[12px] text-ink placeholder:text-ink-faint"
-							/>
+						<div className="shrink-0 px-1.5 pb-1.5">
+							<SearchField value={filter} onChange={setFilter} placeholder={`筛选 ${files.length} 个文件`} />
 						</div>
 					)}
 

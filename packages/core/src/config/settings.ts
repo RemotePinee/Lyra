@@ -100,13 +100,11 @@ export interface Settings {
 	thinking: ThinkingLevel;
 	/** Last level chosen above "off", restored when fast mode is switched back off. */
 	lastThinking?: ThinkingLevel;
-	theme: "dark" | "light" | "system";
 	appearance: AppearanceSettings;
 	hooks: HookConfig[];
 	scheduledTasks: ScheduledTask[];
 	/** Plugin ids the user switched off; everything found on disk is on by default. */
 	disabledPlugins: string[];
-	language: "zh-CN" | "en-US" | "auto";
 	/** Rules the user chose to always allow, keyed by tool kind. */
 	alwaysAllow: string[];
 	sync: {
@@ -129,12 +127,10 @@ export const DEFAULT_SETTINGS: Settings = {
 	defaultModelId: null,
 	permissionMode: "auto",
 	thinking: "medium",
-	theme: "dark",
 	appearance: DEFAULT_APPEARANCE,
 	hooks: [],
 	scheduledTasks: [],
 	disabledPlugins: [],
-	language: "auto",
 	alwaysAllow: [],
 	sync: { enabled: false, port: 4517, token: null },
 	editor: { defaultOpenTarget: "Zed", showBottomPanel: true },

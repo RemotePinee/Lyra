@@ -26,10 +26,18 @@ export function GeneralSettings() {
 
 			<SectionTitle>权限</SectionTitle>
 			<Card className="mb-9">
+				{/*
+				 * A statement, not a switch.
+				 *
+				 * This was a `Toggle` wired to an empty handler — permanently on and inert, because
+				 * what it describes is not configurable: reading the open workspace is the floor the
+				 * agent stands on. A control that cannot move is worse than no control, since it
+				 * invites the one click that proves it does nothing.
+				 */}
 				<Row
 					title="默认权限"
 					detail="DeepWise 始终可以读取和编辑当前工作区内的文件。需要时它会请求额外的访问权限。"
-					control={<Toggle checked onChange={() => undefined} />}
+					control={<span className="text-[12.5px] text-ink-faint">始终开启</span>}
 				/>
 				<Row
 					title="自动审核"
@@ -57,31 +65,16 @@ export function GeneralSettings() {
 					}
 				/>
 				<Row
-					title="语言"
-					detail="界面语言"
-					control={
-						<InlineSelect
-							value={settings.language}
-							onChange={(language) => patch({ language })}
-							options={[
-								{ value: "auto", label: "自动检测" },
-								{ value: "zh-CN", label: "简体中文" },
-								{ value: "en-US", label: "English" },
-							]}
-						/>
-					}
-				/>
-				<Row
 					title="主题"
 					detail="应用配色"
 					control={
 						<Segmented
-							value={settings.theme}
-							onChange={(theme) => patch({ theme })}
+							value={settings.appearance.theme}
+							onChange={(theme) => patch({ appearance: { ...settings.appearance, theme } })}
 							options={[
-								{ value: "dark", label: "深色" },
-								{ value: "light", label: "浅色" },
 								{ value: "system", label: "跟随系统" },
+								{ value: "light", label: "浅色" },
+								{ value: "dark", label: "深色" },
 							]}
 						/>
 					}

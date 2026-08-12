@@ -16,6 +16,7 @@ import { usePopover } from "./Popover.tsx";
 import { ProjectMenu } from "./modals/ProjectMenu.tsx";
 import { useLayout } from "../layout.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { SearchField } from "./SearchField.tsx";
 import { useApp } from "../store.ts";
 
 const COLLAPSED_SESSION_COUNT = 5;
@@ -93,18 +94,13 @@ export function Sidebar() {
 
 			{searching && (
 				<div className="px-3 pb-2">
-					<input
+					<SearchField
 						autoFocus
+						size="comfortable"
 						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Escape") {
-								setQuery("");
-								setSearching(false);
-							}
-						}}
+						onChange={setQuery}
+						onEscape={() => setSearching(false)}
 						placeholder="搜索会话…"
-						className="h-8 w-full rounded-lg border border-line bg-input px-3 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-ink-faint"
 					/>
 				</div>
 			)}

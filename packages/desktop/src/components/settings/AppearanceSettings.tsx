@@ -2,7 +2,7 @@ import type { AppearanceSettings as Appearance } from "@deepwise/core";
 import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
 import { contrastingInk, parseHex } from "../../theme.ts";
-import { Card, InlineSelect, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
+import { Card, GhostButton, InlineSelect, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
 
 /**
  * Mirrors `DEFAULT_APPEARANCE` in @deepwise/core.
@@ -42,8 +42,9 @@ export function AppearanceSettings() {
 	if (!settings) return null;
 
 	const appearance = settings.appearance;
+	// One theme field now; this used to mirror it into a second, top-level one that nothing read.
 	const patch = (next: Partial<Appearance>) =>
-		void saveSettings({ ...settings, appearance: { ...appearance, ...next }, theme: (next.theme ?? appearance.theme) });
+		void saveSettings({ ...settings, appearance: { ...appearance, ...next } });
 	const isDark = appearance.theme === "dark" || (appearance.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
 
 	return (
@@ -221,13 +222,7 @@ export function AppearanceSettings() {
 					title="恢复默认"
 					detail="把外观设置还原为出厂配置"
 					control={
-						<button
-							type="button"
-							onClick={() => patch(FACTORY_APPEARANCE)}
-							className="h-[26px] rounded-lg border border-line px-2.5 text-[12px] text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
-						>
-							恢复
-						</button>
+						<GhostButton onClick={() => patch(FACTORY_APPEARANCE)}>恢复</GhostButton>
 					}
 				/>
 			</Card>

@@ -6,7 +6,7 @@ import {
 	indentOnInput,
 	syntaxHighlighting,
 } from "@codemirror/language";
-import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
 	EditorView,
@@ -93,6 +93,23 @@ export function CodeEditor({
 				indentOnInput(),
 				bracketMatching(),
 				highlightSelectionMatches(),
+				/*
+				 * ⌘F opens it, and it opens at the top.
+				 *
+				 * `searchKeymap` alone was already bound, which is why the shortcut appeared to do
+				 * nothing — the bindings need a panel to open, and without `search()` there was
+				 * none. Top rather than bottom because the composer-shaped things in this app all
+				 * sit at the bottom of their pane, and a find bar down there reads as one of them.
+				 */
+				search({ top: true }),
+				/*
+				 * The panel's own wording, in the app's language.
+				 *
+				 * CodeMirror builds these strings into the panel's DOM, so there is no way to
+				 * translate it from the outside — `phrases` is the hook it provides for exactly
+				 * this. Missing keys fall through to the English original rather than blanking.
+				 */
+				EditorState.phrases.of(SEARCH_PHRASES),
 				syntaxHighlighting(highlightStyle()),
 				EditorState.readOnly.of(Boolean(readOnly)),
 				wrapping.current.of(wrap ? EditorView.lineWrapping : []),
@@ -177,6 +194,29 @@ export function CodeEditor({
 }
 
 /**
+ * The find/replace panel's wording.
+ *
+ * Keys are CodeMirror's own English strings; anything not listed keeps the original.
+ */
+const SEARCH_PHRASES: Record<string, string> = {
+	Find: "查找",
+	Replace: "替换",
+	next: "下一个",
+	previous: "上一个",
+	all: "全部",
+	"match case": "区分大小写",
+	"by word": "全词匹配",
+	regexp: "正则",
+	replace: "替换",
+	"replace all": "全部替换",
+	close: "关闭",
+	"current match": "当前匹配",
+	"replaced $ matches": "已替换 $ 处",
+	"replaced match on line $": "已替换第 $ 行的匹配",
+	"on line": "行",
+};
+
+/**
  * Chrome colours, taken from the app's own tokens.
  *
  * CodeMirror emits real CSS, so `var(...)` works here — which means the editor follows a theme
@@ -223,17 +263,108 @@ function editorTheme(): Extension {
 			outline: "none",
 		},
 		".cm-selectionMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 12%, transparent)" },
+		/*
+		 * The find/replace panel, restyled to the app's controls.
+		 *
+		 * CodeMirror ships a functional panel that looks like a browser dialogue from 2005 —
+		 * beige buttons, a 1px inset border, its own font. Everything here maps it onto the
+		 * tokens the rest of the app uses, so the one moment you press ⌘F does not open a
+		 * different application inside this one.
+		 */
+		".cm-panels": { backgroundColor: "transparent", color: "var(--color-ink)" },
+		".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--color-line-soft)" },
+		".cm-panel.cm-search": {
+			backgroundColor: "var(--color-shell)",
+			padding: "6px 26px 6px 8px",
+			display: "flex",
+			flexWrap: "wrap",
+			alignItems: "center",
+			gap: "6px",
+			fontFamily: "var(--dw-ui-font)",
+			fontSize: "12px",
+		},
+		/*
+		 * Two zero-height full-width pseudo-elements, used as line breaks.
+		 *
+		 * The standard trick for forcing a break in a wrapping flex row. CodeMirror's own `<br>`
+		 * sits at roughly the right point in the source but will not take a `flex-basis` — a
+		 * replaced element ignores it — so it is hidden and these take over, which also gives a
+		 * second break for the options row that the markup has no separator for.
+		 */
+		".cm-panel.cm-search br": { display: "none" },
+		".cm-panel.cm-search::before": { content: '""', flex: "0 0 100%", height: 0, order: 4 },
+		".cm-panel.cm-search::after": { content: '""', flex: "0 0 100%", height: 0, order: 6 },
+		/*
+		 * Reordered, because the source order is not the reading order.
+		 *
+		 * CodeMirror emits find, its buttons, the option checkboxes, close, then replace and its
+		 * buttons — so laid out plainly the replace field lands in the middle of the checkboxes.
+		 * `order` puts each row with its own controls: find, then replace, then the options.
+		 * `margin-left: auto` on close both pins it right and forces what follows onto a new line.
+		 */
+		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 140px", minWidth: "90px" },
+		".cm-panel.cm-search [name=next], .cm-panel.cm-search [name=prev], .cm-panel.cm-search [name=select]": {
+			order: 2,
+		},
+		".cm-panel.cm-search input[name=replace]": { order: 5, flex: "1 1 140px", minWidth: "90px" },
+		".cm-panel.cm-search [name=replace], .cm-panel.cm-search [name=replaceAll]": { order: 5 },
+		".cm-panel.cm-search label": {
+			order: 7,
+			display: "inline-flex",
+			alignItems: "center",
+			gap: "4px",
+			fontSize: "11.5px",
+			color: "var(--color-ink-muted)",
+		},
+		".cm-panel.cm-search input[type=checkbox]": { accentColor: "var(--color-accent)", margin: 0 },
+		".cm-textfield": {
+			backgroundColor: "var(--color-input)",
+			color: "var(--color-ink)",
+			border: "1px solid var(--color-line)",
+			borderRadius: "7px",
+			padding: "0 8px",
+			height: "26px",
+			fontSize: "12px",
+			fontFamily: "var(--dw-ui-font)",
+			outline: "none",
+		},
+		".cm-textfield:focus": { borderColor: "var(--color-ink-faint)" },
+		".cm-button": {
+			backgroundColor: "transparent",
+			backgroundImage: "none",
+			color: "var(--color-ink-muted)",
+			border: "1px solid var(--color-line)",
+			borderRadius: "7px",
+			padding: "0 9px",
+			height: "26px",
+			fontSize: "11.5px",
+			fontFamily: "var(--dw-ui-font)",
+			cursor: "default",
+		},
+		".cm-button:hover": { backgroundColor: "var(--color-card-hover)", color: "var(--color-ink)" },
+		".cm-button:active": { backgroundColor: "var(--color-card-hover)" },
+		// The close affordance is an icon, not a control that needs a box round it.
+		// Absolutely positioned by CodeMirror's base theme, so it sits outside the flex flow.
+		".cm-panel.cm-search [name=close]": {
+			border: "none",
+			background: "transparent",
+			color: "var(--color-ink-faint)",
+			fontSize: "16px",
+			lineHeight: "1",
+			padding: "0 4px",
+			cursor: "default",
+		},
+		".cm-panel.cm-search [name=close]:hover": { color: "var(--color-ink)" },
+		".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 24%, transparent)" },
+		".cm-searchMatch.cm-searchMatch-selected": {
+			backgroundColor: "color-mix(in srgb, var(--color-accent) 42%, transparent)",
+		},
 		".cm-foldPlaceholder": {
 			backgroundColor: "var(--color-card)",
 			border: "none",
 			color: "var(--color-ink-muted)",
 			padding: "0 6px",
 			borderRadius: "4px",
-		},
-		".cm-panels": { backgroundColor: "var(--color-float)", color: "var(--color-ink)" },
-		".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 22%, transparent)" },
-		".cm-searchMatch.cm-searchMatch-selected": {
-			backgroundColor: "color-mix(in srgb, var(--color-info) 42%, transparent)",
 		},
 	});
 }

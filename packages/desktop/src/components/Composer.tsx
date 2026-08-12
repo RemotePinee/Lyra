@@ -34,6 +34,8 @@ export function Composer() {
 	const messages = useApp((s) => s.messages);
 	const running = useApp((s) => s.running);
 	const activeSessionId = useApp((s) => s.activeSessionId);
+	// "底部面板" in Settings → 常规. Saved but read by nothing until now.
+	const showBottomPanel = useApp((s) => s.settings?.editor.showBottomPanel) ?? true;
 	const send = useApp((s) => s.send);
 	const abort = useApp((s) => s.abort);
 	const { compact } = useLayout();
@@ -102,6 +104,7 @@ export function Composer() {
 				 * you check after. Splitting them into two strips would cost a row of height to
 				 * separate things you read together.
 				 */}
+				{showBottomPanel && (
 				<div className="flex items-center gap-0.5 overflow-hidden pb-1">
 					<Chip
 						icon={<Folder size={13} strokeWidth={1.8} />}
@@ -120,6 +123,7 @@ export function Composer() {
 					<div className="min-w-2 flex-1" />
 					<ChangeBar />
 				</div>
+				)}
 
 				<ComposerShell
 					value={text}

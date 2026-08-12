@@ -1,10 +1,11 @@
 import { ChevronRight, Folder } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FileContents, FileEntry } from "../../electron/ipc-types.ts";
 import { FileViewer } from "./FileViewer.tsx";
 import { iconColour, lookFor } from "./fileIcon.tsx";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { SearchField } from "./SearchField.tsx";
 import { ScrollText } from "./ScrollText.tsx";
 import { useNarrow } from "./useNarrow.ts";
 import { useApp } from "../store.ts";
@@ -42,6 +43,7 @@ export function FileBrowser() {
 	 * only, like the terminal's scrollback: they last as long as the app does.
 	 */
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
+	const [filter, setFilter] = useState("");
 
 	const root = workspace?.path;
 
@@ -57,6 +59,7 @@ export function FileBrowser() {
 		setSelected(null);
 		setContents(null);
 		setDrafts({});
+		setFilter("");
 		if (root) void load(root);
 	}, [root, load]);
 
@@ -93,17 +96,41 @@ export function FileBrowser() {
 		if (read) setContents(read);
 	}
 
-	/** Flatten the opened parts of the tree into the rows actually on screen. */
-	const rows: TreeNode[] = [];
-	if (root) {
+	/**
+	 * Flatten the opened parts of the tree into the rows actually on screen.
+	 *
+	 * While filtering, the whole loaded tree is walked rather than only what is expanded, and a
+	 * directory is kept when anything under it matches. Searching only inside folders you had
+	 * already opened would answer a question nobody asked — the point of typing a name is to
+	 * find where it is, which is precisely what you do not yet know.
+	 */
+	const rows = useMemo<TreeNode[]>(() => {
+		if (!root) return [];
+		const needle = filter.trim().toLowerCase();
+		const out: TreeNode[] = [];
+
+		const matches = (entry: FileEntry): boolean => entry.name.toLowerCase().includes(needle);
+		const hasMatchBelow = (dir: string): boolean =>
+			(children[dir] ?? []).some((entry) => matches(entry) || (entry.isDirectory && hasMatchBelow(entry.path)));
+
 		const walk = (dir: string, depth: number) => {
 			for (const entry of children[dir] ?? []) {
-				rows.push({ entry, depth });
-				if (entry.isDirectory && expanded.has(entry.path)) walk(entry.path, depth + 1);
+				if (!needle) {
+					out.push({ entry, depth });
+					if (entry.isDirectory && expanded.has(entry.path)) walk(entry.path, depth + 1);
+					continue;
+				}
+				const deeper = entry.isDirectory && hasMatchBelow(entry.path);
+				if (!matches(entry) && !deeper) continue;
+				out.push({ entry, depth });
+				// A directory on the path to a match opens itself; there is no point showing a
+				// folder that matched and then hiding what matched inside it.
+				if (deeper) walk(entry.path, depth + 1);
 			}
 		};
 		walk(root, 0);
-	}
+		return out;
+	}, [root, children, expanded, filter]);
 
 	if (!workspace) {
 		return (
@@ -117,8 +144,15 @@ export function FileBrowser() {
 
 	return (
 		<div ref={body} className="flex min-h-0 flex-1 flex-col">
-			<div className="flex h-8 shrink-0 items-center gap-2 px-2.5">
-				<span className="min-w-0 truncate text-[12px] text-ink-muted">{workspace.name}</span>
+			{/*
+			 * A search box, not the project's name.
+			 *
+			 * The name is already on the composer and in the sidebar; a third copy of it bought a
+			 * whole row and told you nothing. Finding a file in a tree you have not expanded yet
+			 * is the thing this pane is actually for.
+			 */}
+			<div className="shrink-0 px-1.5 pb-1.5">
+				<SearchField value={filter} onChange={setFilter} placeholder={`搜索 ${workspace.name} 内的文件`} />
 			</div>
 
 			{/*
@@ -138,7 +172,7 @@ export function FileBrowser() {
 			 */}
 			<div className={`flex min-h-0 flex-1 gap-1.5 p-1.5 pt-0 ${narrow ? "flex-col" : ""}`}>
 				<div
-					className={`flex min-h-0 flex-col overflow-hidden rounded-[5px] border border-line-soft ${
+					className={`flex min-h-0 flex-col overflow-hidden rounded-[5px] border border-line-soft bg-card/35 ${
 						!narrow
 							? "w-[212px] shrink-0"
 							: selected
@@ -147,7 +181,7 @@ export function FileBrowser() {
 								: "flex-1"
 					}`}
 				>
-					<Scroller className="flex-1" contentClassName="px-1 py-1" fadeColor="var(--color-shell)">
+					<Scroller className="flex-1" contentClassName="px-1 py-1" fadeColor="transparent">
 						{rows.map(({ entry, depth }) => (
 							<button
 								key={entry.path}

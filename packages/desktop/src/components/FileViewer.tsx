@@ -1,9 +1,10 @@
-import { Braces, Check, Eye, FileWarning, Pencil, Save, WrapText } from "lucide-react";
+import { Braces, Check, ExternalLink, Eye, FileWarning, Pencil, Save, WrapText } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FileContents } from "../../electron/ipc-types.ts";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { useApp } from "../store.ts";
 
 const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "svg"]);
 const VIDEO = new Set(["mp4", "webm", "mov", "mkv", "m4v"]);
@@ -67,6 +68,7 @@ export function FileViewer({
 	 * bundle or a long prose line is the other way round, so it is a toggle rather than a policy.
 	 */
 	const [wrap, setWrap] = useState(false);
+	const openTarget = useApp((s) => s.settings?.editor.defaultOpenTarget) ?? "Finder";
 
 	const text = draft ?? contents.text;
 	const dirty = draft !== undefined && draft !== contents.text;
@@ -120,6 +122,18 @@ export function FileViewer({
 							label={showSource ? "预览" : "编辑源码"}
 						/>
 					)}
+					{/*
+					 * Opens in whatever "默认文件打开目标" names.
+					 *
+					 * That setting existed and was saved, but nothing anywhere read it — the IPC to
+					 * open a path in a named app was already there with no caller. This is the one
+					 * place a file is on screen with a path in hand, so it is where it belongs.
+					 */}
+					<Toggle
+						onClick={() => void window.deepwise.system.openIn(openTarget, path)}
+						icon={<ExternalLink size={12} strokeWidth={1.9} />}
+						label={`在 ${openTarget} 中打开`}
+					/>
 					{kind === "json" && !readOnly && (
 						<Toggle onClick={formatJson} icon={<Braces size={12} strokeWidth={1.9} />} label="格式化" />
 					)}

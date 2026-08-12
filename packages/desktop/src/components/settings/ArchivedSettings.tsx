@@ -1,7 +1,9 @@
 import type { SessionMeta } from "@deepwise/core";
-import { Archive, ArchiveRestore, Folder, Search, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Folder, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { SearchField } from "../SearchField.tsx";
 import { ScrollText } from "../ScrollText.tsx";
+import { GhostButton, InlineSelect } from "./controls.tsx";
 import { useApp } from "../../store.ts";
 
 /**
@@ -103,28 +105,23 @@ export function ArchivedSettings() {
 				</div>
 			) : (
 				<>
+					{/* The shared field and the shared dropdown, as everywhere else. */}
 					<div className="flex flex-wrap items-center gap-2 pb-5">
-						<div className="flex h-8 min-w-[180px] flex-1 items-center gap-2 rounded-lg border border-line bg-input px-2.5">
-							<Search size={13} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
-							<input
-								value={query}
-								onChange={(e) => setQuery(e.target.value)}
-								placeholder="搜索已归档的聊天"
-								className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-ink-faint"
-							/>
-						</div>
-						<select
+						<SearchField
+							size="comfortable"
+							value={query}
+							onChange={setQuery}
+							placeholder="搜索已归档的聊天"
+							className="min-w-[180px] flex-1"
+						/>
+						<InlineSelect
 							value={project}
-							onChange={(e) => setProject(e.target.value)}
-							className="h-8 shrink-0 rounded-lg border border-line bg-input px-2.5 text-[12.5px] text-ink"
-						>
-							<option value="all">所有项目</option>
-							{projects.map((p) => (
-								<option key={p.path} value={p.path}>
-									{p.name}（{p.count}）
-								</option>
-							))}
-						</select>
+							onChange={setProject}
+							options={[
+								{ value: "all", label: "所有项目" },
+								...projects.map((p) => ({ value: p.path, label: `${p.name}（${p.count}）` })),
+							]}
+						/>
 					</div>
 
 					{groups.length === 0 && (
@@ -221,14 +218,9 @@ function Row({
 					>
 						<Trash2 size={13.5} strokeWidth={1.8} />
 					</button>
-					<button
-						type="button"
-						onClick={onRestore}
-						className="flex h-7 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] text-ink-muted transition-colors duration-150 hover:border-ink-faint hover:text-ink active:scale-[0.97]"
-					>
-						<ArchiveRestore size={13} strokeWidth={1.8} />
+					<GhostButton onClick={onRestore} icon={<ArchiveRestore size={13} strokeWidth={1.8} />}>
 						取消归档
-					</button>
+					</GhostButton>
 				</div>
 			)}
 		</div>

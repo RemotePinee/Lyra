@@ -4,15 +4,19 @@ import { useEffect, useRef, useState } from "react";
 const HIT_WIDTH = 9;
 /** Keyboard resizing, per press. Shift multiplies it, the way nudging does everywhere else. */
 const STEP = 16;
+/** Long enough to read as a grab handle, short enough not to read as a border. */
+const GRIP_HEIGHT = 30;
 
 /**
  * The draggable edge of a pane.
  *
- * A 1px line is the correct thing to *see* and an impossible thing to hit, so the target is 9px
- * wide with the line drawn along its outer edge. The target lies wholly inside the pane rather
- * than straddling the boundary: the sidebar clips its own overflow, and half a handle hanging
- * outside would simply be cut off. Nothing is visible until the pointer arrives, which keeps a
- * still window free of chrome — the same rule the scrollbars follow.
+ * What appears is a short grip at the pointer, not a rule down the whole edge. A full-height line
+ * reads as a border — a permanent piece of the layout — when the thing it means is "this
+ * particular spot can be dragged". A grip that follows the pointer says that and nothing else,
+ * and it leaves the boundary looking the same whether or not you happen to be near it.
+ *
+ * The 9px target lies wholly inside the pane rather than straddling the boundary: the sidebar
+ * clips its own overflow, and half a handle hanging outside would simply be cut off.
  *
  * Reports an absolute width rather than a delta, computed from where the drag started. Summing
  * deltas per mousemove accumulates the clamping error: drag past the minimum, come back, and the
@@ -37,7 +41,17 @@ export function ResizeHandle({
 	onReset?: () => void;
 	label: string;
 }) {
+	const track = useRef<HTMLDivElement>(null);
 	const [active, setActive] = useState(false);
+	/*
+	 * Where along the edge the grip sits, in pixels from the top of the handle.
+	 *
+	 * Null until the pointer arrives, so nothing is drawn on a pane nobody is reaching for. Held
+	 * as state rather than read from a CSS variable because it also has to survive the drag: once
+	 * the pointer leaves the 9px strip the handle stops receiving moves, and a grip that vanished
+	 * mid-drag would leave you dragging an invisible edge.
+	 */
+	const [grip, setGrip] = useState<number | null>(null);
 	const start = useRef({ x: 0, width: 0 });
 
 	useEffect(() => {
@@ -47,6 +61,9 @@ export function ResizeHandle({
 			const travel = event.clientX - start.current.x;
 			const next = edge === "end" ? start.current.width + travel : start.current.width - travel;
 			onResize(Math.min(max, Math.max(min, next)));
+			// The grip tracks vertically while dragging, so it stays under the pointer.
+			const box = track.current?.getBoundingClientRect();
+			if (box) setGrip(Math.min(box.height, Math.max(0, event.clientY - box.top)));
 		};
 		const stop = () => setActive(false);
 
@@ -83,6 +100,16 @@ export function ResizeHandle({
 			aria-valuemin={min}
 			aria-valuemax={max}
 			tabIndex={0}
+			ref={track}
+			onMouseEnter={(event) => setGrip(event.clientY - event.currentTarget.getBoundingClientRect().top)}
+			onMouseMove={(event) => {
+				if (active) return;
+				setGrip(event.clientY - event.currentTarget.getBoundingClientRect().top);
+			}}
+			onMouseLeave={() => {
+				// Stays put while dragging: the pointer is usually well outside the strip by then.
+				if (!active) setGrip(null);
+			}}
 			onMouseDown={(event) => {
 				// Left button only: a right-click here should not start a silent drag.
 				if (event.button !== 0) return;
@@ -103,14 +130,24 @@ export function ResizeHandle({
 				event.preventDefault();
 			}}
 			style={{ width: HIT_WIDTH, [edge === "end" ? "right" : "left"]: 0 }}
-			className="group/resize absolute top-0 bottom-0 z-30 cursor-col-resize"
+			className="group/resize absolute top-0 bottom-0 z-30 cursor-col-resize [--dw-grip:30px]"
 		>
-			{/* The line itself: one pixel on the boundary, and only there when wanted. */}
-			<span
-				className={`absolute inset-y-0 w-px transition-colors duration-150 ${
-					edge === "end" ? "right-0" : "left-0"
-				} ${active ? "bg-accent" : "bg-transparent group-hover/resize:bg-line"}`}
-			/>
+			{/*
+			 * The grip: a short rounded bar centred on the pointer, pinned to the boundary itself.
+			 *
+			 * Clamped away from the ends so it never collides with the window controls above or
+			 * the status row below — at those extremes it stops travelling rather than sliding out
+			 * of the pane.
+			 */}
+			{grip !== null && (
+				<span
+					aria-hidden
+					style={{ top: `clamp(${GRIP_HEIGHT / 2 + 8}px, ${grip}px, calc(100% - ${GRIP_HEIGHT / 2 + 8}px))` }}
+					className={`absolute h-[var(--dw-grip)] w-[3px] -translate-y-1/2 rounded-full transition-colors duration-150 ${
+						edge === "end" ? "right-[1px]" : "left-[1px]"
+					} ${active ? "bg-accent" : "bg-ink-faint/45"}`}
+				/>
+			)}
 		</div>
 	);
 }

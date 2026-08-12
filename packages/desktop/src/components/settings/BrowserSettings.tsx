@@ -1,7 +1,7 @@
 import { Globe } from "lucide-react";
 import { useState } from "react";
 import { useApp } from "../../store.ts";
-import { Card, EmptyHint, Row, SectionTitle } from "./controls.tsx";
+import { Card, EmptyHint, GhostButton, Row, SectionTitle } from "./controls.tsx";
 
 const TOOLS = [
 	{
@@ -55,14 +55,9 @@ export function BrowserSettings() {
 					title="检查加载状态"
 					detail={activeSessionId ? "读取当前会话的工具表" : "先打开一个会话"}
 					control={
-						<button
-							type="button"
-							disabled={!activeSessionId}
-							onClick={() => void check()}
-							className="h-[26px] rounded-lg border border-line px-2.5 text-[12px] text-ink-muted transition-colors hover:border-ink-faint hover:text-ink disabled:opacity-40"
-						>
+						<GhostButton disabled={!activeSessionId} onClick={() => void check()}>
 							检查
-						</button>
+						</GhostButton>
 					}
 				/>
 			</Card>

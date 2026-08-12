@@ -1,13 +1,15 @@
 /**
- * The three buttons beside the traffic lights: sidebar, back, forward.
+ * The button beside the traffic lights: show or hide the sidebar.
  *
- * Their own component because they have two homes. Normally they sit in the window's toolbar,
- * over whatever is at the top-left. But a full-screen panel reaches that corner, and buttons
- * floating over a card they do not belong to read as a mistake — so in that one case the panel
- * puts them at the head of its own tab strip instead, where they sit in a row with the tabs and
- * the first tab needs no clearance at all.
+ * Its own component because it has two homes. Normally it sits in the window's toolbar, over
+ * whatever is at the top-left. But a full-screen panel reaches that corner, and a button
+ * floating over a card it does not belong to reads as a mistake — so in that one case the panel
+ * puts it at the head of its own tab strip instead, where it sits in a row with the tabs.
  *
- * Whoever renders them owns the positioning and the `no-drag` region; this is only the buttons.
+ * Back and forward used to live here too. There is nothing to go back to: this is one window
+ * with panes, not a stack of pages, so both were permanently inert.
+ *
+ * Whoever renders it owns the positioning and the `no-drag` region; this is only the button.
  */
 export function WindowControls({
 	navOpen,
@@ -23,12 +25,6 @@ export function WindowControls({
 		<>
 			<ToolbarButton label={navOpen ? "隐藏侧边栏 ⌘B" : "显示侧边栏 ⌘B"} onClick={onToggleNav} active={active}>
 				<SidebarIcon open={navOpen} />
-			</ToolbarButton>
-			<ToolbarButton label="后退" onClick={() => history.back()}>
-				<Chevron direction="left" />
-			</ToolbarButton>
-			<ToolbarButton label="前进" onClick={() => history.forward()}>
-				<Chevron direction="right" />
 			</ToolbarButton>
 		</>
 	);
@@ -78,25 +74,6 @@ function SidebarIcon({ open }: { open: boolean }) {
 				className="transition-opacity duration-200"
 				opacity={open ? 0.5 : 0}
 			/>
-		</svg>
-	);
-}
-
-
-function Chevron({ direction }: { direction: "left" | "right" }) {
-	return (
-		<svg
-			width="15"
-			height="15"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.9"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			style={direction === "right" ? { transform: "scaleX(-1)" } : undefined}
-		>
-			<path d="M15 18l-6-6 6-6" />
 		</svg>
 	);
 }

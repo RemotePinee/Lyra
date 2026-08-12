@@ -147,11 +147,22 @@ function HookCard({
 			</div>
 
 			<div className="space-y-3 px-4 py-3.5">
-				<Field label="命令" hint="在工作区目录下用你的默认 shell 执行">
+				{/*
+				 * An empty command is not saved.
+				 *
+				 * Blurring an empty field used to persist it, and a hook whose command is the empty
+				 * string still runs — the shell exits 0, so a *blocking* hook silently turns into
+				 * one that approves everything. The field keeps what you typed and says why.
+				 */}
+				<Field label="命令" hint={command.trim() ? "在工作区目录下用你的默认 shell 执行" : "不能为空"}>
 					<TextInput
 						value={command}
 						onChange={setCommand}
-						onBlur={() => command !== hook.command && onChange({ command })}
+						onBlur={() => {
+							if (!command.trim()) return;
+							if (command !== hook.command) onChange({ command });
+						}}
+						invalid={!command.trim()}
 						mono
 					/>
 				</Field>

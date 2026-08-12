@@ -110,8 +110,8 @@ export function ModelSettings() {
 	}
 
 	return (
-		<div>
-			<header className="flex items-start justify-between pt-8 pb-6">
+		<div className="flex min-h-0 flex-1 flex-col">
+			<header className="flex shrink-0 items-start justify-between pt-8 pb-6">
 				<div>
 					<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">模型设置</h1>
 					<p className="mt-2 text-[13px] text-ink-muted">管理自定义模型供应商，配置后可在聊天时选择使用。</p>
@@ -126,8 +126,9 @@ export function ModelSettings() {
 				</button>
 			</header>
 
-			<div className="flex min-h-[520px] overflow-hidden rounded-[14px] border border-line bg-card/30">
-				<div className="w-[268px] shrink-0 border-r border-line p-2.5">
+			<div className="flex min-h-0 flex-1 overflow-hidden rounded-[14px] border border-line bg-card/30">
+				{/* Each pane scrolls on its own, so a long provider list never moves the editor. */}
+				<Scroller className="w-[268px] shrink-0 border-r border-line" contentClassName="p-2.5" fadeColor="var(--color-shell)">
 					<div className="px-2 pt-1.5 pb-1 text-[11.5px] text-ink-faint">自定义供应商</div>
 					{providers.map((provider) => (
 						<button
@@ -157,9 +158,9 @@ export function ModelSettings() {
 						<Plus size={15} strokeWidth={1.9} className="shrink-0" />
 						添加供应商
 					</button>
-				</div>
+				</Scroller>
 
-				<div className="min-w-0 flex-1 p-6">
+				<Scroller className="min-w-0 flex-1" contentClassName="p-6" fadeColor="var(--color-shell)">
 					{!selected ? (
 						<div className="flex h-full flex-col items-center justify-center gap-3 text-center">
 							<p className="text-[13px] text-ink-muted">还没有配置任何供应商</p>
@@ -182,7 +183,7 @@ export function ModelSettings() {
 							}}
 						/>
 					)}
-				</div>
+				</Scroller>
 			</div>
 
 			{editingModel && (

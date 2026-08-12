@@ -60,7 +60,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 
 	return (
 		<div
-			className={`dw-enter mb-2 overflow-hidden rounded-[10px] border transition-colors duration-300 ${
+			className={`dw-enter mb-2 overflow-hidden rounded-[10px] border transition-colors duration-200 ${
 				running ? "dw-rail border-info/30 bg-card/60" : "border-line-soft bg-card/45"
 			}`}
 		>
@@ -72,10 +72,10 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				<Icon
 					size={14}
 					strokeWidth={1.8}
-					className={`shrink-0 transition-colors duration-300 ${running ? "dw-pulse text-info" : "text-ink-faint"}`}
+					className={`shrink-0 transition-colors duration-200 ${running ? "dw-pulse text-info" : "text-ink-faint"}`}
 				/>
 				<span
-					className={`min-w-0 flex-1 truncate text-[12.5px] transition-colors duration-300 ${
+					className={`min-w-0 flex-1 truncate text-[12.5px] transition-colors duration-200 ${
 						running ? "text-ink" : "text-ink-muted"
 					}`}
 				>

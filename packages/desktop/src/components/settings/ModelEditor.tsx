@@ -25,7 +25,19 @@ export function ModelEditor({
 	const [priceOut, setPriceOut] = useState(String(model?.pricing?.output ?? ""));
 
 	const trimmedId = modelId.trim();
-	const valid = trimmedId.length > 0 && Number(contextWindow) > 0 && Number(maxOutput) > 0;
+	/*
+	 * Bounded, not merely positive.
+	 *
+	 * `> 0` let `1e99` and `1.5` through: the first makes the context meter read 0% forever and
+	 * the second is sent to a provider that expects an integer. `maxOutput` also cannot exceed
+	 * the window it is drawn from — a model that claims to write more than it can hold is a
+	 * request that fails at the far end, with an error nobody can trace back to this form.
+	 */
+	const window_ = Number(contextWindow);
+	const output = Number(maxOutput);
+	const windowOk = Number.isInteger(window_) && window_ > 0 && window_ <= 100_000_000;
+	const outputOk = Number.isInteger(output) && output > 0 && output <= window_;
+	const valid = trimmedId.length > 0 && windowOk && outputOk;
 
 	function submit() {
 		if (!valid) return;
@@ -64,12 +76,19 @@ export function ModelEditor({
 					<TextInput value={name} onChange={setName} placeholder="DeepSeek V4 Flash" />
 				</Field>
 
+				{/* Marked on the field, not just by a dead Save button that says nothing about why. */}
 				<div className="grid grid-cols-2 gap-3">
-					<Field label="上下文窗口（token）">
-						<TextInput value={contextWindow} onChange={setContextWindow} mono inputMode="numeric" />
+					<Field label="上下文窗口（token）" hint={windowOk ? undefined : "正整数，最大 1 亿"}>
+						<TextInput
+							value={contextWindow}
+							onChange={setContextWindow}
+							invalid={!windowOk}
+							mono
+							inputMode="numeric"
+						/>
 					</Field>
-					<Field label="最大输出（token）">
-						<TextInput value={maxOutput} onChange={setMaxOutput} mono inputMode="numeric" />
+					<Field label="最大输出（token）" hint={outputOk ? undefined : "正整数，且不超过上下文窗口"}>
+						<TextInput value={maxOutput} onChange={setMaxOutput} invalid={!outputOk} mono inputMode="numeric" />
 					</Field>
 				</div>
 
