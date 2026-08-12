@@ -1,0 +1,13 @@
+packages:
+  - "packages/*"
+
+allowBuilds:
+  # Downloads the Electron binary.
+  electron: true
+  # Fetches the platform-specific esbuild binary used by Vite.
+  esbuild: true
+  # Windows installer toolchain; not needed to develop or run the app.
+  electron-winstaller: false
+  # Builds the pseudo-terminal addon the terminal panel runs on. Compiled against Node here,
+  # then rebuilt against Electron's ABI by the desktop package's postinstall.
+  node-pty: true

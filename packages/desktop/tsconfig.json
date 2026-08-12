@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@deepwise/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["electron/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts"]
+}

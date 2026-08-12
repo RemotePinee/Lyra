@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "DeepWise",
+    "slug": "deepwise",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "deepwise",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#171717",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.deepwise.app",
+      "infoPlist": {
+        "UIUserInterfaceStyle": "Dark",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "dev.deepwise.app",
+      "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

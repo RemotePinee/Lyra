@@ -1,0 +1,23 @@
+{
+  "name": "deepwise",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepWise — a fully self-hosted code agent with custom models, tools, skills and MCP. Desktop (Electron) + Mobile (React Native), fully synced.",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "build:core": "pnpm --filter @deepwise/core build",
+    "dev": "pnpm --filter @deepwise/desktop dev",
+    "dev:mobile": "pnpm --filter @deepwise/mobile start",
+    "build": "pnpm --filter @deepwise/core build && pnpm --filter @deepwise/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @deepwise/core test"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.12.4"
+  }
+}

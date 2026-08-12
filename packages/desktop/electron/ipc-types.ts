@@ -1,0 +1,283 @@
+/** The contract between the renderer and the main process. Imported by both sides. */
+
+import type { BranchList } from "./git.ts";
+
+export type { BranchList };
+import type {
+	AgentEvent,
+	ApprovalDecision,
+	ContextBreakdown,
+	ContextSegmentKey,
+	McpServerStatus,
+	Plugin,
+	QueuedTask,
+	SessionMeta,
+	Settings,
+	Skill,
+	UserContent,
+} from "@deepwise/core";
+
+export type { ContextBreakdown, ContextSegmentKey, QueuedTask };
+
+export interface WorkspaceInfo {
+	path: string;
+	name: string;
+	isGitRepo: boolean;
+	branch: string | null;
+	/** Uncommitted line counts, shown in the review panel header. */
+	added: number;
+	removed: number;
+}
+
+export interface SessionSnapshot {
+	meta: SessionMeta;
+	messages: import("@deepwise/core").Message[];
+	running: boolean;
+	pendingApprovals: { id: string; kind: string; title: string; detail: string }[];
+}
+
+/**
+ * The side chat's own transcript. Memory-only by design — it is gone when the app restarts,
+ * and never reaches the session log.
+ */
+export interface SideChatSnapshot {
+	messages: import("@deepwise/core").Message[];
+	running: boolean;
+}
+
+export interface FileEntry {
+	name: string;
+	/** Absolute, so the renderer never has to join paths itself. */
+	path: string;
+	isDirectory: boolean;
+	size: number;
+}
+
+export interface FileContents {
+	text: string;
+	/** True when the file was longer than the read cap and only its head is here. */
+	truncated: boolean;
+	bytes: number;
+	/** Set instead of `text` when the bytes are not text at all. */
+	binary?: boolean;
+	/** Last-modified time, so an editor can notice the file changed underneath it. */
+	modifiedAt: number;
+}
+
+export interface AgentCapabilities {
+	skills: Skill[];
+	skillDiagnostics: { path: string; message: string }[];
+	plugins: Plugin[];
+	pluginDiagnostics: { path: string; message: string }[];
+	mcp: McpServerStatus[];
+	agents: { name: string; description: string; source: string; tools: string[] | "*" }[];
+	toolNames: string[];
+}
+
+export interface ProviderTestResult {
+	ok: boolean;
+	latencyMs: number;
+	message: string;
+	/** Model ids the endpoint reported, when it exposes a listing. */
+	models?: string[];
+}
+
+export interface SyncStatus {
+	running: boolean;
+	port: number;
+	token: string | null;
+	addresses: string[];
+	clients: number;
+	/** Ready-to-scan pairing payload for the mobile app. */
+	pairingUrl: string | null;
+}
+
+export interface DeepWiseApi {
+	settings: {
+		get(): Promise<Settings>;
+		save(settings: Settings): Promise<Settings>;
+	};
+	workspace: {
+		/** Show the project directory in the OS file manager. */
+		reveal(path: string): Promise<void>;
+		pick(): Promise<WorkspaceInfo | null>;
+		info(path: string): Promise<WorkspaceInfo | null>;
+	};
+	sessions: {
+		list(): Promise<SessionMeta[]>;
+		create(cwd: string, modelId: string): Promise<SessionSnapshot>;
+		/** Start the agent for this session — skills, MCP servers, the lot. For running things. */
+		open(projectId: string, sessionId: string): Promise<SessionSnapshot | null>;
+		/** Read the stored transcript without starting anything. For looking at things. */
+		transcript(projectId: string, sessionId: string): Promise<SessionSnapshot | null>;
+		remove(projectId: string, sessionId: string): Promise<void>;
+		/** Move a session in or out of the archive. Returns the whole list, already updated. */
+		setArchived(projectId: string, sessionId: string, archived: boolean): Promise<SessionMeta[]>;
+		/** Delete every archived session at once. Returns the remaining list. */
+		removeArchived(): Promise<SessionMeta[]>;
+		capabilities(sessionId: string): Promise<AgentCapabilities | null>;
+		/** Null when the session is not open — this never boots one just to answer. */
+		contextBreakdown(sessionId: string): Promise<ContextBreakdown | null>;
+	};
+	agent: {
+		prompt(sessionId: string, content: UserContent[]): Promise<void>;
+		/** Replace a message and re-run from there, discarding everything after it. */
+		editMessage(sessionId: string, messageIndex: number, content: UserContent[]): Promise<void>;
+		abort(sessionId: string): Promise<void>;
+		approve(sessionId: string, requestId: string, decision: ApprovalDecision): Promise<void>;
+		setModel(sessionId: string, modelId: string): Promise<void>;
+		onEvent(handler: (payload: { sessionId: string; event: AgentEvent }) => void): () => void;
+	};
+	/**
+	 * The second conversation attached to a session: reads its transcript, writes nothing back.
+	 *
+	 * Its events ride a separate channel from `agent.onEvent` for the obvious reason — they
+	 * describe a different conversation, and mixing them would paint side-chat replies into
+	 * the main transcript.
+	 */
+	sideChat: {
+		/** Null when this session has never had one opened. */
+		state(sessionId: string): Promise<SideChatSnapshot | null>;
+		ask(sessionId: string, content: UserContent[]): Promise<void>;
+		abort(sessionId: string): Promise<void>;
+		/** Throw the conversation away and start fresh. The main session is untouched. */
+		reset(sessionId: string): Promise<void>;
+		onEvent(handler: (payload: { sessionId: string; event: AgentEvent }) => void): () => void;
+	};
+	/** Work the side chat handed to a session, waiting for it to be free. */
+	tasks: {
+		list(sessionId: string): Promise<QueuedTask[]>;
+		/** Only a task that has not started can be withdrawn; stopping a running one is `abort`. */
+		cancel(sessionId: string, taskId: string): Promise<boolean>;
+	};
+	/**
+	 * Reading the project's files, for the panel's file browser.
+	 *
+	 * Confined to the open project: both calls refuse a path outside it. The browser is for
+	 * looking at what you are working on, and a file picker that can wander into the rest of
+	 * the disk is a different, riskier thing than what was asked for.
+	 */
+	files: {
+		list(dir: string): Promise<FileEntry[]>;
+		read(path: string): Promise<FileContents | null>;
+		/** Overwrite a file. Refused outside the open project, same as reading. */
+		write(path: string, text: string): Promise<{ ok: boolean; error?: string }>;
+		/**
+		 * A URL the renderer can put in `src` for images, video and audio.
+		 *
+		 * Served over a private scheme whose handler re-checks the project boundary, so media
+		 * streams (with range requests, so a video can seek) instead of being base64'd through
+		 * IPC — a 40MB clip would otherwise have to become a 55MB string first.
+		 */
+		mediaUrl(path: string): string;
+	};
+	/** A real pseudo-terminal, one per tab. */
+	terminal: {
+		create(cwd: string, cols: number, rows: number): Promise<string>;
+		write(id: string, data: string): void;
+		resize(id: string, cols: number, rows: number): void;
+		kill(id: string): void;
+		onData(handler: (payload: { id: string; data: string }) => void): () => void;
+		onExit(handler: (payload: { id: string; code: number }) => void): () => void;
+	};
+	providers: {
+		test(providerId: string): Promise<ProviderTestResult>;
+	};
+	sync: {
+		status(): Promise<SyncStatus>;
+		start(): Promise<SyncStatus>;
+		stop(): Promise<SyncStatus>;
+		rotateToken(): Promise<SyncStatus>;
+	};
+	plugins: {
+		/** Scan plugin and skill directories without needing an open session. */
+		list(cwd: string): Promise<{
+			plugins: Plugin[];
+			pluginDiagnostics: { path: string; message: string }[];
+			skills: Skill[];
+			skillDiagnostics: { path: string; message: string }[];
+		}>;
+		/** Absolute path to the plugins directory, created if missing. */
+		revealDir(scope: "workspace" | "user", cwd: string): Promise<string>;
+		/** Write a runnable example bundle so the format is discoverable. */
+		installExample(scope: "workspace" | "user", cwd: string): Promise<string>;
+	};
+	/**
+	 * Tell the window itself what the theme is.
+	 *
+	 * Two things depend on it: the OS-drawn controls on Windows and Linux, and — on every
+	 * platform — the window's own backing colour, which is what a fast resize exposes before
+	 * the renderer catches up.
+	 */
+	setWindowTheme(colors: { color: string; symbolColor: string }): void;
+	/**
+	 * Native full screen, reported by the window because the page cannot detect it.
+	 *
+	 * macOS hides the traffic lights in full screen, and everything inset to clear them has to
+	 * stop reserving that space. Fires on entry, on exit, and once after load.
+	 */
+	onFullScreenChange(handler: (fullScreen: boolean) => void): () => void;
+	system: {
+		openPath(path: string): Promise<void>;
+		openExternal(url: string): Promise<void>;
+		openIn(app: string, path: string): Promise<void>;
+		revealSkillsDir(scope: "workspace" | "user", cwd: string): Promise<string>;
+		platform(): Promise<string>;
+	};
+	index: {
+		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
+		rebuild(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
+		search(cwd: string, query: string): Promise<{ name: string; kind: string; file: string; line: number }[]>;
+	};
+	scheduler: {
+		/** Run a scheduled task immediately, through the same path the timer uses. */
+		runNow(taskId: string): Promise<{ ok: boolean; error?: string }>;
+	};
+	git: {
+		pullRequests(cwd: string): Promise<{ pullRequests: PullRequestSummary[]; error?: string }>;
+		/** Local and remote branches, for the composer's branch switcher. */
+		branches(cwd: string): Promise<BranchList>;
+		switchBranch(cwd: string, branch: string): Promise<{ ok: boolean; error?: string }>;
+		createWorktree(cwd: string, branch: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+		/**
+		 * How much is uncommitted, as three numbers.
+		 *
+		 * Deliberately separate from `diff.workspaceDiff`: this one is on screen the whole
+		 * session and re-runs after every turn, so it counts without building any diffs.
+		 */
+		stat(cwd: string): Promise<{ branch: string | null; added: number; removed: number; files: number }>;
+		/** Stage everything and commit it — the change the bar is counting. */
+		commit(cwd: string, message: string): Promise<{ ok: boolean; error?: string }>;
+	};
+	diff: {
+		/** Uncommitted changes for the review panel. */
+		workspaceDiff(cwd: string): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }>;
+	};
+}
+
+export interface PullRequestSummary {
+	number: number;
+	title: string;
+	author: string;
+	state: string;
+	isDraft: boolean;
+	url: string;
+	updatedAt: string;
+	additions: number;
+	deletions: number;
+	headRefName: string;
+}
+
+export interface WorkspaceDiffFile {
+	path: string;
+	status: "added" | "modified" | "deleted" | "renamed" | "untracked";
+	added: number;
+	removed: number;
+	hunks: import("@deepwise/core").DiffHunk[];
+}
+
+declare global {
+	interface Window {
+		deepwise: DeepWiseApi;
+	}
+}

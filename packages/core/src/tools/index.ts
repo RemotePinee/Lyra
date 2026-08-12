@@ -1,0 +1,49 @@
+import { skillTool } from "../skills/tool.ts";
+import type { Tool } from "../types.ts";
+import { bashOutputTool, bashTool } from "./bash.ts";
+import { editTool } from "./edit.ts";
+import { globTool } from "./glob.ts";
+import { grepTool } from "./grep.ts";
+import { lsTool } from "./ls.ts";
+import { readTool } from "./read.ts";
+import { symbolTool } from "./symbol.ts";
+import { taskTool } from "./task.ts";
+import { todoTool } from "./todo.ts";
+import { webFetchTool } from "./web.ts";
+import { writeTool } from "./write.ts";
+
+/** The built-in tool set, in the order they are advertised to the model. */
+export function builtinTools(): Tool[] {
+	return [
+		readTool,
+		writeTool,
+		editTool,
+		lsTool,
+		globTool,
+		grepTool,
+		symbolTool,
+		bashTool,
+		bashOutputTool,
+		todoTool,
+		taskTool,
+		skillTool,
+		webFetchTool,
+	] as Tool[];
+}
+
+/** Tools a read-only agent may use. */
+export const READ_ONLY_TOOL_NAMES = ["read", "ls", "glob", "grep", "bash_output", "web_fetch"];
+
+export { bashOutputTool, bashTool, isReadOnlyCommand } from "./bash.ts";
+export { computeDiff, formatDiff, type DiffHunk, type DiffLine, type FileDiff } from "./diff.ts";
+export { editTool } from "./edit.ts";
+export { globToRegExp, globTool } from "./glob.ts";
+export { grepTool } from "./grep.ts";
+export { invalidateIndex, symbolTool } from "./symbol.ts";
+export { lsTool } from "./ls.ts";
+export { displayPath, resolveWorkspacePath } from "./paths.ts";
+export { hasRead, markRead, readTool } from "./read.ts";
+export { AGENTS_KEY, BUILTIN_AGENTS, taskTool, type AgentDefinition } from "./task.ts";
+export { readTodos, todoTool, TODOS_KEY, type TodoItem } from "./todo.ts";
+export { htmlToText, webFetchTool } from "./web.ts";
+export { writeTool } from "./write.ts";

@@ -1,0 +1,120 @@
+/**
+ * Where the context window actually goes.
+ *
+ * A single "12.5k / 128k" is enough to notice you are filling up and useless for doing anything
+ * about it — the answer to "why is this so expensive?" is nearly always one segment, and which
+ * one decides what you would do: prune the conversation, drop an MCP server, or trim a CLAUDE.md
+ * that grew without anyone reading it again. So the number is broken down by what put it there.
+ *
+ * Measured on the strings that are actually sent. Tool schemas go up as JSON on every request,
+ * so they are measured as JSON; the prompt's own sections are measured as text. Nothing is
+ * counted twice: the skill catalogue and the project instructions are carved out of the system
+ * prompt rather than added to it, which is why the segments sum to the total.
+ */
+
+import type { Message, ModelConfig, Tool } from "../types.ts";
+import { estimateTokens } from "../tokens.ts";
+
+export type ContextSegmentKey = "messages" | "systemTools" | "mcpTools" | "skills" | "systemPrompt" | "memory";
+
+export interface ContextSegment {
+	key: ContextSegmentKey;
+	tokens: number;
+}
+
+export interface ContextBreakdown {
+	/** The model's window, so the caller does not have to look it up again to compute a share. */
+	limit: number;
+	/** Everything that will be sent, in descending order of size. */
+	segments: ContextSegment[];
+	used: number;
+	/** True once the numbers come from the provider rather than from a characters-per-token guess. */
+	measured: boolean;
+}
+
+/** What a tool costs on the wire: the schema the provider is given, every single request. */
+function toolTokens(tools: Tool[]): number {
+	if (tools.length === 0) return 0;
+	const text = tools
+		.map((tool) => `${tool.name}${tool.description}${JSON.stringify(tool.parameters)}`)
+		.join("");
+	return Math.ceil(text.length / 3.5);
+}
+
+function textTokens(text: string): number {
+	return text ? Math.ceil(text.length / 3.5) : 0;
+}
+
+export function buildContextBreakdown(input: {
+	model: ModelConfig;
+	messages: Message[];
+	systemPrompt: string;
+	builtinTools: Tool[];
+	mcpTools: Tool[];
+	skillCatalogue: string;
+	/** As `buildSystemPrompt` receives them, so the same text is measured that gets embedded. */
+	projectInstructions: { path: string; content: string }[];
+}): ContextBreakdown {
+	const skills = textTokens(input.skillCatalogue);
+	const memory = textTokens(input.projectInstructions.map((file) => file.content).join(""));
+	/*
+	 * The prompt minus the two parts listed separately.
+	 *
+	 * Both are embedded in the prompt string, so counting them as their own segments and leaving
+	 * the prompt whole would report a total larger than anything that gets sent.
+	 */
+	const systemPrompt = Math.max(0, textTokens(input.systemPrompt) - skills - memory);
+
+	const systemTools = toolTokens(input.builtinTools);
+	const mcpTools = toolTokens(input.mcpTools);
+	const overhead = systemTools + mcpTools + skills + systemPrompt + memory;
+
+	/*
+	 * The provider's number is the total, not the conversation's share.
+	 *
+	 * `usage.input` covers everything that went up — prompt, tool schemas and history together.
+	 * Treating it as the message segment and then adding the others alongside would report a
+	 * context far larger than anything actually sent. So the measured figure anchors the total
+	 * and the conversation is what is left after the fixed overhead, which also parks the
+	 * estimator's error on the one segment that is too big to be sensitive to it.
+	 */
+	const total = measureTotal(input.messages);
+	const messages = total.measured ? Math.max(0, total.tokens - overhead) : estimateTokens(input.messages);
+
+	const segments = ([
+		{ key: "messages", tokens: messages },
+		{ key: "systemTools", tokens: systemTools },
+		{ key: "mcpTools", tokens: mcpTools },
+		{ key: "skills", tokens: skills },
+		{ key: "systemPrompt", tokens: systemPrompt },
+		{ key: "memory", tokens: memory },
+	] satisfies ContextSegment[])
+		.filter((segment) => segment.tokens > 0)
+		.sort((a, b) => b.tokens - a.tokens);
+
+	return {
+		limit: input.model.contextWindow,
+		segments,
+		used: messages + overhead,
+		measured: total.measured,
+	};
+}
+
+/**
+ * What the whole next request will carry.
+ *
+ * Taken from the last settled reply when there is one: what that turn sent, read from cache and
+ * wrote is exactly the context the next question inherits, and it comes from the provider rather
+ * than from a guess. Anything said since has never been in a request, so only that tail is
+ * estimated. Before the first reply there is nothing to measure and the estimate stands alone.
+ */
+function measureTotal(messages: Message[]): { measured: boolean; tokens: number } {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "assistant" || message.stopReason === "pending") continue;
+		const total = message.usage.input + message.usage.cacheRead + message.usage.output;
+		if (total <= 0) break;
+		return { measured: true, tokens: total + estimateTokens(messages.slice(i + 1)) };
+	}
+	return { measured: false, tokens: estimateTokens(messages) };
+}

@@ -1,0 +1,183 @@
+import { contextBridge, ipcRenderer } from "electron";
+import type { DeepWiseApi } from "./ipc-types.ts";
+
+/**
+ * Paint the saved theme onto the document before anything else runs.
+ *
+ * This is the earliest point in the renderer that exists — before the stylesheet, before React,
+ * before `settings:get` could possibly answer. Waiting for any of those means one or more frames
+ * in the stylesheet's own palette, which is what made a light-theme app flash dark on every
+ * launch. Only the four values the boot screen actually paints with are set here; the full
+ * derived scale still comes from `applyAppearance` once the settings arrive.
+ */
+function paintBootTheme(): void {
+	const flag = process.argv.find((arg) => arg.startsWith("--dw-boot="));
+	if (!flag) return;
+
+	let boot: { dark: boolean; background: string; foreground: string; accent: string };
+	try {
+		boot = JSON.parse(decodeURIComponent(flag.slice("--dw-boot=".length)));
+	} catch {
+		return;
+	}
+
+	const apply = () => {
+		const root = document.documentElement;
+		if (!root) return;
+		root.classList.toggle("dark", boot.dark);
+		root.classList.toggle("light", !boot.dark);
+		// `light-dark()` in the editor's syntax colours resolves against this and nothing else.
+		root.style.colorScheme = boot.dark ? "dark" : "light";
+		root.style.setProperty("--color-shell", boot.background);
+		root.style.setProperty("--color-ink", boot.foreground);
+		root.style.setProperty("--color-accent", boot.accent);
+		// Painted directly as well, not only as a token: the stylesheet that turns `--color-shell`
+		// into a background is itself a load away, and until it lands the page is default white.
+		root.style.background = boot.background;
+		root.style.color = boot.foreground;
+		// Left behind so "did the theme land before the first paint?" stays answerable later.
+		root.dataset.bootThemeMs = String(Math.round(performance.now()));
+	};
+
+	apply();
+	// Belt and braces: on the rare launch where the document element is not up yet.
+	if (!document.documentElement) document.addEventListener("readystatechange", apply, { once: true });
+}
+
+paintBootTheme();
+
+/**
+ * The renderer gets exactly this surface and nothing else — no `ipcRenderer`, no `require`.
+ * Every method maps to one named channel so a compromised renderer cannot invoke arbitrary IPC.
+ */
+const api: DeepWiseApi = {
+	settings: {
+		get: () => ipcRenderer.invoke("settings:get"),
+		save: (settings) => ipcRenderer.invoke("settings:save", settings),
+	},
+	workspace: {
+		pick: () => ipcRenderer.invoke("workspace:pick"),
+		info: (path) => ipcRenderer.invoke("workspace:info", path),
+		reveal: (path) => ipcRenderer.invoke("workspace:reveal", path),
+	},
+	sessions: {
+		list: () => ipcRenderer.invoke("sessions:list"),
+		create: (cwd, modelId) => ipcRenderer.invoke("sessions:create", cwd, modelId),
+		open: (projectId, sessionId) => ipcRenderer.invoke("sessions:open", projectId, sessionId),
+		transcript: (projectId, sessionId) => ipcRenderer.invoke("sessions:transcript", projectId, sessionId),
+		remove: (projectId, sessionId) => ipcRenderer.invoke("sessions:remove", projectId, sessionId),
+		setArchived: (projectId, sessionId, archived) =>
+			ipcRenderer.invoke("sessions:setArchived", projectId, sessionId, archived),
+		removeArchived: () => ipcRenderer.invoke("sessions:removeArchived"),
+		capabilities: (sessionId) => ipcRenderer.invoke("sessions:capabilities", sessionId),
+		contextBreakdown: (sessionId) => ipcRenderer.invoke("sessions:contextBreakdown", sessionId),
+	},
+	agent: {
+		prompt: (sessionId, content) => ipcRenderer.invoke("agent:prompt", sessionId, content),
+		editMessage: (sessionId, messageIndex, content) =>
+			ipcRenderer.invoke("agent:editMessage", sessionId, messageIndex, content),
+		abort: (sessionId) => ipcRenderer.invoke("agent:abort", sessionId),
+		approve: (sessionId, requestId, decision) => ipcRenderer.invoke("agent:approve", sessionId, requestId, decision),
+		setModel: (sessionId, modelId) => ipcRenderer.invoke("agent:setModel", sessionId, modelId),
+		onEvent: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("agent:event", listener);
+			return () => ipcRenderer.removeListener("agent:event", listener);
+		},
+	},
+	sideChat: {
+		state: (sessionId) => ipcRenderer.invoke("sidechat:state", sessionId),
+		ask: (sessionId, content) => ipcRenderer.invoke("sidechat:ask", sessionId, content),
+		abort: (sessionId) => ipcRenderer.invoke("sidechat:abort", sessionId),
+		reset: (sessionId) => ipcRenderer.invoke("sidechat:reset", sessionId),
+		onEvent: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("sidechat:event", listener);
+			return () => ipcRenderer.removeListener("sidechat:event", listener);
+		},
+	},
+	tasks: {
+		list: (sessionId) => ipcRenderer.invoke("tasks:list", sessionId),
+		cancel: (sessionId, taskId) => ipcRenderer.invoke("tasks:cancel", sessionId, taskId),
+	},
+	files: {
+		list: (dir) => ipcRenderer.invoke("files:list", dir),
+		read: (path) => ipcRenderer.invoke("files:read", path),
+		write: (path, text) => ipcRenderer.invoke("files:write", path, text),
+		/*
+		 * One encoded segment under a fixed host.
+		 *
+		 * Not the host component: URL parsing lower-cases that, so `/Users/...` came back as
+		 * `/users/...` and failed the (case-sensitive) project check. The path component keeps
+		 * its case, and encoding it whole means a Windows `C:\` or a space survives too.
+		 */
+		mediaUrl: (path) => `dw-media://f/${encodeURIComponent(path)}`,
+	},
+	terminal: {
+		create: (cwd, cols, rows) => ipcRenderer.invoke("terminal:create", cwd, cols, rows),
+		// `send`, not `invoke`: keystrokes must not wait for a round trip to echo.
+		write: (id, data) => ipcRenderer.send("terminal:write", id, data),
+		resize: (id, cols, rows) => ipcRenderer.send("terminal:resize", id, cols, rows),
+		kill: (id) => ipcRenderer.send("terminal:kill", id),
+		onData: (handler) => {
+			const listener = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("terminal:data", listener);
+			return () => ipcRenderer.removeListener("terminal:data", listener);
+		},
+		onExit: (handler) => {
+			const listener = (_e: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("terminal:exit", listener);
+			return () => ipcRenderer.removeListener("terminal:exit", listener);
+		},
+	},
+	providers: {
+		test: (providerId) => ipcRenderer.invoke("providers:test", providerId),
+	},
+	sync: {
+		status: () => ipcRenderer.invoke("sync:status"),
+		start: () => ipcRenderer.invoke("sync:start"),
+		stop: () => ipcRenderer.invoke("sync:stop"),
+		rotateToken: () => ipcRenderer.invoke("sync:rotateToken"),
+	},
+	plugins: {
+		list: (cwd) => ipcRenderer.invoke("plugins:list", cwd),
+		revealDir: (scope, cwd) => ipcRenderer.invoke("plugins:revealDir", scope, cwd),
+		installExample: (scope, cwd) => ipcRenderer.invoke("plugins:installExample", scope, cwd),
+	},
+	
+	setWindowTheme: (colors: { color: string; symbolColor: string }) =>
+		ipcRenderer.send("window:theme", colors),
+	onFullScreenChange: (handler) => {
+		const listener = (_e: Electron.IpcRendererEvent, full: boolean) => handler(full);
+		ipcRenderer.on("window:fullscreen", listener);
+		return () => ipcRenderer.removeListener("window:fullscreen", listener);
+	},
+	system: {
+		openPath: (path) => ipcRenderer.invoke("system:openPath", path),
+		openExternal: (url) => ipcRenderer.invoke("system:openExternal", url),
+		openIn: (appName, path) => ipcRenderer.invoke("system:openIn", appName, path),
+		revealSkillsDir: (scope, cwd) => ipcRenderer.invoke("system:revealSkillsDir", scope, cwd),
+		platform: () => ipcRenderer.invoke("system:platform"),
+	},
+	index: {
+		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),
+		rebuild: (cwd) => ipcRenderer.invoke("index:rebuild", cwd),
+		search: (cwd, query) => ipcRenderer.invoke("index:search", cwd, query),
+	},
+	scheduler: {
+		runNow: (taskId) => ipcRenderer.invoke("scheduler:runNow", taskId),
+	},
+	git: {
+		pullRequests: (cwd) => ipcRenderer.invoke("git:pullRequests", cwd),
+		branches: (cwd) => ipcRenderer.invoke("git:branches", cwd),
+		switchBranch: (cwd, branch) => ipcRenderer.invoke("git:switchBranch", cwd, branch),
+		createWorktree: (cwd, branch) => ipcRenderer.invoke("git:createWorktree", cwd, branch),
+		stat: (cwd) => ipcRenderer.invoke("git:stat", cwd),
+		commit: (cwd, message) => ipcRenderer.invoke("git:commit", cwd, message),
+	},
+	diff: {
+		workspaceDiff: (cwd) => ipcRenderer.invoke("diff:workspace", cwd),
+	},
+};
+
+contextBridge.exposeInMainWorld("deepwise", api);

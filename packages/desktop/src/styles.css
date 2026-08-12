@@ -1,0 +1,984 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens lifted from the reference screenshots. Every surface in the app picks one of
+ * these rather than an ad-hoc hex, so the two settings layouts and the chat shell stay in sync.
+ */
+@theme {
+  --color-shell: #171717;
+  --color-sidebar: #1c1c1c;
+  --color-panel: #202020;
+  --color-card: #242424;
+  --color-card-hover: #2a2a2a;
+  --color-input: #1f1f1f;
+  --color-elevated: #2c2c2c;
+
+  --color-line: #2e2e2e;
+  --color-line-soft: #262626;
+
+  --color-ink: #ededed;
+  --color-ink-muted: #9a9a9a;
+  --color-ink-faint: #6e6e6e;
+
+  /* Overwritten from Settings at boot; this is only what the first frame paints with. */
+  --color-accent: #339cff;
+  --color-ok: #3ecf8e;
+  --color-info: #5aa2f5;
+  --color-violet: #b18cf5;
+  --color-danger: #f2555a;
+
+  --radius-panel: 12px;
+  --radius-field: 10px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei",
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    background: var(--color-shell);
+    color: var(--color-ink);
+    font-family: var(--dw-ui-font, var(--font-sans));
+    font-size: var(--dw-ui-size, 13px);
+    line-height: 1.6;
+    overflow: hidden;
+    /* The window chrome is drawn by the renderer; nothing should rubber-band. */
+    overscroll-behavior: none;
+  }
+
+  :root[data-font-smoothing="true"] body {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* macOS shows a text cursor over buttons by default; some users want a pointer. */
+  :root[data-pointer-cursor="true"] button:not(:disabled),
+  :root[data-pointer-cursor="true"] a,
+  :root[data-pointer-cursor="true"] [role="switch"] {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-info) 35%, transparent);
+  }
+
+  input,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  input:focus,
+  textarea:focus,
+  button:focus {
+    outline: none;
+  }
+
+  /*
+   * No native scrollbars anywhere.
+   *
+   * Scrolling goes through <Scroller>, which draws its own overlay thumb. The native bar
+   * reserves a gutter, so content shifted sideways the instant a list grew past its box, and
+   * it ignores the app's own palette. Hiding it globally rather than per-element means a
+   * surface that forgets to use <Scroller> is visibly wrong rather than subtly inconsistent.
+   */
+  * {
+    scrollbar-width: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+}
+
+/*
+ * Keeps toolbar buttons clear of the system's own window controls.
+ *
+ * Windows paints minimise/maximise/close over the right of the title bar via the Controls
+ * Overlay, and `titlebar-area-width` is the strip it leaves for the app. macOS puts its
+ * lights on the left and defines none of these, so the fallbacks collapse the whole
+ * expression to a plain 12px inset there.
+ */
+@utility toolbar-right {
+  right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px);
+}
+
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Assistant markdown rendering. Kept close to the reference: tight leading, clear hierarchy. */
+@layer components {
+  .prose-dw {
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: var(--color-ink);
+  }
+
+  .prose-dw > * + * {
+    margin-top: 0.75em;
+  }
+
+  .prose-dw h1,
+  .prose-dw h2,
+  .prose-dw h3,
+  .prose-dw h4 {
+    font-weight: 600;
+    line-height: 1.4;
+    margin-top: 1.6em;
+    margin-bottom: 0.6em;
+  }
+
+  .prose-dw h1 {
+    font-size: 19px;
+  }
+  .prose-dw h2 {
+    font-size: 17px;
+  }
+  .prose-dw h3 {
+    font-size: 15px;
+  }
+  .prose-dw h4 {
+    font-size: 13.5px;
+  }
+
+  .prose-dw ul,
+  .prose-dw ol {
+    padding-left: 1.35em;
+  }
+
+  .prose-dw ul {
+    list-style: disc;
+  }
+  .prose-dw ul ul {
+    list-style: circle;
+  }
+  .prose-dw ol {
+    list-style: decimal;
+  }
+
+  .prose-dw li {
+    margin-top: 0.3em;
+  }
+
+  .prose-dw li > ul,
+  .prose-dw li > ol {
+    margin-top: 0.3em;
+  }
+
+  /*
+   * Derived, not fixed.
+   *
+   * These were hard-coded dark hexes, so on a light theme every inline snippet turned into a
+   * black slab and a paragraph of prose about code became unreadable. The surface tokens step
+   * away from whatever background is in force, in whichever direction that background needs.
+   */
+  .prose-dw code {
+    font-family: var(--dw-code-font, var(--font-mono));
+    font-size: var(--dw-code-size, 12px);
+    background: var(--color-card-hover);
+    color: var(--color-ink);
+    border-radius: 4px;
+    padding: 1.5px 5px;
+  }
+
+  .prose-dw pre {
+    background: var(--color-card);
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+
+  .prose-dw pre code {
+    background: transparent;
+    padding: 0;
+    font-size: var(--dw-code-size, 12px);
+    line-height: 1.65;
+  }
+
+  .prose-dw a {
+    color: var(--color-info);
+    text-decoration: none;
+  }
+
+  .prose-dw a:hover {
+    text-decoration: underline;
+  }
+
+  .prose-dw blockquote {
+    border-left: 2px solid var(--color-line);
+    padding-left: 12px;
+    color: var(--color-ink-muted);
+  }
+
+  .prose-dw table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+
+  .prose-dw th,
+  .prose-dw td {
+    border: 1px solid var(--color-line);
+    padding: 6px 10px;
+    text-align: left;
+  }
+
+  .prose-dw th {
+    background: var(--color-card-hover);
+    font-weight: 600;
+  }
+
+  .prose-dw hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+    margin: 1.5em 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Composer
+ *
+ * Two shadows: a tight one that sits the field on the page, and a wide soft one that lifts it
+ * off. Split by theme because a black shadow does nothing on a dark background — there the
+ * depth has to come from a heavier drop plus a slightly brighter edge.
+ * ------------------------------------------------------------------------- */
+
+.dw-composer {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 10px 30px -14px rgb(0 0 0 / 0.16);
+}
+
+.dw-composer:focus-within {
+  border-color: color-mix(in srgb, var(--color-ink-faint) 55%, transparent);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 14px 36px -14px rgb(0 0 0 / 0.22);
+}
+
+:root.dark .dw-composer {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 14px 34px -16px rgb(0 0 0 / 0.55);
+}
+
+:root.dark .dw-composer:focus-within {
+  border-color: color-mix(in srgb, var(--color-ink-faint) 70%, transparent);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.4),
+    0 18px 40px -16px rgb(0 0 0 / 0.65);
+}
+
+/* ---------------------------------------------------------------------------
+ * Working mark
+ *
+ * A slow turn plus rays breathing out of phase: alive without being busy, and legible at
+ * 14px where a spinner just smears.
+ * ------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+ * Working indicator
+ *
+ * One shape at every size: a faint track with a quarter-arc travelling round it. It replaced
+ * eight rays that blinked out of phase under a slow rotation — three animations arguing over
+ * one 14px mark, which at that size reads as flicker rather than as motion.
+ *
+ * Drawn as SVG strokes rather than a masked conic gradient. The gradient version was the more
+ * elegant construction and looked it at 64px, but the app only ever shows this at 13–17px,
+ * where a gradient spread over 300° leaves nothing bright enough to see and the mask edge goes
+ * to mush. A stroked arc stays crisp at any size, and the track behind it gives the mark a
+ * shape even at the instant the arc is furthest away.
+ * ------------------------------------------------------------------------- */
+
+.dw-spin {
+  animation: dw-spin 900ms linear infinite;
+  transform-origin: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * Scrolling
+ *
+ * The thumb belongs to the surface it scrolls: invisible until the pointer is over that
+ * surface, so a still window shows no chrome at all.
+ * ------------------------------------------------------------------------- */
+
+.dw-thumb {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.dw-scroll-host:hover .dw-thumb {
+  opacity: 0.5;
+}
+
+.dw-scroll-host .dw-thumb:hover,
+.dw-thumb.dw-thumb-active {
+  opacity: 0.85;
+}
+
+/* Dragging the thumb must not select the text it passes over. */
+.dw-scroll-host:has(.dw-thumb-active),
+.dw-scroll-host:has(.dw-hthumb-active),
+.dw-diff-host:has(.dw-hthumb-active) {
+  user-select: none;
+}
+
+/*
+ * The sideways thumb in a diff stays visible, unlike the vertical one.
+ *
+ * Vertical overflow announces itself — the content is visibly cut off at the bottom edge, so a
+ * thumb that appears on hover is enough. A line that runs off to the right looks exactly like a
+ * line that ended there, and nothing moves to say otherwise until you have already guessed.
+ */
+.dw-hthumb {
+  opacity: 0.32;
+  transition: opacity 200ms ease-out;
+}
+
+.dw-diff-host:hover .dw-hthumb,
+.dw-scroll-host:hover .dw-hthumb {
+  opacity: 0.55;
+}
+
+.dw-hthumb:hover,
+.dw-hthumb.dw-hthumb-active {
+  opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion
+ *
+ * Everything that appears, changes state or runs has a matching cue. Durations stay
+ * short (140–260ms) so the UI reads as responsive rather than animated, and every
+ * animation is disabled under prefers-reduced-motion.
+ * ------------------------------------------------------------------------- */
+
+@keyframes dw-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dw-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A light sweeping across a running tool card. */
+@keyframes dw-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Status icon settling in once a tool finishes. */
+@keyframes dw-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Working indicator: a dot travelling along a track, used while a command runs. */
+@keyframes dw-track {
+  0% {
+    left: 0;
+    right: 85%;
+  }
+  50% {
+    left: 30%;
+    right: 30%;
+  }
+  100% {
+    left: 85%;
+    right: 0;
+  }
+}
+
+.dw-enter {
+  animation: dw-fade-up 160ms ease-out;
+}
+
+/*
+ * Suppresses entrance animations for one frame while a list is swapped wholesale.
+ * Individually the fade-up reads as a message arriving; fifty at once reads as the page
+ * lurching.
+ */
+.dw-no-enter .dw-enter,
+.dw-no-enter.dw-enter {
+  animation: none;
+}
+
+.dw-pulse {
+  animation: dw-pulse 1.4s ease-in-out infinite;
+}
+
+.dw-pop {
+  animation: dw-pop 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Indeterminate progress rail shown on a running tool card. */
+.dw-rail {
+  position: relative;
+  overflow: hidden;
+}
+
+.dw-rail::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--color-info), transparent);
+  animation: dw-track 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-reduce-motion="system"] *,
+  :root[data-reduce-motion="system"] *::before,
+  :root[data-reduce-motion="system"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:root[data-reduce-motion="on"] *,
+:root[data-reduce-motion="on"] *::before,
+:root[data-reduce-motion="on"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Diff rows can be marked by colour (default) or by a leading +/- for colour-blind users. */
+:root[data-diff-markers="symbols"] .dw-diff-add::before {
+  content: "+";
+}
+
+:root[data-diff-markers="symbols"] .dw-diff-remove::before {
+  content: "-";
+}
+
+:root[data-diff-markers="symbols"] .dw-diff-add,
+:root[data-diff-markers="symbols"] .dw-diff-remove {
+  background: transparent !important;
+}
+
+@keyframes dw-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dw-slide-up {
+  animation: dw-slide-up 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes dw-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dw-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.dw-slide-in {
+  animation: dw-slide-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dw-fade-in {
+  animation: dw-fade-in 180ms ease-out;
+}
+
+/*
+ * Held back before fading in, for placeholders that usually are not needed.
+ *
+ * A cached transcript arrives in a few milliseconds, and a skeleton that appears and vanishes
+ * inside one blink reads as a glitch rather than as progress. `both` keeps it fully
+ * transparent through the delay, so a fast load shows nothing at all.
+ */
+.dw-defer-in {
+  animation: dw-fade-in 220ms ease-out 170ms both;
+}
+
+/* Popovers grow from the edge nearest their trigger, so the link between them reads. */
+@keyframes dw-pop-up {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dw-pop-down {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dw-pop-up {
+  transform-origin: bottom center;
+  animation: dw-pop-up 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.dw-pop-down {
+  transform-origin: top center;
+  animation: dw-pop-down 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes dw-pop-right {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dw-pop-right {
+  transform-origin: left top;
+  animation: dw-pop-right 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/*
+ * Leaving is quicker than arriving — a menu you have finished with should get out of the way.
+ * Both directions scale rather than travel: a small panel that slides even a few pixels reads
+ * as a twitch, and an overshooting curve on top of that reads as a bounce.
+ */
+@keyframes dw-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.dw-pop-out {
+  animation: dw-pop-out 120ms ease-in forwards;
+  pointer-events: none;
+}
+
+/*
+ * Frosted panel for menus.
+ *
+ * A flat fill reads as pasted onto the list behind it; letting that list blur through says
+ * "floating above" without needing a heavier shadow. The colour is mixed from the same
+ * surface token, so it follows the theme — and the fallback below keeps menus opaque where
+ * backdrop-filter is unavailable, since a translucent menu over unblurred text is unreadable.
+ */
+/*
+ * Shared menu-row states.
+ *
+ * Kept as a class rather than repeated utility strings so every menu in the app highlights
+ * identically — and so a row with a non-standard shape can still pick up the same states.
+ */
+.dw-item {
+  border-radius: 7px;
+  color: var(--color-ink);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+/*
+ * Hover fills; selected does not.
+ *
+ * The checkmark already says which one is chosen. Filling it as well made the selected row
+ * look permanently hovered — so with the pointer on a different row, two rows appeared active
+ * at once and it stopped being obvious which one the next click would take.
+ */
+.dw-item:hover:not(:disabled) {
+  background: var(--color-card-hover);
+}
+
+.dw-item:active:not(:disabled) {
+  background: var(--color-elevated);
+}
+
+.dw-item:disabled {
+  opacity: 0.4;
+}
+
+.dw-item[data-danger="true"] {
+  color: var(--color-danger);
+}
+
+.dw-item[data-danger="true"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.dw-glass {
+  /*
+   * `--color-float` and not `--color-elevated`: the elevated token steps toward the
+   * foreground, which on a light theme makes a menu darker than the page it floats over — and
+   * blurring a dark translucent panel over a light page just yields grey.
+   */
+  background: color-mix(in srgb, var(--color-float) 52%, transparent);
+  backdrop-filter: blur(34px) saturate(200%);
+  box-shadow:
+    /* A hairline along the top edge, as if the panel had thickness — enough to read as glass,
+       not so much that it becomes a stripe. */
+    inset 0 1px 0 rgb(255 255 255 / 0.4),
+    0 6px 20px -6px rgb(0 0 0 / 0.13),
+    0 1px 5px -2px rgb(0 0 0 / 0.09);
+}
+
+:root.dark .dw-glass {
+  background: color-mix(in srgb, var(--color-float) 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 8px 24px -6px rgb(0 0 0 / 0.5),
+    0 1px 6px -2px rgb(0 0 0 / 0.38);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .dw-glass {
+    background: var(--color-float);
+  }
+}
+
+/*
+ * While the window is being dragged, nothing animates.
+ *
+ * A resize is a stream of events, and any transition started by one is overridden by the next
+ * — so the panes chase the window edge rather than following it, and the composited layers
+ * (menu blur, the tab strip's mask) leave trails across regions that have already repainted.
+ * Set on <html> for the length of the drag, so this stays a paint concern in CSS rather than
+ * something every animated component has to know about.
+ */
+:root[data-resizing] *,
+:root[data-resizing] *::before,
+:root[data-resizing] *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
+/*
+ * The editor fills its pane and scrolls inside it.
+ *
+ * CodeMirror sizes itself to its content by default, which inside a flex column means it grows
+ * the column instead of scrolling within it — the file's last line ends up below the panel and
+ * unreachable.
+ */
+.dw-cm .cm-editor {
+  height: 100%;
+}
+
+/*
+ * Checkerboard behind image previews.
+ *
+ * A transparent PNG on a white pane looks like a PNG with a white background, and the
+ * difference matters exactly when you are checking an asset's transparency.
+ */
+.dw-checker {
+  background-image:
+    linear-gradient(45deg, color-mix(in srgb, var(--color-ink) 6%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--color-ink) 6%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--color-ink) 6%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--color-ink) 6%, transparent) 75%);
+  background-size: 14px 14px;
+  background-position:
+    0 0,
+    0 7px,
+    7px -7px,
+    -7px 0;
+}
+
+/*
+ * The diff gutter, pinned to the left while code scrolls under it.
+ *
+ * An opaque fill is what makes that possible: the row's own tint is 8% ink, so a transparent
+ * gutter would have the code sliding through the line numbers. Each variant is the row's tint
+ * already flattened against the surface, which looks identical while giving something to
+ * scroll behind.
+ */
+.dw-diff-gutter {
+  background: var(--color-shell);
+}
+
+.dw-diff-add .dw-diff-gutter {
+  background: color-mix(in srgb, var(--color-ok) 8%, var(--color-shell));
+}
+
+.dw-diff-remove .dw-diff-gutter {
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-shell));
+}
+
+/* The rail beside it is pinned too, so it needs the same treatment on context lines. */
+.dw-diff-rail {
+  background: var(--color-shell);
+}
+
+.dw-diff-add .dw-diff-rail,
+.dw-diff-remove .dw-diff-rail {
+  background: transparent;
+}
+
+/*
+ * The sideways scrollbar is drawn, not native — see HorizontalThumb in DiffView.
+ *
+ * The native one here is an overlay that macOS hides until something moves, which on a diff is
+ * backwards: a long line running off the edge with no visible bar reads as truncated. The
+ * global rule already hides it; the last row needs room so the thumb does not sit on the code.
+ */
+.dw-diff-scroll[data-hscroll="on"] > * {
+  padding-bottom: 10px;
+}
+
+/*
+ * The effort slider's handle.
+ *
+ * A knob resting on a track, so it follows "raised", not "ink". Bound to the text colour it
+ * inherited the foreground's direction — near-white on a dark theme, which reads correctly as a
+ * lit control, and near-black on a light one, which reads as a hole punched in the track.
+ *
+ * Light: the classic white knob, told apart from the pale track by its edge and its shadow.
+ * Dark: a mid grey, because a raised object on a dark surface catches light rather than losing
+ * it, and the panel behind it is too close to black for anything darker to be findable.
+ */
+.dw-knob {
+  background: #ffffff;
+  border-color: rgb(0 0 0 / 0.14);
+  box-shadow: 0 1px 2.5px rgb(0 0 0 / 0.16);
+}
+
+:root.dark .dw-knob {
+  background: var(--color-ink-muted);
+  border-color: rgb(0 0 0 / 0.28);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+}
+
+/*
+ * The inset side panel.
+ *
+ * Depth, not a divider. The panel sits on the same background as the conversation, so what
+ * separates them is that one is lifted off the page — a border alone reads as a seam in a
+ * single surface.
+ *
+ * The first shadow is a hairline ring rather than a blur. On a light theme the panel surface
+ * lands *darker* than the page behind it, which without a defined edge reads as a dent in one
+ * sheet rather than a card resting on it; the ring gives the edge, and the two blurs underneath
+ * give the lift that says which of the two is on top.
+ */
+/*
+ * Diffuse only — no ring.
+ *
+ * The hairline ring that used to be the first layer here was doing the work of a border on top
+ * of an actual border, and at two overlapping edges it read as a thick, hard outline. Depth
+ * alone is enough to say which surface is on top, and it says it without drawing anything.
+ */
+.dw-panel {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.035),
+    0 6px 16px -8px rgb(0 0 0 / 0.09),
+    0 18px 40px -20px rgb(0 0 0 / 0.12);
+}
+
+:root.dark .dw-panel {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 6px 18px -8px rgb(0 0 0 / 0.42),
+    0 20px 46px -20px rgb(0 0 0 / 0.5);
+}
+
+@theme {
+  /*
+   * Max width of the chat column.
+   *
+   * Sized to fit the main column at the default window with the sidebar open, so toggling the
+   * sidebar never changes it. Applied as a max — a hard width overflowed the window and cut
+   * the send button in half once the padding was added, and it leaves the column free to
+   * shrink with a compact window instead of running off the edge.
+   */
+  --dw-content: 640px;
+}
+
+/*
+ * A 10px scrollbar is a meaningful slice of a 380pt window, and the gutter it reserves shows
+ * up as the transcript jumping sideways whenever content starts overflowing.
+ */
+:root[data-layout="compact"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+:root[data-layout="compact"] ::-webkit-scrollbar-thumb {
+  border-width: 1.5px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Overflowing single-line labels
+ *
+ * Registered so it can be transitioned; a plain custom property would jump between the two
+ * mask shapes instead of easing into the left-hand fade as the scroll starts.
+ * ------------------------------------------------------------------------- */
+@property --dw-fade-left {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/*
+ * The right edge dissolves rather than ending in an ellipsis. At rest the left edge is hard,
+ * because that is where the text begins; once the text starts scrolling it runs off that side
+ * too, so a matching fade appears to catch it.
+ */
+.dw-fade-edge {
+  --dw-fade-left: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--dw-fade-left),
+    #000 calc(100% - 22px),
+    transparent 100%
+  );
+  /* No delay on the way out: the moment the pointer leaves, the line snaps back to its start. */
+  transition: --dw-fade-left 140ms ease-out;
+}
+
+/*
+ * One direction, continuously, with a trailing copy so the loop is seamless.
+ *
+ * This used to sweep left and right (`alternate`), which reads as the row twitching — the eye
+ * keeps having to reacquire the start of the line. Travelling one way at a steady pace is what
+ * reading looks like. `linear` on purpose: an eased marquee appears to stutter at both ends of
+ * every cycle.
+ *
+ * The delay is there so a pointer crossing the list on its way somewhere else does not set
+ * every row it touches in motion.
+ *
+ * One rule per selector on purpose. Lightning CSS prunes rules it considers unsupported by the
+ * build targets, and `:has()` took a whole comma-separated group with it once — including the
+ * `:hover` half, which silently killed the effect outright.
+ */
+.dw-marquee-track {
+  display: inline-flex;
+  gap: 44px;
+  white-space: nowrap;
+}
+
+.dw-scroll:hover .dw-marquee-track {
+  animation: dw-marquee var(--dw-scroll, 8s) linear 300ms infinite;
+}
+
+.dw-scroll:has(:focus-visible) .dw-marquee-track {
+  animation: dw-marquee var(--dw-scroll, 8s) linear 300ms infinite;
+}
+
+.dw-scroll:hover .dw-fade-edge {
+  --dw-fade-left: 13px;
+  transition-delay: 320ms;
+}
+
+.dw-scroll:has(:focus-visible) .dw-fade-edge {
+  --dw-fade-left: 13px;
+  transition-delay: 320ms;
+}
+
+/* One cycle carries the first copy off the left, leaving the second exactly where it began. */
+@keyframes dw-marquee {
+  to {
+    transform: translateX(var(--dw-marquee, 0));
+  }
+}
+
+/* Reduced motion needs the scroll gone, not sped up. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-reduce-motion="system"] .dw-scroll:hover .dw-marquee-track {
+    animation: none !important;
+  }
+}
+
+:root[data-reduce-motion="on"] .dw-scroll:hover .dw-marquee-track {
+  animation: none !important;
+}
+
+/* Lit columns breathe at the top effort level — the one setting worth flagging as costly. */
+@keyframes dw-matrix {
+  0%,
+  100% {
+    opacity: var(--dw-matrix-low, 0.35);
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.dw-matrix {
+  animation: dw-matrix 1.6s ease-in-out infinite;
+}
+

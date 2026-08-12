@@ -1,0 +1,228 @@
+import type { Plugin } from "@deepwise/core";
+import { Blocks, Cable, FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useApp } from "../../store.ts";
+import { Badge, Card, EmptyHint, GhostButton, SectionTitle, Toggle } from "./controls.tsx";
+
+const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用户" };
+
+export function PluginsSettings() {
+	const settings = useApp((s) => s.settings);
+	const saveSettings = useApp((s) => s.saveSettings);
+	const workspace = useApp((s) => s.workspace);
+	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.deepwise.plugins.list>> | null>(null);
+	const [busy, setBusy] = useState(false);
+
+	const refresh = async () => setScan(await window.deepwise.plugins.list(workspace?.path ?? ""));
+
+	useEffect(() => {
+		void refresh();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [workspace?.path, settings?.disabledPlugins.length]);
+
+	if (!settings) return null;
+	const plugins = scan?.plugins ?? [];
+	const diagnostics = scan?.pluginDiagnostics ?? [];
+
+	const toggle = (plugin: Plugin, enabled: boolean) => {
+		const disabled = new Set(settings.disabledPlugins);
+		if (enabled) disabled.delete(plugin.id);
+		else disabled.add(plugin.id);
+		void saveSettings({ ...settings, disabledPlugins: [...disabled] });
+	};
+
+	return (
+		<div className="pt-8">
+			<header className="flex items-start justify-between pb-7">
+				<div>
+					<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">插件</h1>
+					<p className="mt-2 max-w-[580px] text-[13px] leading-relaxed text-ink-muted">
+						插件是一个<strong className="font-medium text-ink">打包</strong>：一份清单 + 一组技能（技能里可以带脚本、
+						资源、子智能体定义）+ 可选的 MCP 服务器声明。它不是第三种机制 —— 装上一个插件，等于同时装上了它带来的技能和 MCP 服务。
+					</p>
+				</div>
+				<div className="flex shrink-0 flex-col gap-2 pt-1">
+					<GhostButton onClick={() => void window.deepwise.plugins.revealDir("user", workspace?.path ?? "")}>
+						<span className="flex items-center gap-1.5">
+							<FolderOpen size={12} strokeWidth={1.9} />
+							用户目录
+						</span>
+					</GhostButton>
+					{workspace && (
+						<GhostButton onClick={() => void window.deepwise.plugins.revealDir("workspace", workspace.path)}>
+							<span className="flex items-center gap-1.5">
+								<FolderOpen size={12} strokeWidth={1.9} />
+								项目目录
+							</span>
+						</GhostButton>
+					)}
+				</div>
+			</header>
+
+			{diagnostics.length > 0 && (
+				<Card className="mb-6 border-accent/35 bg-accent/6">
+					<div className="px-4 py-3">
+						<div className="mb-2 flex items-center gap-1.5 text-[12.5px] text-accent">
+							<TriangleAlert size={13} strokeWidth={1.9} />
+							{diagnostics.length} 个插件问题
+						</div>
+						{diagnostics.map((diagnostic) => (
+							<div key={diagnostic.path} className="py-0.5 text-[12px] text-accent/85">
+								<span className="font-mono">{diagnostic.path}</span> — {diagnostic.message}
+							</div>
+						))}
+					</div>
+				</Card>
+			)}
+
+			<SectionTitle>已安装（{plugins.length}）</SectionTitle>
+
+			{plugins.length === 0 ? (
+				<Card>
+					<div className="px-4 py-8 text-center">
+						<p className="text-[12.5px] leading-relaxed text-ink-muted">
+							还没有插件。把插件目录放进上面的目录即可，或者装一个示例看看格式。
+						</p>
+						<button
+							type="button"
+							disabled={busy}
+							onClick={async () => {
+								setBusy(true);
+								try {
+									await window.deepwise.plugins.installExample(workspace ? "workspace" : "user", workspace?.path ?? "");
+									await refresh();
+								} finally {
+									setBusy(false);
+								}
+							}}
+							className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-[12.5px] font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-50"
+						>
+							{busy ? "安装中…" : "安装示例插件"}
+						</button>
+						<p className="mt-3 text-[11.5px] text-ink-faint">安装后需要新建会话才会生效</p>
+					</div>
+				</Card>
+			) : (
+				<div className="space-y-3">
+					{plugins.map((plugin) => (
+						<PluginCard key={plugin.id} plugin={plugin} onToggle={(enabled) => toggle(plugin, enabled)} />
+					))}
+				</div>
+			)}
+
+			<div className="mt-6 rounded-[12px] border border-line bg-card/30 p-4">
+				<div className="mb-2 text-[12.5px] text-ink">插件目录结构</div>
+				<pre className="overflow-x-auto rounded-lg bg-shell p-3 font-mono text-[11.5px] leading-relaxed text-ink-muted">{`my-plugin/
+├── .deepwise-plugin/plugin.json   清单：name、skills、mcpServers、interface
+├── skills/
+│   └── changelog/
+│       ├── SKILL.md               说明书（name + description 必填）
+│       ├── scripts/collect.sh     技能自带的脚本
+│       └── assets/                模板、样式等资源
+└── .mcp.json                      { "mcpServers": { "context7": { … } } }`}</pre>
+				<p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-faint">
+					兼容 Codex 的 <span className="font-mono">.codex-plugin/plugin.json</span> 布局，现成的插件包可以直接放进来。
+				</p>
+			</div>
+		</div>
+	);
+}
+
+function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: boolean) => void }) {
+	const ui = plugin.manifest.interface;
+	const [open, setOpen] = useState(false);
+
+	return (
+		<Card>
+			<div className="flex items-center gap-3 px-4 py-3">
+				<span
+					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+					style={{ background: `${ui?.brandColor ?? "#339CFF"}22`, color: ui?.brandColor ?? "#339CFF" }}
+				>
+					<Blocks size={16} strokeWidth={1.9} />
+				</span>
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-2">
+						<span className="truncate text-[13.5px] text-ink">{ui?.displayName ?? plugin.manifest.name}</span>
+						{plugin.manifest.version && <Badge tone="muted">v{plugin.manifest.version}</Badge>}
+						<Badge tone="muted">{SOURCE_LABEL[plugin.source] ?? plugin.source}</Badge>
+						{ui?.category && <Badge tone="muted">{ui.category}</Badge>}
+					</div>
+					<p className="mt-0.5 truncate text-[12.5px] text-ink-muted">
+						{ui?.shortDescription ?? plugin.manifest.description ?? "（无描述）"}
+					</p>
+				</div>
+				<Toggle checked={plugin.enabled} onChange={onToggle} />
+			</div>
+
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-4 py-2.5 text-[12px] text-ink-muted">
+				<span className="flex items-center gap-1.5">
+					<Sparkles size={12} strokeWidth={1.9} className="text-violet" />
+					{plugin.skills.length} 个技能
+				</span>
+				<span className="flex items-center gap-1.5">
+					<Cable size={12} strokeWidth={1.9} className="text-info" />
+					{plugin.mcpServers.length} 个 MCP 服务
+				</span>
+				<div className="flex-1" />
+				<button
+					type="button"
+					onClick={() => setOpen((v) => !v)}
+					className="text-[12px] text-ink-faint transition-colors hover:text-ink"
+				>
+					{open ? "收起" : "详情"}
+				</button>
+				<button
+					type="button"
+					onClick={() => void window.deepwise.system.openPath(plugin.dir)}
+					className="text-[12px] text-ink-faint transition-colors hover:text-ink"
+				>
+					打开目录
+				</button>
+			</div>
+
+			{open && (
+				<div className="dw-enter space-y-3 border-t border-line-soft px-4 py-3">
+					{ui?.longDescription && (
+						<p className="text-[12.5px] leading-relaxed text-ink-muted">{ui.longDescription}</p>
+					)}
+
+					{plugin.skills.length > 0 && (
+						<div>
+							<div className="mb-1.5 text-[11px] tracking-wide text-ink-faint uppercase">技能</div>
+							{plugin.skills.map((skill) => (
+								<div key={skill.name} className="py-0.5 text-[12px]">
+									<span className="font-mono text-ink">{skill.name}</span>
+									<span className="ml-2 text-ink-muted">{skill.description.slice(0, 90)}</span>
+								</div>
+							))}
+						</div>
+					)}
+
+					{plugin.mcpServers.length > 0 && (
+						<div>
+							<div className="mb-1.5 text-[11px] tracking-wide text-ink-faint uppercase">MCP 服务</div>
+							{plugin.mcpServers.map((server) => (
+								<div key={server.id} className="py-0.5 font-mono text-[12px] text-ink-muted">
+									{server.name} · {server.transport} ·{" "}
+									{server.transport === "stdio" ? `${server.command} ${(server.args ?? []).join(" ")}` : server.url}
+								</div>
+							))}
+						</div>
+					)}
+
+					{ui?.defaultPrompt && ui.defaultPrompt.length > 0 && (
+						<div>
+							<div className="mb-1.5 text-[11px] tracking-wide text-ink-faint uppercase">示例提示</div>
+							{ui.defaultPrompt.map((prompt) => (
+								<div key={prompt} className="py-0.5 text-[12px] text-ink-muted">
+									· {prompt}
+								</div>
+							))}
+						</div>
+					)}
+				</div>
+			)}
+		</Card>
+	);
+}
