@@ -354,7 +354,7 @@ function editorTheme(): Extension {
 			padding: "6px 0 40px",
 			caretColor: "var(--color-ink)",
 		},
-		".cm-scroller": { overflow: "auto", lineHeight: "1.65" },
+		".cm-scroller": { overflow: "auto", lineHeight: "1.55" },
 		"&.cm-focused": { outline: "none" },
 		/*
 		 * Opaque, because the gutter is pinned while the code scrolls under it.

@@ -1,10 +1,15 @@
 import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { MenuItem, Popover, usePopover } from "../Popover.tsx";
+import { Text } from "../Text.tsx";
 
 /** Section heading above a card group, as used by the reference settings pages. */
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-	return <h2 className="mb-3 text-[15px] font-medium text-ink">{children}</h2>;
+	return (
+		<Text as="h2" size="title" weight="medium" className="mb-3">
+			{children}
+		</Text>
+	);
 }
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -27,8 +32,14 @@ export function Row({
 		<div className="border-b border-line-soft px-4 py-3.5 last:border-b-0">
 			<div className="flex items-start gap-4">
 				<div className="min-w-0 flex-1">
-					<div className="text-[13.5px] text-ink">{title}</div>
-					{detail && <div className="mt-0.5 text-[12.5px] leading-relaxed text-ink-muted">{detail}</div>}
+					<Text as="div" size="body">
+						{title}
+					</Text>
+					{detail && (
+						<Text as="div" size="label" tone="muted" className="mt-0.5 leading-relaxed">
+							{detail}
+						</Text>
+					)}
 				</div>
 				{control && <div className="shrink-0 pt-0.5">{control}</div>}
 			</div>
@@ -48,9 +59,15 @@ export function Field({
 }) {
 	return (
 		<label className="block">
-			<span className="mb-1.5 block text-[12.5px] text-ink-muted">{label}</span>
+			<Text size="label" tone="muted" className="mb-1.5 block">
+				{label}
+			</Text>
 			{children}
-			{hint && <span className="mt-1.5 block text-[11.5px] text-ink-faint">{hint}</span>}
+			{hint && (
+				<Text size="detail" tone="faint" className="mt-1.5 block">
+					{hint}
+				</Text>
+			)}
 		</label>
 	);
 }

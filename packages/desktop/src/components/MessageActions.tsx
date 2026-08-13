@@ -1,6 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Text } from "./Text.tsx";
+
 /**
  * The row under a message: when it was written, and what you can do with it.
  *
@@ -38,7 +40,9 @@ export function MessageActions({
 		<div
 			className={`mt-1 flex h-[22px] items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
 		>
-			<span className="text-[11px] text-ink-faint">{formatSentAt(timestamp)}</span>
+			<Text size="caption" tone="faint" numeric>
+				{formatSentAt(timestamp)}
+			</Text>
 			<button
 				type="button"
 				title="复制"

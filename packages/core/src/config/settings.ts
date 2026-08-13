@@ -51,8 +51,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 	lightForeground: "#1A1C1F",
 	darkBackground: "#171717",
 	darkForeground: "#EDEDED",
-	uiFont: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif',
-	codeFont: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace',
+	uiFont: '"Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
+	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
 	uiFontSize: 13,
 	codeFontSize: 12,
 	translucentSidebar: false,
@@ -160,7 +160,7 @@ export async function loadSettings(): Promise<Settings> {
 			...parsed,
 			sync: { ...DEFAULT_SETTINGS.sync, ...parsed.sync },
 			editor: { ...DEFAULT_SETTINGS.editor, ...parsed.editor },
-			appearance: { ...DEFAULT_APPEARANCE, ...parsed.appearance },
+			appearance: migrateAppearance({ ...DEFAULT_APPEARANCE, ...parsed.appearance }),
 			hooks: parsed.hooks ?? [],
 			scheduledTasks: parsed.scheduledTasks ?? [],
 			disabledPlugins: parsed.disabledPlugins ?? [],
@@ -173,6 +173,27 @@ export async function loadSettings(): Promise<Settings> {
 	} catch {
 		return { ...DEFAULT_SETTINGS };
 	}
+}
+
+/**
+ * Font stacks that were once the default, and are no longer.
+ *
+ * Settings are written out in full, so every existing install has the old system stack recorded
+ * as if it had been chosen deliberately — a new default would never reach anyone. Anything still
+ * holding a value this list knows about is taken to have never made a choice, and moves on.
+ * A stack the user actually typed is not in the list, and stays.
+ */
+const SUPERSEDED_FONTS: Record<"uiFont" | "codeFont", string[]> = {
+	uiFont: ['-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'],
+	codeFont: ['ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace'],
+};
+
+function migrateAppearance(appearance: AppearanceSettings): AppearanceSettings {
+	const next = { ...appearance };
+	for (const key of ["uiFont", "codeFont"] as const) {
+		if (SUPERSEDED_FONTS[key].includes(next[key])) next[key] = DEFAULT_APPEARANCE[key];
+	}
+	return next;
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
