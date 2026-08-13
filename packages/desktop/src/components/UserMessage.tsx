@@ -51,7 +51,15 @@ export function UserMessage({
   function submit() {
     const trimmed = draft.trim();
     setEditing(false);
-    if (!trimmed || trimmed === text) return;
+    /*
+     * Unchanged text still sends.
+     *
+     * This used to return early when the wording had not moved, on the reasoning that there was
+     * nothing to do. But re-sending the same message is exactly what you want after a turn died
+     * on a dropped connection — and pressing 发送 and having nothing at all happen reads as a
+     * broken button, not as a considerate no-op. Cancel is right there for changing your mind.
+     */
+    if (!trimmed) return;
     // Images are carried over: the edit is to the wording, not to what was attached.
     void editMessage(index, [...images, { type: "text", text: trimmed }]);
   }

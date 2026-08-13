@@ -314,15 +314,11 @@ function ProjectGroup({
 						strokeWidth={1.8}
 						className={`shrink-0 ${active ? "text-accent" : "text-ink-muted"}`}
 					/>
-					<ScrollText text={group.name} className="min-w-0 flex-1" />
+					<ScrollText text={group.name} className="dw-fade-tail min-w-0 flex-1" />
 				</button>
 
 				<span
-					className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 pl-8 opacity-0 transition-opacity duration-150 group-hover/project:opacity-100"
-					style={{
-						background:
-							"linear-gradient(to right, transparent 0%, var(--color-card-hover) 55%, var(--color-card-hover) 100%)",
-					}}
+					className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/project:opacity-100 focus-within:opacity-100"
 				>
 					<button
 						type="button"
@@ -364,7 +360,7 @@ function ProjectGroup({
 							compact ? "h-[34px]" : "h-[27px]"
 						} ${activeSessionId === session.id ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
 					>
-						<ScrollText text={session.title} className="min-w-0 flex-1" />
+						<ScrollText text={session.title} className="dw-fade-tail min-w-0 flex-1" />
 					</button>
 					{/*
 					 * The delete button rides on a gradient rather than sitting bare on top of the
@@ -376,11 +372,7 @@ function ProjectGroup({
 					 * would shadow the row button and cost it its hover.
 					 */}
 					<span
-						className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 pl-10 opacity-0 transition-opacity duration-150 group-hover/session:opacity-100"
-						style={{
-							background:
-								"linear-gradient(to right, transparent 0%, var(--color-card-hover) 55%, var(--color-card-hover) 100%)",
-						}}
+						className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/session:opacity-100 focus-within:opacity-100"
 					>
 						<button
 							type="button"

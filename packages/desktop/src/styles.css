@@ -1131,3 +1131,25 @@
 .dw-matrix {
   animation: dw-matrix 1.6s ease-in-out infinite;
 }
+
+/*
+ * Text that fades out where a control is about to appear.
+ *
+ * The hover controls in the sidebar used to sit on a gradient of `--color-card-hover`, painted
+ * over the end of the title. That worked while the token was an opaque grey; once it became a
+ * translucent veil — so that hover would read on the translucent sidebar — the gradient stopped
+ * covering anything and the archive icon landed on top of the last characters.
+ *
+ * A mask fades the text itself, so it needs no fill of its own and works over glass, over a
+ * card, and over whatever the desktop happens to be showing through.
+ */
+.dw-fade-tail {
+  transition: mask-image 150ms ease-out;
+}
+
+.group\/session:hover .dw-fade-tail,
+.group\/session:focus-within .dw-fade-tail,
+.group\/project:hover .dw-fade-tail,
+.group\/project:focus-within .dw-fade-tail {
+  mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent calc(100% - 6px));
+}
