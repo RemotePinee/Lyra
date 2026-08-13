@@ -405,13 +405,24 @@ function editorTheme(): Extension {
 		 * `position: absolute` takes the panel container out of the flex column, so the editor
 		 * keeps its full height and the card sits on top of the first line or two.
 		 */
+		/*
+		 * Inset far enough to clear the scrollbar.
+		 *
+		 * The card used to carry its own margin, which pushed it *out* of this container — its
+		 * right edge landed 10px past the editor, directly over the overlay scrollbar's 10px
+		 * track. Positioning the container instead keeps the card inside it, and 20px of right
+		 * inset leaves the track plus a gap.
+		 */
 		".cm-panels": {
 			position: "absolute",
-			top: 0,
-			right: 0,
-			left: "auto",
+			top: "8px",
+			right: "20px",
+			// Bounded on the left too: pinned only by its right edge, a card wider than a narrow
+			// pane would hang off the other side of the editor.
+			left: "8px",
+			display: "flex",
+			justifyContent: "flex-end",
 			zIndex: 5,
-			maxWidth: "100%",
 			backgroundColor: "transparent",
 			color: "var(--color-ink)",
 			border: "none",
@@ -429,7 +440,6 @@ function editorTheme(): Extension {
 			transformOrigin: "top right",
 			width: "440px",
 			maxWidth: "100%",
-			margin: "8px 10px",
 			borderRadius: "10px",
 			border: "1px solid var(--color-line)",
 			padding: "6px 26px 6px 7px",
