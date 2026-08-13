@@ -70,8 +70,10 @@ export function retryDelay(attempt: number, response?: Response): number {
 		if (Number.isFinite(ms) && ms > 0) return Math.min(ms, 30_000);
 	}
 	// 600ms, 1.8s, 5.4s — with jitter, so a fleet of clients does not return in lockstep.
+	// The ceiling is applied *after* the jitter: capping first lets the ±25% push the result
+	// back over the limit, which is what the test caught.
 	const base = 600 * 3 ** (attempt - 1);
-	return Math.min(base, 20_000) * (0.75 + Math.random() * 0.5);
+	return Math.min(base * (0.75 + Math.random() * 0.5), 20_000);
 }
 
 /**

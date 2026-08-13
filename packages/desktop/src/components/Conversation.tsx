@@ -1,6 +1,7 @@
 import type { AssistantMessage, Message } from "@deepwise/core";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { Composer } from "./Composer.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { MessageActions } from "./MessageActions.tsx";
@@ -93,7 +94,19 @@ export function Conversation() {
         </div>
       </Scroller>
 
-      <Composer />
+      {/*
+       * Approvals sit directly above the composer.
+       *
+       * They used to be pinned to the bottom of the whole pane, which put them over the field
+       * you type in — the one control you might want while deciding, and the place your eye is
+       * already resting. Anchored to the composer instead, they push nothing around and cover
+       * nothing: the decision sits between the transcript that prompted it and the box you
+       * would answer in.
+       */}
+      <div className="relative shrink-0">
+        <ApprovalOverlay />
+        <Composer />
+      </div>
     </div>
   );
 }
@@ -216,15 +229,16 @@ function AssistantRow({
 
       {message.stopReason === "error" && message.errorMessage && (
         /*
-         * The way out sits with the thing that went wrong.
+         * Stated, not staged.
          *
-         * A failed turn used to leave the transcript with nothing to press: the only way
-         * to try again was to open the last message for editing and send it unchanged —
-         * which is neither obvious nor, until just now, even functional.
+         * The first version of this put a bordered button under the message, which made a
+         * dropped socket look like the most important thing on the screen. A failure is worth
+         * one line — what went wrong, and the word that undoes it — set at the same weight as
+         * the timestamp under every other reply.
          */
-        <div className="mt-2 rounded-[10px] border border-danger/35 bg-danger/8 px-3.5 py-2.5">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <Text
-            size="label"
+            size="caption"
             tone="danger"
             className="break-words whitespace-pre-wrap"
           >
@@ -234,9 +248,9 @@ function AssistantRow({
             type="button"
             disabled={running}
             onClick={() => void retryFrom(index)}
-            className="mt-2 flex h-[26px] items-center gap-1.5 rounded-lg border border-danger/35 px-2.5 text-[12px] text-danger transition-colors duration-150 hover:bg-danger/10 disabled:opacity-40"
+            className="flex items-center gap-1 rounded text-[11px] text-ink-faint transition-colors duration-150 hover:text-ink disabled:opacity-40"
           >
-            <RotateCcw size={12} strokeWidth={1.9} />
+            <RotateCcw size={10.5} strokeWidth={1.9} />
             重试
           </button>
         </div>
