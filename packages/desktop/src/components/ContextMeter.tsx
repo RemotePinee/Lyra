@@ -61,6 +61,14 @@ export function ContextMeter({
 
 	const model = findModel(settings, modelId);
 	if (!model || model.contextWindow <= 0) return null;
+	/*
+	 * Nothing to report until something has been said.
+	 *
+	 * A new conversation does carry a system prompt and a tool table, so the reading is not
+	 * literally zero — but "1% used" next to an empty transcript is a gauge for a journey that
+	 * has not started. It appears with the first message, which is also when it starts moving.
+	 */
+	if (messages.length === 0) return null;
 
 	// The ring reads from the transcript so it is correct before the detail has been asked for.
 	const used = detail?.used ?? measureContext(messages);
