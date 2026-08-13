@@ -19,6 +19,7 @@ import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts"
 import { formatSkillCatalogue, loadSkills, parseFrontmatter, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { deepwiseHome, SessionStore, type SessionMeta } from "../session/store.ts";
+import { writePreview } from "./previews.ts";
 import { assessCommand, assessWrite } from "../tools/risk.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
@@ -217,12 +218,23 @@ export class AgentSession {
 				modelName: resolved.model.name,
 				isGitRepo: await pathExists(join(this.cwd, ".git")),
 				today: new Date().toISOString().slice(0, 10),
+				scratchDir: this.scratchDir(),
 			}),
 			builtinTools: this.tools.filter((tool) => !mcpNames.has(tool.name)),
 			mcpTools: this.tools.filter((tool) => mcpNames.has(tool.name)),
 			skillCatalogue: formatSkillCatalogue(this.skills),
 			projectInstructions,
 		});
+	}
+
+	/**
+	 * Where the model can put files that are not part of the project.
+	 *
+	 * Named for the conversation so two of them cannot tread on each other, and sitting beside
+	 * the previews, which are removed on the same occasions and for the same reason.
+	 */
+	private scratchDir(): string {
+		return join(deepwiseHome(), "scratch", this.meta?.id ?? "unsaved");
 	}
 
 	/** Drop the cached symbol index so the next `symbol` lookup re-reads it from disk. */
@@ -314,6 +326,7 @@ export class AgentSession {
 				modelName: resolved.model.name,
 				isGitRepo: await pathExists(join(this.cwd, ".git")),
 				today: new Date().toISOString().slice(0, 10),
+				scratchDir: this.scratchDir(),
 			});
 
 			const result = await runAgent(
@@ -329,6 +342,15 @@ export class AgentSession {
 					retryAttempts: this.settings.retryAttempts,
 					signal: this.controller.signal,
 					state: this.state,
+					/*
+					 * Previews are written under the app's directory, keyed by this session.
+					 *
+					 * The workspace is the user's project; a page produced to demonstrate an idea
+					 * is not part of it and should never turn up in `git status`. Keyed by session
+					 * so it can be thrown away with the conversation that produced it.
+					 */
+					writePreview: (input) =>
+						writePreview(deepwiseHome(), { ...input, sessionId: this.meta?.id ?? "unsaved" }),
 					requestApproval: (request) => this.requestApproval(request),
 					spawnSubAgent: (input) => this.runSubAgent(input, resolved.provider, resolved.model, systemPrompt),
 					drainSteering: () => this.steering.splice(0, this.steering.length),

@@ -193,6 +193,18 @@ export interface ToolContext {
 	spawnSubAgent?: (input: SubAgentInput) => Promise<string>;
 	/** Shared per-session scratch space (todo list, file read cache, ...). */
 	state: Map<string, unknown>;
+	/**
+	 * Store a web preview and return where it went.
+	 *
+	 * Provided by the host, because where these files live is the host's business — they are
+	 * conversation artifacts kept under the app's own directory, never in the user's project.
+	 */
+	writePreview?: (input: {
+		id: string;
+		title: string;
+		files: { path: string; content: string }[];
+		entry?: string;
+	}) => Promise<{ id: string; sessionId: string; title: string; entry: string; dir: string }>;
 	logger?: Logger;
 }
 

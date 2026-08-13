@@ -3,15 +3,18 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { spawn as spawnPty, type IPty } from "node-pty";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, screen, session, shell } from "electron";
 import {
 	AgentSession,
 	buildIndex,
 	deepwiseHome,
+	previewsHome,
+	pruneSessionArtifacts,
+	removeSessionArtifacts,
 	indexStats,
 	loadIndex,
 	fetchRegistry,
@@ -75,6 +78,16 @@ const execFileAsync = promisify(execFile);
 
 /** Private scheme the renderer uses to preview images and video from the open project. */
 const MEDIA_SCHEME = "dw-media";
+/**
+ * Previews get a scheme of their own, and deliberately not `file://`.
+ *
+ * A page the agent wrote is untrusted code. Served from its own origin it is subject to the
+ * normal same-origin rules, cannot read the user's disk by walking `file:///`, and can be
+ * pinned to a directory by the handler below — none of which is true of a file URL.
+ */
+const PREVIEW_SCHEME = "dw-preview";
+/** Shared with the renderer's `<webview partition>`; they must name the same partition. */
+const BROWSER_PARTITION = "persist:dw-browser";
 
 /**
  * Whether a path is inside a project the user has opened.
@@ -210,6 +223,25 @@ async function findApp(name: string): Promise<string | null> {
 	return hit ? hit.trim() : null;
 }
 
+/** Enough of a MIME table for a self-contained page; anything else is served as bytes. */
+function contentTypeFor(path: string): string {
+	const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+	return (
+		{
+			".html": "text/html; charset=utf-8",
+			".css": "text/css; charset=utf-8",
+			".js": "text/javascript; charset=utf-8",
+			".json": "application/json; charset=utf-8",
+			".svg": "image/svg+xml",
+			".png": "image/png",
+			".jpg": "image/jpeg",
+			".jpeg": "image/jpeg",
+			".gif": "image/gif",
+			".webp": "image/webp",
+		}[ext] ?? "application/octet-stream"
+	);
+}
+
 function applyNativeAppearance(): void {
 	const theme = settings?.appearance?.theme ?? "system";
 	nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
@@ -284,6 +316,15 @@ function createWindow(): void {
 			contextIsolation: true,
 			nodeIntegration: false,
 			sandbox: false,
+			/*
+			 * Needed for the browser panel, which hosts pages in a `<webview>`.
+			 *
+			 * The tag only lets us create one; each `<webview>` still gets its own process with
+			 * node off, context isolation on and no preload, so the page inside it can render and
+			 * nothing else. That separation is the reason to use it rather than an iframe: a page
+			 * that hangs or crashes takes its own process down and leaves the app alone.
+			 */
+			webviewTag: true,
 			// Read by the preload before the first frame, so the app never opens in the wrong theme.
 			additionalArguments: [`--dw-boot=${encodeURIComponent(JSON.stringify(bootTheme()))}`],
 		},
@@ -393,6 +434,7 @@ function writeWindowState(): void {
  */
 protocol.registerSchemesAsPrivileged([
 	{ scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, bypassCSP: true } },
+	{ scheme: PREVIEW_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
 
 app.whenReady().then(async () => {
@@ -412,10 +454,50 @@ app.whenReady().then(async () => {
 		if (!target || !insideAProject(target)) return new Response("forbidden", { status: 403 });
 		return net.fetch(pathToFileURL(target).toString(), { headers: request.headers, method: request.method });
 	});
+	/*
+	 * `dw-preview://<sessionId>/<previewId>/<file>`.
+	 *
+	 * Resolved against the previews directory and refused if it lands anywhere else, so a page
+	 * asking for `../../../.ssh/id_rsa` gets a 403 rather than a key. This is the only door
+	 * these files have.
+	 */
+	const servePreview = async (request: Request): Promise<Response> => {
+		const url = new URL(request.url);
+		const root = previewsHome(deepwiseHome());
+		const target = resolve(root, url.hostname, decodeURIComponent(url.pathname).replace(/^\//, ""));
+		if (target !== root && !target.startsWith(root + sep)) return new Response("forbidden", { status: 403 });
+		const body = await readFile(target).catch(() => null);
+		if (!body) return new Response("not found", { status: 404 });
+		return new Response(body, { headers: { "content-type": contentTypeFor(target) } });
+	};
+	protocol.handle(PREVIEW_SCHEME, servePreview);
+	/*
+	 * And again for the browser panel's session.
+	 *
+	 * `protocol.handle` registers against the default session only, and the panel's `<webview>`
+	 * runs in a partition of its own — which is the point, since a page the agent wrote should
+	 * not share cookies with anything. The cost is that the partition starts out not knowing this
+	 * scheme exists, so "open in the side panel" landed on a blank page until it was told.
+	 */
+	session.fromPartition(BROWSER_PARTITION).protocol.handle(PREVIEW_SCHEME, servePreview);
+
 	// Clear out sessions that were reserved and never used — including any left over from
 	// when clicking "新对话" created one up front.
 	const pruned = await store.pruneEmpty().catch(() => 0);
 	if (pruned > 0) console.log(`[deepwise] 清理了 ${pruned} 个空会话`);
+
+	/*
+	 * Previews outlive nothing. Anything belonging to a conversation that is gone goes with it,
+	 * and what remains expires on its own after a month — otherwise every sketch ever rendered
+	 * would sit in the app directory forever, since nothing else would ever think to remove it.
+	 */
+	void store
+		.listSessions()
+		.then((all) => pruneSessionArtifacts(deepwiseHome(), new Set(all.map((s) => s.id))))
+		.then((gone) => {
+			if (gone > 0) console.log(`[deepwise] 清理了 ${gone} 个会话的临时文件`);
+		})
+		.catch(() => {});
 	registerIpc();
 	createWindow();
 	if (settings.sync.enabled) await startSync();
@@ -733,6 +815,7 @@ function registerIpc(): void {
 	ipcMain.handle("sessions:remove", async (_event, projectId: string, sessionId: string) => {
 		await disposeSession(sessionId);
 		await store.delete(projectId, sessionId);
+		await removeSessionArtifacts(deepwiseHome(), sessionId);
 	});
 
 	ipcMain.handle(
@@ -749,6 +832,7 @@ function registerIpc(): void {
 		const archived = (await store.listSessions()).filter((s) => s.archived);
 		await Promise.all(archived.map((s) => disposeSession(s.id)));
 		await store.deleteMany(archived.map((s) => ({ projectId: s.projectId, id: s.id })));
+		await Promise.all(archived.map((s) => removeSessionArtifacts(deepwiseHome(), s.id)));
 		return store.listSessions();
 	});
 

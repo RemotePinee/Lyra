@@ -8,6 +8,7 @@ import { lsTool } from "./ls.ts";
 import { readTool } from "./read.ts";
 import { symbolTool } from "./symbol.ts";
 import { taskTool } from "./task.ts";
+import { previewTool } from "./preview.ts";
 import { todoTool } from "./todo.ts";
 import { webFetchTool } from "./web.ts";
 import { writeTool } from "./write.ts";
@@ -28,6 +29,7 @@ export function builtinTools(): Tool[] {
 		taskTool,
 		skillTool,
 		webFetchTool,
+		previewTool,
 	] as Tool[];
 }
 
@@ -44,6 +46,7 @@ export { lsTool } from "./ls.ts";
 export { displayPath, resolveWorkspacePath } from "./paths.ts";
 export { hasRead, markRead, readTool } from "./read.ts";
 export { AGENTS_KEY, BUILTIN_AGENTS, taskTool, type AgentDefinition } from "./task.ts";
+export { previewTool } from "./preview.ts";
 export { readTodos, todoTool, TODOS_KEY, type TodoItem } from "./todo.ts";
 export { htmlToText, webFetchTool } from "./web.ts";
 export { writeTool } from "./write.ts";

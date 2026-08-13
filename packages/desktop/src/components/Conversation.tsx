@@ -5,6 +5,7 @@ import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { Composer } from "./Composer.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { MessageActions } from "./MessageActions.tsx";
+import { PreviewCard, type PreviewInfo } from "./PreviewCard.tsx";
 import { ThinkingBlock } from "./ThinkingBlock.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
 import { Scroller } from "./Scroller.tsx";
@@ -215,6 +216,14 @@ function AssistantRow({
           ) : null;
         }
         const run = toolRuns[block.id];
+        /*
+         * A preview replaces its own tool card.
+         *
+         * The card would say "预览已生成" above the thing itself, which is a caption nobody
+         * needs — the page is right there, and it is the result.
+         */
+        const preview = (run?.result?.details as { preview?: PreviewInfo } | undefined)?.preview;
+        if (preview) return <PreviewCard key={block.id} preview={preview} />;
         return (
           <ToolCard
             key={block.id}

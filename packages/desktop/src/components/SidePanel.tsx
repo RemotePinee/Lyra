@@ -2,6 +2,7 @@ import {
 	Check,
 	Folder,
 	GitCompare,
+	Globe,
 	MessageCirclePlus,
 	Maximize2,
 	Minimize2,
@@ -13,6 +14,7 @@ import {
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { FileBrowser } from "./FileBrowser.tsx";
 import { MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
+import { BrowserPanel } from "./BrowserPanel.tsx";
 import { GitPanel } from "./git/GitPanel.tsx";
 import { SideChat } from "./SideChat.tsx";
 import { TerminalPane } from "./TerminalPane.tsx";
@@ -127,6 +129,12 @@ export function usePanelDefinitions(): PanelDefinition[] {
 			icon: SquareTerminal,
 			shortcut: "⌃`",
 			unavailable: workspace ? undefined : "先打开一个项目",
+		},
+		{
+			kind: "browser",
+			label: "浏览器",
+			icon: Globe,
+			shortcut: "⌘T",
 		},
 		{
 			kind: "review",
@@ -400,6 +408,8 @@ export function SidePanel() {
 								<SideChat />
 							) : kind === "terminal" ? (
 								<TerminalPane />
+							) : kind === "browser" ? (
+								<BrowserPanel />
 							) : (
 								<GitPanel />
 							)}

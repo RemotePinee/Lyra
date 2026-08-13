@@ -28,6 +28,13 @@ export interface SystemPromptInput {
 	today: string;
 	/** Appended verbatim after the built-in prompt. */
 	appendSystemPrompt?: string;
+	/**
+	 * Somewhere to put files that belong to the conversation rather than the project.
+	 *
+	 * Without one, a scratch script, a downloaded sample or a half-finished demo lands in the
+	 * user's repository, shows up in `git status`, and has to be cleaned out by hand.
+	 */
+	scratchDir?: string;
 }
 
 const IDENTITY = `You are DeepWise, a coding agent that works directly inside the user's project. You help by reading files, running commands, editing code, and writing new files. You are judged on whether the code works, not on how the answer reads.`;
@@ -109,6 +116,10 @@ Environment:
 	}
 
 	prompt += `\n\nCurrent working directory: ${cwd}`;
+	if (input.scratchDir) {
+		prompt += `\n\nScratch directory: ${input.scratchDir.replace(/\\/g, "/")}
+Write throwaway files there — scratch scripts, sample data, intermediate output, anything the user did not ask to have in their project. It is removed with the conversation. Only write inside the working directory when the file is part of the project itself.`;
+	}
 
 	return prompt;
 }

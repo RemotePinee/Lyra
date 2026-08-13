@@ -74,3 +74,16 @@ export {
 export * from "./tools/index.ts";
 export { builtinTools } from "./tools/index.ts";
 export * from "./types.ts";
+export {
+	listPreviews,
+	pruneSessionArtifacts,
+	prunePreviews,
+	previewsHome,
+	readPreview,
+	removePreviews,
+	removeSessionArtifacts,
+	scratchHome,
+	writePreview,
+	type PreviewFile,
+	type PreviewRecord,
+} from "./runtime/previews.ts";

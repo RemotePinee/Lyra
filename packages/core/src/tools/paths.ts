@@ -1,22 +1,32 @@
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { scratchHome } from "../runtime/previews.ts";
+import { deepwiseHome } from "../session/store.ts";
+
+function contains(root: string, absolute: string): boolean {
+	const rel = relative(resolve(root), absolute);
+	return rel === "" || !(rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel));
+}
 
 /**
  * Resolve a model-supplied path against the session cwd and refuse anything that escapes it.
  *
  * The model is not trusted to stay inside the workspace: `../../.ssh/id_rsa` is a normal-looking
  * argument. Every filesystem tool routes through here so the containment check exists once.
+ *
+ * The scratch directory is the one exception, because the system prompt sends the model there
+ * for anything that should not end up in the user's repository. Refusing it would be telling the
+ * model to write somewhere and then stopping it — which is exactly what happened before this,
+ * and what it worked around by reaching for an MCP filesystem server instead. Only the scratch
+ * subtree is opened up: `~/.deepwise` itself still holds settings and transcripts, and stays shut.
  */
 export function resolveWorkspacePath(cwd: string, input: string): string {
 	if (!input || typeof input !== "string") throw new Error("A path is required.");
 	const expanded = input.startsWith("~/") ? input.replace("~", process.env.HOME ?? "~") : input;
 	const absolute = isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
-	const rel = relative(resolve(cwd), absolute);
-	if (rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
-		throw new Error(`Path escapes the workspace root (${cwd}): ${input}`);
-	}
-	return absolute;
+	if (contains(cwd, absolute) || contains(scratchHome(deepwiseHome()), absolute)) return absolute;
+	throw new Error(`Path escapes the workspace root (${cwd}): ${input}`);
 }
 
 export function displayPath(cwd: string, absolute: string): string {

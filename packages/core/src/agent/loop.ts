@@ -43,6 +43,8 @@ export interface AgentRunConfig {
 	/** Session-scoped scratch space shared by every tool. */
 	state?: Map<string, unknown>;
 	requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+	/** Passed through to the tools; see `ToolContext.writePreview`. */
+	writePreview?: ToolContext["writePreview"];
 	spawnSubAgent?: (input: SubAgentInput) => Promise<string>;
 	/** Messages the user typed while the agent was mid-turn. Drained between turns. */
 	drainSteering?: () => Message[];
@@ -315,6 +317,7 @@ async function executeOne(
 		signal: config.signal,
 		state,
 		requestApproval: config.requestApproval,
+		writePreview: config.writePreview,
 		spawnSubAgent: config.spawnSubAgent,
 		onProgress: (partial) => void emit({ type: "tool_update", toolCallId: call.id, partial }),
 	};

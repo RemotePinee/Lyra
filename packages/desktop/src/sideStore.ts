@@ -14,7 +14,15 @@ import type { ToolRun } from "./store.ts";
 import { settleTail } from "./transcript.ts";
 
 /** What can occupy a panel tab. One of each at a time — two diffs of one worktree is not a thing. */
-export type PanelKind = "files" | "chat" | "terminal" | "review";
+export type PanelKind = "files" | "chat" | "terminal" | "review" | "browser";
+
+/** Just enough of a preview for the panel to load it; the card owns the full record. */
+export interface BrowserPreview {
+	id: string;
+	sessionId: string;
+	title: string;
+	entry: string;
+}
 
 interface SideState {
 	/**
@@ -47,6 +55,16 @@ interface SideState {
 
 	/** Focus this kind, adding a tab for it if there is not one already. */
 	openTab(kind: PanelKind): void;
+	/**
+	 * What the browser tab is showing.
+	 *
+	 * A preview handed over from the transcript, a URL typed into the address bar, or nothing.
+	 * Held here rather than inside the panel so "open this in the side panel" can be a single
+	 * call from a card that knows nothing about how the panel is built.
+	 */
+	browserTarget: { kind: "preview"; preview: BrowserPreview } | { kind: "url"; url: string } | null;
+	openPreview(preview: BrowserPreview): void;
+	openUrl(url: string): void;
 	/** Discard a tab. Closing the last one puts the panel away. */
 	closeTab(kind: PanelKind): void;
 	/**
@@ -84,10 +102,13 @@ export const useSide = create<SideState>((set, get) => ({
 	tabs: [],
 	activeTab: null,
 	panelOpen: false,
+	browserTarget: null,
 	expanded: false,
 	sessionId: null,
 	...EMPTY,
 
+	openPreview: (preview) => set({ browserTarget: { kind: "preview", preview } }),
+	openUrl: (url) => set({ browserTarget: { kind: "url", url } }),
 	openTab: (kind) => {
 		const tabs = get().tabs.includes(kind) ? get().tabs : [...get().tabs, kind];
 		set({ tabs, activeTab: kind, panelOpen: true });
