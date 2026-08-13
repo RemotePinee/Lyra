@@ -19,7 +19,7 @@ import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts"
 import { formatSkillCatalogue, loadSkills, parseFrontmatter, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { deepwiseHome, SessionStore, type SessionMeta } from "../session/store.ts";
-import { isReadOnlyCommand } from "../tools/bash.ts";
+import { assessCommand, assessWrite } from "../tools/risk.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
 import type {
@@ -482,9 +482,26 @@ export class AgentSession {
 		const mode: PermissionMode = this.settings.permissionMode;
 		if (mode === "full") return "once";
 		if (this.allowList.has(request.subject)) return "once";
-		if (mode === "auto" && request.kind === "bash" && isReadOnlyCommand(request.subject)) return "once";
-		// In "auto" mode reads are free but writes still need a decision, which is what the
-		// bash check above narrows; everything else falls through to the user.
+		/*
+		 * "帮我批准" asks about what cannot be taken back, and nothing else.
+		 *
+		 * It used to allow only a list of read-only commands, which meant it interrupted almost
+		 * every turn — models write `cd x && git log; echo ---`, not bare `ls`. A prompt that
+		 * fires constantly is not a safeguard; it is something you learn to click through, which
+		 * is worse than not having it. Writing files, installing packages and committing are the
+		 * work. Deleting trees, rewriting history, escalating privileges and reaching outside the
+		 * project are the things worth stopping for.
+		 */
+		if (mode === "auto") {
+			const verdict =
+				request.kind === "bash"
+					? assessCommand(request.subject)
+					: request.kind === "edit" || request.kind === "write"
+						? assessWrite(request.subject, this.cwd)
+						: { risky: true as const };
+			if (!verdict.risky) return "once";
+			if (verdict.reason) request.detail = `${verdict.reason}\n\n${request.detail ?? ""}`.trim();
+		}
 
 		const id = randomUUID();
 		return new Promise<ApprovalDecision>((resolve) => {
