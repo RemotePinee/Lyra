@@ -929,7 +929,7 @@ function findMessageSlot(messages: Message[], incoming: Message): number {
 }
 
 /** Reconstruct tool cards when opening a stored session. */
-function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
+export function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
   const runs: Record<string, ToolRun> = {};
   for (const message of messages) {
     if (message.role === "assistant") {
@@ -957,5 +957,29 @@ function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
       }
     }
   }
+
+  /*
+   * A call with no result did not survive; it is not still running.
+   *
+   * Tool state is rebuilt from the log, and a call is only marked finished when its result is
+   * written. Quit the app — or lose the renderer — while a command is running and no result is
+   * ever recorded, so re-opening that session showed a spinner counting up from a process that
+   * stopped existing minutes ago. Nine minutes on a `git status` is not a slow command, it is a
+   * lie about what is happening.
+   *
+   * Only when the turn itself has settled: a session that is genuinely mid-turn in the
+   * background has calls that legitimately have no result yet.
+   */
+  const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+  const turnInFlight = lastAssistant?.role === "assistant" && lastAssistant.stopReason === "pending";
+  if (!turnInFlight) {
+    for (const run of Object.values(runs)) {
+      if (run.status !== "running") continue;
+      run.status = "error";
+      run.result = { content: [{ type: "text", text: "这次调用没有结果：应用在它结束之前退出了。" }], isError: true };
+      run.finishedAt = run.startedAt;
+    }
+  }
+
   return runs;
 }

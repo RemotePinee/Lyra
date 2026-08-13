@@ -3,6 +3,9 @@ import { test } from "node:test";
 
 import type { AssistantMessage, Message } from "@deepwise/core";
 
+import { emptyUsage } from "@deepwise/core";
+
+import { rebuildToolRuns } from "../src/store.ts";
 import { settleTail } from "../src/transcript.ts";
 
 function reply(stopReason: AssistantMessage["stopReason"], text = "你好！"): AssistantMessage {
@@ -49,4 +52,56 @@ test("only the tail is touched, not an earlier turn that failed the same way", (
 
 	assert.equal((settled[1] as AssistantMessage).stopReason, "pending", "an older turn is not this run's to settle");
 	assert.equal((settled[3] as AssistantMessage).stopReason, "stop");
+});
+
+test("a call left without a result is settled, not left spinning", () => {
+	/*
+	 * The shape a log has after the app is quit mid-command: the call was written, the result
+	 * never was, and the turn was closed out on the next load.
+	 */
+	const messages: Message[] = [
+		{ role: "user", content: [{ type: "text", text: "跑一下" }], timestamp: 1 },
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git status" } }],
+			stopReason: "stop",
+			timestamp: 2,
+			usage: emptyUsage(),
+		},
+	];
+
+	const runs = rebuildToolRuns(messages);
+	assert.equal(runs["call-1"].status, "error");
+	assert.ok(runs["call-1"].finishedAt, "a settled run has an end, so the timer stops");
+});
+
+test("a turn still in flight keeps its running calls", () => {
+	const messages: Message[] = [
+		{ role: "user", content: [{ type: "text", text: "跑一下" }], timestamp: 1 },
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "sleep 30" } }],
+			stopReason: "pending",
+			timestamp: 2,
+			usage: emptyUsage(),
+		},
+	];
+
+	// Reopening a session that is genuinely mid-turn must not fake a failure.
+	assert.equal(rebuildToolRuns(messages)["call-1"].status, "running");
+});
+
+test("a call that did get its result is unaffected", () => {
+	const messages: Message[] = [
+		{ role: "user", content: [{ type: "text", text: "跑一下" }], timestamp: 1 },
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: {} }],
+			stopReason: "stop",
+			timestamp: 2,
+			usage: emptyUsage(),
+		},
+		{ role: "toolResult", toolCallId: "call-1", content: [{ type: "text", text: "ok" }], timestamp: 3 },
+	];
+	assert.equal(rebuildToolRuns(messages)["call-1"].status, "done");
 });

@@ -34,7 +34,16 @@ export function ApprovalOverlay() {
         compact ? "px-4 pt-8" : "px-8 pt-16"
       }`}
     >
-      <div className="dw-slide-up pointer-events-auto w-full max-w-[var(--dw-content)] overflow-hidden rounded-[14px] border border-accent/35 bg-panel shadow-2xl shadow-black/40">
+      {/*
+       * The same floating surface as every menu and popover in the app.
+       *
+       * It used to announce itself with an accent-coloured border and a heavy drop shadow,
+       * which made a routine "may I run this" look like an alarm — and looked nothing like the
+       * other things that float in this window. What makes it noticeable is where it appears
+       * and that it stops the turn; the chrome only has to say "this is a layer above". The one
+       * accent left is the warning mark, which is the part that is actually about caution.
+       */}
+      <div className="dw-glass dw-slide-up pointer-events-auto w-full max-w-[var(--dw-content)] overflow-hidden rounded-[10px] border border-line">
         <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
           <TriangleAlert
             size={15}
