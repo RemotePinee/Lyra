@@ -5,26 +5,29 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitCompare,
+  FolderGit2,
   Minus,
   Plus,
   RefreshCw,
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   GitCommit,
   GitStatus,
   WorkspaceDiffFile,
 } from "../../../electron/ipc-types.ts";
-import type { BranchList } from "../../../electron/git.ts";
+import type { BranchList, RepoRef } from "../../../electron/git.ts";
 import { IconButton } from "../IconButton.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { Text } from "../Text.tsx";
 import { useApp } from "../../store.ts";
+import { CommitGraph, LANE_WIDTH } from "./CommitGraph.tsx";
 import { FileDiffList } from "./FileDiffList.tsx";
+import { buildGraph, graphWidth } from "./graph.ts";
 
 type View = "changes" | "history" | "branches";
 
@@ -51,14 +54,38 @@ export function GitPanel() {
   const workspace = useApp((s) => s.workspace);
   const running = useApp((s) => s.running);
   const [view, setView] = useState<View>("changes");
+  /*
+   * Which repository the panel is looking at.
+   *
+   * A workspace is a folder someone opened, and it is perfectly ordinary for one to hold
+   * several repositories — a frontend beside a backend, or services versioned apart on purpose.
+   * Assuming the root was the repository meant everything else was invisible.
+   */
+  const [repos, setRepos] = useState<RepoRef[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Rescan when the workspace changes; the selection follows unless it is still valid.
+  useEffect(() => {
+    if (!workspace) return setRepos([]);
+    void window.deepwise.git.repos(workspace.path).then((found) => {
+      setRepos(found);
+      setSelected((current) =>
+        current && found.some((repo) => repo.path === current)
+          ? current
+          : (found[0]?.path ?? null),
+      );
+    });
+  }, [workspace?.path]);
+
+  const cwd = selected ?? workspace?.path ?? null;
+
   const refresh = useCallback(async () => {
-    if (!workspace?.isGitRepo) return setStatus(null);
-    setStatus(await window.deepwise.git.status(workspace.path));
-  }, [workspace?.path, workspace?.isGitRepo]);
+    if (!cwd) return setStatus(null);
+    setStatus(await window.deepwise.git.status(cwd));
+  }, [cwd]);
 
   // Re-read when a turn ends: the agent's edits are the changes this panel is here to show.
   useEffect(() => {
@@ -79,10 +106,10 @@ export function GitPanel() {
     [refresh],
   );
 
-  if (!workspace || !workspace.isGitRepo) {
+  if (!workspace || !cwd) {
     return (
       <PanelEmpty icon={GitBranch} title="Git">
-        {workspace ? "当前项目不是 Git 仓库。" : "先打开一个项目。"}
+        {workspace ? "这个项目里没有找到 Git 仓库。" : "先打开一个项目。"}
       </PanelEmpty>
     );
   }
@@ -118,18 +145,14 @@ export function GitPanel() {
           label="拉取（--ff-only）"
           size="sm"
           disabled={busy}
-          onClick={() =>
-            void act(() => window.deepwise.git.pull(workspace.path))
-          }
+          onClick={() => void act(() => window.deepwise.git.pull(cwd))}
         />
         <IconButton
           icon={<ArrowUpFromLine size={12} strokeWidth={1.9} />}
           label="推送"
           size="sm"
           disabled={busy}
-          onClick={() =>
-            void act(() => window.deepwise.git.push(workspace.path))
-          }
+          onClick={() => void act(() => window.deepwise.git.push(cwd))}
         />
         <IconButton
           icon={<RefreshCw size={12} strokeWidth={1.9} />}
@@ -182,7 +205,7 @@ export function GitPanel() {
           act={act}
         />
       )}
-      {view === "history" && <HistoryView cwd={workspace.path} />}
+      {view === "history" && <HistoryView cwd={cwd} />}
       {view === "branches" && (
         <BranchesView
           cwd={workspace.path}
@@ -417,14 +440,21 @@ function GroupHeader({
   );
 }
 
-/** The log, each entry opening onto what it changed. */
+/**
+ * The log, drawn as the graph it is.
+ *
+ * A flat list of subjects cannot answer the questions people actually bring to a history: where
+ * did this branch off, when did it come back, what was on main while this was happening. Those
+ * are shape, not text — so the shape is drawn. Each lane keeps one colour from the commit that
+ * starts it to the merge that ends it, which is what makes a column followable.
+ */
 function HistoryView({ cwd }: { cwd: string }) {
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [diff, setDiff] = useState<WorkspaceDiffFile[]>([]);
 
   useEffect(() => {
-    void window.deepwise.git.log(cwd, 60).then(setCommits);
+    void window.deepwise.git.log(cwd, 80).then(setCommits);
   }, [cwd]);
 
   useEffect(() => {
@@ -438,6 +468,9 @@ function HistoryView({ cwd }: { cwd: string }) {
     };
   }, [cwd, open]);
 
+  const rows = useMemo(() => buildGraph(commits), [commits]);
+  const width = useMemo(() => graphWidth(rows, LANE_WIDTH), [rows]);
+
   if (commits.length === 0) {
     return (
       <PanelEmpty icon={GitCommitHorizontal} title="没有提交">
@@ -448,51 +481,55 @@ function HistoryView({ cwd }: { cwd: string }) {
 
   return (
     <Scroller className="flex-1" contentClassName="px-1.5 pb-2" fade={false}>
-      {commits.map((commit) => {
+      {rows.map((row) => {
+        const commit = row.commit;
         const expanded = open === commit.sha;
         return (
-          <div key={commit.sha} className="mb-0.5">
-            <button
-              type="button"
-              onClick={() => setOpen(expanded ? null : commit.sha)}
-              aria-expanded={expanded}
-              className="flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-card-hover"
-            >
-              <GitCommitHorizontal
-                size={13}
-                strokeWidth={1.8}
-                className="mt-px shrink-0 text-ink-faint"
-              />
-              <span className="min-w-0 flex-1">
-                <Text as="span" size="label" className="block truncate">
-                  {commit.subject}
-                </Text>
-                <span className="mt-0.5 flex items-center gap-1.5">
-                  <Text size="caption" tone="faint" mono>
-                    {commit.shortSha}
+          <div key={commit.sha}>
+            {/*
+             * The graph column and the text share a row, and the graph is told the row's height
+             * so its lines meet the ones above and below exactly.
+             */}
+            <div className="flex items-stretch">
+              <CommitGraph row={row} height={ROW_HEIGHT} width={width} />
+              <button
+                type="button"
+                onClick={() => setOpen(expanded ? null : commit.sha)}
+                aria-expanded={expanded}
+                style={{ height: ROW_HEIGHT }}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-card-hover"
+              >
+                <span className="min-w-0 flex-1">
+                  <Text as="span" size="label" className="block truncate">
+                    {commit.subject}
                   </Text>
-                  <Text size="caption" tone="faint" className="truncate">
-                    {commit.author} · {relativeTime(commit.date)}
-                  </Text>
-                </span>
-              </span>
-              {commit.refs.length > 0 && (
-                <span className="flex shrink-0 gap-1">
-                  {commit.refs.slice(0, 2).map((ref) => (
-                    <Text
-                      key={ref}
-                      size="caption"
-                      tone="muted"
-                      className="rounded border border-line px-1 py-px"
-                    >
-                      {ref}
+                  <span className="flex items-center gap-1.5">
+                    <Text size="caption" tone="faint" mono>
+                      {commit.shortSha}
                     </Text>
-                  ))}
+                    <Text size="caption" tone="faint" className="truncate">
+                      {commit.author} · {relativeTime(commit.date)}
+                    </Text>
+                  </span>
                 </span>
-              )}
-            </button>
+                {commit.refs.length > 0 && (
+                  <span className="flex shrink-0 gap-1">
+                    {commit.refs.slice(0, 2).map((ref) => (
+                      <Text
+                        key={ref}
+                        size="caption"
+                        tone="muted"
+                        className="rounded border border-line px-1 py-px"
+                      >
+                        {ref}
+                      </Text>
+                    ))}
+                  </span>
+                )}
+              </button>
+            </div>
             {expanded && (
-              <div className="dw-enter mb-1.5">
+              <div className="dw-enter mb-1.5" style={{ marginLeft: width }}>
                 <FileDiffList
                   files={diff}
                   emptyLabel="正在读取这次提交的改动…"
@@ -505,6 +542,9 @@ function HistoryView({ cwd }: { cwd: string }) {
     </Scroller>
   );
 }
+
+/** Fixed, because the graph has to know it to line its strokes up across rows. */
+const ROW_HEIGHT = 46;
 
 /**
  * Branches, and the diff between any two of them.
@@ -539,9 +579,11 @@ function BranchesView({
   } | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [worktrees, setWorktrees] = useState<RepoRef[]>([]);
 
   const load = useCallback(() => {
     void window.deepwise.git.branches(cwd).then(setBranches);
+    void window.deepwise.git.worktrees(cwd).then(setWorktrees);
   }, [cwd]);
 
   useEffect(load, [load, status?.branch]);
@@ -673,6 +715,43 @@ function BranchesView({
               }
             />
           ))}
+
+          {worktrees.filter((tree) => tree.worktree).length > 0 && (
+            <>
+              <GroupHeader
+                label="工作树"
+                count={worktrees.filter((tree) => tree.worktree).length}
+                action=""
+                disabled
+                onAction={() => {}}
+              />
+              {worktrees
+                .filter((tree) => tree.worktree)
+                .map((tree) => (
+                  <div
+                    key={tree.path}
+                    data-dw-tip={tree.path}
+                    className="flex items-center gap-1.5 rounded-md px-1.5 py-1"
+                  >
+                    <FolderGit2
+                      size={12}
+                      strokeWidth={1.8}
+                      className="shrink-0 text-ink-faint"
+                    />
+                    <Text
+                      size="label"
+                      tone="muted"
+                      className="min-w-0 flex-1 truncate"
+                    >
+                      {tree.label}
+                    </Text>
+                    <Text size="caption" tone="faint" className="shrink-0">
+                      {tree.branch ?? "游离 HEAD"}
+                    </Text>
+                  </div>
+                ))}
+            </>
+          )}
 
           {remotes.length > 0 && (
             <GroupHeader

@@ -58,6 +58,8 @@ import {
 	isGitRepo,
 	listBranches,
 	listPullRequests,
+	listRepos,
+	listWorktrees,
 	pullBranch,
 	pushBranch,
 	stagePaths,
@@ -1087,6 +1089,10 @@ function registerIpc(): void {
 		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
 		return commitAll(cwd, message);
 	});
+
+	ipcMain.handle("git:repos", async (_event, root: string) => listRepos(root));
+
+	ipcMain.handle("git:worktrees", async (_event, cwd: string) => listWorktrees(cwd));
 
 	ipcMain.handle("git:status", async (_event, cwd: string) => gitStatus(cwd));
 

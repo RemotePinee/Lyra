@@ -1,8 +1,8 @@
 /** The contract between the renderer and the main process. Imported by both sides. */
 
-import type { BranchList, GitCommit, GitStatus } from "./git.ts";
+import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
 
-export type { GitCommit, GitStatus, GitStatusFile } from "./git.ts";
+export type { GitCommit, GitStatus, GitStatusFile, RepoRef } from "./git.ts";
 
 /** The shape every diff view consumes, whatever produced it. */
 export interface RefDiff {
@@ -268,6 +268,10 @@ export interface DeepWiseApi {
 
 		/* The Git panel's surface. Reading first, then the operations that write. */
 
+		/** Every repository under the workspace — people keep more than one side by side. */
+		repos(root: string): Promise<RepoRef[]>;
+		/** Linked checkouts of one repository, each on its own branch. */
+		worktrees(cwd: string): Promise<RepoRef[]>;
 		/** Working tree split by index, with upstream distance. */
 		status(cwd: string): Promise<GitStatus>;
 		log(cwd: string, limit?: number, ref?: string): Promise<GitCommit[]>;

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { computeDiff, type DiffHunk } from "@deepwise/core";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
@@ -483,6 +483,8 @@ export interface GitCommit {
 	sha: string;
 	shortSha: string;
 	subject: string;
+	/** Every parent, so the renderer can draw where lines split and rejoin. */
+	parents: string[];
 	author: string;
 	/** ISO 8601, formatted for display in the renderer where the locale lives. */
 	date: string;
@@ -490,12 +492,13 @@ export interface GitCommit {
 	refs: string[];
 }
 
-const LOG_FORMAT = "%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%D%x1e";
+const LOG_FORMAT = "%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%D%x1f%P%x1e";
 
 export async function gitLog(cwd: string, limit = 60, ref?: string): Promise<GitCommit[]> {
 	if (!(await isGitRepo(cwd))) return [];
 	const out = await git(cwd, [
 		"log",
+		"--topo-order",
 		`--max-count=${Math.min(limit, 300)}`,
 		`--format=${LOG_FORMAT}`,
 		...(ref ? [ref] : []),
@@ -506,11 +509,12 @@ export async function gitLog(cwd: string, limit = 60, ref?: string): Promise<Git
 		.map((record) => record.replace(/^\n/, ""))
 		.filter(Boolean)
 		.map((record) => {
-			const [sha, shortSha, subject, author, date, refs] = record.split("\x1f");
+			const [sha, shortSha, subject, author, date, refs, parents] = record.split("\x1f");
 			return {
 				sha,
 				shortSha,
 				subject,
+				parents: (parents ?? "").split(" ").filter(Boolean),
 				author,
 				date,
 				refs: (refs ?? "")
@@ -638,4 +642,104 @@ async function run(cwd: string, args: string[]): Promise<{ ok: boolean; error?: 
 		const text = (detail.stderr || detail.stdout || detail.message || "").trim();
 		return { ok: false, error: text.split("\n").slice(0, 3).join("\n") || "操作失败" };
 	}
+}
+
+export interface RepoRef {
+	/** Absolute path to the working directory of this repository. */
+	path: string;
+	/** Path relative to the workspace, or the folder name for the workspace root itself. */
+	label: string;
+	branch: string | null;
+	/** True when this is a linked worktree rather than the main checkout. */
+	worktree: boolean;
+}
+
+/** Directories never worth descending into when looking for repositories. */
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "out", "build", "target", "vendor", ".next", ".venv"]);
+
+/**
+ * Every git repository under the workspace, not just the workspace itself.
+ *
+ * A workspace is a folder someone opened, and plenty of people keep several repositories side
+ * by side in one — a frontend and a backend, or a set of services versioned apart on purpose.
+ * With one repository assumed, the panel showed whichever one happened to be at the root and
+ * silently ignored the rest.
+ *
+ * Two levels deep, because that covers the layouts people actually use (`~/work/*`, `repo/*`)
+ * and stops the scan from walking an entire home directory.
+ */
+export async function listRepos(root: string): Promise<RepoRef[]> {
+	const found: RepoRef[] = [];
+
+	if (await isGitRepo(root)) {
+		found.push({ path: root, label: basename(root), branch: await gitBranch(root), worktree: false });
+	}
+
+	const walk = async (dir: string, depth: number) => {
+		if (depth > 2 || found.length >= 24) return;
+		const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+		for (const entry of entries) {
+			if (!entry.isDirectory() || entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+			const child = join(dir, entry.name);
+			// `.git` can be a directory (a normal clone) or a file (a linked worktree).
+			const isRepo = await stat(join(child, ".git")).then(() => true).catch(() => false);
+			if (isRepo) {
+				if (!found.some((repo) => repo.path === child)) {
+					found.push({
+						path: child,
+						label: relative(root, child) || basename(child),
+						branch: await gitBranch(child),
+						worktree: false,
+					});
+				}
+				// A repository's own subdirectories are its business, not ours.
+				continue;
+			}
+			await walk(child, depth + 1);
+		}
+	};
+	await walk(root, 1);
+
+	return found;
+}
+
+/**
+ * The worktrees attached to a repository.
+ *
+ * A worktree is a second checkout of the same repository on a different branch, which is how
+ * people keep a review and their own work open at once. They share one history, so the panel
+ * treats them as places to switch to rather than as separate repositories.
+ */
+export async function listWorktrees(cwd: string): Promise<RepoRef[]> {
+	if (!(await isGitRepo(cwd))) return [];
+	const out = await git(cwd, ["worktree", "list", "--porcelain"]).catch(() => "");
+	const trees: RepoRef[] = [];
+	let path: string | null = null;
+	let branch: string | null = null;
+
+	const flush = (isMain: boolean) => {
+		if (!path) return;
+		trees.push({ path, label: basename(path), branch, worktree: !isMain });
+		path = null;
+		branch = null;
+	};
+
+	for (const line of out.split("\n")) {
+		if (line.startsWith("worktree ")) {
+			flush(trees.length === 0);
+			path = line.slice("worktree ".length);
+		} else if (line.startsWith("branch ")) {
+			branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
+		} else if (line.startsWith("detached")) {
+			branch = null;
+		}
+	}
+	flush(trees.length === 0);
+
+	// The first entry is the main checkout; the rest are the linked ones.
+	return trees.map((tree, index) => ({ ...tree, worktree: index > 0 }));
+}
+
+export async function addWorktree(cwd: string, branch: string): Promise<{ ok: boolean; path?: string; error?: string }> {
+	return createWorktree(cwd, branch);
 }
