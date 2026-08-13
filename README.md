@@ -54,46 +54,16 @@ pnpm dev:mobile
 | `<项目>/.deepwise/agents/` | 项目级子智能体 |
 | `<项目>/DEEPWISE.md`、`AGENTS.md`、`CLAUDE.md` | 项目指令，按此优先级取第一个存在的 |
 
-## 插件
+## 扩展与机制
 
-插件是一个**打包**，不是第三种机制：一份清单 + 一组技能（技能里可以带脚本、资源、子智能体定义）+ 可选的 MCP 服务器声明。装上一个插件，等于同时装上了它带来的技能和 MCP 服务。
+插件、技能、MCP、子智能体的目录结构与文件格式，以及浏览器、索引库、钩子、移动端同步
+的工作方式，都在 [`docs/`](docs/README.md)：
 
-```
-my-plugin/
-├── .deepwise-plugin/plugin.json   清单：name、skills、mcpServers、interface
-├── skills/
-│   └── changelog/
-│       ├── SKILL.md               说明书（name + description 必填）
-│       ├── scripts/collect.sh     技能自带的脚本
-│       └── assets/                模板、样式等资源
-└── .mcp.json                      { "mcpServers": { "context7": { … } } }
-```
+- [扩展 DeepWise](docs/extending.md)：插件目录结构、`SKILL.md` 格式、MCP 声明、子智能体定义
+- [内置能力](docs/capabilities.md)：浏览器与其安全边界、索引库、钩子、移动端同步
 
-清单里 `skills` 指向技能目录，`mcpServers` 指向一个 `.mcp.json`，`interface` 提供显示名、分类、品牌色和示例提示。布局兼容 Codex 的 `.codex-plugin/plugin.json`，现成的插件包可以直接放进 `~/.deepwise/plugins/`。
-
-在「设置 → 插件」里可以逐个开关、查看它带来的技能与 MCP 服务，或一键装一个示例。同名技能以工作区里的松散技能优先，插件里的会让位。
-
-## MCP 与技能的区别
-
-两者经常被混为一谈，实际是不同层的东西：
-
-|  | 技能 | MCP |
-| --- | --- | --- |
-| 是什么 | 一段写给模型的说明书 | 一个对外的工具服务进程 |
-| 提供什么 | 做事的方法、步骤、约定 | 可调用的函数 |
-| 怎么进上下文 | 名称+描述常驻，正文按需注入 | 工具签名进工具表 |
-| 谁执行 | 模型按说明用已有工具去做 | 服务端进程执行后返回结果 |
-
-「设置 → MCP 服务器」里内置了 Context7（按库名拉取最新官方文档）和 Filesystem 两个推荐服务，一键添加。
-
-## 钩子
-
-在工具调用前后运行一段命令。工具名和参数通过 `$DW_TOOL`、`$DW_ARGS` 传入，也会以 JSON 写到 stdin。
-
-- **调用前 + 可阻断**：命令退出码非零时，这次调用会变成一条错误结果交给模型。可以用来保护特定文件、拦截危险命令。
-- **调用后**：stdout 会附加到模型看到的结果里，可以用来做审计、自动格式化。
-
-钩子自身跑不起来（命令不存在、工作目录缺失）与钩子判定阻断是分开报告的 —— 否则一个配置错误会伪装成安全策略拒绝，让人往错误的方向排查。
+要点：插件是一个**打包**，不是第三种机制——一份清单 + 一组技能 + 可选的 MCP 服务器声明。
+装上一个插件，等于同时装上了它带来的技能和 MCP 服务。
 
 ## 外观
 
@@ -104,34 +74,6 @@ my-plugin/
 - UI 字体 / 代码字体 / UI 字号 / 代码字号 / 半透明侧边栏 / 指针光标 / 字体平滑
 - 减少动态效果：系统 / 开启 / 关闭
 - 差异标记：颜色 或 `+/-`（给色觉障碍用户）
-
-## 写一个技能
-
-`<项目>/.deepwise/skills/release-notes/SKILL.md`：
-
-```markdown
----
-name: release-notes
-description: 编写发布说明。当用户要求写 changelog、release notes、版本说明时使用。
----
-
-# 发布说明写法
-
-1. 先用 `bash` 跑 `git log --oneline -20` 拿到提交
-2. 按 Added / Changed / Fixed 三节归类
-3. 每条一句话，写清楚对用户的影响，不要写实现细节
-```
-
-目录名必须和 `name` 一致，`description` 必填 —— 模型就是靠它判断该不该用这个技能。
-
-## 接一个 MCP 服务
-
-「设置 → MCP 服务器」新建 stdio 服务，例如：
-
-- 命令：`npx`
-- 参数：`-y @modelcontextprotocol/server-filesystem /path/to/project`
-
-改动在下次新建会话时生效。
 
 ## 系统提示词
 

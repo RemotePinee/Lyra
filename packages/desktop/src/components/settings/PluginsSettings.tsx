@@ -110,21 +110,6 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 					))}
 				</div>
 			)}
-
-			<div className="mt-6 rounded-[12px] border border-line bg-card/30 p-4">
-				<div className="mb-2 text-[12.5px] text-ink">插件目录结构</div>
-				<pre className="overflow-x-auto rounded-lg bg-shell p-3 font-mono text-[11.5px] leading-relaxed text-ink-muted">{`my-plugin/
-├── .deepwise-plugin/plugin.json   清单：name、skills、mcpServers、interface
-├── skills/
-│   └── changelog/
-│       ├── SKILL.md               说明书（name + description 必填）
-│       ├── scripts/collect.sh     技能自带的脚本
-│       └── assets/                模板、样式等资源
-└── .mcp.json                      { "mcpServers": { "context7": { … } } }`}</pre>
-				<p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-faint">
-					兼容 Codex 的 <span className="font-mono">.codex-plugin/plugin.json</span> 布局，现成的插件包可以直接放进来。
-				</p>
-			</div>
 		</div>
 	);
 }

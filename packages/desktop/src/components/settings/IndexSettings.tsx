@@ -47,9 +47,7 @@ export function IndexSettings() {
 		<div className="pt-8">
 			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">索引库</h1>
 			<p className="mt-2 max-w-[580px] pb-7 text-[13px] leading-relaxed text-ink-muted">
-				索引记录函数、类、接口、类型和常量的<strong className="font-medium text-ink">定义位置</strong>。
-				Agent 用 <code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">symbol</code> 工具查它 ——
-				grep 一个常用函数名会返回所有调用点，索引只返回定义它的那一行。
+				索引记录函数、类、接口、类型和常量的<strong className="font-medium text-ink">定义位置</strong>，Agent 用 symbol 工具查它。
 			</p>
 
 			{!workspace ? (

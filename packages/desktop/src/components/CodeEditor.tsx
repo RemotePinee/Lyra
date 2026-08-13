@@ -145,13 +145,18 @@ export function CodeEditor({
 		 *
 		 * The buttons show a glyph now, so the words have to live somewhere — and `phrases` only
 		 * controls the visible label. CodeMirror builds the panel on first open, so this watches
-		 * for it rather than running once. `title` rather than the app's own Tooltip: the panel
-		 * is outside React's tree entirely.
+		 * for it rather than running once. The app's own tooltip is driven by an attribute
+		 * precisely so a panel outside React's tree can still use it.
 		 */
 		const labelPanel = () => {
-			for (const [name, hint] of Object.entries(SEARCH_TITLES)) {
+			for (const [name, hint] of Object.entries(SEARCH_TIPS)) {
 				const button = element.querySelector<HTMLElement>(`.cm-search button[name=${name}]`);
-				if (button && !button.title) button.title = hint;
+				if (button && !button.dataset.dwTip) button.dataset.dwTip = hint;
+			}
+			// The options are labels, and their text is hidden, so they need one too.
+			const options = element.querySelectorAll<HTMLElement>(".cm-search label");
+			for (const [i, hint] of ["区分大小写", "正则表达式", "全词匹配"].entries()) {
+				if (options[i] && !options[i].dataset.dwTip) options[i].dataset.dwTip = hint;
 			}
 		};
 		const panels = new MutationObserver(labelPanel);
@@ -216,7 +221,7 @@ export function CodeEditor({
  * Keys are CodeMirror's own English strings; anything not listed keeps the original.
  */
 /** Hover text for the icon-only buttons, keyed by CodeMirror's own `name` attribute. */
-const SEARCH_TITLES: Record<string, string> = {
+const SEARCH_TIPS: Record<string, string> = {
 	next: "下一个",
 	prev: "上一个",
 	select: "选中全部匹配",
@@ -302,7 +307,7 @@ function editorTheme(): Extension {
 		".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--color-line-soft)" },
 		".cm-panel.cm-search": {
 			backgroundColor: "var(--color-shell)",
-			padding: "6px 24px 6px 8px",
+			padding: "7px 8px",
 			display: "flex",
 			flexWrap: "wrap",
 			alignItems: "center",
@@ -311,30 +316,45 @@ function editorTheme(): Extension {
 			fontSize: "12px",
 		},
 		/*
-		 * Two zero-height full-width pseudo-elements, used as line breaks.
+		 * One zero-height full-width pseudo-element, used as a line break.
 		 *
 		 * The standard trick for forcing a break in a wrapping flex row. CodeMirror's own `<br>`
 		 * sits at roughly the right point in the source but will not take a `flex-basis` — a
-		 * replaced element ignores it — so it is hidden and these take over, which also gives a
-		 * second break for the options row that the markup has no separator for.
+		 * replaced element ignores it — so it is hidden and this takes over.
 		 */
 		".cm-panel.cm-search br": { display: "none" },
-		".cm-panel.cm-search::before": { content: '""', flex: "0 0 100%", height: 0, order: 4 },
+		".cm-panel.cm-search::before": { content: '""', flex: "0 0 100%", height: 0, order: 5 },
 		/*
 		 * Reordered, because the source order is not the reading order.
 		 *
 		 * CodeMirror emits find, its buttons, the option checkboxes, close, then replace and its
 		 * buttons — so laid out plainly the replace field lands in the middle of the checkboxes.
-		 * `order` puts each row with its own controls: find, then replace, then the options.
-		 * `margin-left: auto` on close both pins it right and forces what follows onto a new line.
+		 * This puts each row with its own controls: find with its options and navigation, then
+		 * replace with the two things you can replace.
 		 */
-		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 60px", minWidth: "60px" },
+		/*
+		 * The fields have a width, rather than taking whatever is going.
+		 *
+		 * Left to grow they filled the pane — in a wide panel that meant a 1,100px box to type a
+		 * word into, with its buttons stranded at the far end and nothing in between. A find bar
+		 * is a compact group of controls, so it stays one and sits at the left edge whatever the
+		 * pane is doing. Both fields get the same cap, so in any pane wide enough to reach it the
+		 * two rows line up without a spacer propping them apart.
+		 *
+		 * A cap rather than a basis: `flex-wrap` breaks the line before it shrinks anything, so a
+		 * 240px basis in a narrow pane put each field on a row of its own and made the panel
+		 * taller instead of narrower. Growing up to a limit collapses gracefully instead.
+		 */
+		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 56px", minWidth: "56px", maxWidth: "240px" },
 		".cm-panel.cm-search [name=next], .cm-panel.cm-search [name=prev], .cm-panel.cm-search [name=select]": {
-			order: 2,
+			order: 3,
 		},
-		".cm-panel.cm-search input[name=replace]": { order: 5, flex: "1 1 60px", minWidth: "60px" },
-		".cm-panel.cm-search [name=replace], .cm-panel.cm-search [name=replaceAll]": { order: 5 },
+		".cm-panel.cm-search input[name=replace]": { order: 6, flex: "1 1 56px", minWidth: "56px", maxWidth: "240px" },
+		".cm-panel.cm-search [name=replace], .cm-panel.cm-search [name=replaceAll]": { order: 7 },
 		".cm-textfield": {
+			// Otherwise the flex basis is the content box and each field silently occupies 24px
+			// more than it claims — enough, in a narrow pane, to push the close button off the row.
+			boxSizing: "border-box",
 			backgroundColor: "var(--color-input)",
 			color: "var(--color-ink)",
 			border: "1px solid var(--color-line)",
@@ -388,7 +408,7 @@ function editorTheme(): Extension {
 		 * the hidden text is still the label the checkbox is announced with.
 		 */
 		".cm-panel.cm-search label": {
-			order: 3,
+			order: 2,
 			position: "relative",
 			display: "inline-flex",
 			alignItems: "center",
@@ -398,7 +418,6 @@ function editorTheme(): Extension {
 			borderRadius: "6px",
 			fontSize: 0,
 			color: "transparent",
-			cursor: "default",
 		},
 		".cm-panel.cm-search label::before": {
 			position: "absolute",
@@ -435,7 +454,6 @@ function editorTheme(): Extension {
 			height: "26px",
 			fontSize: "11.5px",
 			fontFamily: "var(--dw-ui-font)",
-			cursor: "default",
 		},
 		".cm-button:hover": { backgroundColor: "var(--color-card-hover)", color: "var(--color-ink)" },
 		".cm-button:active": { backgroundColor: "var(--color-card-hover)" },
@@ -444,20 +462,17 @@ function editorTheme(): Extension {
 		/*
 		 * Out of the flow and in the corner.
 		 *
-		 * Left in the flow it took the width of the last option and pushed it onto a row of its
-		 * own. Needs `button[name=close]` rather than `[name=close]` to outrank the shared
-		 * icon-button rule above, which would otherwise hold it `relative`.
+		 * Last on the find row, after the navigation it belongs beside. Pinned to the panel's far
+		 * corner it ended up hundreds of pixels from every other control in a wide pane.
 		 */
 		".cm-panel.cm-search button[name=close]": {
-			position: "absolute",
-			top: "7px",
-			right: "3px",
+			order: 4,
+			marginLeft: "2px",
 			width: "18px",
 			height: "18px",
 			border: "none",
 			background: "transparent",
 			padding: 0,
-			cursor: "default",
 		},
 		".cm-panel.cm-search button[name=close]::before": { content: '"\\00D7"', fontSize: "15px" },
 		".cm-panel.cm-search button[name=close]:hover": { background: "var(--color-card-hover)", borderRadius: "5px" },

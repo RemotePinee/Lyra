@@ -56,10 +56,7 @@ export function HooksSettings() {
 				<div>
 					<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">钩子</h1>
 					<p className="mt-2 max-w-[580px] text-[13px] leading-relaxed text-ink-muted">
-						在工具调用前后运行一段命令。工具名和参数通过环境变量{" "}
-						<code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">$DW_TOOL</code>、
-						<code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">$DW_ARGS</code> 传入，
-						同时也会以 JSON 写到 stdin。
+						在工具调用前后运行一段命令。
 					</p>
 				</div>
 				<div className="shrink-0 pt-1">
@@ -97,8 +94,6 @@ export function HooksSettings() {
 				<Card>
 					<EmptyHint>
 						还没有钩子。
-						<br />
-						常见用途：审计所有命令、阻止改动受保护的文件、写入后自动格式化。
 					</EmptyHint>
 				</Card>
 			) : (

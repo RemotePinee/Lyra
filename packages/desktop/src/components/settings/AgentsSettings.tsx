@@ -21,8 +21,7 @@ export function AgentsSettings() {
 		<div className="pt-8">
 			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">子智能体</h1>
 			<p className="mt-2 max-w-[600px] pb-7 text-[13px] leading-relaxed text-ink-muted">
-				主 Agent 通过 <code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">task</code>{" "}
-				工具把工作交给子智能体。子智能体有独立的上下文窗口，只把最终结论交回来 —— 一次翻遍四十个文件的搜索，回到主对话里只剩一段话。
+				子智能体有独立的上下文窗口，只把结论交回主对话。
 			</p>
 
 			<SectionTitle>可用（{agents.length}）</SectionTitle>
@@ -45,20 +44,6 @@ export function AgentsSettings() {
 					))
 				)}
 			</Card>
-
-			<div className="rounded-[12px] border border-line bg-card/30 p-4">
-				<div className="mb-2 text-[12.5px] text-ink">
-					自定义子智能体：<span className="font-mono text-[12px]">.deepwise/agents/&lt;名称&gt;.md</span>
-				</div>
-				<pre className="overflow-x-auto rounded-lg bg-shell p-3 font-mono text-[11.5px] leading-relaxed text-ink-muted">{`---
-name: migration
-description: 批量迁移代码，只在明确给出迁移规则时使用。
-tools: [read, edit, glob, grep, bash]
----
-
-你是迁移执行者。按给定规则逐文件改写，改完一个就用 bash 跑一次类型检查。
-不要扩大改动范围，不要顺手重构。最后汇报改了哪些文件、哪些没改以及原因。`}</pre>
-			</div>
 		</div>
 	);
 }

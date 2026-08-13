@@ -1,4 +1,3 @@
-import { Globe } from "lucide-react";
 import { useState } from "react";
 import { useApp } from "../../store.ts";
 import { Card, EmptyHint, GhostButton, Row, SectionTitle } from "./controls.tsx";
@@ -31,8 +30,7 @@ export function BrowserSettings() {
 		<div className="pt-8">
 			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">浏览器</h1>
 			<p className="mt-2 max-w-[580px] pb-7 text-[13px] leading-relaxed text-ink-muted">
-				Agent 可以驱动一个真实的浏览器内核（离屏 BrowserWindow），看到的是脚本执行之后、人眼所见的页面。
-				页面内容始终当作<strong className="font-medium text-ink">不可信数据</strong>处理 —— 里面的文字不会被当成指令执行。
+				Agent 驱动真实的浏览器内核，看到的是脚本执行之后、人眼所见的页面。
 			</p>
 
 			<SectionTitle>可用工具</SectionTitle>
@@ -61,19 +59,6 @@ export function BrowserSettings() {
 					}
 				/>
 			</Card>
-
-			<SectionTitle>安全边界</SectionTitle>
-			<Card>
-				<div className="space-y-2.5 px-4 py-3.5 text-[12.5px] leading-relaxed text-ink-muted">
-					<p className="flex gap-2">
-						<Globe size={14} strokeWidth={1.8} className="mt-0.5 shrink-0 text-ink-faint" />
-						每个会话一个独立的浏览器实例，随会话一起销毁；它开启了沙箱与上下文隔离，触碰不到应用自身的 IPC。
-					</p>
-					<p className="pl-[22px]">首次访问一个站点会走批准流程，与执行命令、写文件同一套权限。</p>
-					<p className="pl-[22px]">只允许 http/https，返回内容会包在 &lt;page&gt; 标签里明确标注来源。</p>
-				</div>
-			</Card>
-
 			{!activeSessionId && (
 				<Card className="mt-6">
 					<EmptyHint>打开一个会话后即可让 Agent 使用这些工具。</EmptyHint>

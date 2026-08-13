@@ -23,8 +23,7 @@ export function SyncSettings() {
 		<div className="pt-8">
 			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">移动端同步</h1>
 			<p className="mt-2 max-w-[600px] pb-7 text-[13px] leading-relaxed text-ink-muted">
-				桌面端是唯一的数据源 —— 文件、终端和 MCP 进程都在这里。手机连上以后重放同一份会话日志，
-				可以查看正在进行的回合、批准操作、继续追问。两端看到的内容完全一致。
+				手机连上以后可以查看正在进行的回合、批准操作、继续追问，两端内容完全一致。
 			</p>
 
 			<SectionTitle>服务</SectionTitle>

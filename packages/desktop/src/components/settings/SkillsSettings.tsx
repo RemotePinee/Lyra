@@ -91,21 +91,6 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 					))
 				)}
 			</Card>
-
-			<div className="mt-6 rounded-[12px] border border-line bg-card/30 p-4">
-				<div className="mb-2 text-[12.5px] text-ink">SKILL.md 格式</div>
-				<pre className="overflow-x-auto rounded-lg bg-shell p-3 font-mono text-[11.5px] leading-relaxed text-ink-muted">{`---
-name: pdf-report
-description: 生成带图表的 PDF 报表。当用户要求导出报表、生成 PDF 时使用。
-allowed-tools: [read, write, bash]
----
-
-# 生成 PDF 报表
-
-1. 先用 \`read\` 确认数据源结构
-2. 用 reportlab 生成，模板在 templates/report.py
-3. 输出到 out/report-<日期>.pdf 并把路径回给用户`}</pre>
-			</div>
 		</div>
 	);
 }

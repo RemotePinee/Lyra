@@ -65,6 +65,11 @@
   /* macOS shows a text cursor over buttons by default; some users want a pointer. */
   :root[data-pointer-cursor="true"] button:not(:disabled),
   :root[data-pointer-cursor="true"] a,
+  :root[data-pointer-cursor="true"] summary,
+  :root[data-pointer-cursor="true"] label:has(input:not(:disabled)),
+  :root[data-pointer-cursor="true"] input[type="checkbox"]:not(:disabled),
+  :root[data-pointer-cursor="true"] input[type="radio"]:not(:disabled),
+  :root[data-pointer-cursor="true"] [role="tab"],
   :root[data-pointer-cursor="true"] [role="switch"] {
     cursor: pointer;
   }
@@ -866,6 +871,12 @@
  * parse. Dark-on-light and light-on-dark both stay legible over whatever it covers.
  */
 .dw-tooltip {
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: nowrap;
   background: color-mix(in srgb, var(--color-ink) 92%, transparent);
   color: var(--color-shell);
   box-shadow: 0 4px 14px -4px rgb(0 0 0 / 0.3);
@@ -1054,4 +1065,3 @@
 .dw-matrix {
   animation: dw-matrix 1.6s ease-in-out infinite;
 }
-
