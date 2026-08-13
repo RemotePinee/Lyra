@@ -121,7 +121,7 @@ export function ReviewPanel() {
 					title="刷新"
 					aria-label="刷新改动"
 					onClick={() => void refresh()}
-					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink active:scale-90"
+					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
 				>
 					<RefreshCw size={12.5} strokeWidth={1.8} className={loading ? "dw-pulse" : undefined} />
 				</button>

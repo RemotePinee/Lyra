@@ -13,6 +13,8 @@ import {
 	deepwiseHome,
 	indexStats,
 	loadIndex,
+	fetchRegistry,
+	installEntry,
 	loadPlugins,
 	loadSettings,
 	loadSkills,
@@ -21,10 +23,12 @@ import {
 	saveSettings,
 	searchIndex,
 	SessionStore,
+	uninstallEntry,
 	SideChat,
 	type AgentEvent,
 	type ApprovalDecision,
 	type ContextBreakdown,
+	type RegistryEntry,
 	type Settings,
 	type UserContent,
 } from "@deepwise/core";
@@ -92,6 +96,15 @@ const terminals = new Map<string, IPty>();
 let settings: Settings;
 let mainWindow: BrowserWindow | null = null;
 let syncServer: SyncServer | null = null;
+/**
+ * Whether the window is currently showing a vibrant material.
+ *
+ * Tracked because two handlers write the same property. `window:theme` repaints the backing
+ * colour so a fast resize does not flash the old palette — but under vibrancy that colour is
+ * exactly what must stay transparent, and an opaque one painted over the material is the
+ * material gone. Whichever message arrived last used to win.
+ */
+let vibrant = process.platform === "darwin";
 let scheduler: Scheduler | null = null;
 
 // ---------------------------------------------------------------------------
@@ -117,7 +130,7 @@ function resolvedBackground(): string {
  * dark and then snapped, every launch. The main process has the settings on disk before the
  * window exists, so it hands the answer to the preload, which paints it before the first frame.
  */
-function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string } {
+function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string; vibrancy: boolean } {
 	const appearance = settings?.appearance;
 	const dark = appearance
 		? appearance.theme === "dark" || (appearance.theme === "system" && nativeTheme.shouldUseDarkColors)
@@ -127,6 +140,7 @@ function bootTheme(): { dark: boolean; background: string; foreground: string; a
 		background: dark ? (appearance?.darkBackground ?? "#171717") : (appearance?.lightBackground ?? "#ffffff"),
 		foreground: dark ? (appearance?.darkForeground ?? "#ededed") : (appearance?.lightForeground ?? "#1a1a1a"),
 		accent: appearance?.accent ?? "#339cff",
+		vibrancy: process.platform === "darwin" && appearance?.translucentSidebar !== false,
 	};
 }
 
@@ -154,6 +168,22 @@ function createWindow(): void {
 		 * from the saved appearance here, and kept in step by `window:theme` afterwards.
 		 */
 		backgroundColor: resolvedBackground(),
+		/*
+		 * macOS vibrancy, which is what "半透明侧边栏" actually means.
+		 *
+		 * A translucent colour on the sidebar alone would show the window's own opaque background
+		 * through it — the same flat tone, at less contrast. What makes a sidebar translucent is
+		 * the compositor sampling the desktop behind the window, and only the platform can do
+		 * that. Windows has its own material and Linux has none, so this is darwin-only.
+		 */
+		...(process.platform === "darwin" && settings?.appearance?.translucentSidebar !== false
+			? {
+					vibrancy: "sidebar" as const,
+					// Otherwise the material follows focus and flattens whenever another app is in front.
+					visualEffectState: "active" as const,
+					backgroundColor: "#00000000",
+				}
+			: {}),
 		// The chrome in the design is drawn by the renderer; keep only the traffic lights.
 		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
 		// Centres the 12pt lights on the 46px toolbar row the renderer draws, matching the
@@ -471,6 +501,20 @@ function registerIpc(): void {
 	 * and Electron throws if the window was not created with an overlay, so the call is guarded
 	 * rather than merely no-op'd.
 	 */
+	/*
+	 * Toggled without recreating the window.
+	 *
+	 * `vibrancy` is a constructor option but also a live setter, so flipping the switch takes
+	 * effect immediately. The backing colour has to move with it: an opaque one would sit over
+	 * the vibrant layer and hide the very thing it was turned on for.
+	 */
+	ipcMain.on("window:vibrancy", (_event, on: boolean) => {
+		if (process.platform !== "darwin" || !mainWindow) return;
+		vibrant = on;
+		mainWindow.setVibrancy(on ? "sidebar" : null);
+		mainWindow.setBackgroundColor(on ? "#00000000" : resolvedBackground());
+	});
+
 	ipcMain.on("window:theme", (_event, colors: { color: string; symbolColor: string }) => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		/*
@@ -479,7 +523,7 @@ function registerIpc(): void {
 		 * This is the surface a fast resize exposes before the renderer has reflowed, so it has
 		 * to track the theme — otherwise dragging an edge flashes the old palette's background.
 		 */
-		mainWindow.setBackgroundColor(colors.color);
+		if (!vibrant) mainWindow.setBackgroundColor(colors.color);
 		if (process.platform === "darwin") return;
 		try {
 			mainWindow.setTitleBarOverlay({ ...colors, height: 44 });
@@ -895,6 +939,32 @@ function registerIpc(): void {
 
 	// Scanning does not need a live session: the settings pages are usually opened before
 	// any conversation exists, and an empty plugin list there reads as "nothing installed".
+	ipcMain.handle("registry:fetch", async (_event, url: string) => {
+		try {
+			return { ok: true as const, registry: await fetchRegistry(url) };
+		} catch (cause) {
+			return { ok: false as const, message: cause instanceof Error ? cause.message : String(cause) };
+		}
+	});
+
+	/*
+	 * Cloning is a write to disk from a URL the user typed, so it says what it did.
+	 *
+	 * The entry itself is inert until the plugin loader picks it up on the next session, and its
+	 * MCP servers still arrive switched off — installing is not the same as trusting.
+	 */
+	ipcMain.handle("registry:install", async (_event, entry: RegistryEntry) => {
+		try {
+			return { ok: true as const, dir: await installEntry(entry) };
+		} catch (cause) {
+			return { ok: false as const, message: cause instanceof Error ? cause.message : String(cause) };
+		}
+	});
+
+	ipcMain.handle("registry:uninstall", async (_event, id: string) => {
+		await uninstallEntry(id);
+	});
+
 	ipcMain.handle("plugins:list", async (_event, cwd: string) => {
 		const [plugins, skills] = await Promise.all([
 			loadPlugins(

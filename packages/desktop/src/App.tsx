@@ -271,12 +271,12 @@ function ChatShell() {
 	}, [compact, navOpen, panelOpen, expanded, toggleNav, dismissNav, closePanel, toggleTab, toggleExpanded, activeSessionId, workspace]);
 
 	return (
-		<div className="relative flex h-full overflow-hidden bg-shell">
+		<div className="dw-shell relative flex h-full overflow-hidden">
 			<NavPane width={sidebarWidth} label="侧边栏">
 				<Sidebar />
 			</NavPane>
 
-			<main className="relative flex min-w-0 flex-1 flex-col">
+			<main className="dw-opaque relative flex min-w-0 flex-1 flex-col">
 				{/* Space for the window toolbar, which is rendered last so its no-drag holes stick. */}
 				<div className="h-[44px] shrink-0" />
 
@@ -342,8 +342,8 @@ function ChatShell() {
 						compact
 							? "dw-fade-in absolute inset-0 z-50"
 							: fullScreen
-								? "dw-fade-in absolute inset-y-0 right-0 z-50"
-								: "dw-slide-in relative z-50 shrink-0 transition-[width] duration-200"
+								? "dw-opaque dw-fade-in absolute inset-y-0 right-0 z-50"
+								: "dw-opaque dw-slide-in relative z-50 shrink-0 transition-[width] duration-200"
 					}
 					style={
 						compact

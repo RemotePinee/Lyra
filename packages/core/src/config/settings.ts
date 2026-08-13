@@ -55,7 +55,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 	codeFont: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace',
 	uiFontSize: 13,
 	codeFontSize: 12,
-	translucentSidebar: true,
+	translucentSidebar: false,
 	contrast: 60,
 	pointerCursor: false,
 	reduceMotion: "system",
@@ -105,6 +105,14 @@ export interface Settings {
 	scheduledTasks: ScheduledTask[];
 	/** Plugin ids the user switched off; everything found on disk is on by default. */
 	disabledPlugins: string[];
+	/**
+	 * Plugin registry index URLs the user has added, browsed from the plugins page.
+	 *
+	 * Empty by default. Shipping a preset would mean pointing at a collection whose contents we
+	 * do not control and cannot promise will stay there — and a dead URL in a fresh install reads
+	 * as a broken feature rather than as an empty one.
+	 */
+	pluginRegistries: string[];
 	/** Rules the user chose to always allow, keyed by tool kind. */
 	alwaysAllow: string[];
 	sync: {
@@ -131,6 +139,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	hooks: [],
 	scheduledTasks: [],
 	disabledPlugins: [],
+	pluginRegistries: [],
 	alwaysAllow: [],
 	sync: { enabled: false, port: 4517, token: null },
 	editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
@@ -155,6 +164,7 @@ export async function loadSettings(): Promise<Settings> {
 			hooks: parsed.hooks ?? [],
 			scheduledTasks: parsed.scheduledTasks ?? [],
 			disabledPlugins: parsed.disabledPlugins ?? [],
+			pluginRegistries: parsed.pluginRegistries ?? [],
 			providers: parsed.providers ?? [],
 			mcpServers: parsed.mcpServers ?? [],
 			projects: parsed.projects ?? [],

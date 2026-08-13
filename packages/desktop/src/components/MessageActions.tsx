@@ -46,7 +46,7 @@ export function MessageActions({
 				onClick={() => {
 					void navigator.clipboard.writeText(text).then(() => setCopied(true));
 				}}
-				className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink active:scale-90"
+				className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
 			>
 				{copied ? <Check size={12.5} strokeWidth={2.2} className="dw-pop text-ok" /> : <Copy size={12.5} strokeWidth={1.8} />}
 			</button>

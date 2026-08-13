@@ -2,6 +2,7 @@ import type { McpServerConfig } from "@deepwise/core";
 import { Cable, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentCapabilities } from "../../../electron/ipc-types.ts";
+import { PluginIcon } from "./PluginIcon.tsx";
 import { useApp } from "../../store.ts";
 import { Badge, Card, EmptyHint, Field, GhostButton, SectionTitle, Select, TextInput, Toggle } from "./controls.tsx";
 
@@ -35,7 +36,7 @@ const RECOMMENDED: { id: string; name: string; detail: string; server: McpServer
 	},
 ];
 
-export function McpSettings() {
+export function McpSettings({ filter = "" }: { filter?: string }) {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	const activeSessionId = useApp((s) => s.activeSessionId);
@@ -47,7 +48,8 @@ export function McpSettings() {
 	}, [activeSessionId]);
 
 	if (!settings) return null;
-	const servers = settings.mcpServers;
+	const needle = filter.trim().toLowerCase();
+	const servers = settings.mcpServers.filter((s) => !needle || s.name.toLowerCase().includes(needle));
 
 	const update = (id: string, patch: Partial<McpServerConfig>) =>
 		void saveSettings({
@@ -68,16 +70,8 @@ export function McpSettings() {
 		void saveSettings({ ...settings, mcpServers: settings.mcpServers.filter((s) => s.id !== id) });
 
 	return (
-		<div className="pt-8">
-			<header className="flex items-start justify-between pb-7">
-				<div>
-					<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">MCP 服务器</h1>
-					<p className="mt-2 max-w-[560px] text-[13px] leading-relaxed text-ink-muted">
-						连接 Model Context Protocol 服务器，它们的工具会以{" "}
-						<code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">mcp__服务名__工具名</code>{" "}
-						的形式加入 Agent 的工具集。改动在下一次新建会话时生效。
-					</p>
-				</div>
+		<div>
+			<header className="flex items-start justify-end pb-4">
 				<div className="flex shrink-0 gap-2 pt-1">
 					<GhostButton onClick={() => add("stdio")}>
 						<span className="flex items-center gap-1.5">
@@ -139,7 +133,7 @@ export function McpSettings() {
 						return (
 							<Card key={server.id}>
 								<div className="flex items-center gap-2.5 border-b border-line-soft px-4 py-3">
-									<Cable size={15} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
+									<PluginIcon name={server.name} size={22} />
 									<input
 										value={server.name}
 										onChange={(e) => update(server.id, { name: e.target.value })}

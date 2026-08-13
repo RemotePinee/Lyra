@@ -1,12 +1,13 @@
 import type { Plugin } from "@deepwise/core";
-import { Blocks, Cable, FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
+import { Cable, FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
 import { Badge, Card, EmptyHint, GhostButton, SectionTitle, Toggle } from "./controls.tsx";
+import { PluginIcon } from "./PluginIcon.tsx";
 
 const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用户" };
 
-export function PluginsSettings() {
+export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	const workspace = useApp((s) => s.workspace);
@@ -21,7 +22,14 @@ export function PluginsSettings() {
 	}, [workspace?.path, settings?.disabledPlugins.length]);
 
 	if (!settings) return null;
-	const plugins = scan?.plugins ?? [];
+	const needle = filter.trim().toLowerCase();
+	const plugins = (scan?.plugins ?? []).filter(
+		(p) =>
+			!needle ||
+			`${p.id} ${p.manifest.name ?? ""} ${p.manifest.interface?.shortDescription ?? ""}`
+				.toLowerCase()
+				.includes(needle),
+	);
 	const diagnostics = scan?.pluginDiagnostics ?? [];
 
 	const toggle = (plugin: Plugin, enabled: boolean) => {
@@ -32,16 +40,9 @@ export function PluginsSettings() {
 	};
 
 	return (
-		<div className="pt-8">
-			<header className="flex items-start justify-between pb-7">
-				<div>
-					<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">插件</h1>
-					<p className="mt-2 max-w-[580px] text-[13px] leading-relaxed text-ink-muted">
-						插件是一个<strong className="font-medium text-ink">打包</strong>：一份清单 + 一组技能（技能里可以带脚本、
-						资源、子智能体定义）+ 可选的 MCP 服务器声明。它不是第三种机制 —— 装上一个插件，等于同时装上了它带来的技能和 MCP 服务。
-					</p>
-				</div>
-				<div className="flex shrink-0 flex-col gap-2 pt-1">
+		<div>
+			<header className="flex items-start justify-end pb-4">
+				<div className="flex shrink-0 gap-2">
 					<GhostButton onClick={() => void window.deepwise.plugins.revealDir("user", workspace?.path ?? "")}>
 						<span className="flex items-center gap-1.5">
 							<FolderOpen size={12} strokeWidth={1.9} />
@@ -135,12 +136,11 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 	return (
 		<Card>
 			<div className="flex items-center gap-3 px-4 py-3">
-				<span
-					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-					style={{ background: `${ui?.brandColor ?? "#339CFF"}22`, color: ui?.brandColor ?? "#339CFF" }}
-				>
-					<Blocks size={16} strokeWidth={1.9} />
-				</span>
+				<PluginIcon
+					name={ui?.displayName ?? plugin.manifest.name ?? plugin.id}
+					logo={ui?.logo}
+					brandColor={ui?.brandColor}
+				/>
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
 						<span className="truncate text-[13.5px] text-ink">{ui?.displayName ?? plugin.manifest.name}</span>

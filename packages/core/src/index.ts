@@ -24,6 +24,13 @@ export {
 	type McpStdioServer,
 } from "./mcp/client.ts";
 export {
+	fetchRegistry,
+	installEntry,
+	uninstallEntry,
+	type Registry,
+	type RegistryEntry,
+} from "./plugins/registry.ts";
+export {
 	loadPlugins,
 	pluginSummary,
 	type Plugin,

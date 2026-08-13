@@ -14,7 +14,7 @@ function paintBootTheme(): void {
 	const flag = process.argv.find((arg) => arg.startsWith("--dw-boot="));
 	if (!flag) return;
 
-	let boot: { dark: boolean; background: string; foreground: string; accent: string };
+	let boot: { dark: boolean; background: string; foreground: string; accent: string; vibrancy?: boolean };
 	try {
 		boot = JSON.parse(decodeURIComponent(flag.slice("--dw-boot=".length)));
 	} catch {
@@ -31,10 +31,17 @@ function paintBootTheme(): void {
 		root.style.setProperty("--color-shell", boot.background);
 		root.style.setProperty("--color-ink", boot.foreground);
 		root.style.setProperty("--color-accent", boot.accent);
-		// Painted directly as well, not only as a token: the stylesheet that turns `--color-shell`
-		// into a background is itself a load away, and until it lands the page is default white.
-		root.style.background = boot.background;
 		root.style.color = boot.foreground;
+		/*
+		 * Painted directly as well, not only as a token: the stylesheet that turns `--color-shell`
+		 * into a background is itself a load away, and until it lands the page is default white.
+		 *
+		 * Except under vibrancy, where an opaque page is precisely what must not be painted — the
+		 * translucent sidebar shows the desktop through the *window*, so every layer above it has
+		 * to let light past. The flag is set here so the stylesheet can do the same.
+		 */
+		root.dataset.vibrancy = boot.vibrancy ? "on" : "off";
+		root.style.background = boot.vibrancy ? "transparent" : boot.background;
 		// Left behind so "did the theme land before the first paint?" stays answerable later.
 		root.dataset.bootThemeMs = String(Math.round(performance.now()));
 	};
@@ -143,10 +150,14 @@ const api: DeepWiseApi = {
 		list: (cwd) => ipcRenderer.invoke("plugins:list", cwd),
 		revealDir: (scope, cwd) => ipcRenderer.invoke("plugins:revealDir", scope, cwd),
 		installExample: (scope, cwd) => ipcRenderer.invoke("plugins:installExample", scope, cwd),
+		fetchRegistry: (url) => ipcRenderer.invoke("registry:fetch", url),
+		installFromRegistry: (entry) => ipcRenderer.invoke("registry:install", entry),
+		uninstall: (id) => ipcRenderer.invoke("registry:uninstall", id),
 	},
 	
 	setWindowTheme: (colors: { color: string; symbolColor: string }) =>
 		ipcRenderer.send("window:theme", colors),
+	setVibrancy: (on: boolean) => ipcRenderer.send("window:vibrancy", on),
 	onFullScreenChange: (handler) => {
 		const listener = (_e: Electron.IpcRendererEvent, full: boolean) => handler(full);
 		ipcRenderer.on("window:fullscreen", listener);

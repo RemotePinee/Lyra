@@ -810,6 +810,79 @@
  * Dark: a mid grey, because a raised object on a dark surface catches light rather than losing
  * it, and the panel behind it is too close to black for anything darker to be findable.
  */
+/* ---------------------------------------------------------------------------
+ * Translucent sidebar
+ *
+ * The effect is the compositor sampling the desktop behind the window and blurring it. Only the
+ * platform can do that, so the window is created with `vibrancy: "sidebar"` and a transparent
+ * backing colour — and then every layer between that vibrant surface and the sidebar has to let
+ * light through, or it is covered by our own opaque paint and nothing shows.
+ *
+ * So under vibrancy the page itself is transparent, and the regions that must *not* be
+ * see-through — the conversation, the settings body — put their own opaque fill back. Without
+ * that second half the whole window turns into a sheet of glass, which is not what was asked
+ * for either.
+ * ------------------------------------------------------------------------- */
+
+:root[data-vibrancy="on"] body {
+  background: transparent;
+}
+
+.dw-sidebar-fill {
+  background: var(--color-sidebar);
+}
+
+/*
+ * Under vibrancy the wash is the page colour, not the sidebar's grey.
+ *
+ * That grey exists to separate the sidebar from the content beside it — a job the material
+ * already does here. Keeping it meant laying an achromatic film over the desktop showing
+ * through, which is exactly what "everything looks grey" is: a neutral tint desaturating
+ * whatever is behind it. White on light and near-black on dark leaves the blur its own colour.
+ */
+:root[data-vibrancy="on"] .dw-sidebar-fill {
+  background: color-mix(in srgb, var(--color-shell) calc(var(--dw-sidebar-alpha, 1) * 100%), transparent);
+}
+
+.dw-shell {
+  background: var(--color-shell);
+}
+
+/* Under vibrancy the shell steps aside so the sidebar has something to reveal. */
+:root[data-vibrancy="on"] .dw-shell {
+  background: transparent;
+}
+
+/* Everything that is not the sidebar stays solid, vibrant window or not. */
+.dw-opaque {
+  background: var(--color-shell);
+}
+
+/*
+ * Tooltip surface.
+ *
+ * Inverted rather than another floating card: a tip is a transient annotation, and at this size
+ * a bordered panel in the same palette as everything else reads as one more piece of UI to
+ * parse. Dark-on-light and light-on-dark both stay legible over whatever it covers.
+ */
+.dw-tooltip {
+  background: color-mix(in srgb, var(--color-ink) 92%, transparent);
+  color: var(--color-shell);
+  box-shadow: 0 4px 14px -4px rgb(0 0 0 / 0.3);
+  animation: dw-tip-in 120ms ease-out;
+}
+
+@keyframes dw-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .dw-knob {
   background: #ffffff;
   border-color: rgb(0 0 0 / 0.14);

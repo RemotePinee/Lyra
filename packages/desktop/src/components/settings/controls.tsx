@@ -299,7 +299,7 @@ export function GhostButton({
 			disabled={disabled}
 			onClick={onClick}
 			title={title}
-			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] transition-colors duration-150 active:scale-[0.97] disabled:opacity-45 disabled:active:scale-100 ${
+			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] transition-colors duration-150 disabled:opacity-45 disabled: ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"
 					: "text-ink-muted hover:border-ink-faint hover:text-ink"

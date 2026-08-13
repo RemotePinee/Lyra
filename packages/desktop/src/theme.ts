@@ -37,7 +37,27 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 
 	// 0–100 maps to a 0.5×–1.5× multiplier on every derived step.
 	const strength = 0.5 + appearance.contrast / 100;
-	const surface = (step: number) => toHex(mix(background, foreground, Math.min(0.9, step * strength)));
+
+	/*
+	 * Surfaces and rules are scaled apart, and only on a light theme.
+	 *
+	 * Both used to come off the same curve, which produced a scale where the rule (#ececed) was
+	 * *paler* than the card it was meant to divide (#f0f0f0) — a border lighter than its own
+	 * surface separates nothing, so every layer had to earn its separation by getting greyer
+	 * instead. Stacked three deep that is where "the whole app looks grey" comes from.
+	 *
+	 * So on light: surfaces stay close to the page and the rules step well clear of it, which is
+	 * how the apps this is measured against read as clean — white panels, visible hairlines.
+	 * Dark themes already work the other way round: a surface lifts off the page by getting
+	 * lighter, which is the same direction its text goes, and there the shared curve is correct.
+	 */
+	const SURFACE_ON_LIGHT = 0.45;
+	const RULE_ON_LIGHT = 1.7;
+
+	const surface = (step: number) =>
+		toHex(mix(background, foreground, Math.min(0.9, step * strength * (dark ? 1 : SURFACE_ON_LIGHT))));
+	const rule = (step: number) =>
+		toHex(mix(background, foreground, Math.min(0.9, step * strength * (dark ? 1 : RULE_ON_LIGHT))));
 	const text = (weight: number) => toHex(mix(background, foreground, Math.min(1, weight)));
 
 	/**
@@ -79,9 +99,9 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		"--color-input": paper,
 		"--color-elevated": surface(0.1),
 		"--color-float": float_,
-		/* Now that surfaces carry the separation, rules only have to be findable, not loud. */
-		"--color-line": surface(0.075),
-		"--color-line-soft": surface(0.05),
+		/* The rules carry the separation on light, so they have to be visible against it. */
+		"--color-line": rule(0.075),
+		"--color-line-soft": rule(0.05),
 		"--color-ink": toHex(foreground),
 		"--color-ink-muted": text(0.62),
 		"--color-ink-faint": text(0.4),
@@ -98,7 +118,25 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		"--dw-code-font": appearance.codeFont,
 		"--dw-ui-size": `${appearance.uiFontSize}px`,
 		"--dw-code-size": `${appearance.codeFontSize}px`,
-		"--dw-sidebar-alpha": appearance.translucentSidebar ? "0.72" : "1",
+		/*
+		 * A tint over the material, not a pane in front of it.
+		 *
+		 * 0.62 was covering the very thing it turned on — the blur was there but you could barely
+		 * read anything through it. macOS's own sidebars lay down only a light wash and let the
+		 * vibrancy carry the look; the material already lifts contrast for text drawn on it, so
+		 * a thin tint stays legible. Dark themes get a little more, because a dark wash over a
+		 * bright desktop needs more body to keep pale text off a light patch.
+		 */
+		/*
+		 * A wash heavy enough that the sidebar still has a colour of its own.
+		 *
+		 * Thin is what makes vibrancy look like vibrancy, and it is also what makes the sidebar
+		 * take on whatever the window happens to be sitting over — grey against a dark desktop,
+		 * near-white against a bright one. That unpredictability is what reads as "unnatural":
+		 * every other surface in the app is a fixed colour and this one drifts. At 0.72 the tint
+		 * dominates and the material shows through as a subtle shift rather than as the subject.
+		 */
+		"--dw-sidebar-alpha": appearance.translucentSidebar ? (dark ? "0.78" : "0.72") : "1",
 	};
 
 	for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
@@ -112,6 +150,14 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 	 * quickly is exactly that, and a stale colour there is the black frame that flashes.
 	 */
 	window.deepwise?.setWindowTheme?.({ color: toHex(background), symbolColor: text(0.62) });
+	/*
+	 * The window has to be told too: vibrancy is a native layer, not a CSS effect.
+	 *
+	 * Nothing in the stylesheet can sample the desktop behind the window, so the alpha above only
+	 * has anything to reveal once the platform is compositing a vibrant layer underneath it.
+	 */
+	window.deepwise?.setVibrancy?.(appearance.translucentSidebar);
+	root.dataset.vibrancy = appearance.translucentSidebar ? "on" : "off";
 
 	root.classList.toggle("dark", dark);
 	root.classList.toggle("light", !dark);

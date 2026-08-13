@@ -7,6 +7,8 @@ import type {
 	AgentEvent,
 	ApprovalDecision,
 	ContextBreakdown,
+	Registry,
+	RegistryEntry,
 	ContextSegmentKey,
 	McpServerStatus,
 	Plugin,
@@ -17,7 +19,7 @@ import type {
 	UserContent,
 } from "@deepwise/core";
 
-export type { ContextBreakdown, ContextSegmentKey, QueuedTask };
+export type { ContextBreakdown, ContextSegmentKey, QueuedTask, Registry, RegistryEntry };
 
 export interface WorkspaceInfo {
 	path: string;
@@ -201,6 +203,10 @@ export interface DeepWiseApi {
 		revealDir(scope: "workspace" | "user", cwd: string): Promise<string>;
 		/** Write a runnable example bundle so the format is discoverable. */
 		installExample(scope: "workspace" | "user", cwd: string): Promise<string>;
+		/** Read a registry index. Failures come back as data — a bad URL is routine, not exceptional. */
+		fetchRegistry(url: string): Promise<{ ok: true; registry: Registry } | { ok: false; message: string }>;
+		installFromRegistry(entry: RegistryEntry): Promise<{ ok: true; dir: string } | { ok: false; message: string }>;
+		uninstall(id: string): Promise<void>;
 	};
 	/**
 	 * Tell the window itself what the theme is.
@@ -210,6 +216,8 @@ export interface DeepWiseApi {
 	 * the renderer catches up.
 	 */
 	setWindowTheme(colors: { color: string; symbolColor: string }): void;
+	/** macOS only; a no-op elsewhere. Translucency is a window material, not a CSS colour. */
+	setVibrancy(on: boolean): void;
 	/**
 	 * Native full screen, reported by the window because the page cannot detect it.
 	 *

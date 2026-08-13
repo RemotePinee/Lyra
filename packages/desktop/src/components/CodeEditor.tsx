@@ -139,6 +139,23 @@ export function CodeEditor({
 
 		const instance = new EditorView({ state, parent: element });
 		view.current = instance;
+
+		/*
+		 * Tooltips for the find bar, which is not ours to render.
+		 *
+		 * The buttons show a glyph now, so the words have to live somewhere — and `phrases` only
+		 * controls the visible label. CodeMirror builds the panel on first open, so this watches
+		 * for it rather than running once. `title` rather than the app's own Tooltip: the panel
+		 * is outside React's tree entirely.
+		 */
+		const labelPanel = () => {
+			for (const [name, hint] of Object.entries(SEARCH_TITLES)) {
+				const button = element.querySelector<HTMLElement>(`.cm-search button[name=${name}]`);
+				if (button && !button.title) button.title = hint;
+			}
+		};
+		const panels = new MutationObserver(labelPanel);
+		panels.observe(element, { childList: true, subtree: true });
 		setScroller(instance.scrollDOM);
 
 		let live = true;
@@ -198,6 +215,16 @@ export function CodeEditor({
  *
  * Keys are CodeMirror's own English strings; anything not listed keeps the original.
  */
+/** Hover text for the icon-only buttons, keyed by CodeMirror's own `name` attribute. */
+const SEARCH_TITLES: Record<string, string> = {
+	next: "下一个",
+	prev: "上一个",
+	select: "选中全部匹配",
+	replace: "替换当前",
+	replaceAll: "全部替换",
+	close: "关闭 (Esc)",
+};
+
 const SEARCH_PHRASES: Record<string, string> = {
 	Find: "查找",
 	Replace: "替换",
@@ -275,11 +302,11 @@ function editorTheme(): Extension {
 		".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--color-line-soft)" },
 		".cm-panel.cm-search": {
 			backgroundColor: "var(--color-shell)",
-			padding: "6px 26px 6px 8px",
+			padding: "6px 24px 6px 8px",
 			display: "flex",
 			flexWrap: "wrap",
 			alignItems: "center",
-			gap: "6px",
+			gap: "4px",
 			fontFamily: "var(--dw-ui-font)",
 			fontSize: "12px",
 		},
@@ -293,7 +320,6 @@ function editorTheme(): Extension {
 		 */
 		".cm-panel.cm-search br": { display: "none" },
 		".cm-panel.cm-search::before": { content: '""', flex: "0 0 100%", height: 0, order: 4 },
-		".cm-panel.cm-search::after": { content: '""', flex: "0 0 100%", height: 0, order: 6 },
 		/*
 		 * Reordered, because the source order is not the reading order.
 		 *
@@ -302,33 +328,103 @@ function editorTheme(): Extension {
 		 * `order` puts each row with its own controls: find, then replace, then the options.
 		 * `margin-left: auto` on close both pins it right and forces what follows onto a new line.
 		 */
-		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 140px", minWidth: "90px" },
+		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 60px", minWidth: "60px" },
 		".cm-panel.cm-search [name=next], .cm-panel.cm-search [name=prev], .cm-panel.cm-search [name=select]": {
 			order: 2,
 		},
-		".cm-panel.cm-search input[name=replace]": { order: 5, flex: "1 1 140px", minWidth: "90px" },
+		".cm-panel.cm-search input[name=replace]": { order: 5, flex: "1 1 60px", minWidth: "60px" },
 		".cm-panel.cm-search [name=replace], .cm-panel.cm-search [name=replaceAll]": { order: 5 },
-		".cm-panel.cm-search label": {
-			order: 7,
-			display: "inline-flex",
-			alignItems: "center",
-			gap: "4px",
-			fontSize: "11.5px",
-			color: "var(--color-ink-muted)",
-		},
-		".cm-panel.cm-search input[type=checkbox]": { accentColor: "var(--color-accent)", margin: 0 },
 		".cm-textfield": {
 			backgroundColor: "var(--color-input)",
 			color: "var(--color-ink)",
 			border: "1px solid var(--color-line)",
 			borderRadius: "7px",
 			padding: "0 8px",
-			height: "26px",
+			height: "24px",
 			fontSize: "12px",
 			fontFamily: "var(--dw-ui-font)",
 			outline: "none",
 		},
 		".cm-textfield:focus": { borderColor: "var(--color-ink-faint)" },
+		/*
+		 * Icons, not sentences.
+		 *
+		 * Five text buttons and three checkbox labels wrapped onto four rows in a docked panel —
+		 * a find bar taller than the code it was searching. The words move into `title` and the
+		 * glyph carries the meaning, which is what every editor's find bar does.
+		 *
+		 * The label text is pushed out of view rather than removed: it is still the button's
+		 * accessible name, and `display: none` on it would take that away.
+		 */
+		".cm-panel.cm-search button[name]": {
+			position: "relative",
+			width: "22px",
+			height: "22px",
+			padding: 0,
+			fontSize: 0,
+			color: "transparent",
+		},
+		".cm-panel.cm-search button[name]::before": {
+			position: "absolute",
+			inset: 0,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			fontSize: "13px",
+			color: "var(--color-ink-muted)",
+		},
+		".cm-panel.cm-search button[name=next]::before": { content: '"\\2193"' },
+		".cm-panel.cm-search button[name=prev]::before": { content: '"\\2191"' },
+		".cm-panel.cm-search button[name=select]::before": { content: '"\\2261"', fontSize: "14px" },
+		".cm-panel.cm-search button[name=replace]::before": { content: '"\\21B5"' },
+		".cm-panel.cm-search button[name=replaceAll]::before": { content: '"\\21C9"' },
+		".cm-panel.cm-search button[name]:hover::before": { color: "var(--color-ink)" },
+
+		/*
+		 * The options become the three glyphs every find bar uses, on the first row.
+		 *
+		 * As words they took a row of their own and made the panel taller than the code it
+		 * searches. `Aa`, `.*` and `ab` are the conventional marks, so they need no legend — and
+		 * the hidden text is still the label the checkbox is announced with.
+		 */
+		".cm-panel.cm-search label": {
+			order: 3,
+			position: "relative",
+			display: "inline-flex",
+			alignItems: "center",
+			justifyContent: "center",
+			width: "22px",
+			height: "22px",
+			borderRadius: "6px",
+			fontSize: 0,
+			color: "transparent",
+			cursor: "default",
+		},
+		".cm-panel.cm-search label::before": {
+			position: "absolute",
+			inset: 0,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			fontFamily: "var(--dw-code-font)",
+			fontSize: "11px",
+			color: "var(--color-ink-faint)",
+		},
+		".cm-panel.cm-search label:nth-of-type(1)::before": { content: '"Aa"' },
+		".cm-panel.cm-search label:nth-of-type(2)::before": { content: '".*"' },
+		".cm-panel.cm-search label:nth-of-type(3)::before": { content: '"ab"', textDecoration: "underline" },
+		".cm-panel.cm-search label:hover": { background: "var(--color-card-hover)" },
+		".cm-panel.cm-search label:hover::before": { color: "var(--color-ink)" },
+		// The checkbox itself is redundant once the tile can show its own state.
+		".cm-panel.cm-search label input[type=checkbox]": {
+			position: "absolute",
+			width: "100%",
+			height: "100%",
+			margin: 0,
+			opacity: 0,
+		},
+		".cm-panel.cm-search label:has(:checked)": { background: "var(--color-card-hover)" },
+		".cm-panel.cm-search label:has(:checked)::before": { color: "var(--color-accent)" },
 		".cm-button": {
 			backgroundColor: "transparent",
 			backgroundImage: "none",
@@ -345,16 +441,26 @@ function editorTheme(): Extension {
 		".cm-button:active": { backgroundColor: "var(--color-card-hover)" },
 		// The close affordance is an icon, not a control that needs a box round it.
 		// Absolutely positioned by CodeMirror's base theme, so it sits outside the flex flow.
-		".cm-panel.cm-search [name=close]": {
+		/*
+		 * Out of the flow and in the corner.
+		 *
+		 * Left in the flow it took the width of the last option and pushed it onto a row of its
+		 * own. Needs `button[name=close]` rather than `[name=close]` to outrank the shared
+		 * icon-button rule above, which would otherwise hold it `relative`.
+		 */
+		".cm-panel.cm-search button[name=close]": {
+			position: "absolute",
+			top: "7px",
+			right: "3px",
+			width: "18px",
+			height: "18px",
 			border: "none",
 			background: "transparent",
-			color: "var(--color-ink-faint)",
-			fontSize: "16px",
-			lineHeight: "1",
-			padding: "0 4px",
+			padding: 0,
 			cursor: "default",
 		},
-		".cm-panel.cm-search [name=close]:hover": { color: "var(--color-ink)" },
+		".cm-panel.cm-search button[name=close]::before": { content: '"\\00D7"', fontSize: "15px" },
+		".cm-panel.cm-search button[name=close]:hover": { background: "var(--color-card-hover)", borderRadius: "5px" },
 		".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 24%, transparent)" },
 		".cm-searchMatch.cm-searchMatch-selected": {
 			backgroundColor: "color-mix(in srgb, var(--color-accent) 42%, transparent)",

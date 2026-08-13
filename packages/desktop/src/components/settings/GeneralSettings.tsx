@@ -65,21 +65,6 @@ export function GeneralSettings() {
 					}
 				/>
 				<Row
-					title="主题"
-					detail="应用配色"
-					control={
-						<Segmented
-							value={settings.appearance.theme}
-							onChange={(theme) => patch({ appearance: { ...settings.appearance, theme } })}
-							options={[
-								{ value: "system", label: "跟随系统" },
-								{ value: "light", label: "浅色" },
-								{ value: "dark", label: "深色" },
-							]}
-						/>
-					}
-				/>
-				<Row
 					title="默认推理强度"
 					detail="新会话使用的思考预算，可在输入框右侧随时切换"
 					control={

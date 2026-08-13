@@ -1,11 +1,12 @@
-import { FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
+import { FolderOpen, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { PluginIcon } from "./PluginIcon.tsx";
 import { useApp } from "../../store.ts";
 import { Badge, Card, EmptyHint, GhostButton, SectionTitle } from "./controls.tsx";
 
 const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用户", builtin: "内置" };
 
-export function SkillsSettings() {
+export function SkillsSettings({ filter = "" }: { filter?: string }) {
 	const workspace = useApp((s) => s.workspace);
 	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.deepwise.plugins.list>> | null>(null);
 
@@ -14,21 +15,17 @@ export function SkillsSettings() {
 		void window.deepwise.plugins.list(workspace?.path ?? "").then(setScan);
 	}, [workspace?.path]);
 
-	const skills = scan?.skills ?? [];
+	// Name or description, because you remember a skill by either.
+	const needle = filter.trim().toLowerCase();
+	const skills = (scan?.skills ?? []).filter(
+		(s) => !needle || `${s.name} ${s.description}`.toLowerCase().includes(needle),
+	);
 	const diagnostics = scan?.skillDiagnostics ?? [];
 
 	return (
-		<div className="pt-8">
-			<header className="flex items-start justify-between pb-7">
-				<div>
-					<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">技能</h1>
-					<p className="mt-2 max-w-[560px] text-[13px] leading-relaxed text-ink-muted">
-						技能是放在 <code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">SKILL.md</code>{" "}
-						里的一段说明书。DeepWise 只把名称和描述放进系统提示，模型判断任务匹配时才通过{" "}
-						<code className="rounded bg-card px-1 py-0.5 font-mono text-[12px]">skill</code> 工具把正文读进来。
-					</p>
-				</div>
-				<div className="flex shrink-0 gap-2 pt-1">
+		<div>
+			<header className="flex items-start justify-end pb-4">
+				<div className="flex shrink-0 gap-2">
 					<GhostButton
 						onClick={() => void window.deepwise.system.revealSkillsDir("user", workspace?.path ?? "")}
 					>
@@ -76,7 +73,7 @@ export function SkillsSettings() {
 					skills.map((skill) => (
 						<div key={skill.path} className="border-b border-line-soft px-4 py-3.5 last:border-b-0">
 							<div className="flex items-center gap-2">
-								<Sparkles size={14} strokeWidth={1.8} className="shrink-0 text-violet" />
+								<PluginIcon name={skill.name} size={22} />
 								<span className="font-mono text-[13px] text-ink">{skill.name}</span>
 								<Badge tone="muted">{SOURCE_LABEL[skill.source] ?? skill.source}</Badge>
 								{skill.disableModelInvocation && <Badge tone="accent">仅手动调用</Badge>}

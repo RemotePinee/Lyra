@@ -63,7 +63,7 @@ export function Sidebar() {
 	return (
 		// No right border: the sidebar's own tint is what sets it apart from the column beside
 		// it. A rule on top of that reads as a seam rather than a boundary.
-		<div className="flex h-full w-full flex-col bg-sidebar">
+		<div className="dw-sidebar-fill flex h-full w-full flex-col">
 			<div className="h-[44px] shrink-0" />
 
 			<div className="flex h-[34px] shrink-0 items-center justify-between px-4">
@@ -318,7 +318,7 @@ function ProjectGroup({
 						aria-label={`「${group.name}」的项目操作`}
 						aria-haspopup="menu"
 						onClick={menu.toggle}
-						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink active:scale-90"
+						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
 					>
 						<SquarePen size={12.5} strokeWidth={1.8} />
 					</button>
@@ -375,7 +375,7 @@ function ProjectGroup({
 							title="归档会话"
 							aria-label={`归档会话「${session.title}」`}
 							onClick={() => onArchiveSession(session)}
-							className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink active:scale-90"
+							className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
 						>
 							<Archive size={12.5} strokeWidth={1.8} />
 						</button>

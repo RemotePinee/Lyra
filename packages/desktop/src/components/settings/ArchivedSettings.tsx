@@ -214,7 +214,7 @@ function Row({
 						title="删除"
 						aria-label={`删除「${session.title}」`}
 						onClick={() => setConfirming(true)}
-						className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-danger/10 hover:text-danger active:scale-90"
+						className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-danger/10 hover:text-danger"
 					>
 						<Trash2 size={13.5} strokeWidth={1.8} />
 					</button>

@@ -128,7 +128,7 @@ export function ComposerSend({
 				title="停止"
 				aria-label="停止"
 				onClick={onStop}
-				className="dw-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-150 hover:opacity-85 active:scale-90"
+				className="dw-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-150 hover:opacity-85"
 			>
 				<svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
 					<rect width="11" height="11" rx="1.5" fill="currentColor" />
@@ -143,7 +143,7 @@ export function ComposerSend({
 			aria-label="发送"
 			disabled={disabled}
 			onClick={onSend}
-			className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-elevated text-ink transition-all duration-150 enabled:hover:bg-ink enabled:hover:text-shell enabled:active:scale-90 disabled:opacity-45"
+			className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-elevated text-ink transition-all duration-150 enabled:hover:bg-ink enabled:hover:text-shell enabled: disabled:opacity-45"
 		>
 			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
 				<path d="M12 19V5M5 12l7-7 7 7" />

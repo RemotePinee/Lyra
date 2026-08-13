@@ -131,7 +131,7 @@ export function UserMessage({ message, index }: { message: UserMessageType; inde
 						setDraft(text);
 						setEditing(true);
 					}}
-					className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink active:scale-90 disabled:opacity-40 disabled:hover:bg-transparent"
+					className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
 				>
 					<Pencil size={12.5} strokeWidth={1.8} />
 				</button>

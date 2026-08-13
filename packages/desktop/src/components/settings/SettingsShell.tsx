@@ -28,7 +28,7 @@ import { CommandsSettings } from "./CommandsSettings.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
 import { McpSettings } from "./McpSettings.tsx";
 import { ModelSettings } from "./ModelSettings.tsx";
-import { PluginsSettings } from "./PluginsSettings.tsx";
+import { ExtensionsSettings } from "./ExtensionsSettings.tsx";
 import { HooksSettings } from "./HooksSettings.tsx";
 import { IndexSettings } from "./IndexSettings.tsx";
 import { BrowserSettings } from "./BrowserSettings.tsx";
@@ -58,9 +58,7 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 		label: "Agent 能力",
 		items: [
 			{ id: "plugins", label: "插件", icon: Blocks },
-			{ id: "skills", label: "技能", icon: Sparkles },
 			{ id: "agents", label: "子智能体", icon: Bot },
-			{ id: "mcp", label: "MCP 服务器", icon: Cable },
 			{ id: "commands", label: "命令", icon: SquareTerminal },
 			{ id: "hooks", label: "钩子", icon: Anchor },
 		],
@@ -110,10 +108,10 @@ export function SettingsShell() {
 		 * two columns read as one undifferentiated field. The workspace already answers this: the
 		 * nav is tinted and the thing you are working in is the plain page.
 		 */
-		<div className="relative flex h-full bg-shell">
+		<div className="dw-shell relative flex h-full">
 			<NavPane width={NAV_WIDTH} label="设置导航">
 				{/* Same as the workspace sidebar: separated by its tint, not by a rule. */}
-				<nav className="flex h-full w-full flex-col bg-sidebar">
+				<nav className="dw-sidebar-fill flex h-full w-full flex-col">
 					<div className="h-[44px] shrink-0" />
 
 					{/*
@@ -190,7 +188,7 @@ export function SettingsShell() {
 				</nav>
 			</NavPane>
 
-			<main className="flex min-w-0 flex-1 flex-col">
+			<main className="dw-opaque flex min-w-0 flex-1 flex-col">
 				<div className="h-[44px] shrink-0" />
 				{/*
 				 * Most sections are a column of settings and scroll as one page. A few are
@@ -225,7 +223,7 @@ export function SettingsShell() {
 						aria-label={navOpen ? "隐藏设置导航" : "显示设置导航"}
 						aria-pressed={compact && navOpen}
 						onClick={toggleNav}
-						className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 active:scale-90 ${
+						className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ${
 							compact && navOpen ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 						}`}
 					>
@@ -250,7 +248,7 @@ export function SettingsShell() {
 						title="返回工作区"
 						aria-label="返回工作区"
 						onClick={() => setView("chat")}
-						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-150 hover:bg-card-hover hover:text-ink active:scale-90"
+						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-150 hover:bg-card-hover hover:text-ink"
 					>
 						<ArrowLeft size={15} strokeWidth={1.9} />
 					</button>
@@ -276,7 +274,7 @@ function SectionBody({ section }: { section: SettingsSection }) {
 		case "mcp":
 			return <McpSettings />;
 		case "plugins":
-			return <PluginsSettings />;
+			return <ExtensionsSettings />;
 		case "hooks":
 			return <HooksSettings />;
 		case "index":

@@ -168,7 +168,17 @@ export function Popover({
 			const clampX = (x: number) => Math.min(Math.max(minLeft, x), Math.max(minLeft, maxLeft));
 
 			let left: number;
-			let top: number;
+			/*
+			 * Which edge is pinned, not just where the card starts.
+			 *
+			 * A card that opens upwards used to be placed by `top: anchor.top - height`, computed
+			 * from the height it happened to have when it was measured. Content that arrives
+			 * afterwards — a breakdown replacing its skeleton rows — makes it taller, and since
+			 * the top edge is nailed down it grows *downwards*, over the trigger that opened it.
+			 * Pinning `bottom` to the trigger instead makes it grow away from it, so late content
+			 * moves the far edge and never the near one.
+			 */
+			let anchorEdge: { top: number } | { bottom: number };
 			let resolved: "top" | "bottom" | "right";
 
 			if (placement === "right") {
@@ -177,12 +187,13 @@ export function Popover({
 				resolved = "right";
 				const fitsRight = a.right + GAP + w <= maxLeft + w;
 				left = clampX(fitsRight ? a.right + GAP : a.left - GAP - w);
-				top = Math.min(Math.max(MARGIN, a.top - 4), window.innerHeight - box.height - MARGIN);
+				anchorEdge = { top: Math.min(Math.max(MARGIN, a.top - 4), window.innerHeight - box.height - MARGIN) };
 			} else {
 				resolved =
 					placement === "top" ? (fitsAbove || !fitsBelow ? "top" : "bottom") : fitsBelow || !fitsAbove ? "bottom" : "top";
 				left = clampX(align === "start" ? a.left : align === "center" ? a.left + a.width / 2 - w / 2 : a.right - w);
-				top = resolved === "top" ? a.top - box.height - GAP : a.bottom + GAP;
+				anchorEdge =
+					resolved === "top" ? { bottom: window.innerHeight - a.top + GAP } : { top: a.bottom + GAP };
 			}
 
 			setSide(resolved);
@@ -190,12 +201,18 @@ export function Popover({
 			setPlaced(true);
 			setStyle({
 				left,
-				top,
+				...anchorEdge,
 				// Leave intrinsic width intrinsic; only cap it, so content changes still reflow.
 				width,
 				maxWidth: limit,
-				// Tall menus in a short window scroll rather than run off the bottom edge.
-				maxHeight: window.innerHeight - MARGIN * 2,
+				// Capped at the gap it was placed in, so content arriving later scrolls inside the
+				// card rather than pushing its far edge off the screen.
+				maxHeight:
+					resolved === "top"
+						? a.top - GAP - MARGIN
+						: resolved === "bottom"
+							? window.innerHeight - a.bottom - GAP - MARGIN
+							: window.innerHeight - MARGIN * 2,
 				opacity: 1,
 			});
 		};

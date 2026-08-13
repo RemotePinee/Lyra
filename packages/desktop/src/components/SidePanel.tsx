@@ -367,7 +367,7 @@ export function SidePanel() {
 							title={expanded ? "退出全屏（Esc）" : "全屏显示"}
 							aria-label={expanded ? "退出全屏" : "全屏显示"}
 							onClick={toggleExpanded}
-							className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink active:scale-90"
+							className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
 						>
 							{expanded ? <Minimize2 size={12.5} strokeWidth={1.9} /> : <Maximize2 size={12.5} strokeWidth={1.9} />}
 						</button>
@@ -377,7 +377,7 @@ export function SidePanel() {
 						title="收起面板"
 						aria-label="收起面板"
 						onClick={closePanel}
-						className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink active:scale-90"
+						className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
 					>
 						<PanelRight size={13} strokeWidth={1.8} />
 					</button>
