@@ -81,6 +81,22 @@ export function GeneralSettings() {
 					}
 				/>
 				<Row
+					title="请求重试次数"
+					detail="模型请求因网络中断失败时的重试次数（含首次）。中继或代理不稳时值得调高；设为 1 则失败立即报错。已经开始输出的回答不会重试。"
+					control={
+						<Segmented
+							value={String(settings.retryAttempts)}
+							onChange={(value) => patch({ retryAttempts: Number(value) })}
+							options={[
+								{ value: "1", label: "不重试" },
+								{ value: "2", label: "2 次" },
+								{ value: "3", label: "3 次" },
+								{ value: "5", label: "5 次" },
+							]}
+						/>
+					}
+				/>
+				<Row
 					title="底部面板"
 					detail="在会话底部显示用量与状态信息"
 					control={

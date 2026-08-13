@@ -326,6 +326,7 @@ export class AgentSession {
 					tools: this.tools,
 					messages: this.messages,
 					thinking: thinking ?? this.settings.thinking,
+					retryAttempts: this.settings.retryAttempts,
 					signal: this.controller.signal,
 					state: this.state,
 					requestApproval: (request) => this.requestApproval(request),
@@ -544,6 +545,7 @@ export class AgentSession {
 				tools: allowed,
 				messages: [{ role: "user", content: [{ type: "text", text: input.prompt }], timestamp: Date.now() }],
 				thinking: this.settings.thinking,
+					retryAttempts: this.settings.retryAttempts,
 				signal: this.controller?.signal,
 				state: new Map<string, unknown>([
 					[SKILLS_KEY, this.skills],

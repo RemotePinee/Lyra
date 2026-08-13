@@ -23,6 +23,7 @@ import type {
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
 import { computeCost } from "../utils/pricing.ts";
+import { fetchWithRetry } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 import { describeFetchError, joinUrl, truncate } from "./anthropic-messages.ts";
 
@@ -90,16 +91,21 @@ async function* streamResponses(
 	const doFetch = options.fetch ?? globalThis.fetch;
 	let response: Response;
 	try {
-		response = await doFetch(joinUrl(provider.baseUrl, "/v1/responses"), {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				authorization: `Bearer ${provider.apiKey}`,
-				...provider.headers,
+		response = await fetchWithRetry(
+			doFetch,
+			joinUrl(provider.baseUrl, "/v1/responses"),
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${provider.apiKey}`,
+					...provider.headers,
+				},
+				body: JSON.stringify(body),
+				signal: options.signal,
 			},
-			body: JSON.stringify(body),
-			signal: options.signal,
-		});
+			{ attempts: options.retryAttempts, signal: options.signal, onRetry: options.onRetry },
+		);
 	} catch (error) {
 		partial.stopReason = options.signal?.aborted ? "aborted" : "error";
 		partial.errorMessage = describeFetchError(error, options.signal);

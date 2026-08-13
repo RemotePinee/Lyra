@@ -98,6 +98,13 @@ export interface Settings {
 	defaultModelId: string | null;
 	permissionMode: PermissionMode;
 	thinking: ThinkingLevel;
+	/**
+	 * Attempts per model request, including the first.
+	 *
+	 * Only the connection is retried — a stream already delivering text never is. Worth raising
+	 * on a flaky relay, worth setting to 1 when you would rather see failures immediately.
+	 */
+	retryAttempts: number;
 	/** Last level chosen above "off", restored when fast mode is switched back off. */
 	lastThinking?: ThinkingLevel;
 	appearance: AppearanceSettings;
@@ -135,6 +142,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	defaultModelId: null,
 	permissionMode: "auto",
 	thinking: "medium",
+	retryAttempts: 3,
 	appearance: DEFAULT_APPEARANCE,
 	hooks: [],
 	scheduledTasks: [],

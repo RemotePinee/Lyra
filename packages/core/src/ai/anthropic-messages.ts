@@ -21,6 +21,7 @@ import type {
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
 import { computeCost } from "../utils/pricing.ts";
+import { fetchWithRetry } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 
 const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
@@ -101,18 +102,23 @@ async function* streamAnthropic(
 	const doFetch = options.fetch ?? globalThis.fetch;
 	let response: Response;
 	try {
-		response = await doFetch(joinUrl(provider.baseUrl, "/v1/messages"), {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				"x-api-key": provider.apiKey,
-				"anthropic-version": "2023-06-01",
-				"anthropic-beta": "prompt-caching-2024-07-31",
-				...provider.headers,
+		response = await fetchWithRetry(
+			doFetch,
+			joinUrl(provider.baseUrl, "/v1/messages"),
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-api-key": provider.apiKey,
+					"anthropic-version": "2023-06-01",
+					"anthropic-beta": "prompt-caching-2024-07-31",
+					...provider.headers,
+				},
+				body: JSON.stringify(body),
+				signal: options.signal,
 			},
-			body: JSON.stringify(body),
-			signal: options.signal,
-		});
+			{ attempts: options.retryAttempts, signal: options.signal, onRetry: options.onRetry },
+		);
 	} catch (error) {
 		partial.stopReason = options.signal?.aborted ? "aborted" : "error";
 		partial.errorMessage = describeFetchError(error, options.signal);

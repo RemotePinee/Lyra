@@ -300,6 +300,14 @@ export interface RequestOptions {
 	fetch?: typeof globalThis.fetch;
 	/** Inspect or rewrite the outgoing body — used by the request inspector in the UI. */
 	onPayload?: (payload: unknown) => void;
+	/**
+	 * How many times to attempt the request, including the first.
+	 *
+	 * Only the connection is retried, never a stream already in flight. 1 disables it.
+	 */
+	retryAttempts?: number;
+	/** Told about each wait, so the UI can say why a turn is taking longer than usual. */
+	onRetry?: (info: { attempt: number; delayMs: number; reason: string }) => void;
 }
 
 export interface LlmContext {

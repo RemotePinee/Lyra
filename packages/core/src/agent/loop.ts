@@ -34,6 +34,8 @@ export interface AgentRunConfig {
 	tools: Tool[];
 	messages: Message[];
 	thinking?: ThinkingLevel;
+	/** Attempts per request, including the first; see `Settings.retryAttempts`. */
+	retryAttempts?: number;
 	maxTokens?: number;
 	temperature?: number;
 	maxTurns?: number;
@@ -182,6 +184,21 @@ async function streamTurn(
 		thinking: config.thinking,
 		maxTokens: config.maxTokens,
 		temperature: config.temperature,
+		retryAttempts: config.retryAttempts,
+		/*
+		 * Said out loud, because the alternative is a turn that appears to hang.
+		 *
+		 * A retry costs seconds of silence at a moment when the user is already waiting, and
+		 * silence is indistinguishable from a stall. One line naming the cause turns it into
+		 * something that is visibly being handled.
+		 */
+		onRetry: ({ attempt, delayMs, reason }) => {
+			void emit({
+				type: "notice",
+				level: "info",
+				message: `连接失败（${reason}），${Math.round(delayMs / 1000)} 秒后重试（第 ${attempt} 次）`,
+			});
+		},
 	});
 
 	let started = false;

@@ -127,6 +127,7 @@ export class SideChat {
 					tools: [dispatchTaskTool(this.main)],
 					messages: this.messages,
 					thinking: options.thinking ?? this.settings.thinking,
+					retryAttempts: this.settings.retryAttempts,
 					signal: this.controller.signal,
 					maxTurns: 12,
 				},
