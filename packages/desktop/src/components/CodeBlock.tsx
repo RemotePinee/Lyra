@@ -67,7 +67,7 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 					setCopied(true);
 					setTimeout(() => setCopied(false), 1400);
 				}}
-				className="absolute top-2 right-2 hidden rounded-md border border-line bg-elevated p-1.5 text-ink-muted transition-colors group-hover:block hover:text-ink"
+				className="absolute top-2 right-2 hidden rounded-md border border-line bg-float p-1.5 text-ink-muted transition-colors group-hover:block hover:text-ink"
 			>
 				{copied ? <Check size={12} strokeWidth={2} className="text-ok" /> : <Copy size={12} strokeWidth={1.9} />}
 			</button>

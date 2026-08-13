@@ -44,6 +44,12 @@
   --color-card-hover: #2a2a2a;
   --color-input: #1f1f1f;
   --color-elevated: #2c2c2c;
+  /*
+   * Declared here as well as at runtime, so Tailwind emits a `bg-float` utility for it.
+   * The theme overwrites the value; without this line the class would not exist at all and
+   * anything using it would come out fully transparent.
+   */
+  --color-float: #1f1f1f;
 
   --color-line: #2e2e2e;
   --color-line-soft: #262626;

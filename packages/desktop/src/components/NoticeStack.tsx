@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useApp } from "../store.ts";
 
 const TONE: Record<string, string> = {
-	info: "border-line bg-elevated text-ink-muted",
+	info: "border-line bg-float text-ink-muted",
 	warn: "border-accent/40 bg-accent/10 text-accent",
 	error: "border-danger/40 bg-danger/10 text-danger",
 };

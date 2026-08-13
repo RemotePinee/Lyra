@@ -144,7 +144,7 @@ export function Composer() {
 										<button
 											type="button"
 											onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
-											className="absolute -top-1.5 -right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-elevated text-ink-muted transition-colors hover:text-ink"
+											className="absolute -top-1.5 -right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-line bg-float text-ink-muted transition-colors hover:text-ink"
 										>
 											<X size={11} strokeWidth={2.2} />
 										</button>
