@@ -2,7 +2,6 @@ import { ExternalLink, Maximize2, Minimize2, RotateCw } from "lucide-react";
 import { useState } from "react";
 
 import { IconButton } from "./IconButton.tsx";
-import { Text } from "./Text.tsx";
 import { useSide } from "../sideStore.ts";
 
 export interface PreviewInfo {
@@ -23,6 +22,12 @@ export function previewUrl(preview: PreviewInfo): string {
  * in one second what a fenced code block takes a paragraph to explain, and a layout put up for
  * approval is answered by looking at it. So it renders here, in place, already interactive.
  *
+ * It is a piece of the conversation, not an application window sitting in one. There was a title
+ * bar here — a name and three buttons across the top, on a card with its own border — and it
+ * announced itself twice: the page nearly always opens with its own heading, and the bar repeated
+ * it above a strip of chrome that did nothing until you wanted it. Now the page is simply there,
+ * and the controls surface on hover the way a message's own actions do.
+ *
  * Inside a sandboxed frame with `allow-scripts` and nothing else — no same-origin, so it cannot
  * reach this window; no top-navigation, so it cannot replace the app with something else. It is
  * served from its own `dw-preview://` origin rather than `file://`, which is what keeps it from
@@ -37,18 +42,40 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 	const openPreview = useSide((s) => s.openPreview);
 
 	return (
-		<div className="dw-enter my-2 overflow-hidden rounded-[12px] border border-line bg-card/30">
+		<div
+			className={`dw-enter relative my-2.5 overflow-hidden rounded-[12px] border border-line-soft transition-[height] duration-200 ${
+				tall ? "h-[620px]" : "h-[440px]"
+			}`}
+		>
 			{/*
-			 * A title and its controls, not an imitation of a window.
+			 * The frame fades in over the card's own colour rather than appearing on white.
 			 *
-			 * This used to open with three grey dots standing in for macOS traffic lights. They
-			 * decorated the card as a browser it is not — the frame already reads as a page, and
-			 * the dots were the one piece of chrome here that did no work.
+			 * Every preview starts as a blank document, and a blank document is white — which on a
+			 * dark theme is a flash bright enough to be the most noticeable thing about the whole
+			 * feature. Holding it back until the page has painted costs nothing and removes it.
 			 */}
-			<div className="flex h-9 items-center gap-2 border-b border-line-soft px-3">
-				<Text size="label" tone="muted" className="min-w-0 flex-1 truncate">
-					{preview.title}
-				</Text>
+			<div className="h-full w-full bg-card">
+				<iframe
+					key={nonce}
+					src={previewUrl(preview)}
+					title={preview.title}
+					sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals"
+					onLoad={() => setReady(true)}
+					className={`block h-full w-full transition-opacity duration-200 ${ready ? "opacity-100" : "opacity-0"}`}
+				/>
+			</div>
+
+			{/*
+			 * Floating over the page, faint until you go for them.
+			 *
+			 * Elsewhere in the app controls like these stay hidden until the pointer is on what they
+			 * act on. Not here: the page fills the card, so nearly every position the pointer can
+			 * take is inside a cross-process frame, and whether that hover reaches this document is
+			 * not something that could be established either way. Rather than stake the only way to
+			 * rerun or reopen a preview on it, they stay — quiet enough to read as part of the page,
+			 * and solid the moment the pointer arrives, which is a hover this document does own.
+			 */}
+			<div className="dw-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
 				{/*
 				 * Taller, because the frame cannot ask for a size.
 				 *
@@ -83,24 +110,6 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 						openPreview(preview);
 						openTab("browser");
 					}}
-				/>
-			</div>
-
-			{/*
-			 * The frame fades in over the card's own colour rather than appearing on white.
-			 *
-			 * Every preview starts as a blank document, and a blank document is white — which on a
-			 * dark theme is a flash bright enough to be the most noticeable thing about the whole
-			 * feature. Holding it back until the page has painted costs nothing and removes it.
-			 */}
-			<div className={`relative w-full bg-card transition-[height] duration-200 ${tall ? "h-[620px]" : "h-[440px]"}`}>
-				<iframe
-					key={nonce}
-					src={previewUrl(preview)}
-					title={preview.title}
-					sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals"
-					onLoad={() => setReady(true)}
-					className={`block h-full w-full transition-opacity duration-200 ${ready ? "opacity-100" : "opacity-0"}`}
 				/>
 			</div>
 		</div>

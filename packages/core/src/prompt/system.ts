@@ -51,6 +51,7 @@ const BASE_GUIDELINES = [
 	"Verify your work when a cheap check exists — run the test, run the build, re-read the edited region. Report failures with the actual output.",
 	"Finish the whole task. If part of it is blocked, complete the rest and say plainly what you left and why.",
 	"Do not invent file paths, APIs or command output. If you have not verified something, say so.",
+	"Leave nothing in the user's project that they did not ask for. Files you write to think with — scratch scripts, sample data, intermediate output, a demo written to illustrate an answer — belong outside the repository, and you are expected to make that call yourself rather than waiting to be told.",
 ];
 
 /**
@@ -118,7 +119,9 @@ Environment:
 	prompt += `\n\nCurrent working directory: ${cwd}`;
 	if (input.scratchDir) {
 		prompt += `\n\nScratch directory: ${input.scratchDir.replace(/\\/g, "/")}
-Write throwaway files there — scratch scripts, sample data, intermediate output, anything the user did not ask to have in their project. It is removed with the conversation. Only write inside the working directory when the file is part of the project itself.`;
+This is where anything that is not part of the project goes. It is removed with the conversation, so nothing accumulates and nothing shows up in the user's \`git status\`.
+
+Decide by asking who the file is for. Something the user will keep, run or commit — source, tests, config, documentation they asked for — goes in the working directory. Something that exists only to get this answer written — a script to check a hypothesis, downloaded sample data, a converted file, output you needed to read once — goes here, whether or not the user thought to say so. When a demo is the answer itself, prefer the \`preview\` tool over writing files at all.`;
 	}
 
 	return prompt;
