@@ -171,17 +171,19 @@ export function CodeEditor({
 			 */
 			const panel = element.querySelector<HTMLElement>(".cm-panel.cm-search");
 			// The app's floating surface, so the find card matches every menu and popover in it.
-			panel?.classList.add("dw-glass");
+			panel?.classList.add("dw-glass", "dw-pop-down");
 			if (panel && !panel.querySelector("[name=dw-replace-toggle]")) {
 				const toggle = document.createElement("button");
 				toggle.setAttribute("name", "dw-replace-toggle");
 				toggle.setAttribute("type", "button");
 				toggle.setAttribute("aria-label", "显示替换");
 				toggle.dataset.dwTip = "显示替换";
+				toggle.innerHTML = CHEVRON_RIGHT;
 				toggle.addEventListener("click", () => {
 					const open = panel.classList.toggle("dw-replace-open");
 					toggle.setAttribute("aria-label", open ? "隐藏替换" : "显示替换");
 					toggle.dataset.dwTip = open ? "隐藏替换" : "显示替换";
+					toggle.innerHTML = open ? CHEVRON_DOWN : CHEVRON_RIGHT;
 					if (open) panel.querySelector<HTMLInputElement>("input[name=replace]")?.focus();
 				});
 				panel.prepend(toggle);
@@ -189,12 +191,21 @@ export function CodeEditor({
 
 			for (const [name, hint] of Object.entries(SEARCH_TIPS)) {
 				const button = element.querySelector<HTMLElement>(`.cm-search button[name=${name}]`);
-				if (button && !button.dataset.dwTip) button.dataset.dwTip = hint;
+				if (!button || button.querySelector("svg")) continue;
+				// The icon replaces the word, so the word has to survive as the accessible name.
+				button.setAttribute("aria-label", hint);
+				button.dataset.dwTip = hint;
+				button.innerHTML = SEARCH_ICONS[name] ?? "";
 			}
 			// The options are labels, and their text is hidden, so they need one too.
 			const options = element.querySelectorAll<HTMLElement>(".cm-search label");
 			for (const [i, hint] of ["区分大小写", "正则表达式", "全词匹配"].entries()) {
-				if (options[i] && !options[i].dataset.dwTip) options[i].dataset.dwTip = hint;
+				const option = options[i];
+				if (!option || option.querySelector("svg")) continue;
+				option.setAttribute("aria-label", hint);
+				option.dataset.dwTip = hint;
+				// Appended, not assigned: the checkbox inside is what holds the option's state.
+				option.insertAdjacentHTML("beforeend", OPTION_ICONS[i] ?? "");
 			}
 		};
 		const panels = new MutationObserver(labelPanel);
@@ -259,6 +270,48 @@ export function CodeEditor({
  * Keys are CodeMirror's own English strings; anything not listed keeps the original.
  */
 /** Hover text for the icon-only buttons, keyed by CodeMirror's own `name` attribute. */
+/**
+ * The find bar's icons, as markup.
+ *
+ * Same set and same geometry as the lucide icons the rest of the app imports as components —
+ * CodeMirror builds these buttons itself, so they cannot take a React child, and glyphs like
+ * `↓` or `≡` borrowed from the text font sat next to real icons everywhere else and read as a
+ * different program's toolbar.
+ */
+const icon = (paths: string, size = 13) =>
+	`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+
+const SEARCH_ICONS: Record<string, string> = {
+	next: icon('<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>'),
+	prev: icon('<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>'),
+	select: icon('<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>'),
+	replace: icon(
+		'<path d="M14 4a1 1 0 0 1 1-1"/><path d="M15 10a1 1 0 0 1-1-1"/><path d="M21 4a1 1 0 0 0-1-1"/><path d="M21 9a1 1 0 0 1-1 1"/><path d="m3 7 3 3 3-3"/><path d="M6 10V5a2 2 0 0 1 2-2h2"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+		14.5,
+	),
+	replaceAll: icon(
+		'<path d="M14 14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1"/><path d="M14 4a1 1 0 0 1 1-1"/><path d="M15 10a1 1 0 0 1-1-1"/><path d="M19 14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1"/><path d="M21 4a1 1 0 0 0-1-1"/><path d="M21 9a1 1 0 0 1-1 1"/><path d="m3 7 3 3 3-3"/><path d="M6 10V5a2 2 0 0 1 2-2h2"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+		14.5,
+	),
+	close: icon('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+};
+
+/** Three options, in lucide's own find-bar icons. */
+const OPTION_ICONS = [
+	icon(
+		'<path d="m2 16 4.039-9.69a.5.5 0 0 1 .923 0L11 16"/><path d="M22 9v7"/><path d="M3.304 13h6.392"/><circle cx="18.5" cy="12.5" r="3.5"/>',
+	),
+	icon(
+		'<path d="M17 3v10"/><path d="m12.67 5.5 8.66 5"/><path d="m12.67 10.5 8.66-5"/><path d="M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2z"/>',
+	),
+	icon(
+		'<circle cx="7" cy="12" r="3"/><path d="M10 9v6"/><circle cx="17" cy="12" r="3"/><path d="M14 7v8"/><path d="M22 17v1c0 .5-.5 1-1 1H3c-.5 0-1-.5-1-1v-1"/>',
+	),
+];
+
+const CHEVRON_RIGHT = icon('<path d="m9 18 6-6-6-6"/>');
+const CHEVRON_DOWN = icon('<path d="m6 9 6 6 6-6"/>');
+
 const SEARCH_TIPS: Record<string, string> = {
 	next: "下一个",
 	prev: "上一个",
@@ -372,6 +425,8 @@ function editorTheme(): Extension {
 		 * which is what lets the replace actions line up under the navigation.
 		 */
 		".cm-panel.cm-search": {
+			// The card grows from the corner it is pinned to, not from its own centre.
+			transformOrigin: "top right",
 			width: "440px",
 			maxWidth: "100%",
 			margin: "8px 10px",
@@ -426,8 +481,6 @@ function editorTheme(): Extension {
 			fontSize: "9px",
 			lineHeight: "22px",
 		},
-		".cm-panel.cm-search button[name=dw-replace-toggle]::before": { content: '"\\25B6"' },
-		".cm-panel.cm-search.dw-replace-open button[name=dw-replace-toggle]::before": { content: '"\\25BC"' },
 		".cm-panel.cm-search button[name=dw-replace-toggle]:hover": { color: "var(--color-ink)" },
 		".cm-panel.cm-search input[name=replace], .cm-panel.cm-search button[name=replace], .cm-panel.cm-search button[name=replaceAll], .cm-panel.cm-search::before":
 			{ display: "none" },
@@ -472,23 +525,9 @@ function editorTheme(): Extension {
 			height: "20px",
 			padding: 0,
 			fontSize: 0,
-			color: "transparent",
+			color: "var(--color-ink-faint)",
 		},
-		".cm-panel.cm-search button[name]::before": {
-			position: "absolute",
-			inset: 0,
-			display: "flex",
-			alignItems: "center",
-			justifyContent: "center",
-			fontSize: "13px",
-			color: "var(--color-ink-muted)",
-		},
-		".cm-panel.cm-search button[name=next]::before": { content: '"\\2193"' },
-		".cm-panel.cm-search button[name=prev]::before": { content: '"\\2191"' },
-		".cm-panel.cm-search button[name=select]::before": { content: '"\\2261"', fontSize: "14px" },
-		".cm-panel.cm-search button[name=replace]::before": { content: '"\\21B5"' },
-		".cm-panel.cm-search button[name=replaceAll]::before": { content: '"\\21C9"' },
-		".cm-panel.cm-search button[name]:hover::before": { color: "var(--color-ink)" },
+		".cm-panel.cm-search button[name]:hover": { color: "var(--color-ink)" },
 
 		/*
 		 * The options become the three glyphs every find bar uses, on the first row.
@@ -507,23 +546,9 @@ function editorTheme(): Extension {
 			height: "20px",
 			borderRadius: "6px",
 			fontSize: 0,
-			color: "transparent",
-		},
-		".cm-panel.cm-search label::before": {
-			position: "absolute",
-			inset: 0,
-			display: "flex",
-			alignItems: "center",
-			justifyContent: "center",
-			fontFamily: "var(--dw-code-font)",
-			fontSize: "11px",
 			color: "var(--color-ink-faint)",
 		},
-		".cm-panel.cm-search label:nth-of-type(1)::before": { content: '"Aa"' },
-		".cm-panel.cm-search label:nth-of-type(2)::before": { content: '".*"' },
-		".cm-panel.cm-search label:nth-of-type(3)::before": { content: '"ab"', textDecoration: "underline" },
-		".cm-panel.cm-search label:hover": { background: "var(--color-card-hover)" },
-		".cm-panel.cm-search label:hover::before": { color: "var(--color-ink)" },
+		".cm-panel.cm-search label:hover": { background: "var(--color-card-hover)", color: "var(--color-ink)" },
 		// The checkbox itself is redundant once the tile can show its own state.
 		".cm-panel.cm-search label input[type=checkbox]": {
 			position: "absolute",
@@ -532,8 +557,7 @@ function editorTheme(): Extension {
 			margin: 0,
 			opacity: 0,
 		},
-		".cm-panel.cm-search label:has(:checked)": { background: "var(--color-card-hover)" },
-		".cm-panel.cm-search label:has(:checked)::before": { color: "var(--color-accent)" },
+		".cm-panel.cm-search label:has(:checked)": { background: "var(--color-card-hover)", color: "var(--color-accent)" },
 		".cm-button": {
 			backgroundColor: "transparent",
 			backgroundImage: "none",
@@ -566,7 +590,6 @@ function editorTheme(): Extension {
 			background: "transparent",
 			padding: 0,
 		},
-		".cm-panel.cm-search button[name=close]::before": { content: '"\\00D7"', fontSize: "15px" },
 		".cm-panel.cm-search button[name=close]:hover": { background: "var(--color-card-hover)", borderRadius: "5px" },
 		".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 24%, transparent)" },
 		".cm-searchMatch.cm-searchMatch-selected": {
