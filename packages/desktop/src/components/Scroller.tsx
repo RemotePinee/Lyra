@@ -115,7 +115,7 @@ export function Scroller({
 	return (
 		<div
 			style={fadeColor ? ({ "--dw-fade-color": fadeColor } as React.CSSProperties) : undefined}
-			className={`dw-scroll-host relative min-h-0 ${className}`}
+			className={`dw-scroll-host relative flex min-h-0 flex-col ${className}`}
 		>
 			<div
 				ref={viewport}
@@ -123,7 +123,18 @@ export function Scroller({
 					measure();
 					onScroll?.(event.currentTarget);
 				}}
-				className={`dw-scroll-view h-full overflow-y-auto overscroll-contain ${contentClassName}`}
+				/*
+				 * A flex child, not `height: 100%`.
+				 *
+				 * `height: 100%` needs a parent with a *resolved* height. Given one bounded by
+				 * `max-height` instead — which is how every menu here is sized — it resolves to
+				 * `auto`, the viewport grows with its content, and nothing scrolls: the branch
+				 * list simply ran off the bottom of its own menu. Percentage `max-height` fails
+				 * the same way, for the same reason. Making the host a flex column and this its
+				 * item hands the sizing to the flex algorithm, which honours both a fixed height
+				 * and a `max-height` — so one Scroller works in a pane and in a popover.
+				 */
+				className={`dw-scroll-view min-h-0 flex-auto overflow-y-auto overscroll-contain ${contentClassName}`}
 			>
 				{children}
 			</div>

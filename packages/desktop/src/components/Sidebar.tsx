@@ -281,9 +281,17 @@ function ProjectGroup({
 			{/* Same hover-owner arrangement as the session rows: the fill belongs to the row so
 			    reaching for the menu button does not drop it. */}
 			<div
-				className={`dw-scroll group/project relative rounded-lg transition-colors duration-150 ${
-					active ? "bg-card-hover" : "hover:bg-card-hover active:bg-elevated"
-				}`}
+				/*
+				 * The open project is not filled, unlike the open session.
+				 *
+				 * Both used to take the same fill, so an open project sitting directly above its
+				 * own open session put two identical blocks four pixels apart — one continuous
+				 * grey slab with no hierarchy left in it. A project is a heading for the sessions
+				 * under it, not one of the things you pick between; it says it is open by the
+				 * weight of its name and the colour of its icon, and keeps the fill for hover,
+				 * where it means "you are about to press this".
+				 */
+				className="dw-scroll group/project relative rounded-lg transition-colors duration-150 hover:bg-card-hover active:bg-elevated"
 				onContextMenu={(event) => {
 					event.preventDefault();
 					// At the cursor: right-click acts on the row as a whole, so there is no one
@@ -299,9 +307,13 @@ function ProjectGroup({
 					}}
 					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-[13px] transition-colors duration-150 ${
 						compact ? "h-[40px]" : "h-[31px]"
-					} ${active ? "text-ink" : "text-ink group-hover/project:text-ink"}`}
+					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
 				>
-					<Folder size={15} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
+					<Folder
+						size={15}
+						strokeWidth={1.8}
+						className={`shrink-0 ${active ? "text-accent" : "text-ink-muted"}`}
+					/>
 					<ScrollText text={group.name} className="min-w-0 flex-1" />
 				</button>
 
