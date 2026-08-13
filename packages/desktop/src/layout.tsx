@@ -301,6 +301,15 @@ export function NavPane({
 			// `inert`, not just aria-hidden: a closed pane is otherwise still in the tab order,
 			// so Tab walks into something nobody can see.
 			inert={!navOpen}
+			/*
+			 * Which form it is in, so the fill can differ.
+			 *
+			 * Beside the content it is translucent on purpose — that is the point of the
+			 * vibrancy, and what shows through is the desktop. As a drawer it lies over the
+			 * transcript, and 72% opacity means the conversation reads straight through the
+			 * navigation: two columns of text on top of each other, neither legible.
+			 */
+			data-pane={compact ? "drawer" : "beside"}
 			className={`${compact ? "fixed inset-0 z-30 shadow-2xl shadow-black/60" : "relative shrink-0 overflow-hidden"} ${
 				snap ? "transition-none" : "transition-[margin-left,opacity,transform] duration-[220ms] ease-out"
 			}`}
