@@ -6,7 +6,9 @@
  * CodeMirror extensions; the transcript renders the same tags to spans without an editor.
  */
 
-import { HighlightStyle, type Language } from "@codemirror/language";
+import { HighlightStyle, type Language, syntaxTree } from "@codemirror/language";
+import { RangeSetBuilder } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { highlightTree, tags as t } from "@lezer/highlight";
 
@@ -23,10 +25,29 @@ export function highlightStyle(): HighlightStyle {
 		{ tag: [t.keyword, t.modifier, t.controlKeyword], color: c("#8a45a5", "#c39ac9") },
 		{ tag: [t.definitionKeyword, t.moduleKeyword], color: c("#8a45a5", "#c39ac9") },
 		{ tag: [t.string, t.special(t.string)], color: c("#2f7d4f", "#7fc98a") },
-		{ tag: [t.number, t.bool, t.null, t.atom], color: c("#a3562a", "#dd9160") },
+		{ tag: [t.number, t.bool, t.null, t.atom], color: ATOM },
 		{ tag: [t.comment, t.blockComment, t.lineComment], color: c("#8a8d90", "#7e8184"), fontStyle: "italic" },
 		{ tag: [t.function(t.variableName), t.function(t.propertyName)], color: c("#2b62c6", "#79b8ff") },
-		{ tag: [t.definition(t.variableName), t.definition(t.propertyName)], color: c("#1a1c1f", "#ededed") },
+		/*
+		 * A key is a key, however the grammar spells it.
+		 *
+		 * JSON marks its keys `propertyName`, but YAML — and JavaScript object literals — mark
+		 * theirs `definition(propertyName)`. Grouped with `definition(variableName)` it inherited
+		 * the plain text colour, which is why a YAML file came out as an undifferentiated wall:
+		 * every key the same weight as its value, with only quoted strings picking up any colour.
+		 */
+		{ tag: [t.definition(t.propertyName)], color: c("#2b62c6", "#79b8ff") },
+		{ tag: [t.definition(t.variableName)], color: c("#1a1c1f", "#ededed") },
+		/*
+		 * Unquoted scalars, which is most of a YAML file's right-hand side.
+		 *
+		 * The grammar cannot tell `true` from `1.2.3` from a bare word — all three are `Literal`
+		 * — so this cannot be split into booleans and numbers the way a typed language can. Plain
+		 * text is the honest rendering: the key carries the colour, the value carries the weight.
+		 */
+		{ tag: [t.content], color: c("#1a1c1f", "#ededed") },
+		// Anchors and aliases (&name, *name) — references, so they read like other labels.
+		{ tag: [t.labelName], color: c("#8a45a5", "#c39ac9") },
 		{ tag: [t.typeName, t.className, t.namespace], color: c("#0f7d78", "#6fd2c8") },
 		{ tag: [t.propertyName], color: c("#2b62c6", "#79b8ff") },
 		{ tag: [t.variableName], color: c("#1a1c1f", "#ededed") },
@@ -46,6 +67,57 @@ export function highlightStyle(): HighlightStyle {
 }
 
 /** Everything the editor knows how to colour, keyed by extension. */
+/*
+ * Booleans and numbers in YAML, which the grammar cannot label for us.
+ *
+ * Lezer marks every unquoted scalar `Literal` — `true`, `1.2.3` and a bare word are the same
+ * node, because in YAML they genuinely are until something decides how to read them. That left
+ * the right-hand side of a config file entirely uncoloured while JSON, whose grammar does carry
+ * types, came out fully lit. This looks at the text of each `Literal` and marks the ones that
+ * are unambiguously a boolean, a null or a number, which is the same judgement a reader makes.
+ *
+ * Keys are `Literal` too, under a `Key` parent — skipped, since they already have a colour.
+ */
+/** Shared with the editor theme, which colours the decorator below. */
+export const ATOM = "light-dark(#a3562a, #dd9160)";
+
+const YAML_BOOL = /^(?:true|false|yes|no|on|off)$/i;
+const YAML_NULL = /^(?:null|~)$/i;
+const YAML_NUMBER = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/;
+
+function yamlScalarMarks(view: EditorView): DecorationSet {
+	const builder = new RangeSetBuilder<Decoration>();
+	for (const { from, to } of view.visibleRanges) {
+		syntaxTree(view.state).iterate({
+			from,
+			to,
+			enter: (node) => {
+				if (node.name !== "Literal" || node.node.parent?.name === "Key") return;
+				const text = view.state.doc.sliceString(node.from, node.to);
+				if (YAML_BOOL.test(text) || YAML_NULL.test(text) || YAML_NUMBER.test(text)) {
+					builder.add(node.from, node.to, ATOM_MARK);
+				}
+			},
+		});
+	}
+	return builder.finish();
+}
+
+const ATOM_MARK = Decoration.mark({ class: "dw-yaml-atom" });
+
+const yamlScalars = ViewPlugin.fromClass(
+	class {
+		decorations: DecorationSet;
+		constructor(view: EditorView) {
+			this.decorations = yamlScalarMarks(view);
+		}
+		update(update: ViewUpdate) {
+			if (update.docChanged || update.viewportChanged) this.decorations = yamlScalarMarks(update.view);
+		}
+	},
+	{ decorations: (plugin) => plugin.decorations },
+);
+
 export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	ts: async () => (await import("@codemirror/lang-javascript")).javascript({ typescript: true }),
 	mts: async () => (await import("@codemirror/lang-javascript")).javascript({ typescript: true }),
@@ -79,8 +151,8 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	hpp: async () => (await import("@codemirror/lang-cpp")).cpp(),
 	cc: async () => (await import("@codemirror/lang-cpp")).cpp(),
 	sql: async () => (await import("@codemirror/lang-sql")).sql(),
-	yaml: async () => (await import("@codemirror/lang-yaml")).yaml(),
-	yml: async () => (await import("@codemirror/lang-yaml")).yaml(),
+	yaml: async () => [(await import("@codemirror/lang-yaml")).yaml(), yamlScalars],
+	yml: async () => [(await import("@codemirror/lang-yaml")).yaml(), yamlScalars],
 };
 
 async function languageFor(path: string): Promise<Extension | null> {

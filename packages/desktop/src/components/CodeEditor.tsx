@@ -19,7 +19,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 
-import { GRAMMARS, highlightStyle } from "./highlight.ts";
+import { ATOM, GRAMMARS, highlightStyle } from "./highlight.ts";
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
 
 /**
@@ -619,6 +619,13 @@ function editorTheme(): Extension {
 			padding: 0,
 		},
 		".cm-panel.cm-search button[name=close]:hover": { background: "var(--color-card-hover)", borderRadius: "5px" },
+		/* Booleans, nulls and numbers in YAML, marked by the plugin in highlight.ts. */
+		/*
+		 * The decoration wraps the syntax span rather than the other way round, so colouring only
+		 * the outer element leaves the inner one — which carries the grammar's own plain-text
+		 * colour — to win. Both, and the value takes the mark's colour either way.
+		 */
+		".dw-yaml-atom, .dw-yaml-atom span": { color: ATOM },
 		".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 24%, transparent)" },
 		".cm-searchMatch.cm-searchMatch-selected": {
 			backgroundColor: "color-mix(in srgb, var(--color-accent) 42%, transparent)",
