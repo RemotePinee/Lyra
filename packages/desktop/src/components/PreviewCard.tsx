@@ -38,13 +38,14 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 
 	return (
 		<div className="dw-enter my-2 overflow-hidden rounded-[12px] border border-line bg-card/30">
+			{/*
+			 * A title and its controls, not an imitation of a window.
+			 *
+			 * This used to open with three grey dots standing in for macOS traffic lights. They
+			 * decorated the card as a browser it is not — the frame already reads as a page, and
+			 * the dots were the one piece of chrome here that did no work.
+			 */}
 			<div className="flex h-9 items-center gap-2 border-b border-line-soft px-3">
-				{/* Enough to say "this is a running page", without dressing it up as a browser. */}
-				<span className="flex gap-1" aria-hidden>
-					<span className="h-[7px] w-[7px] rounded-full bg-line" />
-					<span className="h-[7px] w-[7px] rounded-full bg-line" />
-					<span className="h-[7px] w-[7px] rounded-full bg-line" />
-				</span>
 				<Text size="label" tone="muted" className="min-w-0 flex-1 truncate">
 					{preview.title}
 				</Text>
