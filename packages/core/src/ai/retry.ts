@@ -123,3 +123,26 @@ function describeCause(error: unknown): string {
 	const cause = (error as { cause?: { code?: string } }).cause;
 	return cause?.code ?? error.message;
 }
+
+/**
+ * A tool call's id, invented if the provider did not supply one.
+ *
+ * The id is the only thing tying a call to its result and to the card on screen. A provider
+ * that omits it — some relays drop `call_id` on a truncated stream — used to yield the empty
+ * string for every such call, so they all collided on one entry: the newest call reset the
+ * shared record to "running" and every earlier card in the transcript started spinning again,
+ * all showing the same elapsed time because they were all reading the same object.
+ *
+ * The fallback is remembered per output index, because one call arrives across several events
+ * and they have to agree on what it is called.
+ */
+export function toolCallId(given: unknown, outputIndex: number, invented: Map<number, string>): string {
+	const supplied = String(given ?? "").trim();
+	if (supplied) return supplied;
+	let generated = invented.get(outputIndex);
+	if (!generated) {
+		generated = `dw-call-${outputIndex}-${Math.random().toString(36).slice(2, 10)}`;
+		invented.set(outputIndex, generated);
+	}
+	return generated;
+}

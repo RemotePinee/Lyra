@@ -21,7 +21,7 @@ import type {
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
 import { computeCost } from "../utils/pricing.ts";
-import { fetchWithRetry } from "./retry.ts";
+import { fetchWithRetry, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 
 const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
@@ -99,6 +99,9 @@ async function* streamAnthropic(
 
 	options.onPayload?.(body);
 
+	/** Stand-in ids for calls the provider did not name, keyed by block index. */
+	const inventedIds = new Map<number, string>();
+
 	const doFetch = options.fetch ?? globalThis.fetch;
 	let response: Response;
 	try {
@@ -173,13 +176,13 @@ async function* streamAnthropic(
 					} else if (block.type === "tool_use") {
 						partial.content.push({
 							type: "toolCall",
-							id: String(block.id ?? ""),
+							id: toolCallId(block.id, idx, inventedIds),
 							name: String(block.name ?? ""),
 							arguments: {},
 							argumentsText: "",
 						});
 						blocks.set(idx, { kind: "toolCall", contentIndex: partial.content.length - 1, raw: "" });
-						yield { type: "toolcall_start", index: idx, id: String(block.id ?? ""), name: String(block.name ?? "") };
+						yield { type: "toolcall_start", index: idx, id: toolCallId(block.id, idx, inventedIds), name: String(block.name ?? "") };
 					}
 					break;
 				}

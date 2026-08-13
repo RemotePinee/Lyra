@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fetchWithRetry, isRetryableError, isRetryableStatus, retryDelay } from "../src/ai/retry.ts";
+import { fetchWithRetry, isRetryableError, isRetryableStatus, retryDelay, toolCallId } from "../src/ai/retry.ts";
 
 const socketError = () => Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } });
 const noSleep = async () => {};
@@ -126,4 +126,22 @@ test("the server's own Retry-After wins over the backoff curve", () => {
 	// Without a header the curve grows, and stays inside its ceiling.
 	assert.ok(retryDelay(1) < retryDelay(3));
 	assert.ok(retryDelay(9) <= 20_000);
+});
+
+test("a call with no id gets its own, and keeps it across events", () => {
+	const invented = new Map<number, string>();
+	// Two events for the same call agree, because the fallback is remembered by index.
+	const first = toolCallId(undefined, 0, invented);
+	assert.equal(toolCallId(undefined, 0, invented), first);
+	// A different call gets a different id, which is the whole point: they used to collide on
+	// the empty string, so the newest call reset the record every earlier card was reading.
+	assert.notEqual(toolCallId(undefined, 1, invented), first);
+	assert.notEqual(toolCallId("", 2, invented), first);
+});
+
+test("a supplied id is used unchanged", () => {
+	const invented = new Map<number, string>();
+	assert.equal(toolCallId("call_abc", 0, invented), "call_abc");
+	// Whitespace-only is not an id.
+	assert.notEqual(toolCallId("   ", 1, invented), "   ");
 });

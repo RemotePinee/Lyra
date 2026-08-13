@@ -23,7 +23,7 @@ import type {
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
 import { computeCost } from "../utils/pricing.ts";
-import { fetchWithRetry } from "./retry.ts";
+import { fetchWithRetry, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 import { describeFetchError, joinUrl, truncate } from "./anthropic-messages.ts";
 
@@ -125,6 +125,8 @@ async function* streamResponses(
 
 	/** output_index -> position in partial.content, so deltas can find their block. */
 	const items = new Map<number, { kind: "text" | "thinking" | "toolCall"; contentIndex: number; raw: string }>();
+	/** Stand-in ids for calls the provider did not name, keyed by output index. */
+	const inventedIds = new Map<number, string>();
 	let incompleteReason: string | undefined;
 
 	try {
@@ -160,7 +162,7 @@ async function* streamResponses(
 						partial.content.push({
 							type: "toolCall",
 							// call_id is the handle the API expects back on function_call_output.
-							id: String(item.call_id ?? item.id ?? ""),
+							id: toolCallId(item.call_id ?? item.id, outputIndex, inventedIds),
 							name: String(item.name ?? ""),
 							arguments: {},
 							argumentsText: "",
@@ -170,7 +172,7 @@ async function* streamResponses(
 						yield {
 							type: "toolcall_start",
 							index: outputIndex,
-							id: String(item.call_id ?? item.id ?? ""),
+							id: toolCallId(item.call_id ?? item.id, outputIndex, inventedIds),
 							name: String(item.name ?? ""),
 						};
 					}
