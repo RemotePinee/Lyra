@@ -413,14 +413,16 @@
 }
 
 /*
- * The sideways thumb in a diff stays visible, unlike the vertical one.
+ * Both thumbs fade out when the pointer leaves.
  *
- * Vertical overflow announces itself — the content is visibly cut off at the bottom edge, so a
- * thumb that appears on hover is enough. A line that runs off to the right looks exactly like a
- * line that ended there, and nothing moves to say otherwise until you have already guessed.
+ * The sideways one used to stay visible on the reasoning that horizontal overflow does not
+ * announce itself — a line that runs off to the right looks like a line that ended there. True,
+ * but the cost is a permanent grey bar under every wide file, and a scrollbar that is always
+ * there stops being a signal. Both directions now behave the same way, which is also what the
+ * platform does.
  */
 .dw-hthumb {
-  opacity: 0.32;
+  opacity: 0;
   transition: opacity 200ms ease-out;
 }
 

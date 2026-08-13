@@ -59,6 +59,8 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 	const rule = (step: number) =>
 		toHex(mix(background, foreground, Math.min(0.9, step * strength * (dark ? 1 : RULE_ON_LIGHT))));
 	const text = (weight: number) => toHex(mix(background, foreground, Math.min(1, weight)));
+	/** A wash of the foreground at a given opacity — reads against any backdrop, including none. */
+	const veil = (alpha: number) => `color-mix(in srgb, ${toHex(foreground)} ${(alpha * 100).toFixed(1)}%, transparent)`;
 
 	/**
 	 * Fields read as paper: lighter than the page, never darker.
@@ -95,9 +97,19 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		"--color-sidebar": surface(0.042),
 		"--color-panel": surface(0.04),
 		"--color-card": surface(0.06),
-		"--color-card-hover": surface(0.085),
+		/*
+		 * The two interaction states are a veil, not a colour.
+		 *
+		 * Every other surface is an opaque mix of background and foreground, which is right for
+		 * a card that sits on a known page. Hover is different: it lands on the translucent
+		 * sidebar as often as on a card, and there the background is whatever the desktop behind
+		 * the window happens to be. An opaque #f5f6f6 over a white desktop is invisible — which
+		 * is exactly what happened to the session list. A translucent wash of the foreground
+		 * darkens whatever it covers by the same amount, so the state reads on every surface.
+		 */
+		"--color-card-hover": veil(dark ? 0.062 : 0.05),
 		"--color-input": paper,
-		"--color-elevated": surface(0.1),
+		"--color-elevated": veil(dark ? 0.1 : 0.085),
 		"--color-float": float_,
 		/* The rules carry the separation on light, so they have to be visible against it. */
 		"--color-line": rule(0.075),

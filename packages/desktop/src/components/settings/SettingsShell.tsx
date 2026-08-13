@@ -79,13 +79,11 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 
 /** Matches the chat shell so the toggle button does not jump when you enter settings. */
 const TOOLBAR_LEFT = 78;
-const NAV_WIDTH = 236;
-
 export function SettingsShell() {
 	const section = useApp((s) => s.settingsSection);
 	const setSection = useApp((s) => s.setSettingsSection);
 	const setView = useApp((s) => s.setView);
-	const { compact, navOpen, toggleNav, dismissNav } = useLayout();
+	const { compact, navOpen, toggleNav, dismissNav, sidebarWidth } = useLayout();
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -109,7 +107,7 @@ export function SettingsShell() {
 		 * nav is tinted and the thing you are working in is the plain page.
 		 */
 		<div className="dw-shell relative flex h-full">
-			<NavPane width={NAV_WIDTH} label="设置导航">
+			<NavPane width={sidebarWidth} label="设置导航">
 				{/* Same as the workspace sidebar: separated by its tint, not by a rule. */}
 				<nav className="dw-sidebar-fill flex h-full w-full flex-col">
 					<div className="h-[44px] shrink-0" />
