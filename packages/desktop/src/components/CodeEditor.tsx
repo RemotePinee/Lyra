@@ -519,15 +519,31 @@ function editorTheme(): Extension {
 		 * The label text is pushed out of view rather than removed: it is still the button's
 		 * accessible name, and `display: none` on it would take that away.
 		 */
+		/*
+		 * The icon buttons are tiles, not boxed buttons.
+		 *
+		 * CodeMirror tags them `cm-button`, which carries a border meant for a labelled button —
+		 * so half the row (find, step, select all) sat in outlines while the other half (the
+		 * three options, which are labels) did not. Same treatment for both: no chrome at rest,
+		 * a filled tile under the pointer, exactly like the icon buttons elsewhere in the app.
+		 */
 		".cm-panel.cm-search button[name]": {
 			position: "relative",
+			display: "inline-flex",
+			alignItems: "center",
+			justifyContent: "center",
 			width: "20px",
 			height: "20px",
 			padding: 0,
+			border: "none",
+			borderRadius: "6px",
+			background: "transparent",
 			fontSize: 0,
 			color: "var(--color-ink-faint)",
+			transition: "background-color 140ms ease, color 140ms ease",
 		},
-		".cm-panel.cm-search button[name]:hover": { color: "var(--color-ink)" },
+		".cm-panel.cm-search button[name]:hover": { background: "var(--color-card-hover)", color: "var(--color-ink)" },
+		".cm-panel.cm-search button[name]:active": { background: "var(--color-elevated)" },
 
 		/*
 		 * The options become the three glyphs every find bar uses, on the first row.
@@ -547,8 +563,10 @@ function editorTheme(): Extension {
 			borderRadius: "6px",
 			fontSize: 0,
 			color: "var(--color-ink-faint)",
+			transition: "background-color 140ms ease, color 140ms ease",
 		},
 		".cm-panel.cm-search label:hover": { background: "var(--color-card-hover)", color: "var(--color-ink)" },
+		".cm-panel.cm-search label:active": { background: "var(--color-elevated)" },
 		// The checkbox itself is redundant once the tile can show its own state.
 		".cm-panel.cm-search label input[type=checkbox]": {
 			position: "absolute",
@@ -582,10 +600,10 @@ function editorTheme(): Extension {
 		 */
 		".cm-panel.cm-search button[name=close]": {
 			position: "absolute",
-			top: "5px",
+			top: "4px",
 			right: "4px",
-			width: "18px",
-			height: "18px",
+			width: "20px",
+			height: "20px",
 			border: "none",
 			background: "transparent",
 			padding: 0,
