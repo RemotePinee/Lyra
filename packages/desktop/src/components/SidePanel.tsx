@@ -13,7 +13,7 @@ import {
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { FileBrowser } from "./FileBrowser.tsx";
 import { MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
-import { ReviewPanel } from "./ReviewPanel.tsx";
+import { GitPanel } from "./git/GitPanel.tsx";
 import { SideChat } from "./SideChat.tsx";
 import { TerminalPane } from "./TerminalPane.tsx";
 import { WindowControls } from "./WindowControls.tsx";
@@ -130,7 +130,7 @@ export function usePanelDefinitions(): PanelDefinition[] {
 		},
 		{
 			kind: "review",
-			label: "审阅改动",
+			label: "Git",
 			icon: GitCompare,
 			shortcut: "⌘⇧R",
 			unavailable: workspace ? undefined : "先打开一个项目",
@@ -401,7 +401,7 @@ export function SidePanel() {
 							) : kind === "terminal" ? (
 								<TerminalPane />
 							) : (
-								<ReviewPanel />
+								<GitPanel />
 							)}
 						</div>
 					))}

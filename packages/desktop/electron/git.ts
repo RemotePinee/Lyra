@@ -328,3 +328,314 @@ export async function commitAll(cwd: string, message: string): Promise<{ ok: boo
 		return { ok: false, error: text.split("\n").slice(0, 3).join("\n") || "提交失败" };
 	}
 }
+
+/* ---------------------------------------------------------------------------
+ * The Git panel's surface.
+ *
+ * Everything above this line serves the composer's status bar, which asks one question: how
+ * much is uncommitted. A panel asks the questions you act on — what exactly changed, what is
+ * staged, what happened before this, how does this branch differ from that one — and each of
+ * those is a different git plumbing call.
+ * ------------------------------------------------------------------------- */
+
+/** The empty tree, so the first commit in a repository can be diffed against something. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+export interface GitStatusFile {
+	path: string;
+	status: WorkspaceDiffFile["status"];
+	/** Both can be true: a file edited after part of it was staged. */
+	staged: boolean;
+	unstaged: boolean;
+	added: number;
+	removed: number;
+}
+
+export interface GitStatus {
+	branch: string | null;
+	upstream: string | null;
+	/** Commits this branch has that its upstream does not, and the reverse. */
+	ahead: number;
+	behind: number;
+	staged: GitStatusFile[];
+	unstaged: GitStatusFile[];
+}
+
+/**
+ * Status split by index, which the porcelain format already encodes.
+ *
+ * Each entry's first character is the index state and the second the working-tree state, so a
+ * file can appear on both sides — staged as far as it was added, unstaged for what came after.
+ * Presenting that as one list is what makes people commit half of what they meant to.
+ */
+export async function gitStatus(cwd: string): Promise<GitStatus> {
+	const empty: GitStatus = { branch: null, upstream: null, ahead: 0, behind: 0, staged: [], unstaged: [] };
+	if (!(await isGitRepo(cwd))) return empty;
+
+	const [branch, porcelain] = await Promise.all([
+		gitBranch(cwd),
+		git(cwd, ["status", "--porcelain=v1", "-uall", "-z", "--branch"]).catch(() => ""),
+	]);
+
+	const parts = porcelain.split("\0").filter(Boolean);
+	const header = parts[0]?.startsWith("## ") ? parts.shift()!.slice(3) : "";
+	const upstreamMatch = header.match(/\.\.\.(\S+)/);
+	const aheadMatch = header.match(/ahead (\d+)/);
+	const behindMatch = header.match(/behind (\d+)/);
+
+	const [stagedStat, unstagedStat] = await Promise.all([
+		numstat(cwd, ["diff", "--numstat", "--cached"]),
+		numstat(cwd, ["diff", "--numstat"]),
+	]);
+
+	const staged: GitStatusFile[] = [];
+	const unstaged: GitStatusFile[] = [];
+
+	for (const entry of parts.slice(0, MAX_FILES)) {
+		const index = entry[0];
+		const tree = entry[1];
+		// A rename's porcelain entry carries both paths separated by a NUL, already split above.
+		const path = entry.slice(3);
+		if (!path) continue;
+
+		if (index && index !== " " && index !== "?") {
+			staged.push({
+				path,
+				status: classify(index),
+				staged: true,
+				unstaged: false,
+				...(stagedStat.get(path) ?? { added: 0, removed: 0 }),
+			});
+		}
+		if (tree && tree !== " ") {
+			const untracked = index === "?" || tree === "?";
+				unstaged.push({
+				path,
+				status: untracked ? "untracked" : classify(tree),
+				staged: false,
+				unstaged: true,
+				...(untracked ? await countNewFile(cwd, path) : (unstagedStat.get(path) ?? { added: 0, removed: 0 })),
+			});
+		}
+	}
+
+	return {
+		branch,
+		upstream: upstreamMatch?.[1] ?? null,
+		ahead: Number.parseInt(aheadMatch?.[1] ?? "0", 10),
+		behind: Number.parseInt(behindMatch?.[1] ?? "0", 10),
+		staged,
+		unstaged,
+	};
+}
+
+async function numstat(cwd: string, args: string[]): Promise<Map<string, { added: number; removed: number }>> {
+	const out = await git(cwd, args).catch(() => "");
+	const map = new Map<string, { added: number; removed: number }>();
+	for (const line of out.split("\n")) {
+		if (!line.trim()) continue;
+		const [plus, minus, path] = line.split("\t");
+		if (path) map.set(path, { added: Number.parseInt(plus, 10) || 0, removed: Number.parseInt(minus, 10) || 0 });
+	}
+	return map;
+}
+
+/** An untracked file has no other side to diff against, so every line counts as added. */
+async function countNewFile(cwd: string, path: string): Promise<{ added: number; removed: number }> {
+	const buffer = await readFile(join(cwd, path)).catch(() => null);
+	if (!buffer || buffer.length > MAX_BLOB_BYTES || buffer.includes(0)) return { added: 0, removed: 0 };
+	const text = buffer.toString("utf8");
+	return { added: text.length === 0 ? 0 : text.replace(/\n$/, "").split("\n").length, removed: 0 };
+}
+
+export async function stagePaths(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }> {
+	return run(cwd, ["add", "--", ...paths]);
+}
+
+export async function unstagePaths(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }> {
+	// `restore --staged` rather than `reset`: it leaves the working tree alone even before the
+	// first commit exists, where `reset HEAD` has nothing to reset against.
+	return run(cwd, ["restore", "--staged", "--", ...paths]);
+}
+
+/**
+ * Throw away working-tree changes.
+ *
+ * Untracked files are deleted rather than restored — there is no version to restore them to.
+ * The two are done in separate calls because `restore` refuses paths it does not track.
+ */
+export async function discardPaths(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }> {
+	const tracked: string[] = [];
+	const untracked: string[] = [];
+	for (const path of paths) {
+		const known = await git(cwd, ["ls-files", "--error-unmatch", "--", path]).then(() => true).catch(() => false);
+		(known ? tracked : untracked).push(path);
+	}
+	if (tracked.length) {
+		const result = await run(cwd, ["restore", "--worktree", "--", ...tracked]);
+		if (!result.ok) return result;
+	}
+	if (untracked.length) return run(cwd, ["clean", "-fd", "--", ...untracked]);
+	return { ok: true };
+}
+
+export interface GitCommit {
+	sha: string;
+	shortSha: string;
+	subject: string;
+	author: string;
+	/** ISO 8601, formatted for display in the renderer where the locale lives. */
+	date: string;
+	/** Branch and tag names pointing at this commit, already stripped of their prefixes. */
+	refs: string[];
+}
+
+const LOG_FORMAT = "%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%D%x1e";
+
+export async function gitLog(cwd: string, limit = 60, ref?: string): Promise<GitCommit[]> {
+	if (!(await isGitRepo(cwd))) return [];
+	const out = await git(cwd, [
+		"log",
+		`--max-count=${Math.min(limit, 300)}`,
+		`--format=${LOG_FORMAT}`,
+		...(ref ? [ref] : []),
+	]).catch(() => "");
+
+	return out
+		.split("\x1e")
+		.map((record) => record.replace(/^\n/, ""))
+		.filter(Boolean)
+		.map((record) => {
+			const [sha, shortSha, subject, author, date, refs] = record.split("\x1f");
+			return {
+				sha,
+				shortSha,
+				subject,
+				author,
+				date,
+				refs: (refs ?? "")
+					.split(", ")
+					.map((name) => name.replace(/^HEAD -> /, "").trim())
+					.filter((name) => name && name !== "HEAD"),
+			};
+		});
+}
+
+/**
+ * The diff between any two points in history.
+ *
+ * One implementation for three questions — what a commit changed, how two branches differ, what
+ * is staged — because to git they are the same question with different endpoints. `base` of
+ * `null` means the index, which is how the staged view gets its content.
+ */
+export async function diffRefs(
+	cwd: string,
+	base: string,
+	head: string | null,
+): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number }> {
+	if (!(await isGitRepo(cwd))) return { files: [], added: 0, removed: 0 };
+
+	const range = head ? [base, head] : ["--cached", base];
+	const names = await git(cwd, ["diff", "--name-status", "-z", ...range]).catch(() => "");
+
+	const files: WorkspaceDiffFile[] = [];
+	let added = 0;
+	let removed = 0;
+
+	const tokens = names.split("\0").filter(Boolean);
+	for (let i = 0; i < tokens.length && files.length < MAX_FILES; i++) {
+		const code = tokens[i];
+		if (!/^[A-Z]/.test(code)) continue;
+		// A rename spends three tokens: the code, the old path and the new one.
+		const isRename = code.startsWith("R");
+		const path = tokens[isRename ? i + 2 : i + 1];
+		if (isRename) i += 2;
+		else i += 1;
+		if (!path) continue;
+
+		const status = classify(code[0]);
+		const [before, after] = await Promise.all([
+			status === "added" ? Promise.resolve("") : blobAt(cwd, head ? base : "HEAD", path),
+			status === "deleted" ? Promise.resolve("") : head ? blobAt(cwd, head, path) : stagedBlob(cwd, path),
+		]);
+		if (before === null || after === null) continue;
+
+		// Counted from the diff itself rather than from `--numstat`, so the totals and the hunks
+		// on screen can never disagree.
+		const diff = computeDiff(before, after);
+		added += diff.added;
+		removed += diff.removed;
+		files.push({ path, status, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) });
+	}
+
+	return { files, added, removed };
+}
+
+/** A commit's own diff — against its parent, or against nothing if it is the first. */
+export async function commitDiff(cwd: string, sha: string) {
+	const parent = await git(cwd, ["rev-parse", "--verify", `${sha}^`])
+		.then((out) => out.trim())
+		.catch(() => EMPTY_TREE);
+	return diffRefs(cwd, parent, sha);
+}
+
+async function blobAt(cwd: string, ref: string, path: string): Promise<string | null> {
+	const out = await git(cwd, ["show", `${ref}:${path}`]).catch(() => null);
+	if (out === null) return "";
+	return out.length > MAX_BLOB_BYTES ? null : out;
+}
+
+async function stagedBlob(cwd: string, path: string): Promise<string | null> {
+	const out = await git(cwd, ["show", `:${path}`]).catch(() => null);
+	if (out === null) return "";
+	return out.length > MAX_BLOB_BYTES ? null : out;
+}
+
+export async function createBranch(cwd: string, name: string, from?: string) {
+	const clean = name.trim();
+	if (!clean) return { ok: false, error: "分支名不能为空" };
+	return run(cwd, ["switch", "-c", clean, ...(from ? [from] : [])]);
+}
+
+export async function deleteBranch(cwd: string, name: string, force = false) {
+	return run(cwd, ["branch", force ? "-D" : "-d", name]);
+}
+
+export async function pushBranch(cwd: string): Promise<{ ok: boolean; error?: string }> {
+	const branch = await gitBranch(cwd);
+	if (!branch) return { ok: false, error: "当前不在任何分支上" };
+	// `-u` on the first push, so the branch gains an upstream instead of failing for want of one.
+	const hasUpstream = await git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).then(() => true).catch(() => false);
+	return run(cwd, hasUpstream ? ["push"] : ["push", "-u", "origin", branch]);
+}
+
+export async function pullBranch(cwd: string): Promise<{ ok: boolean; error?: string }> {
+	// `--ff-only`: a merge commit, or worse a conflict, is not something to start from a button.
+	return run(cwd, ["pull", "--ff-only"]);
+}
+
+/**
+ * Commit what is staged.
+ *
+ * Unlike `commitAll`, which the composer's bar uses, this one records exactly what the panel
+ * shows as staged — the whole point of having an index in front of you.
+ */
+export async function commitStaged(cwd: string, message: string): Promise<{ ok: boolean; error?: string }> {
+	const trimmed = message.trim();
+	if (!trimmed) return { ok: false, error: "提交信息不能为空" };
+	const staged = await git(cwd, ["diff", "--cached", "--name-only"]).catch(() => "");
+	if (!staged.trim()) return { ok: false, error: "没有已暂存的改动" };
+	return run(cwd, ["commit", "-m", trimmed]);
+}
+
+/** Runs a git command for its effect, turning failure into readable text rather than a throw. */
+async function run(cwd: string, args: string[]): Promise<{ ok: boolean; error?: string }> {
+	try {
+		await git(cwd, args);
+		return { ok: true };
+	} catch (error) {
+		const detail = error as { stderr?: string; stdout?: string; message?: string };
+		const text = (detail.stderr || detail.stdout || detail.message || "").trim();
+		return { ok: false, error: text.split("\n").slice(0, 3).join("\n") || "操作失败" };
+	}
+}

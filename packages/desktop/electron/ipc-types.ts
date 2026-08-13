@@ -1,6 +1,15 @@
 /** The contract between the renderer and the main process. Imported by both sides. */
 
-import type { BranchList } from "./git.ts";
+import type { BranchList, GitCommit, GitStatus } from "./git.ts";
+
+export type { GitCommit, GitStatus, GitStatusFile } from "./git.ts";
+
+/** The shape every diff view consumes, whatever produced it. */
+export interface RefDiff {
+	files: WorkspaceDiffFile[];
+	added: number;
+	removed: number;
+}
 
 export type { BranchList };
 import type {
@@ -256,6 +265,27 @@ export interface DeepWiseApi {
 		stat(cwd: string): Promise<{ branch: string | null; added: number; removed: number; files: number }>;
 		/** Stage everything and commit it — the change the bar is counting. */
 		commit(cwd: string, message: string): Promise<{ ok: boolean; error?: string }>;
+
+		/* The Git panel's surface. Reading first, then the operations that write. */
+
+		/** Working tree split by index, with upstream distance. */
+		status(cwd: string): Promise<GitStatus>;
+		log(cwd: string, limit?: number, ref?: string): Promise<GitCommit[]>;
+		/** What one commit changed, against its parent. */
+		commitDiff(cwd: string, sha: string): Promise<RefDiff>;
+		/** Any two points in history; `head` of null diffs the index against `base`. */
+		diffRefs(cwd: string, base: string, head: string | null): Promise<RefDiff>;
+
+		stage(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }>;
+		unstage(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }>;
+		/** Irreversible: untracked paths are deleted, not restored. */
+		discard(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }>;
+		/** Commits exactly what the panel shows as staged. */
+		commitStaged(cwd: string, message: string): Promise<{ ok: boolean; error?: string }>;
+		createBranch(cwd: string, name: string, from?: string): Promise<{ ok: boolean; error?: string }>;
+		deleteBranch(cwd: string, name: string, force?: boolean): Promise<{ ok: boolean; error?: string }>;
+		push(cwd: string): Promise<{ ok: boolean; error?: string }>;
+		pull(cwd: string): Promise<{ ok: boolean; error?: string }>;
 	};
 	diff: {
 		/** Uncommitted changes for the review panel. */

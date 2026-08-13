@@ -44,14 +44,26 @@ import type {
 import { createBrowserTools } from "./browser-tools.ts";
 import {
 	collectWorkspaceDiff,
+	commitAll,
+	commitDiff,
+	commitStaged,
+	createBranch,
 	createWorktree,
+	deleteBranch,
+	diffRefs,
+	discardPaths,
 	gitBranch,
+	gitLog,
+	gitStatus,
 	isGitRepo,
 	listBranches,
 	listPullRequests,
+	pullBranch,
+	pushBranch,
+	stagePaths,
 	switchBranch,
+	unstagePaths,
 	workspaceStat,
-	commitAll,
 } from "./git.ts";
 import { Scheduler } from "./scheduler.ts";
 import { SyncServer } from "./sync-server.ts";
@@ -1074,6 +1086,58 @@ function registerIpc(): void {
 		// place to leave unchecked.
 		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
 		return commitAll(cwd, message);
+	});
+
+	ipcMain.handle("git:status", async (_event, cwd: string) => gitStatus(cwd));
+
+	ipcMain.handle("git:log", async (_event, cwd: string, limit?: number, ref?: string) => gitLog(cwd, limit, ref));
+
+	ipcMain.handle("git:commitDiff", async (_event, cwd: string, sha: string) => commitDiff(cwd, sha));
+
+	ipcMain.handle("git:diffRefs", async (_event, cwd: string, base: string, head: string | null) =>
+		diffRefs(cwd, base, head),
+	);
+
+	/*
+	 * The writing half, behind the same boundary as committing.
+	 *
+	 * Staging, discarding and branch surgery all reach outside the renderer's sandbox and are
+	 * hard or impossible to undo — `discard` in particular deletes untracked files outright.
+	 */
+	for (const [channel, action] of [
+		["git:stage", stagePaths],
+		["git:unstage", unstagePaths],
+		["git:discard", discardPaths],
+	] as const) {
+		ipcMain.handle(channel, async (_event, cwd: string, paths: string[]) => {
+			if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+			return action(cwd, paths);
+		});
+	}
+
+	ipcMain.handle("git:commitStaged", async (_event, cwd: string, message: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return commitStaged(cwd, message);
+	});
+
+	ipcMain.handle("git:createBranch", async (_event, cwd: string, name: string, from?: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return createBranch(cwd, name, from);
+	});
+
+	ipcMain.handle("git:deleteBranch", async (_event, cwd: string, name: string, force?: boolean) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return deleteBranch(cwd, name, force);
+	});
+
+	ipcMain.handle("git:push", async (_event, cwd: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return pushBranch(cwd);
+	});
+
+	ipcMain.handle("git:pull", async (_event, cwd: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return pullBranch(cwd);
 	});
 
 	ipcMain.handle("diff:workspace", async (_event, cwd: string) => collectWorkspaceDiff(cwd));

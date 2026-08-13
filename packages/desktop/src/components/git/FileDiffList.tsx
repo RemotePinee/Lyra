@@ -1,0 +1,171 @@
+import { ChevronRight } from "lucide-react";
+import { useState } from "react";
+
+import type { WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
+import { DiffView } from "../DiffView.tsx";
+import { iconColour, lookFor } from "../fileIcon.tsx";
+import { Text } from "../Text.tsx";
+
+/**
+ * The last meaningful segment of a path.
+ *
+ * `split("/").pop()` is not enough: git reports an untracked *directory* as `.claude/`, whose
+ * final segment is the empty string — which showed up in the list as a row with an icon, a
+ * status letter, and no name at all.
+ */
+export function baseName(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+/** True for the trailing-slash form git uses when a whole directory is untracked. */
+export function isDirectory(path: string): boolean {
+  return path.endsWith("/");
+}
+
+/**
+ * A list of changed files, each opening onto its own diff.
+ *
+ * An accordion rather than a list beside a viewer. Reading a change is *reading through* —
+ * top to bottom — and being able to leave two files open next to each other is worth more than
+ * jumping to one by name. It also needs no second column, which is what makes it work unchanged
+ * in a 368px panel.
+ *
+ * Shared by all three of the panel's views, because "what changed" looks the same whether the
+ * change is uncommitted, one commit old, or the distance between two branches. Only the row's
+ * trailing controls differ, which is what `actions` is for.
+ */
+export function FileDiffList({
+  files,
+  actions,
+  emptyLabel = "没有匹配的文件",
+  initiallyOpen,
+}: {
+  files: WorkspaceDiffFile[];
+  /** Rendered at the end of a row — staging controls in the changes view, nothing elsewhere. */
+  actions?: (file: WorkspaceDiffFile) => React.ReactNode;
+  emptyLabel?: string;
+  /** Open every file on first render. Used where the list is short by construction. */
+  initiallyOpen?: boolean;
+}) {
+  const [open, setOpen] = useState<Set<string>>(() =>
+    initiallyOpen ? new Set(files.map((file) => file.path)) : new Set(),
+  );
+
+  function toggle(path: string) {
+    setOpen((current) => {
+      const next = new Set(current);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  }
+
+  if (files.length === 0) {
+    return (
+      <Text as="p" size="label" tone="faint" className="px-2 py-6 text-center">
+        {emptyLabel}
+      </Text>
+    );
+  }
+
+  return (
+    <>
+      {files.map((file) => {
+        const expanded = open.has(file.path);
+        const look = lookFor(baseName(file.path), isDirectory(file.path));
+        return (
+          <div key={file.path} className="group/row mb-0.5">
+            {/*
+             * Pinned to the top of its own file while that file is on screen.
+             *
+             * Scroll into a three-hundred-line diff and the question becomes "which file am
+             * I in" — the name has to stay put to answer it. Each header sticks within its
+             * own wrapper, so the next one pushes the last one out on the way past rather
+             * than stacking up. The opaque fill is what makes that work: a transparent
+             * sticky row has the diff scrolling through it.
+             */}
+            <div className="sticky top-0 z-10 flex items-center gap-1 rounded-md bg-shell pr-1 transition-colors hover:bg-card-hover">
+              <button
+                type="button"
+                data-dw-tip={file.path}
+                onClick={() => toggle(file.path)}
+                aria-expanded={expanded}
+                className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-1 text-left"
+              >
+                <ChevronRight
+                  size={11}
+                  strokeWidth={2.2}
+                  className="shrink-0 text-ink-faint transition-transform duration-150"
+                  style={expanded ? { transform: "rotate(90deg)" } : undefined}
+                />
+                <look.Icon
+                  size={12.5}
+                  strokeWidth={1.75}
+                  className="shrink-0"
+                  style={{ color: iconColour(look) }}
+                />
+                {/*
+                 * The directory is what tells two `index.ts` apart, so it stays —
+                 * truncated from the left, where the shared prefix is.
+                 */}
+                <span
+                  className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-muted"
+                  dir="rtl"
+                >
+                  <span dir="ltr">{file.path}</span>
+                </span>
+                <Text size="caption" mono numeric className="shrink-0">
+                  {file.added > 0 && (
+                    <span className="text-ok">+{file.added}</span>
+                  )}
+                  {file.added > 0 && file.removed > 0 && " "}
+                  {file.removed > 0 && (
+                    <span className="text-danger">−{file.removed}</span>
+                  )}
+                  {file.added === 0 && file.removed === 0 && (
+                    <span className="text-ink-faint">—</span>
+                  )}
+                </Text>
+              </button>
+              {actions?.(file)}
+            </div>
+
+            {/*
+             * Flush, with no card around it.
+             *
+             * A rounded border here had to be clipped to stop the diff's square row tints
+             * poking out of the corners — and that clip cut into the pinned line-number
+             * column. Each row already has its own fill and the name above it sits on an
+             * opaque strip, so the border was separating two things already legible apart.
+             */}
+            {expanded && (
+              <div className="dw-enter mt-0.5 mb-1.5 border-y border-line-soft">
+                {isDirectory(file.path) ? (
+                  <Text
+                    as="p"
+                    size="detail"
+                    tone="faint"
+                    className="px-3 py-4 text-center"
+                  >
+                    整个目录都还没有被 Git 跟踪，暂时没有可对比的内容。
+                  </Text>
+                ) : file.hunks.length === 0 ? (
+                  <Text
+                    as="p"
+                    size="detail"
+                    tone="faint"
+                    className="px-3 py-4 text-center"
+                  >
+                    这个文件没有可以按行对比的内容（二进制或过大）。
+                  </Text>
+                ) : (
+                  <DiffView hunks={file.hunks} />
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
