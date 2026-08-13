@@ -125,7 +125,7 @@ export function AppearanceSettings() {
 				/>
 				<Row
 					title="半透明侧边栏"
-					detail="侧边栏透出窗口背后的内容（仅 macOS）。效果取决于背后是什么，浅色主题下压在深色窗口上会偏灰。"
+					detail="侧边栏透出窗口背后的内容（仅 macOS）。效果取决于背后是什么。"
 					control={
 						<Toggle
 							checked={appearance.translucentSidebar}

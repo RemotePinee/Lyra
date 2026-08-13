@@ -144,6 +144,23 @@ function resolvedBackground(): string {
  * dark and then snapped, every launch. The main process has the settings on disk before the
  * window exists, so it hands the answer to the preload, which paints it before the first frame.
  */
+/**
+ * Tell the OS which appearance this window is in.
+ *
+ * macOS draws the sidebar's vibrancy itself, and picks the material from the *window's*
+ * appearance — which, left alone, is whatever the system is set to. So a light app on a dark
+ * system got a dark material under a 72%-white sidebar, and the sidebar came out grey while
+ * every pixel the renderer painted was correct. Nothing in CSS can reach that layer; the
+ * window has to be told.
+ *
+ * It also settles the native menus, dialogs and scrollbars, which have the same problem for
+ * the same reason.
+ */
+function applyNativeAppearance(): void {
+	const theme = settings?.appearance?.theme ?? "system";
+	nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
+}
+
 function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string; vibrancy: boolean } {
 	const appearance = settings?.appearance;
 	const dark = appearance
@@ -327,6 +344,8 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(async () => {
 	await mkdir(deepwiseHome(), { recursive: true });
 	settings = await loadSettings();
+	// Before the window exists, so its very first frame gets the right material.
+	applyNativeAppearance();
 
 	/*
 	 * `dw-media://f/<encoded absolute path>`.
@@ -488,6 +507,8 @@ function registerIpc(): void {
 
 	ipcMain.handle("settings:save", async (_event, next: Settings) => {
 		settings = next;
+		// Before anything else: the window's appearance is part of what was just changed.
+		applyNativeAppearance();
 		await saveSettings(next);
 		for (const session of sessions.values()) session.updateSettings(next);
 		for (const chat of sideChats.values()) chat.updateSettings(next);
