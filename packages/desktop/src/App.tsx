@@ -257,7 +257,10 @@ function ChatShell() {
 			 * rather than closing outright: you asked for more room, not to be rid of the panel.
 			 * Popovers stop the event during capture, so an open menu still gets first refusal.
 			 */
-			if (event.key === "Escape") {
+			// Anything that already acted on Escape — the editor's find bar, a menu — calls
+			// `preventDefault`. Without this check the same keypress also stepped the panel out
+			// of full screen, so closing a find bar took the window apart with it.
+			if (event.key === "Escape" && !event.defaultPrevented) {
 				if (compact) {
 					if (navOpen) dismissNav();
 					else if (panelOpen) closePanel();

@@ -6,7 +6,7 @@ import {
 	indentOnInput,
 	syntaxHighlighting,
 } from "@codemirror/language";
-import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
+import { closeSearchPanel, highlightSelectionMatches, openSearchPanel, search, searchKeymap, searchPanelOpen } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
 	EditorView,
@@ -115,6 +115,18 @@ export function CodeEditor({
 				wrapping.current.of(wrap ? EditorView.lineWrapping : []),
 				language.current.of([]),
 				keymap.of([
+					/*
+					 * ⌘F toggles rather than only opens.
+					 *
+					 * `searchKeymap` binds it to open, so pressing it again with the panel already
+					 * up did nothing at all — and the way out was a key you had to know about.
+					 * The shortcut that summons a thing should dismiss it.
+					 */
+					{
+						key: "Mod-f",
+						preventDefault: true,
+						run: (view) => (searchPanelOpen(view.state) ? closeSearchPanel(view) : openSearchPanel(view)),
+					},
 					// Before the defaults, so ⌘S is ours rather than the browser's.
 					{
 						key: "Mod-s",
@@ -149,6 +161,32 @@ export function CodeEditor({
 		 * precisely so a panel outside React's tree can still use it.
 		 */
 		const labelPanel = () => {
+			/*
+			 * Replace starts folded, behind a disclosure of its own.
+			 *
+			 * Eleven controls is more than a narrow pane can hold on one line, and unfolded they
+			 * wrapped to three rows with the close button stranded on one by itself. Most finds
+			 * never replace anything, so the second row is the part that should be asked for —
+			 * which is what every editor with a find bar does.
+			 */
+			const panel = element.querySelector<HTMLElement>(".cm-panel.cm-search");
+			// The app's floating surface, so the find card matches every menu and popover in it.
+			panel?.classList.add("dw-glass");
+			if (panel && !panel.querySelector("[name=dw-replace-toggle]")) {
+				const toggle = document.createElement("button");
+				toggle.setAttribute("name", "dw-replace-toggle");
+				toggle.setAttribute("type", "button");
+				toggle.setAttribute("aria-label", "显示替换");
+				toggle.dataset.dwTip = "显示替换";
+				toggle.addEventListener("click", () => {
+					const open = panel.classList.toggle("dw-replace-open");
+					toggle.setAttribute("aria-label", open ? "隐藏替换" : "显示替换");
+					toggle.dataset.dwTip = open ? "隐藏替换" : "显示替换";
+					if (open) panel.querySelector<HTMLInputElement>("input[name=replace]")?.focus();
+				});
+				panel.prepend(toggle);
+			}
+
 			for (const [name, hint] of Object.entries(SEARCH_TIPS)) {
 				const button = element.querySelector<HTMLElement>(`.cm-search button[name=${name}]`);
 				if (button && !button.dataset.dwTip) button.dataset.dwTip = hint;
@@ -303,15 +341,47 @@ function editorTheme(): Extension {
 		 * tokens the rest of the app uses, so the one moment you press ⌘F does not open a
 		 * different application inside this one.
 		 */
-		".cm-panels": { backgroundColor: "transparent", color: "var(--color-ink)" },
-		".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--color-line-soft)" },
+		/*
+		 * The find bar floats over the code rather than pushing it down.
+		 *
+		 * As a full-width strip it had to be laid out like one: controls at the left, and a few
+		 * hundred pixels of nothing to their right that read as an unfinished toolbar. Every
+		 * editor worth copying puts find in a small card in the corner instead — it is a tool you
+		 * summon, not a part of the chrome, and it costs the document no vertical space.
+		 *
+		 * `position: absolute` takes the panel container out of the flex column, so the editor
+		 * keeps its full height and the card sits on top of the first line or two.
+		 */
+		".cm-panels": {
+			position: "absolute",
+			top: 0,
+			right: 0,
+			left: "auto",
+			zIndex: 5,
+			maxWidth: "100%",
+			backgroundColor: "transparent",
+			color: "var(--color-ink)",
+			border: "none",
+		},
+		/*
+		 * Width is fixed, not fitted.
+		 *
+		 * `fit-content` on a wrapping flex row resolves towards max-content — the width every
+		 * control would need on a single line — which left a stretch of empty card between the
+		 * last button and the close corner. A stated width makes both rows end at the same edge,
+		 * which is what lets the replace actions line up under the navigation.
+		 */
 		".cm-panel.cm-search": {
-			backgroundColor: "var(--color-shell)",
-			padding: "7px 8px",
+			width: "440px",
+			maxWidth: "100%",
+			margin: "8px 10px",
+			borderRadius: "10px",
+			border: "1px solid var(--color-line)",
+			padding: "6px 26px 6px 7px",
 			display: "flex",
 			flexWrap: "wrap",
 			alignItems: "center",
-			gap: "4px",
+			gap: "3px",
 			fontFamily: "var(--dw-ui-font)",
 			fontSize: "12px",
 		},
@@ -345,12 +415,32 @@ function editorTheme(): Extension {
 		 * 240px basis in a narrow pane put each field on a row of its own and made the panel
 		 * taller instead of narrower. Growing up to a limit collapses gracefully instead.
 		 */
-		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 56px", minWidth: "56px", maxWidth: "240px" },
+		".cm-panel.cm-search button[name=dw-replace-toggle]": {
+			order: 0,
+			width: "18px",
+			height: "22px",
+			padding: 0,
+			border: "none",
+			background: "transparent",
+			color: "var(--color-ink-faint)",
+			fontSize: "9px",
+			lineHeight: "22px",
+		},
+		".cm-panel.cm-search button[name=dw-replace-toggle]::before": { content: '"\\25B6"' },
+		".cm-panel.cm-search.dw-replace-open button[name=dw-replace-toggle]::before": { content: '"\\25BC"' },
+		".cm-panel.cm-search button[name=dw-replace-toggle]:hover": { color: "var(--color-ink)" },
+		".cm-panel.cm-search input[name=replace], .cm-panel.cm-search button[name=replace], .cm-panel.cm-search button[name=replaceAll], .cm-panel.cm-search::before":
+			{ display: "none" },
+		".cm-panel.cm-search.dw-replace-open input[name=replace], .cm-panel.cm-search.dw-replace-open button[name=replace], .cm-panel.cm-search.dw-replace-open button[name=replaceAll]":
+			{ display: "inline-flex" },
+		".cm-panel.cm-search.dw-replace-open::before": { display: "block" },
+		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 36px", minWidth: "36px", maxWidth: "236px" },
 		".cm-panel.cm-search [name=next], .cm-panel.cm-search [name=prev], .cm-panel.cm-search [name=select]": {
 			order: 3,
 		},
-		".cm-panel.cm-search input[name=replace]": { order: 6, flex: "1 1 56px", minWidth: "56px", maxWidth: "240px" },
+		".cm-panel.cm-search input[name=replace]": { order: 6, flex: "1 1 36px", minWidth: "36px", maxWidth: "236px", marginLeft: "23px" },
 		".cm-panel.cm-search [name=replace], .cm-panel.cm-search [name=replaceAll]": { order: 7 },
+		".cm-panel.cm-search button[name=replace]": { marginLeft: "auto" },
 		".cm-textfield": {
 			// Otherwise the flex basis is the content box and each field silently occupies 24px
 			// more than it claims — enough, in a narrow pane, to push the close button off the row.
@@ -378,8 +468,8 @@ function editorTheme(): Extension {
 		 */
 		".cm-panel.cm-search button[name]": {
 			position: "relative",
-			width: "22px",
-			height: "22px",
+			width: "20px",
+			height: "20px",
 			padding: 0,
 			fontSize: 0,
 			color: "transparent",
@@ -413,8 +503,8 @@ function editorTheme(): Extension {
 			display: "inline-flex",
 			alignItems: "center",
 			justifyContent: "center",
-			width: "22px",
-			height: "22px",
+			width: "20px",
+			height: "20px",
 			borderRadius: "6px",
 			fontSize: 0,
 			color: "transparent",
@@ -462,12 +552,14 @@ function editorTheme(): Extension {
 		/*
 		 * Out of the flow and in the corner.
 		 *
-		 * Last on the find row, after the navigation it belongs beside. Pinned to the panel's far
-		 * corner it ended up hundreds of pixels from every other control in a wide pane.
+		 * The card's corner, like any dismissable card. It was in the flow while the panel was a
+		 * full-width strip — out there the corner was hundreds of pixels from everything else —
+		 * but the card is 250px wide, so the corner is right next to the controls it closes.
 		 */
 		".cm-panel.cm-search button[name=close]": {
-			order: 4,
-			marginLeft: "2px",
+			position: "absolute",
+			top: "5px",
+			right: "4px",
 			width: "18px",
 			height: "18px",
 			border: "none",
