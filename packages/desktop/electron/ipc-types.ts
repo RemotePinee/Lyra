@@ -240,6 +240,8 @@ export interface DeepWiseApi {
 		openIn(app: string, path: string): Promise<void>;
 		revealSkillsDir(scope: "workspace" | "user", cwd: string): Promise<string>;
 		platform(): Promise<string>;
+		/** The installed app's own icon as a data URL, or null if it is not installed. */
+		appIcon(appName: string): Promise<string | null>;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

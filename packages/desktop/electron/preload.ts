@@ -169,6 +169,7 @@ const api: DeepWiseApi = {
 		openIn: (appName, path) => ipcRenderer.invoke("system:openIn", appName, path),
 		revealSkillsDir: (scope, cwd) => ipcRenderer.invoke("system:revealSkillsDir", scope, cwd),
 		platform: () => ipcRenderer.invoke("system:platform"),
+		appIcon: (appName) => ipcRenderer.invoke("system:appIcon", appName),
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),

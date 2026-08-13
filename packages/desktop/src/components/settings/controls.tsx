@@ -29,8 +29,16 @@ export function Row({
 	children?: React.ReactNode;
 }) {
 	return (
-		<div className="border-b border-line-soft px-4 py-3.5 last:border-b-0">
-			<div className="flex items-start gap-4">
+		/*
+		 * The control drops below the text when the row runs out of width.
+		 *
+		 * A control is `shrink-0` — a segmented picker squeezed to nothing is worse than one
+		 * that moved — so beside it the description took whatever was left. In a narrow window
+		 * that was a column two or three characters wide and a dozen lines tall, which reads as
+		 * broken rather than as compact. Measured against the row, so a wide window is unchanged.
+		 */
+		<div className="@container border-b border-line-soft px-4 py-3.5 last:border-b-0">
+			<div className="flex flex-col gap-2 @md:flex-row @md:items-start @md:gap-4">
 				<div className="min-w-0 flex-1">
 					<Text as="div" size="body">
 						{title}
@@ -41,7 +49,7 @@ export function Row({
 						</Text>
 					)}
 				</div>
-				{control && <div className="shrink-0 pt-0.5">{control}</div>}
+				{control && <div className="shrink-0 @md:pt-0.5">{control}</div>}
 			</div>
 			{children}
 		</div>
@@ -151,7 +159,7 @@ function Dropdown<T extends string>({
 }: {
 	value: T;
 	onChange: (value: T) => void;
-	options: { value: T; label: string; detail?: string }[];
+	options: { value: T; label: string; detail?: string; icon?: React.ReactNode }[];
 	/** `field` fills a form row; `inline` is the compact one that sits at the end of a setting. */
 	size: "field" | "inline";
 }) {
@@ -172,7 +180,10 @@ function Dropdown<T extends string>({
 						: "h-[30px] rounded-lg border-line bg-card px-3 text-[12.5px]"
 				} ${menu.open ? "border-ink-faint" : "hover:border-ink-faint"}`}
 			>
-				<span className="min-w-0 truncate">{current?.label ?? value}</span>
+				<span className="flex min-w-0 items-center gap-2">
+					{current?.icon}
+					<span className="min-w-0 truncate">{current?.label ?? value}</span>
+				</span>
 				<ChevronDown
 					size={field ? 15 : 13}
 					strokeWidth={1.9}
@@ -189,6 +200,7 @@ function Dropdown<T extends string>({
 								key={option.value}
 								selected={option.value === value}
 								detail={option.detail}
+								icon={option.icon}
 								onClick={() => {
 									onChange(option.value);
 									menu.close();
@@ -207,7 +219,7 @@ function Dropdown<T extends string>({
 export function Select<T extends string>(props: {
 	value: T;
 	onChange: (value: T) => void;
-	options: { value: T; label: string; detail?: string }[];
+	options: { value: T; label: string; detail?: string; icon?: React.ReactNode }[];
 }) {
 	return <Dropdown {...props} size="field" />;
 }
@@ -216,7 +228,7 @@ export function Select<T extends string>(props: {
 export function InlineSelect<T extends string>(props: {
 	value: T;
 	onChange: (value: T) => void;
-	options: { value: T; label: string; detail?: string }[];
+	options: { value: T; label: string; detail?: string; icon?: React.ReactNode }[];
 }) {
 	return <Dropdown {...props} size="inline" />;
 }

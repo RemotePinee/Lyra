@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { promisify } from "node:util";
 import { spawn as spawnPty, type IPty } from "node-pty";
@@ -156,6 +157,59 @@ function resolvedBackground(): string {
  * It also settles the native menus, dialogs and scrollbars, which have the same problem for
  * the same reason.
  */
+/** Icons change about as often as applications are installed; one lookup per name is plenty. */
+const appIconCache = new Map<string, string | null>();
+/** The icon file a bundle declares, which is not always named after the app. */
+async function iconFileFor(bundle: string): Promise<string | null> {
+	const { stdout } = await execFileAsync("defaults", ["read", `${bundle}/Contents/Info`, "CFBundleIconFile"]).catch(
+		() => ({ stdout: "" }),
+	);
+	const name = stdout.trim();
+	if (!name) return null;
+	const file = name.endsWith(".icns") ? name : `${name}.icns`;
+	const path = `${bundle}/Contents/Resources/${file}`;
+	return (await stat(path).then(() => true).catch(() => false)) ? path : null;
+}
+
+async function renderAppIcon(appName: string): Promise<string | null> {
+	const bundle = await findApp(appName);
+	if (!bundle) return null;
+	const icns = await iconFileFor(bundle);
+	if (!icns) return null;
+
+	// A temporary file, because `sips` writes to a path and not to a pipe.
+	const out = join(tmpdir(), `dw-icon-${Buffer.from(appName).toString("hex")}.png`);
+	await execFileAsync("sips", ["-s", "format", "png", "--resampleWidth", "128", icns, "--out", out]);
+	const png = await readFile(out).catch(() => null);
+	await rm(out, { force: true }).catch(() => {});
+	return png ? `data:image/png;base64,${png.toString("base64")}` : null;
+}
+
+/**
+ * Where an application lives, by display name.
+ *
+ * The four directories macOS actually keeps applications in — third-party ones, the bundled
+ * ones Apple moved out of /Applications in Catalina, the utilities folder, and the services
+ * directory where Finder lives. Spotlight is the fallback for anything installed elsewhere,
+ * matched on file name because display names are localised and ours are not.
+ */
+const APP_DIRS = [
+	"/Applications",
+	"/System/Applications",
+	"/System/Applications/Utilities",
+	"/System/Library/CoreServices",
+];
+
+async function findApp(name: string): Promise<string | null> {
+	for (const dir of APP_DIRS) {
+		const candidate = `${dir}/${name}.app`;
+		if (await stat(candidate).then(() => true).catch(() => false)) return candidate;
+	}
+	const { stdout } = await execFileAsync("mdfind", ["-name", `${name}.app`]).catch(() => ({ stdout: "" }));
+	const hit = stdout.split("\n").find((line) => line.trim().endsWith(`${name}.app`));
+	return hit ? hit.trim() : null;
+}
+
 function applyNativeAppearance(): void {
 	const theme = settings?.appearance?.theme ?? "system";
 	nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
@@ -1058,6 +1112,35 @@ function registerIpc(): void {
 	});
 	ipcMain.handle("system:platform", async () => process.platform);
 
+	/*
+	 * The real icon, from the copy of the app that is actually installed.
+	 *
+	 * Better than shipping our own drawings of other people's logos: it is the icon the user
+	 * already recognises from their own Dock, it is whatever version they have, and an app that
+	 * is not installed simply returns nothing — which is also the answer to "should this be in
+	 * the list at all". Resolved through `mdfind` so it works wherever the app was put.
+	 */
+	/*
+	 * The application's own icon, rendered from its bundle.
+	 *
+	 * Not `app.getFileIcon`: it reaches into AppKit and takes the whole process down with a
+	 * SIGTRAP at anything above the smallest size, serialised or not. `sips` is the tool macOS
+	 * ships for exactly this, runs out of process, and gives a real 128px rendering rather than
+	 * the 32px one the API tops out at usefully.
+	 *
+	 * Better than shipping our own drawings of other people's logos: it is the icon already in
+	 * the user's Dock, at whatever version they have. An app that is not installed has none,
+	 * and its row stays a plain label.
+	 */
+	ipcMain.handle("system:appIcon", async (_event, appName: string): Promise<string | null> => {
+		if (process.platform !== "darwin") return null;
+		const cached = appIconCache.get(appName);
+		if (cached !== undefined) return cached;
+
+		const rendered = await renderAppIcon(appName).catch(() => null);
+		appIconCache.set(appName, rendered);
+		return rendered;
+	});
 
 	ipcMain.handle("index:stats", async (_event, cwd: string) => indexStats(cwd));
 
