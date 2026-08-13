@@ -177,13 +177,17 @@ export function Composer() {
 
 							<button
 								type="button"
-								title={PERMISSION_LABEL[permissionMode]}
+								/* The app's own tooltip, so the icon-only form still says what it is. */
+								data-dw-tip={PERMISSION_LABEL[permissionMode]}
+								data-dw-tip-side="top"
+								aria-label={PERMISSION_LABEL[permissionMode]}
 								onClick={permissionMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={permissionMenu.open}
 								className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] transition-colors duration-150 ${
 									permissionMode === "full"
-										? `text-accent ${permissionMenu.open ? "bg-accent/10" : "hover:bg-accent/10"}`
+										? // Red, not the accent: this is the one mode that hands over the machine.
+											`text-danger ${permissionMenu.open ? "bg-danger/10" : "hover:bg-danger/10"}`
 										: permissionMenu.open
 											? "bg-card-hover text-ink"
 											: "text-ink-muted hover:bg-card-hover hover:text-ink"
@@ -191,17 +195,20 @@ export function Composer() {
 							>
 								<CircleAlert size={13.5} strokeWidth={1.9} className="shrink-0" />
 								{/*
-								 * The label is the first thing to go when space runs out, except in
-								 * full-access mode — the one setting that must never be quietly on.
+								 * The label is the first thing to go when space runs out.
+								 *
+								 * Full access used to keep its words at every width, on the grounds
+								 * that it must never be quietly on. But a label that refuses to
+								 * yield just pushes the rest of the row out; the mark carries that
+								 * meaning on its own now that it is red, and the tooltip says the
+								 * word for anyone unsure.
 								 *
 								 * Measured against the field rather than the window: with a sidebar
 								 * and a panel open, a roomy-looking window still leaves this row
 								 * about 350px, and the label has to go long before the layout is
 								 * "compact".
 								 */}
-								<span className={permissionMode === "full" ? "" : "@max-[360px]:hidden"}>
-									{PERMISSION_LABEL[permissionMode]}
-								</span>
+								<span className="@max-[420px]:hidden">{PERMISSION_LABEL[permissionMode]}</span>
 							</button>
 						</>
 					}
