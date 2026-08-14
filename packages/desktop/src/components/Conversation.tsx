@@ -201,6 +201,16 @@ export function ConversationSkeleton() {
   );
 }
 
+/**
+ * Whether this message is where the reply stopped, rather than a pause inside it.
+ *
+ * `pending` is still arriving; `toolUse` is a handover to a tool with more to come after it.
+ * Everything else — a plain stop, a length cap, an error, an abort — is an ending.
+ */
+function settled(stopReason: AssistantMessage["stopReason"]): boolean {
+  return stopReason !== "pending" && stopReason !== "toolUse";
+}
+
 /** True while we are waiting on the model rather than rendering its live output. */
 function lastIsSettledOrEmpty(messages: Message[]): boolean {
   const last = messages[messages.length - 1];
@@ -384,8 +394,16 @@ function AssistantRow({
         </div>
       )}
 
-      {/* Intermediate tool-only turns have nothing to copy, so they get no row. */}
-      {message.stopReason !== "pending" && text.trim() && (
+      {/*
+       * Only where the reply actually ends.
+       *
+       * One answer is often several assistant messages: the model says what it is about to do,
+       * calls a tool, reads the result, says the next thing. Those middle messages end with
+       * `toolUse` — they are the sentence before the work, not the end of the answer — and each
+       * one was getting its own timestamp and copy button, so a single reply came back stamped
+       * four times. The row belongs to the message that finished the turn.
+       */}
+      {settled(message.stopReason) && text.trim() && (
         <MessageActions timestamp={message.timestamp} text={text} />
       )}
     </div>
