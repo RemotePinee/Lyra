@@ -347,7 +347,16 @@ export function SidePanel() {
 						);
 					})}
 
+					</div>
+
 					{/*
+					 * Outside the strip, so it cannot be scrolled away from.
+					 *
+					 * It used to be the last thing inside the tabs, which is where a new-tab button
+					 * belongs right up until the tabs overflow — after that it lives past the right
+					 * edge, under the fade, reachable only by scrolling a strip most people do not
+					 * realise scrolls. Anchored here it holds one position at any number of tabs.
+					 *
 					 * Only once something is open. With no tabs the body *is* the chooser, and a
 					 * button that pops up the same list a second time is just a second way to be
 					 * asked the same question.
@@ -360,14 +369,13 @@ export function SidePanel() {
 							aria-haspopup="menu"
 							aria-expanded={adder.open}
 							onClick={adder.toggle}
-							className={`no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+							className={`no-drag ml-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
 								adder.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 							}`}
 						>
 							<Plus size={14} strokeWidth={2} />
 						</button>
 					)}
-					</div>
 
 					<div className="w-2 shrink-0" />
 
@@ -444,7 +452,15 @@ export function SidePanel() {
 			 * click on them dragged the window instead. Declaring the same corner undraggable
 			 * here, after it in the order, is what makes them clickable.
 			 */}
-			<div className="no-drag absolute top-0 right-0 h-[44px] w-[104px]" />
+			{/*
+			 * Undraggable, and invisible to the pointer.
+			 *
+			 * `-webkit-app-region` is composited separately from hit testing, so this can decline
+			 * clicks and still declare the corner undraggable. Without that it also swallowed
+			 * every click in the area it covers — including the panel's own new-tab button, which
+			 * sits right under it.
+			 */}
+			<div className="no-drag pointer-events-none absolute top-0 right-0 h-[44px] w-[104px]" />
 		</div>
 	);
 }
