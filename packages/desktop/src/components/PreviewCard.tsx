@@ -88,6 +88,8 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 	const [nonce, setNonce] = useState(0);
 	const [tall, setTall] = useState(false);
 	const [ready, setReady] = useState(false);
+	/** The page wants more room than a card in a transcript is allowed to take. */
+	const [overflowing, setOverflowing] = useState(false);
 	const frame = useRef<HTMLIFrameElement>(null);
 	// Straight from the last time this preview was measured, so the first frame is already right.
 	const [measured, setMeasured] = useState<number | null>(() => recallHeight(preview));
@@ -120,6 +122,9 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 			setMeasured(height);
 			rememberHeight(preview, height);
 		}
+		function note(asked: number) {
+			if (asked > MAX_HEIGHT + 8) setOverflowing(true);
+		}
 		function onMessage(event: MessageEvent) {
 			// Identified by the window it came from — a sandboxed frame has no origin to check.
 			if (event.source !== frame.current?.contentWindow) return;
@@ -137,6 +142,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 				 * them is the one that saw all of it.
 				 */
 				state.tallest = Math.max(state.tallest, asked);
+				note(asked);
 				state.timer ??= setTimeout(() => {
 					/*
 					 * Too small to be a measurement of anything.
@@ -157,6 +163,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 			 * agreeing with itself. Growth is different: content that overflows the settled height
 			 * is content that would otherwise be cut off — a detail panel opening, a list loading.
 			 */
+			note(asked);
 			setMeasured((current) => {
 				const next = clamp(asked);
 				if (current === null || next <= current + 8 || state.adjustments >= MAX_ADJUSTMENTS) return current;
@@ -206,7 +213,12 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 				<iframe
 					ref={frame}
 					key={nonce}
-					src={previewUrl(preview)}
+					/*
+					 * `#dw-inline` tells the page it is in the transcript rather than the panel, and
+					 * a fragment does it without touching the request — same URL, same file, one
+					 * fetch. The injected stylesheet keys off it to stop the page scrolling here.
+					 */
+					src={`${previewUrl(preview)}#dw-inline`}
 					title={preview.title}
 					sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals"
 					onLoad={() => setReady(true)}
@@ -224,6 +236,29 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 			 * rerun or reopen a preview on it, they stay — quiet enough to read as part of the page,
 			 * and solid the moment the pointer arrives, which is a hover this document does own.
 			 */}
+			{/*
+			 * Say so when there is more below.
+			 *
+			 * The page does not scroll inside the card — that is what stops it swallowing the wheel
+			 * and jittering against its own edge — so a page taller than the ceiling is simply cut
+			 * off, and silently cutting content off is worse than the scrollbar ever was. The panel
+			 * is where a page this size belongs anyway.
+			 */}
+			{overflowing && !tall && (
+				<button
+					type="button"
+					onClick={() => {
+						openPreview(preview);
+						openTab("browser");
+					}}
+					className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-2"
+				>
+					<span className="dw-glass rounded-full px-2.5 py-1 text-[11.5px] text-ink-muted transition-colors hover:text-ink">
+						内容更长 · 在侧栏中查看
+					</span>
+				</button>
+			)}
+
 			<div className="dw-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
 				{/*
 				 * Taller, because the frame cannot ask for a size.
@@ -248,6 +283,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					onClick={() => {
 						// A fresh run may draw something a different size, so measure it again.
 						survey.current = { settled: false, tallest: 0, adjustments: 0, timer: null };
+						setOverflowing(false);
 						setReady(false);
 						setMeasured(null);
 						setNonce((value) => value + 1);

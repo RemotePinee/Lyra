@@ -258,11 +258,19 @@ function withHeightReporter(html: string): string {
 	 * ends up with a grey rail down one side that nothing asked for.
 	 *
 	 * Removing it from the layout ends the loop: an overlay scrollbar takes no width, so measuring
-	 * and displaying agree. The page still scrolls by wheel and by key for the rare thing too tall
-	 * for the ceiling — it is the rail that goes, not the ability.
+	 * and displaying agree.
+	 *
+	 * Hiding the rail was not enough on its own, though. A page left a pixel over its allowance
+	 * still scrolls — it wobbles under the wheel, and worse, it swallows the gesture, so scrolling
+	 * with the pointer over a preview stops moving the conversation behind it. Inside the card the
+	 * page therefore does not scroll at all: it was measured to fit, and anything that genuinely
+	 * needs more room has the side panel, where scrolling is what you came for. `dw-inline` is set
+	 * by the card and by nothing else, so the same file scrolls normally when opened there.
 	 */
-	const style = `<style>html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`;
+	const style = `<style>html.dw-inline,html.dw-inline body{overflow:hidden!important}html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`;
 	const script = `<script>(function(){
+/* Set before first paint, so the page is never briefly scrollable. */
+if(location.hash==="#dw-inline"&&document.documentElement)document.documentElement.className+=" dw-inline";
 var last=0;
 function measure(){
 var b=document.body,d=document.documentElement;
@@ -277,7 +285,9 @@ for(var i=0;i<keep.length;i++){keep[i][0].style.height=keep[i][1];keep[i][0].sty
 return natural;
 }
 function report(){
-var h=measure();
+/* A pixel of slack. Sub-pixel layout rounds up as often as down, and with overflow hidden the
+   difference is not a scrollbar any more — it is a clipped row of text. */
+var h=measure();if(h)h+=2;
 if(h&&Math.abs(h-last)>2){last=h;try{parent.postMessage({__dwPreviewHeight:h},"*")}catch(e){}}
 }
 addEventListener("load",report);addEventListener("resize",report);
