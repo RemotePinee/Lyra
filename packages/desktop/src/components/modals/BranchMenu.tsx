@@ -7,6 +7,15 @@ import { ScrollText } from "../ScrollText.tsx";
 import { useApp } from "../../store.ts";
 
 /**
+ * The last list seen for a workspace, so reopening the menu does not start from nothing.
+ *
+ * Deliberately module-level and not persisted. It exists to make the second open instant and
+ * the right size — branches change, so it is shown while the real list is being fetched and
+ * replaced the moment it arrives.
+ */
+const lastSeen = new Map<string, BranchList>();
+
+/**
  * Branch switcher for the composer's branch chip.
  *
  * Checking out is refused rather than forced when the working tree would be clobbered — git's
@@ -18,7 +27,9 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	const refreshWorkspace = useApp((s) => s.refreshWorkspace);
 	const notify = useApp((s) => s.notify);
 
-	const [branches, setBranches] = useState<BranchList | null>(null);
+	const [branches, setBranches] = useState<BranchList | null>(
+		() => (workspace ? (lastSeen.get(workspace.path) ?? null) : null),
+	);
 	const [query, setQuery] = useState("");
 	const [busy, setBusy] = useState<string | null>(null);
 
@@ -26,6 +37,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 		if (!workspace) return;
 		let live = true;
 		void window.deepwise.git.branches(workspace.path).then((list) => {
+			lastSeen.set(workspace.path, list);
 			if (live) setBranches(list);
 		});
 		return () => {
@@ -69,7 +81,24 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 			</div>
 
 			<Scroller className="max-h-[min(300px,44vh)]" contentClassName="p-1" fadeColor="var(--color-float)">
-				{!branches && <p className="px-2.5 py-5 text-center text-[12px] text-ink-faint">读取分支…</p>}
+				{/*
+				 * Rows, not a line of text.
+				 *
+				 * A single "读取分支…" is one row tall, and the list that replaces it is six or ten —
+				 * so the menu opened, sat still for a moment, then shoved itself open. Standing in
+				 * the shape of what is coming means the box is the right size from the first frame
+				 * and only its contents change. Same reason the context breakdown does it.
+				 */}
+				{!branches &&
+					[0, 1, 2, 3, 4].map((i) => (
+						<div key={i} className="flex h-[30px] items-center gap-2 px-2">
+							<span className="dw-pulse h-[13px] w-[13px] shrink-0 rounded bg-card" />
+							<span
+								className="dw-pulse h-[11px] rounded bg-card"
+								style={{ width: `${58 - i * 7}%` }}
+							/>
+						</div>
+					))}
 
 				{branches && local.length === 0 && remote.length === 0 && (
 					<p className="px-2.5 py-5 text-center text-[12px] text-ink-faint">
