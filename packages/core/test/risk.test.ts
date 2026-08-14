@@ -153,7 +153,30 @@ test("a glob delete that points outside still asks", () => {
 	}
 });
 
-test("recursive delete is still stopped wherever it points", () => {
-	assert.equal(assessCommand("rm -rf build", "/Users/me/project").risky, true);
-	assert.equal(assessCommand("rm -rf node_modules", "/Users/me/project").risky, true);
+
+test("clearing a build or data directory inside the project proceeds", () => {
+	// The user chose this: contained recursive deletes are part of ordinary work.
+	const cwd = "/Users/me/project";
+	for (const safe of ["rm -rf src/data", "rm -rf dist", "rm -rf node_modules", "cd /Users/me/project/server && rm -rf data"]) {
+		assert.equal(assessCommand(safe, cwd).risky, false, safe);
+	}
+});
+
+test("a recursive delete aimed at anything larger still asks", () => {
+	const cwd = "/Users/me/project";
+	for (const risky of [
+		"rm -rf .",
+		"rm -rf ..",
+		"rm -rf /",
+		"rm -rf /tmp/build",
+		"rm -rf ~/Library/Caches",
+		"rm -rf *",
+		"rm -rf src/*",
+		"rm -rf ../sibling",
+		"cd /tmp && rm -rf build",
+	]) {
+		assert.equal(assessCommand(risky, cwd).risky, true, risky);
+	}
+	// With no workspace to judge against, nothing is known to be contained.
+	assert.equal(assessCommand("rm -rf dist").risky, true);
 });

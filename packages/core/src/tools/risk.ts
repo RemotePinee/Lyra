@@ -152,7 +152,23 @@ function judgeSingle(command: string, contained = false): RiskVerdict {
 
 	// `rm` is the one worth reading closely: removing a file is routine, removing a tree is not.
 	if (head === "rm") {
-		if (/\s-[a-zA-Z]*[rR]/.test(command)) return risky("递归删除目录");
+		/*
+		 * A recursive delete is judged by its target, at the user's direction.
+		 *
+		 * Clearing `src/data` to reseed a database, or `dist` to rebuild, is a step inside work
+		 * that was asked for, and stopping at each one is what stops an unattended run being
+		 * unattended. The user chose this trade explicitly: relative paths inside the workspace
+		 * proceed; the workspace itself (`.`), a bare wildcard, a home or absolute path, anything
+		 * climbing out with `..`, and any chain that has `cd`-ed elsewhere first still ask.
+		 */
+		if (/\s-[a-zA-Z]*[rR]/.test(command)) {
+			const targets = command.split(/\s+/).slice(1).filter((word) => !word.startsWith("-"));
+			const reckless = targets.some(
+				(t) => !t || t.startsWith("/") || t.startsWith("~") || t === "." || t === ".." || t.includes("*"),
+			);
+			const climbs = targets.some((t) => t.split("/").includes(".."));
+			if (targets.length === 0 || reckless || climbs || !contained) return risky("递归删除目录");
+		}
 		/*
 		 * A glob delete is judged by where it points, not by the glob.
 		 *

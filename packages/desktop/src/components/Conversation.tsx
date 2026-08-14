@@ -190,7 +190,9 @@ export function Conversation() {
                 index={run.index}
               />
             ) : (
-              <ToolRun key={`run-${index}-${run.calls[0]?.block.id ?? index}`} calls={run.calls} />
+              /* Keyed on the first call, not the position: inserting anything above must not
+               * make React tear this run down and build it again. */
+              <ToolRun key={`run-${run.calls[0]?.block.id ?? index}`} calls={run.calls} />
             ),
           )}
 
@@ -437,8 +439,18 @@ function runs(messages: Message[], compactions: { at: number }[] = []): Run[] {
      * text is a different matter — that is the model addressing you, and a group should not
      * swallow it or straddle it.
      */
+    /*
+     * A message still streaming never joins the run before it.
+     *
+     * Its shape changes as it arrives — text first, then a call, or the reverse — so its grouping
+     * would flip with it, and every run below would be rebuilt and re-measured on the way. That
+     * is what made the transcript jump while the agent worked. It joins when it is finished and
+     * its shape has settled; until then it stands alone and only its own height moves.
+     */
+    const settling = message.role === "assistant" && message.stopReason === "pending";
     const toolOnly =
       message.role === "assistant" &&
+      !settling &&
       message.content.some((block) => block.type === "toolCall") &&
       !message.content.some((block) => block.type === "text" && block.text.trim());
 
