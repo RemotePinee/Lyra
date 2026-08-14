@@ -124,3 +124,36 @@ test("anything that leaves the machine still asks", () => {
 	assert.equal(assessNetwork("https://localhost.evil.com/").risky, true);
 	assert.equal(assessNetwork("not a url").risky, true);
 });
+
+test("a glob delete inside the workspace is ordinary work", () => {
+	const cwd = "/Users/me/project";
+	for (const safe of [
+		"rm -f data/blog.db*",
+		"cd /Users/me/project/server && rm -f data/blog.db*",
+		"rm -f build/*.map",
+		"cd server && rm -f tmp/*",
+	]) {
+		assert.equal(assessCommand(safe, cwd).risky, false, safe);
+	}
+});
+
+test("a glob delete that points outside still asks", () => {
+	const cwd = "/Users/me/project";
+	for (const risky of [
+		"rm -f /tmp/*",
+		"rm -f ~/Downloads/*",
+		"cd /etc && rm -f *",
+		"cd ../.. && rm -f *",
+		"cd $HOME && rm -f *",
+		// With no workspace to judge against, a glob delete is not obviously contained.
+		"rm -f data/*",
+	]) {
+		const verdict = risky.startsWith("rm -f data/") ? assessCommand(risky) : assessCommand(risky, cwd);
+		assert.equal(verdict.risky, true, risky);
+	}
+});
+
+test("recursive delete is still stopped wherever it points", () => {
+	assert.equal(assessCommand("rm -rf build", "/Users/me/project").risky, true);
+	assert.equal(assessCommand("rm -rf node_modules", "/Users/me/project").risky, true);
+});

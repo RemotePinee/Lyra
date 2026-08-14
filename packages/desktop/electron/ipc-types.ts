@@ -45,6 +45,8 @@ export interface SessionSnapshot {
 	messages: import("@deepwise/core").Message[];
 	running: boolean;
 	pendingApprovals: { id: string; kind: string; title: string; detail: string }[];
+	/** Message positions where history was summarised, so the mark survives a reload. */
+	compactions?: number[];
 }
 
 /**

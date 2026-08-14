@@ -883,7 +883,13 @@ function registerIpc(): void {
 
 		const loaded = await store.load(projectId, sessionId);
 		if (!loaded) return null;
-		return { meta: loaded.meta, messages: loaded.messages, running: false, pendingApprovals: [] };
+		return {
+			meta: loaded.meta,
+			messages: loaded.messages,
+			running: false,
+			pendingApprovals: [],
+			compactions: loaded.compactions,
+		};
 	});
 
 	ipcMain.handle("sessions:open", async (_event, projectId: string, sessionId: string) => {

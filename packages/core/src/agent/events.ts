@@ -18,6 +18,14 @@ export type AgentEvent =
 	| { type: "agent_end"; reason: "done" | "aborted" | "error" | "max_turns"; error?: string }
 	| { type: "notice"; level: "info" | "warn" | "error"; message: string }
 	/**
+	 * History was summarised to fit the window.
+	 *
+	 * Its own event rather than a notice, because it is a fact about the conversation that
+	 * outlives the moment: everything before it is a summary now, and someone reading the
+	 * transcript later needs to know that. Notices are transient by design and this is not.
+	 */
+	| { type: "compacted"; before: number; after: number }
+	/**
 	 * The connection dropped and the turn is being retried.
 	 *
 	 * Its own event rather than a notice, because it describes what this turn is doing right now

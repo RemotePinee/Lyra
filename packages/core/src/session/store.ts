@@ -190,12 +190,24 @@ export class SessionStore {
 		return out;
 	}
 
-	async load(projectId: string, sessionId: string): Promise<{ meta: SessionMeta; messages: Message[] } | null> {
+	async load(
+		projectId: string,
+		sessionId: string,
+	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[] } | null> {
 		let meta: SessionMeta | null = null;
 		// Kept with their sequence numbers so a truncate record can drop the right tail.
 		let entries: { seq: number; message: Message }[] = [];
+		/*
+		 * Where history was summarised, as a position in the transcript.
+		 *
+		 * Recorded at load rather than derived, because after the fact there is nothing in the
+		 * messages themselves to show it happened — the summary lives only in the running
+		 * session's memory, while the log keeps every original message.
+		 */
+		const compactions: number[] = [];
 		for await (const record of this.read(projectId, sessionId)) {
 			if (record.type === "meta") meta = record.meta;
+			else if (record.type === "event" && record.event.type === "compacted") compactions.push(entries.length);
 			else if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
 			else if (record.type === "title" && meta) meta.title = record.title;
 			else if (record.type === "archive" && meta) meta.archived = record.archived;
@@ -207,7 +219,7 @@ export class SessionStore {
 		meta.messageCount = messages.length;
 		// Seed the append queue's view so a reopened session keeps numbering where it left off.
 		this.latestMeta.set(this.keyFor(meta), meta);
-		return { meta, messages };
+		return { meta, messages, compactions };
 	}
 
 	// -------------------------------------------------------------------------

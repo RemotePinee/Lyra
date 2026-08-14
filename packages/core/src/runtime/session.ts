@@ -493,6 +493,17 @@ export class AgentSession {
 	}
 
 	private async emit(event: AgentEvent): Promise<void> {
+		/*
+		 * Compaction is written down; nothing else is.
+		 *
+		 * Events are otherwise live-only — the window renders them and they are gone. That is
+		 * right for progress chatter and wrong for this one: after it, the history the model
+		 * sees is a summary, and a transcript that does not say so is a transcript that cannot
+		 * explain itself. It is also the only way to know afterwards that it ever happened.
+		 */
+		if (event.type === "compacted" && this.meta) {
+			this.meta = await this.store.append(this.meta, { type: "event", event });
+		}
 		await this.emitExternal(event);
 	}
 
@@ -517,7 +528,7 @@ export class AgentSession {
 		if (mode === "auto") {
 			const verdict =
 				request.kind === "bash"
-					? assessCommand(request.subject)
+					? assessCommand(request.subject, this.cwd)
 					: request.kind === "edit" || request.kind === "write"
 						? assessWrite(request.subject, this.cwd)
 						: request.kind === "network"

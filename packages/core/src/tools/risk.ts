@@ -143,7 +143,7 @@ function firstWord(command: string): string {
 /**
  * Judge one command — no chaining, no substitution; `assessCommand` splits those first.
  */
-function judgeSingle(command: string): RiskVerdict {
+function judgeSingle(command: string, contained = false): RiskVerdict {
 	const head = firstWord(command);
 	if (!head) return SAFE;
 
@@ -153,7 +153,19 @@ function judgeSingle(command: string): RiskVerdict {
 	// `rm` is the one worth reading closely: removing a file is routine, removing a tree is not.
 	if (head === "rm") {
 		if (/\s-[a-zA-Z]*[rR]/.test(command)) return risky("递归删除目录");
-		if (/\s-[a-zA-Z]*f/.test(command) && /[*?]/.test(command)) return risky("强制删除通配匹配的文件");
+		/*
+		 * A glob delete is judged by where it points, not by the glob.
+		 *
+		 * Rebuilding a database or clearing a build directory is ordinary work — and it is what
+		 * `rm -f data/blog.db*` is. What cannot be taken back is the same command aimed outside
+		 * the project, so that is what this asks about: an absolute or home-relative target, or
+		 * a chain that has stepped out of the workspace first.
+		 */
+		if (/\s-[a-zA-Z]*f/.test(command) && /[*?]/.test(command)) {
+			const targets = command.split(/\s+/).slice(1).filter((word) => !word.startsWith("-"));
+			const outside = targets.some((t) => t.startsWith("/") || t.startsWith("~"));
+			if (outside || !contained) return risky("强制删除通配匹配的文件");
+		}
 		if (/(^|\s)\/(\s|$)|\s~\/?(\s|$)/.test(command)) return risky("删除根目录或主目录");
 	}
 
@@ -192,7 +204,7 @@ function judgeSingle(command: string): RiskVerdict {
  * A pipeline is risky if any stage is: `cat x | sudo tee /etc/hosts` is not made safe by
  * starting with `cat`.
  */
-export function assessCommand(command: string): RiskVerdict {
+export function assessCommand(command: string, cwd?: string): RiskVerdict {
 	/*
 	 * Checked against the whole line, before it is taken apart.
 	 *
@@ -202,8 +214,17 @@ export function assessCommand(command: string): RiskVerdict {
 	 */
 	if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|fi)?sh\b/.test(command)) return risky("下载并直接执行脚本");
 
+	/*
+	 * Whether the command stays inside the project.
+	 *
+	 * `cd` is what makes a relative path ambiguous: `rm -f build/*` is housekeeping, and
+	 * `cd /etc && rm -f *` is the same three characters somewhere it must never happen. If every
+	 * `cd` in the chain lands inside the workspace, a relative path is a path within it.
+	 */
+	const contained = cwd ? staysInside(command, cwd) : false;
+
 	for (const piece of splitCommands(command)) {
-		const verdict = judgeSingle(piece);
+		const verdict = judgeSingle(piece, contained);
 		if (verdict.risky) return verdict;
 	}
 	return SAFE;
@@ -246,4 +267,27 @@ export function assessNetwork(target: string): RiskVerdict {
 	// `*.localhost` resolves to the loopback by specification, and dev servers do use it.
 	if (host.endsWith(".localhost")) return SAFE;
 	return risky("访问外部网络");
+}
+
+/**
+ * Whether every directory the command changes into is within the workspace.
+ *
+ * Conservative by construction: a `cd` whose destination cannot be read literally — a variable,
+ * a substitution, `-` — counts as leaving, because what it resolves to is not knowable here.
+ */
+function staysInside(command: string, cwd: string): boolean {
+	const root = cwd.replace(/\/+$/, "");
+	for (const piece of splitCommands(command)) {
+		const match = /^\s*cd\s+(\S+)/.exec(piece);
+		if (!match) continue;
+		const target = match[1].replace(/^['"]|['"]$/g, "");
+		if (target.startsWith("~") || target === "-" || /[$`]/.test(target)) return false;
+		if (target.startsWith("/")) {
+			if (target !== root && !target.startsWith(`${root}/`)) return false;
+			continue;
+		}
+		// A relative `cd` can still climb out with `..`.
+		if (target.split("/").includes("..")) return false;
+	}
+	return true;
 }

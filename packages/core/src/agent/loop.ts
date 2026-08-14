@@ -126,11 +126,12 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 		}
 
 		if (config.compact) {
+			const before = messages.length;
 			const compacted = await config.compact(messages, config.model);
 			if (compacted) {
 				messages.length = 0;
 				messages.push(...compacted);
-				await emit({ type: "notice", level: "info", message: "Context compacted to fit the model window." });
+				await emit({ type: "compacted", before, after: compacted.length });
 			}
 		}
 
@@ -179,10 +180,18 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 						},
 					],
 					timestamp: Date.now(),
+					/*
+					 * The runtime is speaking, not the person.
+					 *
+					 * It has to be a user message because that is the only role the model will take
+					 * an instruction in — but the window must not draw it as one. Rendered in the
+					 * human's own bubble it reads as something they typed, and the transcript then
+					 * shows them asking for things they never asked for.
+					 */
+					synthetic: true,
 				};
 				messages.push(nudge);
 				produced.push(nudge);
-				// Shown rather than slipped in: the transcript should say why another turn started.
 				await emit({ type: "message_start", message: nudge });
 				await emit({ type: "message_end", message: nudge });
 				continue;

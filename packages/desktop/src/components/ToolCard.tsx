@@ -49,6 +49,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 	const details = result?.details as Record<string, unknown> | undefined;
 	const hasDiff = Array.isArray(details?.hunks) && (details.hunks as DiffHunk[]).length > 0;
 	const running = status === "running";
+	const { command: _command, ...rest } = args as Record<string, unknown>;
 
 	// A visible timer is the honest signal that a long command is still going.
 	const startedAt = useRef(Date.now());
@@ -112,11 +113,41 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 						<DiffView hunks={details?.hunks as DiffHunk[]} path={String(details?.path ?? "")} />
 					) : (
 						<>
-							<Section title="参数">
-								<pre className="overflow-x-auto font-mono text-[11.5px] leading-relaxed text-ink-muted">
-									{JSON.stringify(args, null, 2)}
-								</pre>
-							</Section>
+							{/*
+							 * A command is shown as a command, not as a field in a JSON object.
+							 *
+							 * What was run is the thing you check first when something looks wrong, and
+							 * `{"command": "cd … && npm install …", "timeout": 300000}` makes you read
+							 * around the syntax to find it. The rest of the arguments still print as
+							 * JSON below, because for every other tool that is the honest shape.
+							 */}
+							{typeof args.command === "string" && (
+								<Section title="命令">
+									<pre className="overflow-x-auto font-mono text-[11.5px] leading-relaxed text-ink">
+										<span className="mr-2 select-none text-ink-faint">$</span>
+										{args.command}
+									</pre>
+								</Section>
+							)}
+							{Object.keys(rest).length > 0 && (
+								<Section title="参数">
+									<pre className="overflow-x-auto font-mono text-[11.5px] leading-relaxed text-ink-muted">
+										{JSON.stringify(rest, null, 2)}
+									</pre>
+								</Section>
+							)}
+							{/*
+							 * Silence is a state too.
+							 *
+							 * A long install prints nothing for minutes while it downloads, and a card
+							 * with a command and no output section looks like a card that has lost its
+							 * output. Saying so is the difference between waiting and wondering.
+							 */}
+							{!result && running && (
+								<Section title="输出（进行中）">
+									<span className="font-mono text-[11.5px] text-ink-faint">等待输出…</span>
+								</Section>
+							)}
 							{result && (
 								<Section title={status === "error" ? "错误" : running ? "输出（进行中）" : "结果"}>
 									<Scroller className="max-h-[420px]" fadeColor="var(--color-shell)">

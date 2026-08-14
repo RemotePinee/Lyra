@@ -128,6 +128,8 @@ interface AppState {
    * half-written message and no explanation, as if the agent had simply gone quiet.
    */
   interrupted: boolean;
+  /** Where history was summarised, by position in the transcript. */
+  compactions: { at: number; before: number; after: number }[];
   notices: { id: string; level: "info" | "warn" | "error"; message: string }[];
   capabilities: AgentCapabilities | null;
   sync: SyncStatus | null;
@@ -193,6 +195,7 @@ export const useApp = create<AppState>((set, get) => ({
   activity: {},
   retrying: null,
   interrupted: false,
+  compactions: [],
   todos: [],
   notices: [],
   capabilities: null,
@@ -461,6 +464,8 @@ export const useApp = create<AppState>((set, get) => ({
       // Replayed from the log rather than the event stream: reopening a conversation does not
       // re-run its tools, so the plan has to be recovered from where the tool wrote it.
       todos: todosFrom(snapshot.messages),
+      // Replayed from the log: the summary itself is not in the transcript, only the fact.
+      compactions: (snapshot.compactions ?? []).map((at) => ({ at, before: 0, after: 0 })),
       interrupted: !snapshot.running && wasCutShort(snapshot.messages),
       running: snapshot.running,
       approvals: snapshot.pendingApprovals,
@@ -916,6 +921,22 @@ export const useApp = create<AppState>((set, get) => ({
 
       case "retry":
         set({ retrying: { attempt: event.attempt, delayMs: event.delayMs, reason: event.reason } });
+        break;
+
+      case "compacted":
+        /*
+         * A marker in the transcript, not a toast.
+         *
+         * Everything above this point is a summary as far as the model is concerned. That is a
+         * property of the conversation and belongs in it — a notice would say it once and then
+         * take the explanation away with it.
+         */
+        set({
+          compactions: [
+            ...get().compactions,
+            { at: get().messages.length, before: event.before, after: event.after },
+          ],
+        });
         break;
 
       case "notice":

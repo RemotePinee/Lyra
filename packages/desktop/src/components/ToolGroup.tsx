@@ -20,11 +20,14 @@ import { Spinner } from "./RunningIndicator.tsx";
 export function ToolGroup({
 	count,
 	running,
+	label,
 	children,
 }: {
 	count: number;
 	/** At least one call in the group has not finished. */
 	running?: boolean;
+	/** What is happening right now — the running call's own summary, when there is exactly one. */
+	label?: string;
 	children: React.ReactNode;
 }) {
 	const [open, setOpen] = useState(false);
@@ -44,7 +47,7 @@ export function ToolGroup({
 	}, [children, open]);
 
 	return (
-		<div className="mb-2">
+		<div className={`mb-2 ${running ? "dw-rail overflow-hidden rounded-md" : ""}`}>
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}
@@ -52,7 +55,15 @@ export function ToolGroup({
 				className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
 			>
 				{running && <Spinner size={11} />}
-				<span>{running ? `执行 ${count} 个操作` : `执行了 ${count} 个操作`}</span>
+				{/*
+				 * The label changes as the group works through its calls, and changing text that
+				 * simply swaps reads as a flicker. Keying the span on the text makes each one a
+				 * new element, so it fades in while the old one is already gone — a change you
+				 * can follow rather than one you catch out of the corner of your eye.
+				 */}
+				<span key={label ?? count} className="dw-fade-in">
+					{running ? (label ?? `执行 ${count} 个操作`) : `执行了 ${count} 个操作`}
+				</span>
 				<ChevronDown
 					size={12}
 					strokeWidth={1.9}

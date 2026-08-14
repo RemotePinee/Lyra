@@ -21,8 +21,12 @@ import { useApp, type ToolRun } from "../store.ts";
 export function Conversation() {
   const messages = useApp((s) => s.messages);
   const running = useApp((s) => s.running);
-  const toolRuns = useApp((s) => s.toolRuns);
+  const compactions = useApp((s) => s.compactions);
+  const toolRunCount = useApp((s) => Object.keys(s.toolRuns).length);
   const activeSessionId = useApp((s) => s.activeSessionId);
+  /** How many messages are mounted. Grows when asked, resets with the conversation. */
+  const [windowSize, setWindowSize] = useState(WINDOW_STEP);
+  useEffect(() => setWindowSize(WINDOW_STEP), [activeSessionId]);
   const { compact } = useLayout();
   /*
    * The floating card needs its own width plus a readable column left over beside it.
@@ -64,7 +68,14 @@ export function Conversation() {
     const el = scrollRef.current;
     if (!el || !pinnedToBottom.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages, toolRuns]);
+    /*
+     * A cheap stand-in for "output arrived".
+     *
+     * Following the bottom used to depend on the whole `toolRuns` map, which meant subscribing
+     * to every streamed chunk here as well. A count of finished calls changes when a card
+     * appears or completes — the moments that actually change the page height.
+     */
+  }, [messages, toolRunCount]);
 
   // A new session starts at the bottom, not wherever the previous one was left.
   useLayoutEffect(() => {
@@ -77,6 +88,10 @@ export function Conversation() {
     const frame = requestAnimationFrame(() => setSwapping(false));
     return () => cancelAnimationFrame(frame);
   }, [swapping]);
+
+  const allRuns = runs(messages, compactions);
+  const hidden = Math.max(0, allRuns.length - windowSize);
+  const visibleRuns = hidden > 0 ? allRuns.slice(hidden) : allRuns;
 
   return (
     <div ref={column} className="relative flex min-h-0 flex-1 flex-col">
@@ -125,13 +140,59 @@ export function Conversation() {
           key={activeSessionId ?? "blank"}
           className={`dw-fade-in mx-auto w-full max-w-[var(--dw-content)] py-5 ${swapping ? "dw-no-enter" : ""}`}
         >
-          {messages.map((message, index) => (
-            <MessageRow
-              key={messageKey(message, index)}
-              message={message}
-              index={index}
-            />
-          ))}
+          {/*
+           * Runs of tool calls are gathered across messages, not just inside one.
+           *
+           * A model that calls a tool, reads the result and calls the next one produces a fresh
+           * assistant message every time. Grouping within a message therefore caught parallel
+           * batches and missed sequential ones — which is the common case, and the one that
+           * fills the transcript with a column of near-identical cards. A message carrying text
+           * ends the run, because that is the model saying something worth reading.
+           */}
+          {/*
+           * Only the tail is mounted until you ask for the rest.
+           *
+           * A day-long session runs to thousands of messages, each with its own cards and
+           * expanders. Mounting all of them costs memory that never comes back and makes every
+           * repaint walk the whole tree, which is what turns scrolling to treacle. The recent
+           * end is what anyone is reading; the rest is one click away and stays unmounted until
+           * then.
+           */}
+          {hidden > 0 && (
+            <button
+              type="button"
+              onClick={() => setWindowSize((n) => n + WINDOW_STEP)}
+              className="mb-4 flex h-7 w-full items-center justify-center rounded-md text-[12px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
+            >
+              显示更早的 {Math.min(hidden, WINDOW_STEP)} 条（共 {hidden} 条）
+            </button>
+          )}
+
+          {visibleRuns.map((run, index) =>
+            run.kind === "compaction" ? (
+              /*
+               * Where it happened, not at the end.
+               *
+               * Everything above this line is a summary as far as the model is concerned, and
+               * everything below is verbatim — which is only useful if the line is at the
+               * boundary. Pinned to the bottom it said the opposite of what it meant: that the
+               * work still arriving had already been summarised away.
+               */
+              <div key={`compaction-${index}`} className="mb-6 flex items-center gap-2 text-[11px] text-ink-faint">
+                <span className="h-px flex-1 bg-line-soft" />
+                <span>以上内容已压缩为摘要</span>
+                <span className="h-px flex-1 bg-line-soft" />
+              </div>
+            ) : run.kind === "message" ? (
+              <MessageRow
+                key={messageKey(run.message, run.index)}
+                message={run.message}
+                index={run.index}
+              />
+            ) : (
+              <ToolRun key={`run-${index}-${run.calls[0]?.block.id ?? index}`} calls={run.calls} />
+            ),
+          )}
 
           {running && lastIsSettledOrEmpty(messages) && <RunningIndicator />}
           {/* Where the running indicator would have been, saying why it is not there. */}
@@ -227,7 +288,28 @@ function messageKey(message: Message, index: number): string {
 
 function MessageRow({ message, index }: { message: Message; index: number }) {
   if (message.role === "user") {
-    // Synthetic messages are the runtime talking to the model, not the user talking.
+    /*
+     * The runtime talking to the model, not the user talking.
+     *
+     * Recognised by what it says, not only by its flag. The flag was added later, so every nudge
+     * already written to a log lacks it — and those are exactly the ones sitting in people's
+     * transcripts wearing their own bubble, timestamp and edit button, looking like something
+     * they typed and never did. Reading the text catches both.
+     *
+     * Most runtime messages say nothing a reader needs and stay hidden; a nudge is why another
+     * turn started, so it gets a line of its own — a note about the conversation rather than a
+     * message in it.
+     */
+    const text = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+    if (text.startsWith("（自动继续）")) {
+      return (
+        <div className="mb-6 flex items-center gap-2 text-[11px] text-ink-faint">
+          <span className="h-px w-6 bg-line-soft" />
+          <span>自动继续 · 清单尚未完成</span>
+          <span className="h-px flex-1 bg-line-soft" />
+        </div>
+      );
+    }
     if (message.synthetic) return null;
     return <UserMessage message={message} index={index} />;
   }
@@ -240,6 +322,14 @@ function MessageRow({ message, index }: { message: Message; index: number }) {
 
 /** Below this a group saves nothing: the line replacing the cards is as tall as they were. */
 const GROUP_MIN = 3;
+
+/**
+ * How much of a long transcript is mounted at once, and how much each "show more" adds.
+ *
+ * Large enough that an ordinary conversation is never truncated, small enough that a session
+ * with thousands of messages still scrolls like an empty one.
+ */
+const WINDOW_STEP = 120;
 
 type Segment =
   | { kind: "block"; block: AssistantContent; index: number }
@@ -265,12 +355,24 @@ function segments(content: AssistantContent[]): Segment[] {
   return out;
 }
 
-function renderTool(
-  block: Extract<AssistantContent, { type: "toolCall" }>,
-  toolRuns: Record<string, ToolRun>,
-  stopReason: AssistantMessage["stopReason"],
-) {
-  const run = toolRuns[block.id];
+/**
+ * One card, subscribed to its own record and nothing else.
+ *
+ * Tool output streams: a long install or a test run emits `tool_update` many times a second, and
+ * each one replaces the whole `toolRuns` map. Anything reading that map re-renders — so with the
+ * map read at the top of the transcript, every chunk of output repainted every message in the
+ * conversation. In a session with hundreds of messages that is what made scrolling stutter.
+ *
+ * Reading one entry means Object.is sees no change for the other cards and they stay put.
+ */
+function LiveToolCard({
+  block,
+  stopReason,
+}: {
+  block: Extract<AssistantContent, { type: "toolCall" }>;
+  stopReason: AssistantMessage["stopReason"];
+}) {
+  const run = useApp((s) => s.toolRuns[block.id]);
   /*
    * A preview replaces its own tool card.
    *
@@ -278,10 +380,9 @@ function renderTool(
    * the page is right there, and it is the result.
    */
   const preview = (run?.result?.details as { preview?: PreviewInfo } | undefined)?.preview;
-  if (preview) return <PreviewCard key={block.id} preview={preview} />;
+  if (preview) return <PreviewCard preview={preview} />;
   return (
     <ToolCard
-      key={block.id}
       toolName={block.name}
       args={block.arguments}
       summary={run?.summary ?? block.name}
@@ -299,6 +400,89 @@ function renderTool(
   );
 }
 
+/**
+ * A message that has something to show, or a run of tool calls with nothing between them.
+ *
+ * Assistant messages that are nothing but tool calls are plumbing — the model handing off and
+ * coming back. Several in a row are one stretch of work, and reading them as one is closer to
+ * what happened than reading them as four separate replies.
+ */
+type Run =
+  | { kind: "compaction" }
+  | { kind: "message"; message: Message; index: number }
+  | { kind: "tools"; calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] };
+
+function runs(messages: Message[], compactions: { at: number }[] = []): Run[] {
+  const out: Run[] = [];
+  // Sorted so the marks can be consumed in order as the transcript is walked.
+  const marks = [...compactions].map((c) => c.at).sort((a, b) => a - b);
+  let nextMark = 0;
+  for (const [index, message] of messages.entries()) {
+    while (nextMark < marks.length && marks[nextMark] === index) {
+      out.push({ kind: "compaction" });
+      nextMark++;
+    }
+    const toolOnly =
+      message.role === "assistant" &&
+      message.content.length > 0 &&
+      message.content.every((block) => block.type === "toolCall");
+
+    if (!toolOnly) {
+      out.push({ kind: "message", message, index });
+      continue;
+    }
+    const calls = message.content
+      .filter((block) => block.type === "toolCall")
+      .map((block) => ({ block, stopReason: message.stopReason }));
+    const last = out[out.length - 1];
+    if (last?.kind === "tools") last.calls.push(...calls);
+    else out.push({ kind: "tools", calls });
+  }
+  // A compaction recorded after the last message still belongs at the end.
+  while (nextMark < marks.length) {
+    out.push({ kind: "compaction" });
+    nextMark++;
+  }
+  return out;
+}
+
+/** A call with no record is still going only while the message that made it is unfinished. */
+function isLive(run: ToolRun | undefined, stopReason: AssistantMessage["stopReason"]): boolean {
+  return run?.status === "running" || (!run && stopReason === "pending");
+}
+
+/** Renders one run: folded when there are enough of them, plain cards when there are not. */
+function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] }) {
+  /*
+   * Two primitives, not the map.
+   *
+   * A selector returning an object builds a new one every time and so always looks changed; a
+   * number and a string are compared by value, so this re-renders when what it shows changes and
+   * not when some other card emits a line of output.
+   */
+  const liveCount = useApp(
+    (s) => calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason)).length,
+  );
+  const label = useApp((s) => {
+    const live = calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason));
+    return live.length === 1 ? (s.toolRuns[live[0].block.id]?.summary ?? "") : "";
+  });
+  const cards = calls.map(({ block, stopReason }) => (
+    <LiveToolCard key={block.id} block={block} stopReason={stopReason} />
+  ));
+  if (calls.length < GROUP_MIN) return <>{cards}</>;
+
+  /*
+   * The label only names something when one thing is happening. With several in flight there is
+   * no single answer, and picking one would have it jumping between them as they finish.
+   */
+  return (
+    <ToolGroup count={calls.length} running={liveCount > 0} label={label || undefined}>
+      {cards}
+    </ToolGroup>
+  );
+}
+
 function AssistantRow({
   message,
   index,
@@ -306,7 +490,6 @@ function AssistantRow({
   message: AssistantMessage;
   index: number;
 }) {
-  const toolRuns = useApp((s) => s.toolRuns);
   const running = useApp((s) => s.running);
   const retryFrom = useApp((s) => s.retryFrom);
 
@@ -347,19 +530,17 @@ function AssistantRow({
               </div>
             ) : null;
           }
-          return renderTool(block, toolRuns, message.stopReason);
+          return <LiveToolCard key={block.id} block={block} stopReason={message.stopReason} />;
         }
 
-        const cards = segment.blocks.map((block) => renderTool(block, toolRuns, message.stopReason));
+        const cards = segment.blocks.map((block) => (
+          <LiveToolCard key={block.id} block={block} stopReason={message.stopReason} />
+        ));
         // Enough of them to be scenery — running or not, since a row of identical spinners is
         // the worst of it rather than the exception.
         if (segment.blocks.length < GROUP_MIN) return cards;
-        const running = segment.blocks.some((block) => {
-          const status = toolRuns[block.id]?.status;
-          return status === "running" || (!status && message.stopReason === "pending");
-        });
         return (
-          <ToolGroup key={`group-${position}`} count={segment.blocks.length} running={running}>
+          <ToolGroup key={`group-${position}`} count={segment.blocks.length}>
             {cards}
           </ToolGroup>
         );
