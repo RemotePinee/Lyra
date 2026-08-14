@@ -504,18 +504,24 @@
 }
 
 /* Working indicator: a dot travelling along a track, used while a command runs. */
+/*
+ * One band of light, crossing at a constant speed.
+ *
+ * It used to animate `left` and `right` independently, which had two consequences: the band
+ * stretched to nearly half the card at the midpoint and shrank again — reading as a breath
+ * rather than a movement — and at the end of each cycle it vanished at the right edge and
+ * reappeared at the left, so the loop had a visible seam.
+ *
+ * Translating a full-width gradient fixes both. The band keeps its shape, and both ends of the
+ * cycle are off-card, so there is nothing to see at the join. `linear`, because a thing moving
+ * past you does not slow down at the edges of the window.
+ */
 @keyframes dw-track {
-  0% {
-    left: 0;
-    right: 85%;
+  from {
+    transform: translateX(-100%);
   }
-  50% {
-    left: 30%;
-    right: 30%;
-  }
-  100% {
-    left: 85%;
-    right: 0;
+  to {
+    transform: translateX(100%);
   }
 }
 
@@ -575,9 +581,19 @@
   content: "";
   position: absolute;
   bottom: 0;
+  left: 0;
+  width: 100%;
   height: 1.5px;
-  background: linear-gradient(90deg, transparent, var(--color-info), transparent);
-  animation: dw-track 1.5s ease-in-out infinite;
+  /* Soft at both ends so it fades in and out of the card rather than arriving as an edge. */
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-info) 45%, transparent) 35%,
+    var(--color-info) 50%,
+    color-mix(in srgb, var(--color-info) 45%, transparent) 65%,
+    transparent 100%
+  );
+  animation: dw-track 1.4s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

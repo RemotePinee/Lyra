@@ -21,6 +21,15 @@ import { useApp } from "../store.ts";
  */
 export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	const todos = useApp((s) => s.todos);
+	/*
+	 * Nothing is working on the current step.
+	 *
+	 * The list records what the agent was doing, not whether anyone is still doing it — so after
+	 * an interruption the step it had reached kept its spinner, turning indefinitely for work
+	 * that stopped minutes ago. Paused is a third state and reads as one: the step is still where
+	 * the plan is, it is simply not moving.
+	 */
+	const paused = useApp((s) => s.interrupted) && !useApp((s) => s.running);
 	const [open, setOpen] = useState(false);
 	const body = useRef<HTMLDivElement>(null);
 	const [height, setHeight] = useState(0);
@@ -71,7 +80,15 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				 * "任务" would spend that time telling you something you can see.
 				 */}
 				<ScrollText
-					text={active ? (active.activeForm ?? active.content) : todos.length === done ? "全部完成" : "待开始"}
+					text={
+						active
+							? paused
+								? `已暂停 · ${active.content}`
+								: (active.activeForm ?? active.content)
+							: todos.length === done
+								? "全部完成"
+								: "待开始"
+					}
 					className="dw-fade-tail min-w-0 flex-1 text-[12.5px]"
 				/>
 				<Text size="caption" tone="faint" numeric className="shrink-0">
@@ -97,7 +114,7 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				<div ref={body} className="border-t border-line-soft">
 					<Scroller className="max-h-[min(280px,38vh)]" contentClassName="px-1.5 py-1.5" fadeColor="var(--color-shell)">
 						{todos.map((todo, index) => (
-							<Row key={`${index}-${todo.content}`} todo={todo} />
+							<Row key={`${index}-${todo.content}`} todo={todo} paused={paused} />
 						))}
 					</Scroller>
 				</div>
@@ -108,10 +125,10 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	);
 }
 
-function Row({ todo }: { todo: TodoItem }) {
+function Row({ todo, paused }: { todo: TodoItem; paused?: boolean }) {
 	return (
 		<div className="dw-scroll flex items-center gap-2 rounded-md px-1.5 py-[5px]">
-			<Mark status={todo.status} />
+			<Mark status={todo.status} paused={paused} />
 			<ScrollText
 				text={todo.content}
 				className={`dw-fade-tail min-w-0 flex-1 text-[12px] ${
@@ -132,11 +149,20 @@ function Row({ todo }: { todo: TodoItem }) {
  * The running one borrows the app's spinner geometry rather than a second kind of spinner, and
  * pending is a dashed ring — present, but plainly not started, which a solid outline reads as.
  */
-function Mark({ status }: { status: TodoItem["status"] }) {
+function Mark({ status, paused }: { status: TodoItem["status"]; paused?: boolean }) {
 	if (status === "completed") {
 		return (
 			<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center text-ok">
 				<Check size={11} strokeWidth={2.4} />
+			</span>
+		);
+	}
+	if (status === "in_progress" && paused) {
+		// Two bars: stopped where it stands, rather than finished or failed.
+		return (
+			<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center gap-[2px]" aria-label="已暂停">
+				<span className="block h-[8px] w-[2px] rounded-[1px] bg-ink-faint" />
+				<span className="block h-[8px] w-[2px] rounded-[1px] bg-ink-faint" />
 			</span>
 		);
 	}

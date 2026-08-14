@@ -1,22 +1,20 @@
 import { Brain, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Markdown } from "./Markdown.tsx";
 
 /**
- * The model's reasoning, folded away once the turn it belongs to is over.
+ * The model's reasoning, behind one line that says it is thinking.
  *
- * Open while the turn runs, because watching the reasoning is how you tell a long turn is
- * going somewhere. Closed afterwards, because a finished answer should not be buried under
- * the working that produced it. Touching the toggle takes it off the automatic track — a
- * block you deliberately opened stays open.
+ * Closed by default, live or not. It used to open itself while the turn ran, on the theory that
+ * watching the reasoning tells you a long turn is going somewhere — but a long turn is mostly
+ * reasoning, so the transcript became a wall of working with the answers lost inside it, and it
+ * moved under the reader as every paragraph arrived. The line is enough to say it is thinking;
+ * opening it is a question you can ask when you want to.
+ *
+ * Once opened it stays open, including as the text keeps arriving.
  */
 export function ThinkingBlock({ text, redacted, live }: { text: string; redacted: boolean; live?: boolean }) {
-	const [open, setOpen] = useState(live ?? false);
-	const [pinned, setPinned] = useState(false);
-
-	useEffect(() => {
-		if (!pinned) setOpen(live ?? false);
-	}, [live, pinned]);
+	const [open, setOpen] = useState(false);
 
 	if (!text && !redacted) return null;
 
@@ -24,10 +22,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 		<div className="mb-2.5">
 			<button
 				type="button"
-				onClick={() => {
-					setPinned(true);
-					setOpen((v) => !v);
-				}}
+				onClick={() => setOpen((v) => !v)}
 				className="flex items-center gap-1.5 rounded-md py-0.5 text-[12px] text-ink-faint transition-colors hover:text-ink-muted"
 			>
 				<Brain size={13} strokeWidth={1.8} className={live ? "dw-pulse" : undefined} />

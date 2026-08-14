@@ -120,6 +120,14 @@ interface AppState {
    * the reading the list exists to save.
    */
   todos: TodoItem[];
+  /**
+   * The last turn stopped without finishing, and nothing is running now.
+   *
+   * A reply left `pending` in the log means the process holding it went away mid-turn — the app
+   * was quit, it crashed, the machine slept. Reopening such a conversation showed the last
+   * half-written message and no explanation, as if the agent had simply gone quiet.
+   */
+  interrupted: boolean;
   notices: { id: string; level: "info" | "warn" | "error"; message: string }[];
   capabilities: AgentCapabilities | null;
   sync: SyncStatus | null;
@@ -184,6 +192,7 @@ export const useApp = create<AppState>((set, get) => ({
   approvals: [],
   activity: {},
   retrying: null,
+  interrupted: false,
   todos: [],
   notices: [],
   capabilities: null,
@@ -452,6 +461,7 @@ export const useApp = create<AppState>((set, get) => ({
       // Replayed from the log rather than the event stream: reopening a conversation does not
       // re-run its tools, so the plan has to be recovered from where the tool wrote it.
       todos: todosFrom(snapshot.messages),
+      interrupted: !snapshot.running && wasCutShort(snapshot.messages),
       running: snapshot.running,
       approvals: snapshot.pendingApprovals,
       toolRuns,
@@ -744,6 +754,7 @@ export const useApp = create<AppState>((set, get) => ({
         set({
           running: true,
           retrying: null,
+          interrupted: false,
           // The composer already started the clock when it sent, and the ~2s of session
           // setup before the agent starts is part of the wait. Overwriting it here made
           // the elapsed time jump backwards. A turn driven from the phone or the
@@ -989,6 +1000,28 @@ function findMessageSlot(messages: Message[], incoming: Message): number {
 
 /** Reconstruct tool cards when opening a stored session. */
 export /**
+ * Whether the conversation was left mid-turn.
+ *
+ * Two shapes mean the same thing. A reply still marked `pending` never reached its end; a
+ * finished reply whose tool calls have no results was cut off between asking for the tools and
+ * running them. Either way the work stopped somewhere it did not choose to.
+ */
+function wasCutShort(messages: Message[]): boolean {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason === "pending") return true;
+		const calls = message.content.filter((block) => block.type === "toolCall");
+		if (calls.length === 0) return false;
+		const answered = new Set(
+			messages.slice(i + 1).flatMap((m) => (m.role === "toolResult" ? [m.toolCallId] : [])),
+		);
+		return calls.some((call) => call.type === "toolCall" && !answered.has(call.id));
+	}
+	return false;
+}
+
+/**
  * The last task list written in a conversation.
  *
  * Searched backwards because `todo_write` sends the whole list every time — the newest one is

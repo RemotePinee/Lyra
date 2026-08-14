@@ -7,6 +7,7 @@ import { Markdown } from "./Markdown.tsx";
 import { MessageActions } from "./MessageActions.tsx";
 import { PreviewCard, type PreviewInfo } from "./PreviewCard.tsx";
 import { ThinkingBlock } from "./ThinkingBlock.tsx";
+import { ResumeRow } from "./ResumeRow.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
@@ -133,6 +134,8 @@ export function Conversation() {
           ))}
 
           {running && lastIsSettledOrEmpty(messages) && <RunningIndicator />}
+          {/* Where the running indicator would have been, saying why it is not there. */}
+          <ResumeRow />
         </div>
       </Scroller>
 
