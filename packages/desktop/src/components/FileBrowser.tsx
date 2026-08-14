@@ -1,5 +1,5 @@
 import { ChevronRight, Folder } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileContents, FileEntry } from "../../electron/ipc-types.ts";
 import { FileViewer } from "./FileViewer.tsx";
 import { iconColour, lookFor } from "./fileIcon.tsx";
@@ -51,6 +51,24 @@ export function FileBrowser() {
 		const entries = await window.deepwise.files.list(dir);
 		setChildren((current) => ({ ...current, [dir]: entries }));
 	}, []);
+
+	/*
+	 * Re-read the tree when a turn ends.
+	 *
+	 * The agent writes files — that is most of what it does — and the panel was loading the tree
+	 * once, when the project opened. Watching it work meant watching a list that had been true
+	 * several minutes ago: files it had just created were simply absent. Every directory that is
+	 * open gets re-read, since those are the ones being looked at.
+	 */
+	const running = useApp((s) => s.running);
+	// A ref, so ending a turn re-reads whatever is open now without re-running on every expand.
+	const openDirs = useRef(expanded);
+	openDirs.current = expanded;
+	useEffect(() => {
+		if (running || !root) return;
+		void load(root);
+		for (const dir of openDirs.current) void load(dir);
+	}, [running, root, load]);
 
 	// Opening a different project starts from scratch rather than showing the old tree.
 	useEffect(() => {

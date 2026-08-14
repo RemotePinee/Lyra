@@ -7,6 +7,7 @@
  */
 
 import { streamAssistant } from "../ai/index.ts";
+import { readTodos } from "../tools/todo.ts";
 import type {
 	ApprovalDecision,
 	ApprovalRequest,
@@ -81,6 +82,13 @@ export interface AgentRunResult {
 }
 
 const DEFAULT_MAX_TURNS = 200;
+/**
+ * How many times in a row the agent may be told to get on with it.
+ *
+ * Enough to carry a plan over a couple of pauses, few enough that a model which has genuinely
+ * finished — but left an item it decided against — is not argued with indefinitely.
+ */
+const MAX_NUDGES = 3;
 
 export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Promise<AgentRunResult> {
 	const messages = [...config.messages];
@@ -88,6 +96,8 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 	const produced: Message[] = [];
 	const state = config.state ?? new Map<string, unknown>();
 	const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
+	/** Consecutive turns that talked about the plan without touching it. */
+	let nudges = 0;
 
 	await emit({ type: "agent_start", sessionId: config.sessionId });
 
@@ -142,9 +152,45 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 			await emit({ type: "turn_end", message: assistant, toolResults: [] });
 			// A steering message that arrived during the final stream still deserves an answer.
 			carried = config.drainSteering?.() ?? [];
-			if (carried.length === 0) return finish("done");
-			continue;
+			if (carried.length > 0) continue;
+
+			/*
+			 * Saying what comes next is not the same as stopping.
+			 *
+			 * On long work a model regularly ends a turn with a sentence like "backend done, now
+			 * the SSR pages" and no tool call at all — it narrated the next step instead of taking
+			 * it. Read literally that is the end of the run, and eight-step plans were being
+			 * abandoned three steps in with nothing wrong and nothing said.
+			 *
+			 * Its own task list is the evidence. If items remain unfinished, the work is not over
+			 * and it is asked to carry on. Bounded, and reset by any turn that actually uses a
+			 * tool, so a model that has genuinely stopped is nudged a few times and then left
+			 * alone rather than talked at forever.
+			 */
+			const unfinished = readTodos(state).filter((todo) => todo.status !== "completed");
+			if (unfinished.length > 0 && nudges < MAX_NUDGES) {
+				nudges += 1;
+				const nudge: Message = {
+					role: "user",
+					content: [
+						{
+							type: "text",
+							text: `（自动继续）清单里还有 ${unfinished.length} 项没有完成。直接执行下一项，不要只描述计划。`,
+						},
+					],
+					timestamp: Date.now(),
+				};
+				messages.push(nudge);
+				produced.push(nudge);
+				// Shown rather than slipped in: the transcript should say why another turn started.
+				await emit({ type: "message_start", message: nudge });
+				await emit({ type: "message_end", message: nudge });
+				continue;
+			}
+			return finish("done");
 		}
+		// It did something, so whatever made it pause before is no longer the pattern.
+		nudges = 0;
 
 		const toolResults =
 			assistant.stopReason === "length"

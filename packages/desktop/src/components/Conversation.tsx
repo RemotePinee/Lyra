@@ -22,6 +22,22 @@ export function Conversation() {
   const toolRuns = useApp((s) => s.toolRuns);
   const activeSessionId = useApp((s) => s.activeSessionId);
   const { compact } = useLayout();
+  /*
+   * The floating card needs its own width plus a readable column left over beside it.
+   * 320 for the card, 32 for the gap it keeps from the edge, and 420 of text — below that the
+   * reply is a ribbon and the card should go and sit above the composer instead.
+   */
+  const column = useRef<HTMLDivElement>(null);
+  const [roomToFloat, setRoomToFloat] = useState(false);
+  useEffect(() => {
+    const element = column.current;
+    if (!element) return;
+    const measure = () => setRoomToFloat(element.clientWidth >= 320 + 32 + 420);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   /**
@@ -61,7 +77,7 @@ export function Conversation() {
   }, [swapping]);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div ref={column} className="relative flex min-h-0 flex-1 flex-col">
       {/*
        * Over the transcript when there is room beside it, in the column when there is not.
        *
@@ -71,8 +87,16 @@ export function Conversation() {
        * the breakpoint there is no corner to spare — the transcript needs its full width — so it
        * moves to the one place that is always visible, just above where you type.
        */}
-      {!compact && (
-        <div className="pointer-events-none absolute top-3 right-4 z-20 w-[320px] max-w-[calc(100%-2rem)]">
+      {/*
+       * Floating only when it can float clear of the words.
+       *
+       * The window being wide is not the same as this column being wide: open the side panel and
+       * the transcript can be 600px inside a 1400px window, at which point a 320px card in the
+       * corner is sitting on top of the reply rather than beside it. Measured here, against the
+       * column it would cover.
+       */}
+      {roomToFloat && (
+        <div className="pointer-events-none absolute top-3 right-4 z-20 w-[320px]">
           <TaskList placement="floating" />
         </div>
       )}
@@ -122,8 +146,8 @@ export function Conversation() {
        */}
       <div className="relative shrink-0">
         <ApprovalOverlay />
-        {compact && (
-          <div className="px-4 pb-1.5">
+        {!roomToFloat && (
+          <div className={`${compact ? "px-4" : "px-8"} pb-1.5`}>
             <div className="mx-auto w-full max-w-[var(--dw-content)]">
               <TaskList placement="inline" />
             </div>
