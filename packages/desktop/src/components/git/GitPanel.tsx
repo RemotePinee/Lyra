@@ -553,7 +553,10 @@ function HistoryView({ cwd }: { cwd: string }) {
                 onClick={() => setOpen(expanded ? null : commit.sha)}
                 aria-expanded={expanded}
                 style={{ height: ROW_HEIGHT }}
-                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-card-hover"
+                /* `dw-scroll` is what lets the subject scroll on hover — the marquee keys off an
+                 * ancestor carrying it, which is why the same component scrolls in the sidebar
+                 * and merely clipped here. */
+                className="dw-scroll flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-card-hover"
               >
                 <span className="min-w-0 flex-1">
                   {/*
@@ -994,7 +997,7 @@ function RepoPicker({
           total > repos.length ? ` · ${total - repos.length} 个工作树` : ""
         } · 点击切换`}
         data-dw-tip-side="bottom"
-        className={`flex h-8 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5 text-left transition-colors ${
+        className={`dw-scroll flex h-8 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5 text-left transition-colors ${
           menu.open ? "bg-card-hover" : "hover:bg-card-hover"
         }`}
       >
