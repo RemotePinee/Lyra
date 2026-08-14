@@ -261,10 +261,13 @@ export function GitPanel() {
       {view === "history" && <HistoryView cwd={cwd} />}
       {view === "branches" && (
         <BranchesView
-          cwd={workspace.path}
+          cwd={cwd}
           status={status}
           busy={busy}
           act={act}
+          repos={repos}
+          trees={trees}
+          onSelectRepo={setSelected}
         />
       )}
     </div>
@@ -624,11 +627,17 @@ function BranchesView({
   status,
   busy,
   act,
+  repos,
+  trees,
+  onSelectRepo,
 }: {
   cwd: string;
   status: GitStatus | null;
   busy: boolean;
   act: Act;
+  repos: RepoRef[];
+  trees: Record<string, RepoRef[]>;
+  onSelectRepo: (path: string) => void;
 }) {
   const [branches, setBranches] = useState<BranchList>({
     current: null,
@@ -645,11 +654,11 @@ function BranchesView({
   } | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [worktrees, setWorktrees] = useState<RepoRef[]>([]);
+  /** Repositories and their worktrees, flattened in display order. */
+  const checkouts = repos.flatMap((repo) => [repo, ...(trees[repo.path] ?? [])]);
 
   const load = useCallback(() => {
     void window.deepwise.git.branches(cwd).then(setBranches);
-    void window.deepwise.git.worktrees(cwd).then(setWorktrees);
   }, [cwd]);
 
   useEffect(load, [load, status?.branch]);
@@ -710,6 +719,47 @@ function BranchesView({
         </>
       ) : (
         <>
+          {/*
+           * Every checkout in the workspace, before its branches.
+           *
+           * A repository's branches only make sense once you know which repository you are
+           * looking at, and a folder someone opened may hold several — plus a worktree for each,
+           * which is a further checkout of the same history on another branch. This list used to
+           * exist only as a picker in the panel's title row, where it went unnoticed twice; the
+           * question "where am I working" belongs on the page that answers "on what branch".
+           */}
+          {checkouts.length > 1 && (
+            <>
+              <GroupHeader label="工作区" count={checkouts.length} action="" disabled onAction={() => {}} />
+              {checkouts.map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  data-dw-tip={entry.path}
+                  onClick={() => onSelectRepo(entry.path)}
+                  className={`flex w-full items-center gap-1.5 rounded-md py-1 pr-1.5 text-left transition-colors ${
+                    entry.worktree ? "pl-5" : "pl-1.5"
+                  } ${entry.path === cwd ? "bg-card-hover" : "hover:bg-card-hover"}`}
+                >
+                  {entry.worktree ? (
+                    <GitBranchPlus size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
+                  ) : (
+                    <FolderGit2 size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
+                  )}
+                  {/* The name identifies the checkout; the branch qualifies it. Names keep their
+                   * width and branches give theirs up, or `CliRelay-wt-audit` becomes `CliR…`. */}
+                  <Text size="label" tone={entry.path === cwd ? "default" : "muted"} className="min-w-0 shrink truncate">
+                    {entry.label}
+                  </Text>
+                  <Text size="caption" tone="faint" className="ml-auto min-w-0 shrink-[4] truncate">
+                    {entry.branch ?? "游离 HEAD"}
+                  </Text>
+                  {entry.path === cwd && <Check size={12} strokeWidth={2.2} className="shrink-0 text-accent" />}
+                </button>
+              ))}
+            </>
+          )}
+
           <GroupHeader
             label="本地"
             count={branches.local.length}
@@ -781,43 +831,6 @@ function BranchesView({
               }
             />
           ))}
-
-          {worktrees.filter((tree) => tree.worktree).length > 0 && (
-            <>
-              <GroupHeader
-                label="工作树"
-                count={worktrees.filter((tree) => tree.worktree).length}
-                action=""
-                disabled
-                onAction={() => {}}
-              />
-              {worktrees
-                .filter((tree) => tree.worktree)
-                .map((tree) => (
-                  <div
-                    key={tree.path}
-                    data-dw-tip={tree.path}
-                    className="flex items-center gap-1.5 rounded-md px-1.5 py-1"
-                  >
-                    <FolderGit2
-                      size={12}
-                      strokeWidth={1.8}
-                      className="shrink-0 text-ink-faint"
-                    />
-                    <Text
-                      size="label"
-                      tone="muted"
-                      className="min-w-0 flex-1 truncate"
-                    >
-                      {tree.label}
-                    </Text>
-                    <Text size="caption" tone="faint" className="shrink-0">
-                      {tree.branch ?? "游离 HEAD"}
-                    </Text>
-                  </div>
-                ))}
-            </>
-          )}
 
           {remotes.length > 0 && (
             <GroupHeader
