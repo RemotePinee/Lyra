@@ -7,6 +7,7 @@ import type {
   UserContent,
 } from "@deepwise/core";
 import { nextActivity, type SessionActivity } from "@deepwise/core/activity";
+import type { TodoItem } from "@deepwise/core";
 import { create } from "zustand";
 import type {
   AgentCapabilities,
@@ -110,6 +111,15 @@ interface AppState {
    * described and sat next to messages that had nothing to do with it.
    */
   retrying: { attempt: number; delayMs: number; reason: string } | null;
+  /**
+   * The agent's own plan for this piece of work, as it last wrote it.
+   *
+   * `todo_write` replaces the whole list every call, so the newest result is the whole truth and
+   * there is nothing to merge. Kept beside the transcript rather than read out of it: it is the
+   * current state of the work, and hunting back through tool cards for the last one is exactly
+   * the reading the list exists to save.
+   */
+  todos: TodoItem[];
   notices: { id: string; level: "info" | "warn" | "error"; message: string }[];
   capabilities: AgentCapabilities | null;
   sync: SyncStatus | null;
@@ -174,6 +184,7 @@ export const useApp = create<AppState>((set, get) => ({
   approvals: [],
   activity: {},
   retrying: null,
+  todos: [],
   notices: [],
   capabilities: null,
   sync: null,
@@ -360,6 +371,7 @@ export const useApp = create<AppState>((set, get) => ({
       toolRuns: {},
       approvals: [],
       running: false,
+      todos: [],
       turnStartedAt: null,
       loadingSession: false,
       pendingUserMessage: null,
@@ -405,6 +417,7 @@ export const useApp = create<AppState>((set, get) => ({
       toolRuns: cached?.toolRuns ?? {},
       approvals: [],
       running: false,
+      todos: [],
       // Only a session with nothing to show is "loading"; a cached one is already on screen
       // and re-reads quietly behind it.
       loadingSession: !cached,
@@ -436,6 +449,9 @@ export const useApp = create<AppState>((set, get) => ({
     set({
       meta: snapshot.meta,
       messages: snapshot.messages,
+      // Replayed from the log rather than the event stream: reopening a conversation does not
+      // re-run its tools, so the plan has to be recovered from where the tool wrote it.
+      todos: todosFrom(snapshot.messages),
       running: snapshot.running,
       approvals: snapshot.pendingApprovals,
       toolRuns,
@@ -842,6 +858,11 @@ export const useApp = create<AppState>((set, get) => ({
             },
           },
         });
+        // The task list arrives as the result of writing it; nothing else announces it.
+        const written = event.result.details as { kind?: string; todos?: TodoItem[] } | undefined;
+        if (!event.isError && written?.kind === "todo" && Array.isArray(written.todos)) {
+          set({ todos: written.todos });
+        }
         break;
       }
 
@@ -967,7 +988,23 @@ function findMessageSlot(messages: Message[], incoming: Message): number {
 }
 
 /** Reconstruct tool cards when opening a stored session. */
-export function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
+export /**
+ * The last task list written in a conversation.
+ *
+ * Searched backwards because `todo_write` sends the whole list every time — the newest one is
+ * the only one that matters, and the ones before it are its earlier drafts.
+ */
+function todosFrom(messages: Message[]): TodoItem[] {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "toolResult" || message.toolName !== "todo_write" || message.isError) continue;
+		const details = message.details as { kind?: string; todos?: TodoItem[] } | undefined;
+		if (details?.kind === "todo" && Array.isArray(details.todos)) return details.todos;
+	}
+	return [];
+}
+
+function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
   const runs: Record<string, ToolRun> = {};
   for (const message of messages) {
     if (message.role === "assistant") {

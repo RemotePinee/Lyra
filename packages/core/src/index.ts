@@ -1,5 +1,6 @@
 export { API_FORMATS, getProvider, streamAssistant } from "./ai/index.ts";
 export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
+export type { TodoItem } from "./tools/todo.ts";
 export { errorResult, runAgent, textResult, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
 export {
 	availableModels,

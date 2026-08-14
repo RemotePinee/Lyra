@@ -8,6 +8,7 @@ import { MessageActions } from "./MessageActions.tsx";
 import { PreviewCard, type PreviewInfo } from "./PreviewCard.tsx";
 import { ThinkingBlock } from "./ThinkingBlock.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
+import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { ToolCard } from "./ToolCard.tsx";
 import { Text } from "./Text.tsx";
@@ -60,7 +61,22 @@ export function Conversation() {
   }, [swapping]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {/*
+       * Over the transcript when there is room beside it, in the column when there is not.
+       *
+       * The plan is a companion to the conversation rather than part of it: it is one thing that
+       * keeps changing, not another entry in a log, so it holds a fixed corner instead of
+       * scrolling away with the messages that happened to be on screen when it was written. Below
+       * the breakpoint there is no corner to spare — the transcript needs its full width — so it
+       * moves to the one place that is always visible, just above where you type.
+       */}
+      {!compact && (
+        <div className="pointer-events-none absolute top-3 right-4 z-20 w-[320px] max-w-[calc(100%-2rem)]">
+          <TaskList placement="floating" />
+        </div>
+      )}
+
       <Scroller
         className="flex-1"
         scrollRef={scrollRef}
@@ -106,6 +122,13 @@ export function Conversation() {
        */}
       <div className="relative shrink-0">
         <ApprovalOverlay />
+        {compact && (
+          <div className="px-4 pb-1.5">
+            <div className="mx-auto w-full max-w-[var(--dw-content)]">
+              <TaskList placement="inline" />
+            </div>
+          </div>
+        )}
         <Composer />
       </div>
     </div>
