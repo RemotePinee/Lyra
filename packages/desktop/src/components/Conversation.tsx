@@ -422,10 +422,28 @@ function runs(messages: Message[], compactions: { at: number }[] = []): Run[] {
       out.push({ kind: "compaction" });
       nextMark++;
     }
+    /*
+     * Tool results are not entries in the transcript; they are the contents of a card.
+     *
+     * This is what kept the runs from ever forming. Every call is answered by a `toolResult`
+     * message, and treating those as ordinary messages put one between every pair of calls — so
+     * a run of seven arrived as seven runs of one, and nothing ever reached the threshold to
+     * fold. They render nothing on their own, so passing over them changes only the grouping.
+     */
+    if (message.role === "toolResult") continue;
+    /*
+     * What breaks a run is the model saying something, not the model thinking.
+     *
+     * This asked for messages that were *only* tool calls, which almost none are: a call usually
+     * arrives alongside the reasoning that produced it, and reasoning is folded away anyway. So
+     * the runs never formed and the transcript stayed a column of cards. A message with actual
+     * text is a different matter — that is the model addressing you, and a group should not
+     * swallow it or straddle it.
+     */
     const toolOnly =
       message.role === "assistant" &&
-      message.content.length > 0 &&
-      message.content.every((block) => block.type === "toolCall");
+      message.content.some((block) => block.type === "toolCall") &&
+      !message.content.some((block) => block.type === "text" && block.text.trim());
 
     if (!toolOnly) {
       out.push({ kind: "message", message, index });
