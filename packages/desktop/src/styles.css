@@ -997,19 +997,14 @@
  * of an actual border, and at two overlapping edges it read as a thick, hard outline. Depth
  * alone is enough to say which surface is on top, and it says it without drawing anything.
  */
-.dw-panel {
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.035),
-    0 6px 16px -8px rgb(0 0 0 / 0.09),
-    0 18px 40px -20px rgb(0 0 0 / 0.12);
-}
+/*
+ * The panel no longer lifts off the page.
+ *
+ * A drop shadow between two surfaces of the same colour is visible as a grey band and nothing
+ * else — there is no depth to read, only a dirty seam. The panel is continuous with the
+ * transcript now and divided from it by a hairline, so there is nothing left to cast a shadow.
+ */
 
-:root.dark .dw-panel {
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.3),
-    0 6px 18px -8px rgb(0 0 0 / 0.42),
-    0 20px 46px -20px rgb(0 0 0 / 0.5);
-}
 
 @theme {
   /*
