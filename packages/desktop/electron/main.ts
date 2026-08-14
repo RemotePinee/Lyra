@@ -249,6 +249,19 @@ function withHeightReporter(html: string): string {
 	 * and reports far less than it draws. Restored in the same task, so nothing is ever painted in
 	 * the measured state.
 	 */
+	/*
+	 * A classic feedback loop, cut at the source.
+	 *
+	 * Measure the content, size the card to it, and a page that lands a pixel over its allowance
+	 * grows a scrollbar. The scrollbar takes width from the content, the content rewraps and gets
+	 * taller, and now it really does overflow — the bar earns its own existence, and every preview
+	 * ends up with a grey rail down one side that nothing asked for.
+	 *
+	 * Removing it from the layout ends the loop: an overlay scrollbar takes no width, so measuring
+	 * and displaying agree. The page still scrolls by wheel and by key for the rare thing too tall
+	 * for the ceiling — it is the rail that goes, not the ability.
+	 */
+	const style = `<style>html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`;
 	const script = `<script>(function(){
 var last=0;
 function measure(){
@@ -273,8 +286,8 @@ setTimeout(report,50);setTimeout(report,200);setTimeout(report,500);setTimeout(r
 })();</script>`;
 	// Before the page's own scripts, so a page that never finishes loading still reports.
 	const head = html.match(/<head[^>]*>/i);
-	if (head) return html.replace(head[0], `${head[0]}${script}`);
-	return script + html;
+	if (head) return html.replace(head[0], `${head[0]}${style}${script}`);
+	return style + script + html;
 }
 
 function contentTypeFor(path: string): string {
