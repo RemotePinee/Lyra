@@ -1,18 +1,32 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Spinner } from "./RunningIndicator.tsx";
+
 /**
- * A run of finished tool calls, folded into one line.
+ * A run of tool calls, folded into one line.
  *
  * A turn that edits nine files leaves nine cards, and reading back through it means scrolling
  * past all of them to find the sentence that says what happened. Individually each card is
  * worth having — you do sometimes want to know exactly which file — but as a block they are
  * scenery, and they push the actual reply off the screen.
  *
- * Folded only once they are all done. While anything is still running, its card is the most
- * interesting thing on the page and stays where it is.
+ * Folded while they run, too. That was not the first answer: a card still going seemed like the
+ * most interesting thing on the page, so running groups stayed open. In practice a batch of
+ * parallel reads is seven cards all saying `read`, each with its own spinner, and seven spinners
+ * report nothing that one does. One line and one spinner say the same thing and leave the reply
+ * on screen; the detail is a click away for the times it matters.
  */
-export function ToolGroup({ count, children }: { count: number; children: React.ReactNode }) {
+export function ToolGroup({
+	count,
+	running,
+	children,
+}: {
+	count: number;
+	/** At least one call in the group has not finished. */
+	running?: boolean;
+	children: React.ReactNode;
+}) {
 	const [open, setOpen] = useState(false);
 	const body = useRef<HTMLDivElement>(null);
 	const [height, setHeight] = useState(0);
@@ -37,7 +51,8 @@ export function ToolGroup({ count, children }: { count: number; children: React.
 				aria-expanded={open}
 				className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
 			>
-				<span>执行了 {count} 个操作</span>
+				{running && <Spinner size={11} />}
+				<span>{running ? `执行 ${count} 个操作` : `执行了 ${count} 个操作`}</span>
 				<ChevronDown
 					size={12}
 					strokeWidth={1.9}

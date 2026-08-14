@@ -341,16 +341,17 @@ function AssistantRow({
         }
 
         const cards = segment.blocks.map((block) => renderTool(block, toolRuns, message.stopReason));
-        // Only once they have all finished, and only when there are enough to be scenery.
-        const foldable =
-          segment.blocks.length >= GROUP_MIN &&
-          segment.blocks.every((block) => toolRuns[block.id]?.status === "done");
-        return foldable ? (
-          <ToolGroup key={`group-${position}`} count={segment.blocks.length}>
+        // Enough of them to be scenery — running or not, since a row of identical spinners is
+        // the worst of it rather than the exception.
+        if (segment.blocks.length < GROUP_MIN) return cards;
+        const running = segment.blocks.some((block) => {
+          const status = toolRuns[block.id]?.status;
+          return status === "running" || (!status && message.stopReason === "pending");
+        });
+        return (
+          <ToolGroup key={`group-${position}`} count={segment.blocks.length} running={running}>
             {cards}
           </ToolGroup>
-        ) : (
-          cards
         );
       })}
 
