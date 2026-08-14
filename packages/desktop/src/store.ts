@@ -6,6 +6,7 @@ import type {
   ToolResult,
   UserContent,
 } from "@deepwise/core";
+import { nextActivity, type SessionActivity } from "@deepwise/core/activity";
 import { create } from "zustand";
 import type {
   AgentCapabilities,
@@ -99,6 +100,8 @@ interface AppState {
   /** Keyed by toolCallId so results can land on the card the model is still streaming. */
   toolRuns: Record<string, ToolRun>;
   approvals: PendingApproval[];
+  /** Per-conversation state for the sidebar; absent means idle. */
+  activity: Record<string, SessionActivity>;
   notices: { id: string; level: "info" | "warn" | "error"; message: string }[];
   capabilities: AgentCapabilities | null;
   sync: SyncStatus | null;
@@ -161,6 +164,7 @@ export const useApp = create<AppState>((set, get) => ({
   turnTokens: 0,
   toolRuns: {},
   approvals: [],
+  activity: {},
   notices: [],
   capabilities: null,
   sync: null,
@@ -672,6 +676,25 @@ export const useApp = create<AppState>((set, get) => ({
     }),
 
   applyEvent(sessionId, event) {
+    /*
+     * Every conversation's state, not just the one on screen.
+     *
+     * Turns run in conversations you are not looking at — a scheduled task, the phone, an agent
+     * that stopped to ask permission twenty minutes ago. The events for those already arrive
+     * here and were being dropped; folding each one into a per-session activity is what lets
+     * the list say which is which.
+     */
+    {
+      const current = get().activity[sessionId] ?? null;
+      const next = nextActivity(event, current);
+      if (next !== current) {
+        const activity = { ...get().activity };
+        if (next) activity[sessionId] = next;
+        else delete activity[sessionId];
+        set({ activity });
+      }
+    }
+
     if (sessionId !== get().activeSessionId) {
       if (event.type === "title") {
         set({

@@ -12,11 +12,13 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ScrollText } from "./ScrollText.tsx";
+import { SessionStatus } from "./SessionStatus.tsx";
 import { usePopover } from "./Popover.tsx";
 import { ProjectMenu } from "./modals/ProjectMenu.tsx";
 import { useLayout } from "../layout.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
+import { visibleActivity } from "@deepwise/core/activity";
 import { useApp } from "../store.ts";
 
 const COLLAPSED_SESSION_COUNT = 5;
@@ -265,6 +267,9 @@ function ProjectGroup({
 	onOpenSession: (meta: SessionMeta) => void;
 	onArchiveSession: (meta: SessionMeta) => void;
 }) {
+	// Subscribed here rather than threaded through: it changes for reasons this group's other
+	// props know nothing about — a turn ending in a conversation nobody has open.
+	const activity = useApp((s) => s.activity);
 	const openWorkspace = useApp((s) => s.openWorkspace);
 	const { compact, dismissNav } = useLayout();
 	const menu = usePopover();
@@ -366,10 +371,12 @@ function ProjectGroup({
 					<button
 						type="button"
 						onClick={() => onOpenSession(session)}
-						className={`flex w-full items-center rounded-lg pr-7 pl-9 text-left text-[12.5px] transition-colors duration-150 ${
+						className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-3.5 text-left text-[12.5px] transition-colors duration-150 ${
 							compact ? "h-[34px]" : "h-[27px]"
 						} ${activeSessionId === session.id ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
 					>
+						{/* In the indent the titles already had, so nothing moved to make room for it. */}
+						<SessionStatus activity={visibleActivity(activity[session.id] ?? null, activeSessionId === session.id)} />
 						<ScrollText text={session.title} className="dw-fade-tail min-w-0 flex-1" />
 					</button>
 					{/* The strip never takes pointer events; only the button does. Anything wider
