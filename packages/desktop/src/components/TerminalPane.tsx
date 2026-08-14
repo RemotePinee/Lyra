@@ -5,6 +5,7 @@ import { SquareTerminal } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { useApp } from "../store.ts";
+import { useSide } from "../sideStore.ts";
 
 /**
  * A real shell, in the panel.
@@ -19,10 +20,36 @@ export function TerminalPane() {
 	const appearance = useApp((s) => s.settings?.appearance);
 	const host = useRef<HTMLDivElement>(null);
 	const term = useRef<Terminal | null>(null);
+	/** Flips once the pty exists, so a queued command knows when it can be written. */
+	const [ready, setReady] = useState(false);
 	const fit = useRef<FitAddon | null>(null);
 	/** Held in a ref as well as state: the data handler runs before React re-renders. */
 	const sessionId = useRef<string | null>(null);
 	const [exited, setExited] = useState<number | null>(null);
+
+	/*
+	 * Run what the transcript handed over.
+	 *
+	 * Written with a newline because the button says "run": the user read the command, saw where
+	 * it came from, and pressed it. Waiting for `ready` matters — the panel opens and the shell
+	 * spawns in that order, so the command usually arrives before there is anywhere to put it.
+	 */
+	const pending = useSide((s) => s.pendingCommand);
+	useEffect(() => {
+		const id = sessionId.current;
+		if (!pending || !ready || !id) return;
+		/*
+		 * Claimed before it is written, not after.
+		 *
+		 * In development the effect runs twice per mount, and with the command still queued on
+		 * the second pass it was sent — and executed — twice. Clearing first makes the second
+		 * pass find nothing to do, which is the only ordering that is safe for something that
+		 * runs a command.
+		 */
+		useSide.getState().commandTaken();
+		window.deepwise.terminal.write(id, `${pending}\r`);
+		term.current?.focus();
+	}, [pending, ready]);
 
 	const cwd = workspace?.path;
 
@@ -66,6 +93,7 @@ export function TerminalPane() {
 				return;
 			}
 			sessionId.current = id;
+			setReady(true);
 			for (const chunk of early.get(id) ?? []) terminal.write(chunk);
 			early.clear();
 			terminal.onData((data) => window.deepwise.terminal.write(id, data));

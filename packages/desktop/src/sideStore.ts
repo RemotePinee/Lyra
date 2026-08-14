@@ -56,6 +56,16 @@ interface SideState {
 	/** Focus this kind, adding a tab for it if there is not one already. */
 	openTab(kind: PanelKind): void;
 	/**
+	 * A command the user asked to run, waiting for the terminal to pick it up.
+	 *
+	 * Handed over rather than executed here: the pty belongs to the terminal pane, which may not
+	 * exist yet when the button is pressed. The pane clears this once it has written it, so the
+	 * same command is never run twice.
+	 */
+	pendingCommand: string | null;
+	runInTerminal(command: string): void;
+	commandTaken(): void;
+	/**
 	 * What the browser tab is showing.
 	 *
 	 * A preview handed over from the transcript, a URL typed into the address bar, or nothing.
@@ -109,6 +119,13 @@ export const useSide = create<SideState>((set, get) => ({
 
 	openPreview: (preview) => set({ browserTarget: { kind: "preview", preview } }),
 	openUrl: (url) => set({ browserTarget: { kind: "url", url } }),
+	pendingCommand: null,
+	runInTerminal: (command) => {
+		set({ pendingCommand: command });
+		get().openTab("terminal");
+	},
+	commandTaken: () => set({ pendingCommand: null }),
+
 	openTab: (kind) => {
 		const tabs = get().tabs.includes(kind) ? get().tabs : [...get().tabs, kind];
 		set({ tabs, activeTab: kind, panelOpen: true });

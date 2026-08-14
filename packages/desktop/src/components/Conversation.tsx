@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message } from "@deepwise/core";
+import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
@@ -11,10 +11,11 @@ import { RunningIndicator } from "./RunningIndicator.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { ToolCard } from "./ToolCard.tsx";
+import { ToolGroup } from "./ToolGroup.tsx";
 import { Text } from "./Text.tsx";
 import { UserMessage } from "./UserMessage.tsx";
 import { useLayout } from "../layout.tsx";
-import { useApp } from "../store.ts";
+import { useApp, type ToolRun } from "../store.ts";
 
 export function Conversation() {
   const messages = useApp((s) => s.messages);
@@ -224,6 +225,67 @@ function MessageRow({ message, index }: { message: Message; index: number }) {
   return <AssistantRow message={message} index={index} />;
 }
 
+/** Below this a group saves nothing: the line replacing the cards is as tall as they were. */
+const GROUP_MIN = 3;
+
+type Segment =
+  | { kind: "block"; block: AssistantContent; index: number }
+  | { kind: "tools"; blocks: Extract<AssistantContent, { type: "toolCall" }>[] };
+
+/**
+ * Split a reply into runs of tool calls and everything else.
+ *
+ * Text between two calls is a break in the run — the model stopping to explain is exactly the
+ * boundary a reader uses, so folding across it would join two things it deliberately separated.
+ */
+function segments(content: AssistantContent[]): Segment[] {
+  const out: Segment[] = [];
+  for (const [index, block] of content.entries()) {
+    if (block.type === "toolCall") {
+      const last = out[out.length - 1];
+      if (last?.kind === "tools") last.blocks.push(block);
+      else out.push({ kind: "tools", blocks: [block] });
+    } else {
+      out.push({ kind: "block", block, index });
+    }
+  }
+  return out;
+}
+
+function renderTool(
+  block: Extract<AssistantContent, { type: "toolCall" }>,
+  toolRuns: Record<string, ToolRun>,
+  stopReason: AssistantMessage["stopReason"],
+) {
+  const run = toolRuns[block.id];
+  /*
+   * A preview replaces its own tool card.
+   *
+   * The card would say "预览已生成" above the thing itself, which is a caption nobody needs —
+   * the page is right there, and it is the result.
+   */
+  const preview = (run?.result?.details as { preview?: PreviewInfo } | undefined)?.preview;
+  if (preview) return <PreviewCard key={block.id} preview={preview} />;
+  return (
+    <ToolCard
+      key={block.id}
+      toolName={block.name}
+      args={block.arguments}
+      summary={run?.summary ?? block.name}
+      /*
+       * No record does not mean "still going".
+       *
+       * A card with no run used to default to running, so any call whose record was lost — an id
+       * the provider never supplied, a session reloaded mid-command — sat there counting up
+       * forever. If the turn that produced it has finished, the call is over too, whatever
+       * became of its record.
+       */
+      status={run?.status ?? (stopReason === "pending" ? "running" : "error")}
+      result={run?.result}
+    />
+  );
+}
+
 function AssistantRow({
   message,
   index,
@@ -243,54 +305,49 @@ function AssistantRow({
   // `group/msg` is what reveals the row below, and it names the whole reply as the target.
   return (
     <div className="group/msg dw-enter mb-6">
-      {message.content.map((block, index) => {
-        if (block.type === "thinking") {
-          // Open while the turn is still producing it; folded away once it has finished.
-          return (
-            <ThinkingBlock
-              key={index}
-              text={block.thinking}
-              redacted={block.redacted === true}
-              live={message.stopReason === "pending"}
-            />
-          );
+      {/*
+       * Grouped before rendering, not after.
+       *
+       * A run of finished tool calls collapses into one line; anything else — text, thinking, a
+       * preview, or a call still going — stays exactly where it is. Whether a card can be folded
+       * away is a fact about the call, so it has to be decided here rather than by looking at
+       * rendered output that no longer knows what it came from.
+       */}
+      {segments(message.content).map((segment, position) => {
+        if (segment.kind === "block") {
+          const { block, index } = segment;
+          if (block.type === "thinking") {
+            // Open while the turn is still producing it; folded away once it has finished.
+            return (
+              <ThinkingBlock
+                key={index}
+                text={block.thinking}
+                redacted={block.redacted === true}
+                live={message.stopReason === "pending"}
+              />
+            );
+          }
+          if (block.type === "text") {
+            return block.text ? (
+              <div key={index} className="mb-2">
+                <Markdown text={block.text} />
+              </div>
+            ) : null;
+          }
+          return renderTool(block, toolRuns, message.stopReason);
         }
-        if (block.type === "text") {
-          return block.text ? (
-            <div key={index} className="mb-2">
-              <Markdown text={block.text} />
-            </div>
-          ) : null;
-        }
-        const run = toolRuns[block.id];
-        /*
-         * A preview replaces its own tool card.
-         *
-         * The card would say "预览已生成" above the thing itself, which is a caption nobody
-         * needs — the page is right there, and it is the result.
-         */
-        const preview = (run?.result?.details as { preview?: PreviewInfo } | undefined)?.preview;
-        if (preview) return <PreviewCard key={block.id} preview={preview} />;
-        return (
-          <ToolCard
-            key={block.id}
-            toolName={block.name}
-            args={block.arguments}
-            summary={run?.summary ?? block.name}
-            /*
-             * No record does not mean "still going".
-             *
-             * A card with no run used to default to running, so any call whose record was lost
-             * — an id the provider never supplied, a session reloaded mid-command — sat there
-             * counting up forever. If the turn that produced it has finished, the call is over
-             * too, whatever became of its record.
-             */
-            status={
-              run?.status ??
-              (message.stopReason === "pending" ? "running" : "error")
-            }
-            result={run?.result}
-          />
+
+        const cards = segment.blocks.map((block) => renderTool(block, toolRuns, message.stopReason));
+        // Only once they have all finished, and only when there are enough to be scenery.
+        const foldable =
+          segment.blocks.length >= GROUP_MIN &&
+          segment.blocks.every((block) => toolRuns[block.id]?.status === "done");
+        return foldable ? (
+          <ToolGroup key={`group-${position}`} count={segment.blocks.length}>
+            {cards}
+          </ToolGroup>
+        ) : (
+          cards
         );
       })}
 
