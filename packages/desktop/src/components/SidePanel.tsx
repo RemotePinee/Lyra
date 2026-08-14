@@ -69,11 +69,12 @@ const MAC = navigator.userAgent.includes("Mac");
  * on a 1px border leaves an 11px corner inside it, and the tab sits 4px in from there — so 7,
  * not 8. Change any one of these numbers and the rest have to move with it.
  */
-/** Inner breathing room for the tab strip, now that the panel has no outer inset of its own. */
-const PANEL_INSET = 8;
+const PANEL_INSET = 4;
 const STRIP_HEIGHT = 34;
 const TAB_HEIGHT = 26;
-const TAB_RADIUS = 7;
+const CARD_RADIUS = 12;
+const CARD_BORDER = 1;
+const TAB_RADIUS = CARD_RADIUS - CARD_BORDER - PANEL_INSET;
 
 /** How far the fade reaches in from an edge that has more tabs past it. */
 const FADE = 18;
@@ -231,21 +232,23 @@ export function SidePanel() {
 
 	return (
 		// One inset for both layouts: the corner geometry above only works out at this value.
-		<div className="relative flex h-full flex-col">
+		<div className="relative flex h-full flex-col" style={{ padding: PANEL_INSET }}>
 			{/*
-			 * The same sheet of paper as the conversation, not a card laid on top of it.
-			 *
-			 * This used to be a rounded card with a border and a soft drop shadow, floating on a
-			 * few pixels of inset. The colours were identical — both the window's own white — but
-			 * the shadow washed a band of grey down the seam, and what you saw was a grey edge
-			 * between two whites. Read as a different kind of place: dimmer, secondary, somewhere
-			 * you glance rather than work.
-			 *
-			 * It is the same kind of place, so now it is literally continuous with the transcript
-			 * and a single hairline says where one ends and the other begins — the same way the
-			 * navigation is divided from the content on the other side.
+			 * The card. `overflow-hidden` is what makes the radius real — without it a scroller
+			 * inside paints its own square corners straight over the rounded ones.
 			 */}
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-line-soft bg-shell">
+			{/*
+			 * Same surface as the conversation, not a tinted one.
+			 *
+			 * A grey card next to a white column reads as a different kind of place — dimmer,
+			 * secondary, something you glance at rather than work in. It is the same kind of
+			 * place, so it gets the same paper; what separates it is the gap around it and a
+			 * soft lift, not a change of colour and a hard rule.
+			 */}
+			<div
+				style={{ borderRadius: CARD_RADIUS }}
+				className="dw-panel flex min-h-0 flex-1 flex-col overflow-hidden border border-line-soft bg-shell"
+			>
 				{/*
 				 * 31px, and every pixel is accounted for: 6px of outer padding, the card's 1px
 				 * border, then a 26px tab centred in what is left puts the strip on the same line
