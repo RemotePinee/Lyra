@@ -1,5 +1,5 @@
 import type { TodoItem } from "@deepwise/core";
-import { Check, ChevronDown, ListTodo } from "lucide-react";
+import { Check, ChevronDown, ListTodo, Pause, Play, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Scroller } from "./Scroller.tsx";
@@ -29,7 +29,27 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	 * originally tied to a detected interruption, which was too narrow — a model that simply
 	 * stopped without finishing leaves a perfectly intact log and a step that spins forever.
 	 */
-	const paused = !useApp((s) => s.running);
+	const running = useApp((s) => s.running);
+	const paused = !running;
+	const abort = useApp((s) => s.abort);
+	const send = useApp((s) => s.send);
+	const messages = useApp((s) => s.messages);
+	/*
+	 * The last turn ended badly, so the step it was on did not merely stop — it failed.
+	 *
+	 * Distinguished because the offer is different: a paused step is carried on with, a failed
+	 * one is tried again. The plan itself has no failed state — `todo_write` only knows pending,
+	 * in progress and completed — so it comes from how the turn ended.
+	 */
+	const failed = !running && lastTurnFailed(messages);
+
+	/** What the control on the current step does, which is also what its mark shows. */
+	const action = running
+		? { icon: Pause, label: "暂停", run: () => void abort() }
+		: failed
+			? { icon: RotateCw, label: "重试这一步", run: () => void send([{ type: "text", text: "重试刚才失败的那一步。" }]) }
+			: { icon: Play, label: "继续", run: () => void send([{ type: "text", text: "继续，从暂停的地方接着做。" }]) };
+
 	const [open, setOpen] = useState(false);
 	const body = useRef<HTMLDivElement>(null);
 	const [height, setHeight] = useState(0);
@@ -102,6 +122,35 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				<Text size="caption" tone="faint" numeric className="shrink-0">
 					{done}/{todos.length}
 				</Text>
+				{/*
+				 * Reachable without opening the list.
+				 *
+				 * Pausing is something you want at the moment you decide it, and going through a
+				 * disclosure first is one gesture too many for "stop". Nested inside the toggle's
+				 * button, so the click is taken here and does not also expand the list.
+				 */}
+				{active && (
+					<span
+						role="button"
+						tabIndex={0}
+						data-dw-tip={action.label}
+						data-dw-tip-side="bottom"
+						aria-label={action.label}
+						onClick={(event) => {
+							event.stopPropagation();
+							action.run();
+						}}
+						onKeyDown={(event) => {
+							if (event.key !== "Enter" && event.key !== " ") return;
+							event.preventDefault();
+							event.stopPropagation();
+							action.run();
+						}}
+						className="flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded text-ink-faint transition-colors hover:bg-elevated hover:text-ink"
+					>
+						<action.icon size={11.5} strokeWidth={2} />
+					</span>
+				)}
 				<ChevronDown
 					size={12.5}
 					strokeWidth={1.9}
@@ -122,7 +171,13 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				<div ref={body} className="border-t border-line-soft">
 					<Scroller className="max-h-[min(280px,38vh)]" contentClassName="px-1.5 py-1.5" fadeColor="var(--color-shell)">
 						{todos.map((todo, index) => (
-							<Row key={`${index}-${todo.content}`} todo={todo} paused={paused} />
+							<Row
+								key={`${index}-${todo.content}`}
+								todo={todo}
+								paused={paused}
+								failed={failed}
+								action={todo.status === "in_progress" ? action : undefined}
+							/>
 						))}
 					</Scroller>
 				</div>
@@ -133,10 +188,38 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	);
 }
 
-function Row({ todo, paused }: { todo: TodoItem; paused?: boolean }) {
+function Row({
+	todo,
+	paused,
+	failed,
+	action,
+}: {
+	todo: TodoItem;
+	paused?: boolean;
+	failed?: boolean;
+	/** Present on the current step: the mark becomes the button that acts on it. */
+	action?: { icon: typeof Pause; label: string; run: () => void };
+}) {
 	return (
-		<div className="dw-scroll flex items-center gap-2 rounded-md px-1.5 py-[5px]">
-			<Mark status={todo.status} paused={paused} />
+		<div className="dw-scroll group/step flex items-center gap-2 rounded-md px-1.5 py-[5px]">
+			{action ? (
+				<button
+					type="button"
+					onClick={action.run}
+					data-dw-tip={action.label}
+					data-dw-tip-side="right"
+					aria-label={action.label}
+					className="flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-sm text-ink-faint transition-colors hover:text-ink"
+				>
+					{/* The state at rest, the offer on hover — one place, one click. */}
+					<span className="group-hover/step:hidden">
+						<Mark status={todo.status} paused={paused} failed={failed} />
+					</span>
+					<action.icon size={11} strokeWidth={2} className="hidden group-hover/step:block" />
+				</button>
+			) : (
+				<Mark status={todo.status} paused={paused} failed={failed} />
+			)}
 			<ScrollText
 				text={todo.content}
 				className={`dw-fade-tail min-w-0 flex-1 text-[12px] ${
@@ -157,11 +240,19 @@ function Row({ todo, paused }: { todo: TodoItem; paused?: boolean }) {
  * The running one borrows the app's spinner geometry rather than a second kind of spinner, and
  * pending is a dashed ring — present, but plainly not started, which a solid outline reads as.
  */
-function Mark({ status, paused }: { status: TodoItem["status"]; paused?: boolean }) {
+function Mark({ status, paused, failed }: { status: TodoItem["status"]; paused?: boolean; failed?: boolean }) {
 	if (status === "completed") {
 		return (
 			<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center text-ok">
 				<Check size={11} strokeWidth={2.4} />
+			</span>
+		);
+	}
+	if (status === "in_progress" && failed) {
+		// Stopped, and not by choice — so the offer is "again" rather than "carry on".
+		return (
+			<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center" aria-label="失败">
+				<span className="block h-[7px] w-[7px] rounded-full bg-danger" />
 			</span>
 		);
 	}
@@ -197,4 +288,14 @@ function Mark({ status, paused }: { status: TodoItem["status"]; paused?: boolean
 			<span className="block h-[9px] w-[9px] rounded-full border border-dashed border-line" />
 		</span>
 	);
+}
+
+/** The most recent reply, and whether it ended in an error rather than an answer. */
+function lastTurnFailed(messages: { role: string; stopReason?: string }[]): boolean {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "assistant") continue;
+		return message.stopReason === "error";
+	}
+	return false;
 }
