@@ -4,9 +4,6 @@ import {
 	GitCompare,
 	Globe,
 	MessageCirclePlus,
-	Maximize2,
-	Minimize2,
-	PanelRight,
 	Plus,
 	SquareTerminal,
 	X,
@@ -191,9 +188,7 @@ export function SidePanel() {
 	const activeTab = useSide((s) => s.activeTab);
 	const openTab = useSide((s) => s.openTab);
 	const closeTab = useSide((s) => s.closeTab);
-	const closePanel = useSide((s) => s.closePanel);
 	const expanded = useSide((s) => s.expanded);
-	const toggleExpanded = useSide((s) => s.toggleExpanded);
 	const { compact, navOpen, nativeFullScreen, toggleNav } = useLayout();
 	const adder = usePopover();
 
@@ -237,7 +232,7 @@ export function SidePanel() {
 
 	return (
 		// One inset for both layouts: the corner geometry above only works out at this value.
-		<div className="flex h-full flex-col" style={{ padding: PANEL_INSET }}>
+		<div className="relative flex h-full flex-col" style={{ padding: PANEL_INSET }}>
 			{/*
 			 * The card. `overflow-hidden` is what makes the radius real — without it a scroller
 			 * inside paints its own square corners straight over the rounded ones.
@@ -368,36 +363,14 @@ export function SidePanel() {
 
 					<div className="w-2 shrink-0" />
 
-					{/* In compact the panel already covers the window; there is nothing to expand into. */}
-					{!compact && (
-						<button
-							type="button"
-							title={expanded ? "退出全屏（Esc）" : "全屏显示"}
-							aria-label={expanded ? "退出全屏" : "全屏显示"}
-							onClick={toggleExpanded}
-							className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
-						>
-							{expanded ? <Minimize2 size={12.5} strokeWidth={1.9} /> : <Maximize2 size={12.5} strokeWidth={1.9} />}
-						</button>
-					)}
 					{/*
-					 * Only while the panel is over the toolbar's own corner.
+					 * Room for the window's own buttons, which float over this strip.
 					 *
-					 * Otherwise the toolbar keeps this control, in a position that does not shift
-					 * when the panel opens — two buttons a few pixels apart, swapping as the panel
-					 * comes and goes, read as the whole corner jumping.
+					 * Full screen and close used to be drawn here. They moved to the toolbar so that
+					 * they keep one position whether the panel is open or shut — what stays behind
+					 * is the space they need, so nothing of this strip ends up underneath them.
 					 */}
-					{(compact || expanded) && (
-						<button
-							type="button"
-							title="收起面板"
-							aria-label="收起面板"
-							onClick={closePanel}
-							className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
-						>
-							<PanelRight size={13} strokeWidth={1.8} />
-						</button>
-					)}
+					<div className="w-[52px] shrink-0" />
 				</div>
 
 				{/*
@@ -452,6 +425,16 @@ export function SidePanel() {
 					))}
 				</Popover>
 			)}
+			{/*
+			 * A hole for the window's buttons, punched from this side.
+			 *
+			 * Electron composites drag regions in DOM order, not by z-index, and this panel comes
+			 * after the toolbar. Its title bar is draggable, so it was filling the toolbar's own
+			 * `no-drag` back in — the buttons were drawn on top and perfectly visible, and every
+			 * click on them dragged the window instead. Declaring the same corner undraggable
+			 * here, after it in the order, is what makes them clickable.
+			 */}
+			<div className="no-drag absolute top-0 right-0 h-[44px] w-[104px]" />
 		</div>
 	);
 }

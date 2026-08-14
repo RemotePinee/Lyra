@@ -1,3 +1,4 @@
+import { Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "./components/RunningIndicator.tsx";
 import {
@@ -345,7 +346,15 @@ function ChatShell() {
        * makes the holes final — and keeps them clickable above the drawer, which is how
        * a full-window drawer gets closed again.
        */}
-      <div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]">
+      {/*
+       * Above the panel, not behind it.
+       *
+       * The panel sits at z-50 and, now that it stays mounted, occupies the right of the window
+       * whenever it is open — which put these buttons underneath it, invisible and unclickable.
+       * Floating them over it is also what keeps them still: the panel's own title bar has the
+       * room for them, so they land in the same place whether it is open or not.
+       */}
+      <div className="drag-region absolute inset-x-0 top-0 z-[60] h-[44px]">
         <div className="no-drag toolbar-right absolute top-0 flex h-[44px] items-center gap-0.5">
           {/*
            * One control, in one place, for both directions.
@@ -357,13 +366,31 @@ function ChatShell() {
            * jump. Now it only hands over when the panel genuinely covers this corner — full
            * screen or compact — and in every other layout it stays put and changes state.
            */}
-          {!panelCoversToolbar && !(compact && navOpen) && (
-            <ToolbarButton
-              label={panelOpen ? "收起面板" : "展开面板"}
-              onClick={() => (panelOpen ? closePanel() : openPanel(() => reopenPanel()))}
-            >
-              <RightPanelIcon active={panelOpen} />
-            </ToolbarButton>
+          {!(compact && navOpen) && (
+            <>
+              {/*
+               * Only means something with a panel to expand. Placed to the left of the toggle so
+               * that appearing and disappearing never shifts the button beside it.
+               */}
+              {panelOpen && !compact && (
+                <ToolbarButton
+                  label={expanded ? "退出全屏（Esc）" : "全屏显示"}
+                  onClick={toggleExpanded}
+                >
+                  {expanded ? (
+                    <Minimize2 size={12.5} strokeWidth={1.9} />
+                  ) : (
+                    <Maximize2 size={12.5} strokeWidth={1.9} />
+                  )}
+                </ToolbarButton>
+              )}
+              <ToolbarButton
+                label={panelOpen ? "收起面板" : "展开面板"}
+                onClick={() => (panelOpen ? closePanel() : openPanel(() => reopenPanel()))}
+              >
+                <RightPanelIcon active={panelOpen} />
+              </ToolbarButton>
+            </>
           )}
         </div>
       </div>
