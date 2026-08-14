@@ -25,7 +25,7 @@ import type {
 import type { BranchList, RepoRef } from "../../../electron/git.ts";
 import { IconButton } from "../IconButton.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
-import { Popover, usePopover } from "../Popover.tsx";
+import { MenuItem, Popover, usePopover } from "../Popover.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Text } from "../Text.tsx";
@@ -1016,75 +1016,54 @@ function RepoPicker({
       </button>
 
       {menu.open && (
-        <Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="start" width={260}>
-          <div className="max-h-[320px] overflow-y-auto py-1">
+        <Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="start" width={264}>
+          {/*
+           * The app's own menu parts, not a hand-rolled list.
+           *
+           * This was a bare scrolling div with rows built here — which meant its own row height,
+           * its own padding and a scrollbar the rest of the app does not show, sitting a few
+           * pixels away from menus that had all three settled long ago. `Scroller` brings the
+           * hidden bar and the faded edge; `MenuItem` brings the two-line row this needs anyway.
+           */}
+          <Scroller className="max-h-[min(320px,44vh)]" contentClassName="p-1" fadeColor="var(--color-float)">
             {repos.map((repo) => (
               <div key={repo.path}>
-                <RepoRow
-                  entry={repo}
-                  active={repo.path === selected}
-                  onSelect={() => {
+                <MenuItem
+                  icon={<Folder size={13} strokeWidth={1.8} />}
+                  detail={repo.branch ?? "游离 HEAD"}
+                  selected={repo.path === selected}
+                  title={repo.path}
+                  trailing={repo.path === selected ? <Check size={12.5} strokeWidth={2.2} /> : undefined}
+                  onClick={() => {
                     onSelect(repo.path);
                     menu.close();
                   }}
-                />
+                >
+                  {repo.label}
+                </MenuItem>
                 {(trees[repo.path] ?? []).map((tree) => (
-                  <RepoRow
+                  <MenuItem
                     key={tree.path}
-                    entry={tree}
-                    nested
-                    active={tree.path === selected}
-                    onSelect={() => {
+                    // A worktree is a checkout of the repository above it; the mark says which.
+                    icon={<GitBranchPlus size={13} strokeWidth={1.8} />}
+                    detail={tree.branch ?? "游离 HEAD"}
+                    selected={tree.path === selected}
+                    title={tree.path}
+                    trailing={tree.path === selected ? <Check size={12.5} strokeWidth={2.2} /> : undefined}
+                    onClick={() => {
                       onSelect(tree.path);
                       menu.close();
                     }}
-                  />
+                  >
+                    {tree.label}
+                  </MenuItem>
                 ))}
               </div>
             ))}
-          </div>
+          </Scroller>
         </Popover>
       )}
     </>
   );
 }
 
-function RepoRow({
-  entry,
-  active,
-  nested = false,
-  onSelect,
-}: {
-  entry: RepoRef;
-  active: boolean;
-  nested?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      title={entry.path}
-      className={`flex w-full items-center gap-2 py-1.5 pr-2.5 text-left transition-colors ${
-        nested ? "pl-7" : "pl-2.5"
-      } ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
-    >
-      {nested ? (
-        <GitBranchPlus size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
-      ) : (
-        <Folder size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
-      )}
-      <span className="min-w-0 flex-1">
-        <Text as="span" size="label" className="block truncate">
-          {entry.label}
-        </Text>
-        {entry.branch && (
-          <Text size="caption" tone="faint" className="block truncate">
-            {entry.branch}
-          </Text>
-        )}
-      </span>
-      {active && <Check size={12} strokeWidth={2.2} className="shrink-0 text-accent" />}
-    </button>
-  );
-}

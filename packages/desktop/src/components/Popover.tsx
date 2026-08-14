@@ -347,7 +347,11 @@ export function MenuItem({
 			{icon && <span className={`shrink-0 text-ink-muted ${detail ? "mt-[3px]" : ""}`}>{icon}</span>}
 			<span className="min-w-0 flex-1">
 				{typeof children === "string" ? <ScrollText text={children} /> : children}
-				{detail && <span className="mt-0.5 block text-[11px] leading-snug opacity-65">{detail}</span>}
+				{/* One line. A detail that wraps makes its row taller than its neighbours, and a menu
+				 * of ragged rows is harder to scan than one where the odd path is cut short. */}
+				{detail && (
+					<span className="mt-0.5 block truncate text-[11px] leading-snug opacity-65">{detail}</span>
+				)}
 			</span>
 			{hint !== undefined && (
 				<span className={`shrink-0 font-mono text-[11px] text-ink-faint ${detail ? "mt-[3px]" : ""}`}>{hint}</span>
