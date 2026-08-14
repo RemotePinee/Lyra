@@ -222,3 +222,28 @@ export function assessWrite(path: string, cwd: string): RiskVerdict {
 	if (!normalised.startsWith(cwd.replace(/\/+$/, ""))) return risky("写入当前项目之外的位置");
 	return SAFE;
 }
+
+/**
+ * Whether reaching this address needs a decision.
+ *
+ * The machine's own ports are not the internet. An agent that has just started a dev server has
+ * to open it to know whether it works, and asking about `http://localhost:4000/` interrupts the
+ * one turn where the answer is obviously yes — while teaching the habit of clicking through, so
+ * the prompt that does matter gets clicked through too.
+ *
+ * Anything that leaves the machine still asks: that is where data can go somewhere it cannot be
+ * taken back from.
+ */
+export function assessNetwork(target: string): RiskVerdict {
+	let host: string;
+	try {
+		host = new URL(target.trim()).hostname.toLowerCase();
+	} catch {
+		// Unparseable is not obviously safe, so it goes the careful way.
+		return risky("无法解析的地址");
+	}
+	if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return SAFE;
+	// `*.localhost` resolves to the loopback by specification, and dev servers do use it.
+	if (host.endsWith(".localhost")) return SAFE;
+	return risky("访问外部网络");
+}

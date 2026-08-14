@@ -20,7 +20,7 @@ import { formatSkillCatalogue, loadSkills, parseFrontmatter, type Skill, type Sk
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { deepwiseHome, SessionStore, type SessionMeta } from "../session/store.ts";
 import { writePreview } from "./previews.ts";
-import { assessCommand, assessWrite } from "../tools/risk.ts";
+import { assessCommand, assessNetwork, assessWrite } from "../tools/risk.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
 import type {
@@ -520,7 +520,9 @@ export class AgentSession {
 					? assessCommand(request.subject)
 					: request.kind === "edit" || request.kind === "write"
 						? assessWrite(request.subject, this.cwd)
-						: { risky: true as const };
+						: request.kind === "network"
+							? assessNetwork(request.subject)
+							: { risky: true as const };
 			if (!verdict.risky) return "once";
 			if (verdict.reason) request.detail = `${verdict.reason}\n\n${request.detail ?? ""}`.trim();
 		}

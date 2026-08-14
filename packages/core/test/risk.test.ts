@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { assessCommand, assessWrite, splitCommands } from "../src/tools/risk.ts";
+import { assessCommand, assessNetwork, assessWrite, splitCommands } from "../src/tools/risk.ts";
 
 const safe = (command: string) => assert.equal(assessCommand(command).risky, false, `应放行: ${command}`);
 const risky = (command: string) => assert.equal(assessCommand(command).risky, true, `应拦截: ${command}`);
@@ -102,4 +102,25 @@ test("splitting handles quotes, substitution and chains", () => {
 	// A separator inside quotes is text, not a separator.
 	assert.deepEqual(splitCommands(`echo "a; b"`), [`echo "a; b"`]);
 	assert.deepEqual(splitCommands("echo $(git status)"), ["echo", "git status"]);
+});
+
+test("the machine's own ports are not the internet", () => {
+	for (const local of [
+		"http://localhost:4000/",
+		"http://localhost:3000/api/posts",
+		"http://127.0.0.1:8080",
+		"http://[::1]:5173/",
+		"http://app.localhost:3000",
+	]) {
+		assert.equal(assessNetwork(local).risky, false, local);
+	}
+});
+
+test("anything that leaves the machine still asks", () => {
+	for (const remote of ["https://example.com", "http://192.168.1.5", "https://raw.githubusercontent.com/x/y"]) {
+		assert.equal(assessNetwork(remote).risky, true, remote);
+	}
+	// A hostname that merely contains "localhost" is not the loopback.
+	assert.equal(assessNetwork("https://localhost.evil.com/").risky, true);
+	assert.equal(assessNetwork("not a url").risky, true);
 });
