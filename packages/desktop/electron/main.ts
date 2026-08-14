@@ -63,6 +63,7 @@ import {
 	listBranches,
 	listPullRequests,
 	listRepos,
+	initRepo,
 	listWorktrees,
 	pullBranch,
 	pushBranch,
@@ -1359,6 +1360,7 @@ function registerIpc(): void {
 	ipcMain.handle("git:repos", async (_event, root: string) => listRepos(root));
 
 	ipcMain.handle("git:worktrees", async (_event, cwd: string) => listWorktrees(cwd));
+	ipcMain.handle("git:init", async (_event, cwd: string) => initRepo(cwd));
 
 	ipcMain.handle("git:status", async (_event, cwd: string) => gitStatus(cwd));
 

@@ -21,8 +21,19 @@ export async function isGitRepo(cwd: string): Promise<boolean> {
 }
 
 export async function gitBranch(cwd: string): Promise<string | null> {
-	return git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])
+	const named = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])
 		.then((out) => out.trim())
+		.catch(() => null);
+	if (named) return named;
+	/*
+	 * A repository with no commits yet still has a branch — it just has nothing to point at.
+	 *
+	 * `rev-parse HEAD` resolves a commit and so fails outright there, which showed a freshly
+	 * initialised project as having no branch at all. `symbolic-ref` reads the name HEAD is
+	 * waiting to become, which is what the first commit will land on.
+	 */
+	return git(cwd, ["symbolic-ref", "--short", "HEAD"])
+		.then((out) => out.trim() || null)
 		.catch(() => null);
 }
 
@@ -742,4 +753,21 @@ export async function listWorktrees(cwd: string): Promise<RepoRef[]> {
 
 export async function addWorktree(cwd: string, branch: string): Promise<{ ok: boolean; path?: string; error?: string }> {
 	return createWorktree(cwd, branch);
+}
+
+/**
+ * Turn a plain directory into a repository.
+ *
+ * Offered because the panel is often looking at a project that was just created — by the agent,
+ * a minute ago — and "not a repository" is a state with an obvious next step rather than a dead
+ * end. Nothing is committed: the first commit is a decision, and the panel is right there for it.
+ */
+export async function initRepo(cwd: string): Promise<{ ok: boolean; error?: string }> {
+	if (await isGitRepo(cwd)) return { ok: true };
+	try {
+		await git(cwd, ["init"]);
+		return { ok: true };
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
 }

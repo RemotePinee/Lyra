@@ -274,6 +274,7 @@ export interface DeepWiseApi {
 		repos(root: string): Promise<RepoRef[]>;
 		/** Linked checkouts of one repository, each on its own branch. */
 		worktrees(cwd: string): Promise<RepoRef[]>;
+		init(cwd: string): Promise<{ ok: boolean; error?: string }>;
 		/** Working tree split by index, with upstream distance. */
 		status(cwd: string): Promise<GitStatus>;
 		log(cwd: string, limit?: number, ref?: string): Promise<GitCommit[]>;

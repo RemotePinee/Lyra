@@ -67,6 +67,10 @@ export function GitPanel() {
    * Assuming the root was the repository meant everything else was invisible.
    */
   const [repos, setRepos] = useState<RepoRef[]>([]);
+  /** True until the first scan finishes, so "no repository" is only said once it is known. */
+  const [scanning, setScanning] = useState(true);
+  /** Bumped to re-run the scan after something changes what it would find. */
+  const [rescan, setRescan] = useState(0);
   /** Worktrees per repository, keyed by the repository's path. */
   const [trees, setTrees] = useState<Record<string, RepoRef[]>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -87,9 +91,11 @@ export function GitPanel() {
     if (!workspace) {
       setRepos([]);
       setTrees({});
+      setScanning(false);
       return;
     }
     let cancelled = false;
+    setScanning(true);
     void (async () => {
       const found = await window.deepwise.git.repos(workspace.path);
       const lists = await Promise.all(
@@ -112,13 +118,22 @@ export function GitPanel() {
         const reachable = [...roots.map((r) => r.path), ...[...claimed]];
         return current && reachable.includes(current) ? current : (roots[0]?.path ?? null);
       });
+      setScanning(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [workspace?.path]);
+  }, [workspace?.path, rescan]);
 
-  const cwd = selected ?? workspace?.path ?? null;
+  /*
+   * Only a real repository, never the workspace root as a stand-in.
+   *
+   * Falling back to the folder meant every panel below this had something to work with, so a
+   * directory with no version control at all rendered as a repository with no branch: a dash
+   * where the name goes, pull and push buttons that could not do anything, and "工作区干净"
+   * announcing that nothing had changed in a history that did not exist.
+   */
+  const cwd = selected;
 
   const refresh = useCallback(async () => {
     if (!cwd) return setStatus(null);
@@ -144,10 +159,35 @@ export function GitPanel() {
     [refresh],
   );
 
-  if (!workspace || !cwd) {
+  if (!workspace) {
     return (
       <PanelEmpty icon={GitBranch} title="Git">
-        {workspace ? "这个项目里没有找到 Git 仓库。" : "先打开一个项目。"}
+        先打开一个项目。
+      </PanelEmpty>
+    );
+  }
+
+  // Nothing is known yet; an empty state now would be a claim the scan has not made.
+  if (scanning) return <div className="flex-1" />;
+
+  if (!cwd) {
+    return (
+      <PanelEmpty icon={GitBranch} title="不是 Git 仓库">
+        <span className="block">这个目录还没有版本控制。</span>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            void act(() => window.deepwise.git.init(workspace.path)).then((ok) => {
+              // Re-scan rather than assume: the new repository has to come back through the
+              // same path as any other, or the panel would be showing something it invented.
+              if (ok) setRescan((n) => n + 1);
+            });
+          }}
+          className="mt-3 h-[26px] rounded-md bg-ink px-2.5 text-[11.5px] font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          初始化仓库
+        </button>
       </PanelEmpty>
     );
   }

@@ -189,6 +189,7 @@ const api: DeepWiseApi = {
 		status: (cwd) => ipcRenderer.invoke("git:status", cwd),
 		repos: (root) => ipcRenderer.invoke("git:repos", root),
 		worktrees: (cwd) => ipcRenderer.invoke("git:worktrees", cwd),
+		init: (cwd) => ipcRenderer.invoke("git:init", cwd),
 		log: (cwd, limit, ref) => ipcRenderer.invoke("git:log", cwd, limit, ref),
 		commitDiff: (cwd, sha) => ipcRenderer.invoke("git:commitDiff", cwd, sha),
 		diffRefs: (cwd, base, head) => ipcRenderer.invoke("git:diffRefs", cwd, base, head),
