@@ -74,10 +74,9 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 					strokeWidth={1.8}
 					className={`shrink-0 transition-colors duration-200 ${running ? "dw-pulse text-info" : "text-ink-faint"}`}
 				/>
-				{/* Light travels across the summary while the tool is running — see `.dw-sweep`. */}
 				<span
 					className={`min-w-0 flex-1 truncate text-[12.5px] transition-colors duration-200 ${
-						running ? "dw-sweep text-ink" : "text-ink-muted"
+						running ? "text-ink" : "text-ink-muted"
 					}`}
 				>
 					{summary}

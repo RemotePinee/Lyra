@@ -72,7 +72,7 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				 */}
 				<ScrollText
 					text={active ? (active.activeForm ?? active.content) : todos.length === done ? "全部完成" : "待开始"}
-					className={`dw-fade-tail min-w-0 flex-1 text-[12.5px] ${active ? "dw-sweep" : ""}`}
+					className="dw-fade-tail min-w-0 flex-1 text-[12.5px]"
 				/>
 				<Text size="caption" tone="faint" numeric className="shrink-0">
 					{done}/{todos.length}
@@ -118,7 +118,7 @@ function Row({ todo }: { todo: TodoItem }) {
 					todo.status === "completed"
 						? "text-ink-faint line-through decoration-line"
 						: todo.status === "in_progress"
-							? "dw-sweep text-ink"
+							? "text-ink"
 							: "text-ink-muted"
 				}`}
 			/>
