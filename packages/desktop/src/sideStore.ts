@@ -14,7 +14,7 @@ import type { ToolRun } from "./store.ts";
 import { settleTail } from "./transcript.ts";
 
 /** What can occupy a panel tab. One of each at a time — two diffs of one worktree is not a thing. */
-export type PanelKind = "files" | "chat" | "terminal" | "review" | "browser";
+export type PanelKind = "files" | "chat" | "terminal" | "review" | "browser" | "tasks";
 
 /** Just enough of a preview for the panel to load it; the card owns the full record. */
 export interface BrowserPreview {

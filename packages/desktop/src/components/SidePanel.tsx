@@ -3,6 +3,7 @@ import {
 	Folder,
 	GitCompare,
 	Globe,
+	ListTodo,
 	MessageCirclePlus,
 	Plus,
 	SquareTerminal,
@@ -12,6 +13,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { FileBrowser } from "./FileBrowser.tsx";
 import { MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
 import { BrowserPanel } from "./BrowserPanel.tsx";
+import { TaskPanel } from "./TaskPanel.tsx";
 import { GitPanel } from "./git/GitPanel.tsx";
 import { SideChat } from "./SideChat.tsx";
 import { TerminalPane } from "./TerminalPane.tsx";
@@ -126,6 +128,12 @@ export function usePanelDefinitions(): PanelDefinition[] {
 			icon: SquareTerminal,
 			shortcut: "⌃`",
 			unavailable: workspace ? undefined : "先打开一个项目",
+		},
+		{
+			kind: "tasks",
+			label: "任务",
+			icon: ListTodo,
+			shortcut: "⌘J",
 		},
 		{
 			kind: "browser",
@@ -390,6 +398,8 @@ export function SidePanel() {
 								<SideChat />
 							) : kind === "terminal" ? (
 								<TerminalPane />
+							) : kind === "tasks" ? (
+								<TaskPanel />
 							) : kind === "browser" ? (
 								<BrowserPanel />
 							) : (

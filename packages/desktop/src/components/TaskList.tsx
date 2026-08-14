@@ -24,12 +24,12 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	/*
 	 * Nothing is working on the current step.
 	 *
-	 * The list records what the agent was doing, not whether anyone is still doing it — so after
-	 * an interruption the step it had reached kept its spinner, turning indefinitely for work
-	 * that stopped minutes ago. Paused is a third state and reads as one: the step is still where
-	 * the plan is, it is simply not moving.
+	 * The list records what the agent was doing, not whether anyone is still doing it. Whether a
+	 * step is moving is a fact about the turn, not about the plan: no turn, no motion. This was
+	 * originally tied to a detected interruption, which was too narrow — a model that simply
+	 * stopped without finishing leaves a perfectly intact log and a step that spins forever.
 	 */
-	const paused = useApp((s) => s.interrupted) && !useApp((s) => s.running);
+	const paused = !useApp((s) => s.running);
 	const [open, setOpen] = useState(false);
 	const body = useRef<HTMLDivElement>(null);
 	const [height, setHeight] = useState(0);
@@ -57,6 +57,14 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	}, [todos, open]);
 
 	if (todos.length === 0) return null;
+	/*
+	 * A finished plan puts itself away.
+	 *
+	 * The list answers "how much is left"; once the answer is "none" it is a card holding a row
+	 * of ticks in the corner of a conversation that has moved on. What it recorded is still in
+	 * the transcript, on the tool call that wrote it.
+	 */
+	if (done === todos.length) return null;
 
 	return (
 		<div

@@ -16,12 +16,22 @@ export function ResumeRow() {
 	const send = useApp((s) => s.send);
 	const running = useApp((s) => s.running);
 	const interrupted = useApp((s) => s.interrupted);
+	const todos = useApp((s) => s.todos);
 
-	if (!interrupted || running) return null;
+	const unfinished = todos.filter((todo) => todo.status !== "completed").length;
+	/*
+	 * Two ways for work to be left undone, and the same thing to offer for both.
+	 *
+	 * One is an interruption: the log stops mid-turn because the process went away. The other is
+	 * quieter and was not covered at all — the model ended its turn cleanly with items still on
+	 * its own list. Nothing is wrong in that second case, which is exactly why nothing said
+	 * anything, and the plan sat there unfinished with no way back into it.
+	 */
+	if (running || (!interrupted && unfinished === 0)) return null;
 
 	return (
 		<div className="dw-enter mb-6 flex items-center gap-2 text-[11.5px] text-ink-faint">
-			<span>上次执行被中断</span>
+			<span>{interrupted ? "上次执行被中断" : `计划还有 ${unfinished} 项未完成`}</span>
 			<span className="text-line">·</span>
 			<button
 				type="button"
@@ -30,14 +40,17 @@ export function ResumeRow() {
 			>
 				继续
 			</button>
-			<button
-				type="button"
-				// The last thing it tried, rather than the whole turn: the earlier steps landed.
-				onClick={() => void send([{ type: "text", text: "重试刚才没有完成的那一步。" }])}
-				className="rounded px-1 text-ink-muted underline decoration-line underline-offset-2 transition-colors hover:text-ink"
-			>
-				重试
-			</button>
+			{/* Only for an interruption: a turn that ended cleanly has nothing to try again. */}
+			{interrupted && (
+				<button
+					type="button"
+					// The last thing it tried, rather than the whole turn: the earlier steps landed.
+					onClick={() => void send([{ type: "text", text: "重试刚才没有完成的那一步。" }])}
+					className="rounded px-1 text-ink-muted underline decoration-line underline-offset-2 transition-colors hover:text-ink"
+				>
+					重试
+				</button>
+			)}
 		</div>
 	);
 }
