@@ -146,3 +146,54 @@ export function toolCallId(given: unknown, outputIndex: number, invented: Map<nu
 	}
 	return generated;
 }
+
+/**
+ * Run a streamed request, and start it over if the stream itself dies.
+ *
+ * `fetchWithRetry` covers getting the connection; this covers keeping it. They are different
+ * failures with the same cause and very different odds: a request that takes forty seconds to
+ * stream a large reply is exposed to a dropped socket for the whole of it, and a long piece of
+ * work is exactly where the replies are longest. Losing one there ends the turn — and with it a
+ * plan the agent was eight steps into.
+ *
+ * Starting over is safe because nothing has happened yet. Tools are executed by the caller after
+ * a complete reply arrives, so a half-streamed one has changed nothing; the only cost is the
+ * tokens spent saying it again.
+ *
+ * `reset` is called before every attempt to clear whatever the last one accumulated. Anything
+ * already emitted to the UI is replaced by what the retry emits, because each update carries the
+ * whole message rather than a delta to apply.
+ */
+export async function* retryStream<T>(
+	attempt: (attemptNumber: number) => AsyncGenerator<T, void>,
+	options: {
+		attempts?: number;
+		signal?: AbortSignal;
+		reset: () => void;
+		onRetry?: (info: { attempt: number; delayMs: number; reason: string }) => void;
+		sleep?: (ms: number) => Promise<void>;
+	},
+): AsyncGenerator<T, void> {
+	const attempts = Math.max(1, options.attempts ?? 3);
+	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+
+	for (let number = 1; number <= attempts; number++) {
+		options.reset();
+		try {
+			yield* attempt(number);
+			return;
+		} catch (error) {
+			const last = number === attempts;
+			if (last || options.signal?.aborted || !isRetryableError(error)) throw error;
+			const delayMs = retryDelay(number);
+			options.onRetry?.({ attempt: number, delayMs, reason: describeError(error) });
+			await sleep(delayMs);
+		}
+	}
+}
+
+function describeError(error: unknown): string {
+	const cause = (error as { cause?: { code?: string } })?.cause?.code;
+	if (cause) return cause;
+	return error instanceof Error ? error.message : String(error);
+}

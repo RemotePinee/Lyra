@@ -21,7 +21,7 @@ import type {
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
 import { computeCost } from "../utils/pricing.ts";
-import { fetchWithRetry, toolCallId } from "./retry.ts";
+import { fetchWithRetry, retryStream, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 
 const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
@@ -92,7 +92,9 @@ async function* streamAnthropic(
 						budget_tokens: Math.min(THINKING_BUDGET[options.thinking as Exclude<ThinkingLevel, "off">], maxTokens - 1),
 					},
 				}
-			: { ...(options.temperature !== undefined ? { temperature: options.temperature } : {}) }),
+			: {
+					...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+				}),
 		...model.samplingParams,
 		...options.samplingParams,
 	};
@@ -103,153 +105,220 @@ async function* streamAnthropic(
 	const inventedIds = new Map<number, string>();
 
 	const doFetch = options.fetch ?? globalThis.fetch;
-	let response: Response;
-	try {
-		response = await fetchWithRetry(
-			doFetch,
-			joinUrl(provider.baseUrl, "/v1/messages"),
-			{
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					"x-api-key": provider.apiKey,
-					"anthropic-version": "2023-06-01",
-					"anthropic-beta": "prompt-caching-2024-07-31",
-					...provider.headers,
-				},
-				body: JSON.stringify(body),
-				signal: options.signal,
-			},
-			{ attempts: options.retryAttempts, signal: options.signal, onRetry: options.onRetry },
-		);
-	} catch (error) {
-		partial.stopReason = options.signal?.aborted ? "aborted" : "error";
-		partial.errorMessage = describeFetchError(error, options.signal);
-		yield { type: "error", error: partial.errorMessage, message: { ...partial } };
-		return partial;
-	}
 
-	if (!response.ok) {
-		const detail = await response.text().catch(() => "");
-		partial.stopReason = "error";
-		partial.errorMessage = `HTTP ${response.status}: ${truncate(detail, 800)}`;
-		yield { type: "error", error: partial.errorMessage, message: { ...partial } };
-		return partial;
-	}
-
-	yield { type: "start", partial: { ...partial } };
-
-	const blocks = new Map<number, { kind: "text" | "thinking" | "toolCall"; contentIndex: number; raw: string }>();
-	let stopReason: string | undefined;
-
-	try {
-		for await (const frame of readSse(response, options.signal)) {
-			let event: Record<string, any>;
-			try {
-				event = JSON.parse(frame.data);
-			} catch {
-				continue;
-			}
-
-			switch (event.type) {
-				case "message_start": {
-					applyUsage(partial.usage, event.message?.usage);
-					break;
-				}
-
-				case "content_block_start": {
-					const idx: number = event.index;
-					const block = event.content_block ?? {};
-					if (block.type === "text") {
-						partial.content.push({ type: "text", text: "" });
-						blocks.set(idx, { kind: "text", contentIndex: partial.content.length - 1, raw: "" });
-						yield { type: "text_start", index: idx };
-					} else if (block.type === "thinking" || block.type === "redacted_thinking") {
-						partial.content.push({
-							type: "thinking",
-							thinking: "",
-							redacted: block.type === "redacted_thinking" || undefined,
-							encrypted: typeof block.data === "string" ? block.data : undefined,
-						});
-						blocks.set(idx, { kind: "thinking", contentIndex: partial.content.length - 1, raw: "" });
-						yield { type: "thinking_start", index: idx };
-					} else if (block.type === "tool_use") {
-						partial.content.push({
-							type: "toolCall",
-							id: toolCallId(block.id, idx, inventedIds),
-							name: String(block.name ?? ""),
-							arguments: {},
-							argumentsText: "",
-						});
-						blocks.set(idx, { kind: "toolCall", contentIndex: partial.content.length - 1, raw: "" });
-						yield { type: "toolcall_start", index: idx, id: toolCallId(block.id, idx, inventedIds), name: String(block.name ?? "") };
-					}
-					break;
-				}
-
-				case "content_block_delta": {
-					const idx: number = event.index;
-					const tracked = blocks.get(idx);
-					if (!tracked) break;
-					const delta = event.delta ?? {};
-					const target = partial.content[tracked.contentIndex];
-
-					if (delta.type === "text_delta" && target?.type === "text") {
-						target.text += delta.text ?? "";
-						yield { type: "text_delta", index: idx, delta: delta.text ?? "", partial: { ...partial } };
-					} else if (delta.type === "thinking_delta" && target?.type === "thinking") {
-						target.thinking += delta.thinking ?? "";
-						yield { type: "thinking_delta", index: idx, delta: delta.thinking ?? "", partial: { ...partial } };
-					} else if (delta.type === "signature_delta" && target?.type === "thinking") {
-						target.signature = (target.signature ?? "") + (delta.signature ?? "");
-					} else if (delta.type === "input_json_delta" && target?.type === "toolCall") {
-						tracked.raw += delta.partial_json ?? "";
-						target.argumentsText = tracked.raw;
-						yield { type: "toolcall_delta", index: idx, delta: delta.partial_json ?? "", partial: { ...partial } };
-					}
-					break;
-				}
-
-				case "content_block_stop": {
-					const idx: number = event.index;
-					const tracked = blocks.get(idx);
-					if (!tracked) break;
-					if (tracked.kind === "toolCall") {
-						const target = partial.content[tracked.contentIndex];
-						if (target?.type === "toolCall") {
-							target.arguments = parseToolArguments(tracked.raw) ?? {};
-						}
-						yield { type: "toolcall_end", index: idx, partial: { ...partial } };
-					} else if (tracked.kind === "text") {
-						yield { type: "text_end", index: idx };
-					} else {
-						yield { type: "thinking_end", index: idx };
-					}
-					break;
-				}
-
-				case "message_delta": {
-					applyUsage(partial.usage, event.usage);
-					if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
-					break;
-				}
-
-				case "error": {
-					const message = event.error?.message ?? "Unknown provider error";
-					partial.stopReason = "error";
-					partial.errorMessage = message;
-					partial.usage = computeCost(partial.usage, model);
-					yield { type: "error", error: message, message: { ...partial } };
-					return partial;
-				}
-			}
+	const blocks = new Map<
+		number,
+		{
+			kind: "text" | "thinking" | "toolCall";
+			contentIndex: number;
+			raw: string;
 		}
+	>();
+	let stopReason: string | undefined;
+	/** The provider answered with an error of its own, which no amount of retrying will change. */
+	let refused = false;
+
+	try {
+		// The whole exchange, not just the connection — see the same wrapper in the Responses
+		// adapter for why a stream that dies part way through is worth asking for again.
+		yield* retryStream(
+			async function* attempt() {
+				const response = await fetchWithRetry(
+					doFetch,
+					joinUrl(provider.baseUrl, "/v1/messages"),
+					{
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							"x-api-key": provider.apiKey,
+							"anthropic-version": "2023-06-01",
+							"anthropic-beta": "prompt-caching-2024-07-31",
+							...provider.headers,
+						},
+						body: JSON.stringify(body),
+						signal: options.signal,
+					},
+					{
+						attempts: options.retryAttempts,
+						signal: options.signal,
+						onRetry: options.onRetry,
+					},
+				);
+
+				if (!response.ok) {
+					const detail = await response.text().catch(() => "");
+					throw new Error(`HTTP ${response.status}: ${truncate(detail, 800)}`);
+				}
+
+				yield { type: "start", partial: { ...partial } } as StreamEvent;
+
+				for await (const frame of readSse(response, options.signal)) {
+					let event: Record<string, any>;
+					try {
+						event = JSON.parse(frame.data);
+					} catch {
+						continue;
+					}
+
+					switch (event.type) {
+						case "message_start": {
+							applyUsage(partial.usage, event.message?.usage);
+							break;
+						}
+
+						case "content_block_start": {
+							const idx: number = event.index;
+							const block = event.content_block ?? {};
+							if (block.type === "text") {
+								partial.content.push({ type: "text", text: "" });
+								blocks.set(idx, {
+									kind: "text",
+									contentIndex: partial.content.length - 1,
+									raw: "",
+								});
+								yield { type: "text_start", index: idx };
+							} else if (block.type === "thinking" || block.type === "redacted_thinking") {
+								partial.content.push({
+									type: "thinking",
+									thinking: "",
+									redacted: block.type === "redacted_thinking" || undefined,
+									encrypted: typeof block.data === "string" ? block.data : undefined,
+								});
+								blocks.set(idx, {
+									kind: "thinking",
+									contentIndex: partial.content.length - 1,
+									raw: "",
+								});
+								yield { type: "thinking_start", index: idx };
+							} else if (block.type === "tool_use") {
+								partial.content.push({
+									type: "toolCall",
+									id: toolCallId(block.id, idx, inventedIds),
+									name: String(block.name ?? ""),
+									arguments: {},
+									argumentsText: "",
+								});
+								blocks.set(idx, {
+									kind: "toolCall",
+									contentIndex: partial.content.length - 1,
+									raw: "",
+								});
+								yield {
+									type: "toolcall_start",
+									index: idx,
+									id: toolCallId(block.id, idx, inventedIds),
+									name: String(block.name ?? ""),
+								};
+							}
+							break;
+						}
+
+						case "content_block_delta": {
+							const idx: number = event.index;
+							const tracked = blocks.get(idx);
+							if (!tracked) break;
+							const delta = event.delta ?? {};
+							const target = partial.content[tracked.contentIndex];
+
+							if (delta.type === "text_delta" && target?.type === "text") {
+								target.text += delta.text ?? "";
+								yield {
+									type: "text_delta",
+									index: idx,
+									delta: delta.text ?? "",
+									partial: { ...partial },
+								};
+							} else if (delta.type === "thinking_delta" && target?.type === "thinking") {
+								target.thinking += delta.thinking ?? "";
+								yield {
+									type: "thinking_delta",
+									index: idx,
+									delta: delta.thinking ?? "",
+									partial: { ...partial },
+								};
+							} else if (delta.type === "signature_delta" && target?.type === "thinking") {
+								target.signature = (target.signature ?? "") + (delta.signature ?? "");
+							} else if (delta.type === "input_json_delta" && target?.type === "toolCall") {
+								tracked.raw += delta.partial_json ?? "";
+								target.argumentsText = tracked.raw;
+								yield {
+									type: "toolcall_delta",
+									index: idx,
+									delta: delta.partial_json ?? "",
+									partial: { ...partial },
+								};
+							}
+							break;
+						}
+
+						case "content_block_stop": {
+							const idx: number = event.index;
+							const tracked = blocks.get(idx);
+							if (!tracked) break;
+							if (tracked.kind === "toolCall") {
+								const target = partial.content[tracked.contentIndex];
+								if (target?.type === "toolCall") {
+									target.arguments = parseToolArguments(tracked.raw) ?? {};
+								}
+								yield {
+									type: "toolcall_end",
+									index: idx,
+									partial: { ...partial },
+								};
+							} else if (tracked.kind === "text") {
+								yield { type: "text_end", index: idx };
+							} else {
+								yield { type: "thinking_end", index: idx };
+							}
+							break;
+						}
+
+						case "message_delta": {
+							applyUsage(partial.usage, event.usage);
+							if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
+							break;
+						}
+
+						case "error": {
+							const message = event.error?.message ?? "Unknown provider error";
+							partial.stopReason = "error";
+							partial.errorMessage = message;
+							partial.usage = computeCost(partial.usage, model);
+							yield {
+								type: "error",
+								error: message,
+								message: { ...partial },
+							} as StreamEvent;
+							// The provider itself refused; asking again would be told the same thing.
+							refused = true;
+							return;
+						}
+					}
+				}
+			},
+			{
+				attempts: options.retryAttempts,
+				signal: options.signal,
+				onRetry: options.onRetry,
+				reset: () => {
+					partial.content = [];
+					partial.usage = emptyUsage();
+					blocks.clear();
+					stopReason = undefined;
+				},
+			},
+		);
+		if (refused) return partial;
 	} catch (error) {
 		const aborted = options.signal?.aborted;
 		partial.stopReason = aborted ? "aborted" : "error";
 		partial.errorMessage = aborted ? "Aborted by user" : describeFetchError(error, options.signal);
 		partial.usage = computeCost(partial.usage, model);
-		yield { type: "error", error: partial.errorMessage, message: { ...partial } };
+		yield {
+			type: "error",
+			error: partial.errorMessage,
+			message: { ...partial },
+		};
 		return partial;
 	}
 
@@ -292,7 +361,10 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 			const blocks: AnthropicBlock[] = message.content.map((c) =>
 				c.type === "text"
 					? { type: "text", text: c.text }
-					: { type: "image", source: { type: "base64", media_type: c.mimeType, data: c.data } },
+					: {
+							type: "image",
+							source: { type: "base64", media_type: c.mimeType, data: c.data },
+						},
 			);
 			if (blocks.length > 0) out.push({ role: "user", content: blocks });
 			continue;
@@ -306,9 +378,19 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 				} else if (c.type === "thinking") {
 					// A thinking block without its signature is rejected on replay, so drop it.
 					if (c.redacted && c.encrypted) blocks.push({ type: "redacted_thinking", data: c.encrypted });
-					else if (c.signature) blocks.push({ type: "thinking", thinking: c.thinking, signature: c.signature });
+					else if (c.signature)
+						blocks.push({
+							type: "thinking",
+							thinking: c.thinking,
+							signature: c.signature,
+						});
 				} else {
-					blocks.push({ type: "tool_use", id: c.id, name: c.name, input: c.arguments });
+					blocks.push({
+						type: "tool_use",
+						id: c.id,
+						name: c.name,
+						input: c.arguments,
+					});
 				}
 			}
 			if (blocks.length > 0) out.push({ role: "assistant", content: blocks });
@@ -321,7 +403,10 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 			content: message.content.map((c) =>
 				c.type === "text"
 					? { type: "text", text: c.text }
-					: { type: "image", source: { type: "base64", media_type: c.mimeType, data: c.data } },
+					: {
+							type: "image",
+							source: { type: "base64", media_type: c.mimeType, data: c.data },
+						},
 			),
 			...(message.isError ? { is_error: true } : {}),
 		};
