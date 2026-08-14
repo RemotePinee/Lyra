@@ -1,33 +1,33 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Spinner } from "./RunningIndicator.tsx";
 
 /**
- * A run of tool calls, folded into one line.
+ * A stretch of tool work, said in one line.
  *
- * A turn that edits nine files leaves nine cards, and reading back through it means scrolling
- * past all of them to find the sentence that says what happened. Individually each card is
- * worth having — you do sometimes want to know exactly which file — but as a block they are
- * scenery, and they push the actual reply off the screen.
+ * Every run of calls looks the same here whether it is one file or nine — and that sameness is
+ * the point. The transcript used to switch between two languages: a short run drew a row of
+ * bordered cards, a long one collapsed to a line of grey text, and the eye had to re-learn what
+ * it was looking at every few paragraphs. One form, always, reads as prose with the reply rather
+ * than as furniture between paragraphs.
  *
- * Folded while they run, too. That was not the first answer: a card still going seemed like the
- * most interesting thing on the page, so running groups stayed open. In practice a batch of
- * parallel reads is seven cards all saying `read`, each with its own spinner, and seven spinners
- * report nothing that one does. One line and one spinner say the same thing and leave the reply
- * on screen; the detail is a click away for the times it matters.
+ * The line says what was done, not how many things were done. "执行了 4 个操作" is a count of
+ * events nobody witnessed; "创建 2 个文件、执行 2 条命令" is the same row of cards, read.
  */
 export function ToolGroup({
-	count,
+	summary,
+	added,
+	removed,
 	running,
-	label,
 	children,
 }: {
-	count: number;
-	/** At least one call in the group has not finished. */
+	/** What this run did, in words — see `describeRun`. */
+	summary: string;
+	/** Lines added and removed across the whole run, when any of it touched a file. */
+	added?: number;
+	removed?: number;
 	running?: boolean;
-	/** What is happening right now — the running call's own summary, when there is exactly one. */
-	label?: string;
 	children: React.ReactNode;
 }) {
 	const [open, setOpen] = useState(false);
@@ -47,27 +47,31 @@ export function ToolGroup({
 	}, [children, open]);
 
 	return (
-		<div className={`mb-2 ${running ? "dw-rail overflow-hidden rounded-md" : ""}`}>
+		<div className="mb-2">
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}
 				aria-expanded={open}
-				className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
+				className="dw-scroll group/run flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-[12.5px] text-ink-faint transition-colors hover:text-ink-muted"
 			>
-				{running && <Spinner size={11} />}
+				{running && <Spinner size={11} className="shrink-0" />}
 				{/*
-				 * The label changes as the group works through its calls, and changing text that
-				 * simply swaps reads as a flicker. Keying the span on the text makes each one a
-				 * new element, so it fades in while the old one is already gone — a change you
-				 * can follow rather than one you catch out of the corner of your eye.
+				 * Keyed on the text so a change is a new element: the old one is gone and the new
+				 * one fades in, which reads as a change rather than as a flicker.
 				 */}
-				<span key={label ?? count} className="dw-fade-in">
-					{running ? (label ?? `执行 ${count} 个操作`) : `执行了 ${count} 个操作`}
+				<span key={summary} className="dw-fade-in min-w-0 truncate">
+					{summary}
 				</span>
-				<ChevronDown
+				{(added ?? 0) + (removed ?? 0) > 0 && (
+					<span className="shrink-0 font-mono text-[11px]">
+						<span className="text-ok/80">+{added ?? 0}</span> <span className="text-danger/80">-{removed ?? 0}</span>
+					</span>
+				)}
+				<ChevronRight
 					size={12}
-					strokeWidth={1.9}
-					className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+					strokeWidth={2}
+					className="shrink-0 opacity-0 transition-all duration-200 group-hover/run:opacity-100"
+					style={open ? { transform: "rotate(90deg)", opacity: 1 } : undefined}
 				/>
 			</button>
 
@@ -79,3 +83,52 @@ export function ToolGroup({
 		</div>
 	);
 }
+
+/**
+ * What a run of calls did, in the words someone would use to describe it afterwards.
+ *
+ * Grouped by the kind of action rather than by tool name, because "读取" is what three different
+ * tools amount to from the outside. One action of one kind names its subject — that is the case
+ * where the detail fits and is worth having; anything more is counted.
+ */
+export function describeRun(calls: { toolName: string; subject?: string }[]): string {
+	const buckets = new Map<string, string[]>();
+	for (const call of calls) {
+		const kind = KIND[call.toolName] ?? "使用工具";
+		const list = buckets.get(kind) ?? [];
+		if (call.subject) list.push(call.subject);
+		buckets.set(kind, list);
+	}
+
+	const counts = new Map<string, number>();
+	for (const call of calls) counts.set(KIND[call.toolName] ?? "使用工具", (counts.get(KIND[call.toolName] ?? "使用工具") ?? 0) + 1);
+
+	const parts: string[] = [];
+	for (const [kind, count] of counts) {
+		const subjects = buckets.get(kind) ?? [];
+		// One of a kind, with a name worth saying: say it.
+		if (count === 1 && subjects.length === 1) parts.push(`${kind} ${subjects[0]}`);
+		// One of a kind with nothing to name — "执行命令 1 个" counts to one, which is just noise.
+		else if (count === 1) parts.push(kind);
+		else parts.push(`${kind} ${count} 个`);
+	}
+	return parts.join("、");
+}
+
+/** Tool names to the plain verb for what they do. */
+const KIND: Record<string, string> = {
+	write: "创建文件",
+	edit: "修改文件",
+	read: "读取文件",
+	bash: "执行命令",
+	bash_output: "查看输出",
+	glob: "查找文件",
+	grep: "搜索内容",
+	ls: "列出目录",
+	todo_write: "更新清单",
+	web_fetch: "抓取网页",
+	web_search: "搜索网络",
+	task: "派发子任务",
+	preview: "生成预览",
+	symbol: "查找符号",
+};

@@ -12,7 +12,7 @@ import { RunningIndicator } from "./RunningIndicator.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { ToolCard } from "./ToolCard.tsx";
-import { ToolGroup } from "./ToolGroup.tsx";
+import { ToolGroup, describeRun } from "./ToolGroup.tsx";
 import { Text } from "./Text.tsx";
 import { UserMessage } from "./UserMessage.tsx";
 import { useLayout } from "../layout.tsx";
@@ -320,9 +320,6 @@ function MessageRow({ message, index }: { message: Message; index: number }) {
   return <AssistantRow message={message} index={index} />;
 }
 
-/** Below this a group saves nothing: the line replacing the cards is as tall as they were. */
-const GROUP_MIN = 3;
-
 /**
  * How much of a long transcript is mounted at once, and how much each "show more" adds.
  *
@@ -469,10 +466,16 @@ function isLive(run: ToolRun | undefined, stopReason: AssistantMessage["stopReas
   return run?.status === "running" || (!run && stopReason === "pending");
 }
 
-/** Renders one run: folded when there are enough of them, plain cards when there are not. */
+/**
+ * One run of tool work: always a line, never a row of cards.
+ *
+ * The threshold that used to decide between the two forms is gone. It was the source of the
+ * unevenness — the same kind of work looked like two different things depending on how many
+ * calls happened to fall together, and the boundary moved as the model chose to batch or not.
+ */
 function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] }) {
   /*
-   * Two primitives, not the map.
+   * Primitives, not the map.
    *
    * A selector returning an object builds a new one every time and so always looks changed; a
    * number and a string are compared by value, so this re-renders when what it shows changes and
@@ -481,24 +484,42 @@ function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, { type: 
   const liveCount = useApp(
     (s) => calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason)).length,
   );
-  const label = useApp((s) => {
+  const runningLabel = useApp((s) => {
     const live = calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason));
     return live.length === 1 ? (s.toolRuns[live[0].block.id]?.summary ?? "") : "";
   });
+  const summary = useApp((s) =>
+    describeRun(calls.map(({ block }) => ({ toolName: block.name, subject: subjectOf(block) }))),
+  );
+  // Totals across the run, so a fold does not hide how much changed.
+  const added = useApp((s) => calls.reduce((n, { block }) => n + diffOf(s.toolRuns[block.id], "added"), 0));
+  const removed = useApp((s) => calls.reduce((n, { block }) => n + diffOf(s.toolRuns[block.id], "removed"), 0));
+
   const cards = calls.map(({ block, stopReason }) => (
     <LiveToolCard key={block.id} block={block} stopReason={stopReason} />
   ));
-  if (calls.length < GROUP_MIN) return <>{cards}</>;
 
-  /*
-   * The label only names something when one thing is happening. With several in flight there is
-   * no single answer, and picking one would have it jumping between them as they finish.
-   */
   return (
-    <ToolGroup count={calls.length} running={liveCount > 0} label={label || undefined}>
+    <ToolGroup
+      summary={liveCount > 0 ? runningLabel || `执行 ${calls.length} 个操作` : summary}
+      added={added}
+      removed={removed}
+      running={liveCount > 0}
+    >
       {cards}
     </ToolGroup>
   );
+}
+
+/** The file a call is about, when it is about one — the part worth naming in a summary. */
+function subjectOf(block: Extract<AssistantContent, { type: "toolCall" }>): string | undefined {
+  const path = (block.arguments as { path?: unknown } | undefined)?.path;
+  return typeof path === "string" ? path.split("/").pop() : undefined;
+}
+
+function diffOf(run: ToolRun | undefined, key: "added" | "removed"): number {
+  const value = (run?.result?.details as Record<string, unknown> | undefined)?.[key];
+  return typeof value === "number" ? value : 0;
 }
 
 function AssistantRow({
@@ -551,17 +572,8 @@ function AssistantRow({
           return <LiveToolCard key={block.id} block={block} stopReason={message.stopReason} />;
         }
 
-        const cards = segment.blocks.map((block) => (
-          <LiveToolCard key={block.id} block={block} stopReason={message.stopReason} />
-        ));
-        // Enough of them to be scenery — running or not, since a row of identical spinners is
-        // the worst of it rather than the exception.
-        if (segment.blocks.length < GROUP_MIN) return cards;
-        return (
-          <ToolGroup key={`group-${position}`} count={segment.blocks.length}>
-            {cards}
-          </ToolGroup>
-        );
+        const calls = segment.blocks.map((block) => ({ block, stopReason: message.stopReason }));
+        return <ToolRun key={`group-${position}`} calls={calls} />;
       })}
 
       {message.stopReason === "error" && message.errorMessage && (
