@@ -12,6 +12,7 @@ export function RunningIndicator() {
 	const startedAt = useApp((s) => s.turnStartedAt);
 	const tokens = useApp((s) => s.turnTokens);
 	const messages = useApp((s) => s.messages);
+	const retrying = useApp((s) => s.retrying);
 	const [now, setNow] = useState(() => Date.now());
 
 	useEffect(() => {
@@ -35,6 +36,21 @@ export function RunningIndicator() {
 				<>
 					<span className="text-ink-faint">·</span>
 					<span className="tabular-nums">{formatTokens(total)} tokens</span>
+				</>
+			)}
+			{/*
+			 * Why the wait is longer than it should be, on the line that is already counting it.
+			 *
+			 * A dropped connection is not an event of its own to be announced elsewhere — it is
+			 * the reason this particular turn is taking so long, and it stops being true the
+			 * moment the turn does.
+			 */}
+			{retrying && (
+				<>
+					<span className="text-ink-faint">·</span>
+					<span className="text-ink-faint">
+						连接中断，{Math.round(retrying.delayMs / 1000)} 秒后重试（第 {retrying.attempt} 次）
+					</span>
 				</>
 			)}
 		</div>

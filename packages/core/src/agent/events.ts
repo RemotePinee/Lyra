@@ -18,6 +18,15 @@ export type AgentEvent =
 	| { type: "agent_end"; reason: "done" | "aborted" | "error" | "max_turns"; error?: string }
 	| { type: "notice"; level: "info" | "warn" | "error"; message: string }
 	/**
+	 * The connection dropped and the turn is being retried.
+	 *
+	 * Its own event rather than a notice, because it describes what this turn is doing right now
+	 * — the same class of fact as "thinking" or "running a tool" — and belongs beside the turn
+	 * rather than in the corner of the window with things that outlive it. It also expires on its
+	 * own: once the turn is over, whether it was retried is history nobody needs.
+	 */
+	| { type: "retry"; attempt: number; delayMs: number; reason: string }
+	/**
 	 * The session got its name from the first prompt.
 	 *
 	 * Announced rather than left for the next list refresh: the title is set the instant the

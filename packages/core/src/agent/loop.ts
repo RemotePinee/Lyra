@@ -195,11 +195,7 @@ async function streamTurn(
 		 * something that is visibly being handled.
 		 */
 		onRetry: ({ attempt, delayMs, reason }) => {
-			void emit({
-				type: "notice",
-				level: "info",
-				message: `连接失败（${reason}），${Math.round(delayMs / 1000)} 秒后重试（第 ${attempt} 次）`,
-			});
+			void emit({ type: "retry", attempt, delayMs, reason });
 		},
 	});
 

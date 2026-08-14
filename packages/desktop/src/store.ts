@@ -102,6 +102,14 @@ interface AppState {
   approvals: PendingApproval[];
   /** Per-conversation state for the sidebar; absent means idle. */
   activity: Record<string, SessionActivity>;
+  /**
+   * The connection dropped and this turn is being retried.
+   *
+   * Belongs to the turn, so it is cleared when one starts or ends rather than dismissed. Before
+   * this it went to the corner of the window with the notices, where it outlived the turn it
+   * described and sat next to messages that had nothing to do with it.
+   */
+  retrying: { attempt: number; delayMs: number; reason: string } | null;
   notices: { id: string; level: "info" | "warn" | "error"; message: string }[];
   capabilities: AgentCapabilities | null;
   sync: SyncStatus | null;
@@ -165,6 +173,7 @@ export const useApp = create<AppState>((set, get) => ({
   toolRuns: {},
   approvals: [],
   activity: {},
+  retrying: null,
   notices: [],
   capabilities: null,
   sync: null,
@@ -718,6 +727,7 @@ export const useApp = create<AppState>((set, get) => ({
       case "agent_start":
         set({
           running: true,
+          retrying: null,
           // The composer already started the clock when it sent, and the ~2s of session
           // setup before the agent starts is part of the wait. Overwriting it here made
           // the elapsed time jump backwards. A turn driven from the phone or the
@@ -872,6 +882,10 @@ export const useApp = create<AppState>((set, get) => ({
         useSide.getState().setTasks(event.tasks);
         break;
 
+      case "retry":
+        set({ retrying: { attempt: event.attempt, delayMs: event.delayMs, reason: event.reason } });
+        break;
+
       case "notice":
         set({
           notices: [
@@ -888,6 +902,7 @@ export const useApp = create<AppState>((set, get) => ({
       case "agent_end":
         set({
           running: false,
+          retrying: null,
           approvals: [],
           pendingUserMessage: null,
           turnStartedAt: null,

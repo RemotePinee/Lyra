@@ -524,6 +524,30 @@
 }
 
 /*
+ * A notice leaving, rather than being deleted.
+ *
+ * They arrived with a fade-up and then simply stopped existing, which reads as a glitch — the
+ * eye registers that something changed without seeing what. Sliding out the way it came in makes
+ * the disappearance an event you can follow, and the collapse of the height carries the stack
+ * below it up smoothly instead of snapping.
+ */
+@keyframes dw-fade-out-right {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+.dw-leave {
+  animation: dw-fade-out-right 160ms ease-in forwards;
+  pointer-events: none;
+}
+
+/*
  * Suppresses entrance animations for one frame while a list is swapped wholesale.
  * Individually the fade-up reads as a message arriving; fifty at once reads as the page
  * lurching.
