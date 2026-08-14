@@ -353,24 +353,27 @@ function ProjectGroup({
 						activeSessionId === session.id ? "bg-card-hover" : "hover:bg-card-hover"
 					}`}
 				>
+					{/*
+					 * The title stops short of the archive button, always.
+					 *
+					 * It used to run the full width and the icon appeared on top of it, so a long
+					 * name and the icon overlapped into something neither of them could be read
+					 * through. A gradient behind the icon was the previous answer, but the sidebar
+					 * is translucent — there is no colour to fade to that reliably covers text.
+					 * Reserving the space costs a few characters and cannot go wrong; the full
+					 * title is a hover away in the scroller either way.
+					 */}
 					<button
 						type="button"
 						onClick={() => onOpenSession(session)}
-						className={`flex w-full items-center rounded-lg pr-2 pl-9 text-left text-[12.5px] transition-colors duration-150 ${
+						className={`flex w-full items-center rounded-lg pr-7 pl-9 text-left text-[12.5px] transition-colors duration-150 ${
 							compact ? "h-[34px]" : "h-[27px]"
 						} ${activeSessionId === session.id ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
 					>
 						<ScrollText text={session.title} className="dw-fade-tail min-w-0 flex-1" />
 					</button>
-					{/*
-					 * The delete button rides on a gradient rather than sitting bare on top of the
-					 * title — otherwise a long name runs straight under the icon and both become
-					 * unreadable. The gradient reaches full opacity before the icon starts, so
-					 * nothing shows through it, and it gives the scrolling text somewhere to go.
-					 *
-					 * The strip never takes pointer events; only the button does. Anything wider
-					 * would shadow the row button and cost it its hover.
-					 */}
+					{/* The strip never takes pointer events; only the button does. Anything wider
+					 * would shadow the row button and cost it its hover. */}
 					<span
 						className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/session:opacity-100 focus-within:opacity-100"
 					>

@@ -13,7 +13,7 @@ import { SidePanel } from "./components/SidePanel.tsx";
 import { ToolbarButton, WindowControls } from "./components/WindowControls.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SettingsShell } from "./components/settings/SettingsShell.tsx";
-import { LayoutProvider, NavPane, useLayout } from "./layout.tsx";
+import { LayoutProvider, NavPane, SidePane, useLayout } from "./layout.tsx";
 import { useSide } from "./sideStore.ts";
 import { useApp } from "./store.ts";
 import { applyAppearance, watchSystemTheme } from "./theme.ts";
@@ -182,6 +182,13 @@ function ChatShell() {
    * toolbar. Exactly one of the two renders them, so they never double up.
    */
   const panelHostsControls = panelOpen && (compact || (fullScreen && !navOpen));
+  /**
+   * Whether the panel is over the top-right corner, where the toolbar's own buttons live.
+   *
+   * Only then does the panel need to carry the control that closes it; the rest of the time the
+   * toolbar keeps it, in a spot that does not move when the panel opens.
+   */
+  const panelCoversToolbar = panelOpen && (compact || fullScreen);
 
   /**
    * Opening the panel puts the sidebar away when all three cannot fit.
@@ -341,16 +348,21 @@ function ChatShell() {
       <div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]">
         <div className="no-drag toolbar-right absolute top-0 flex h-[44px] items-center gap-0.5">
           {/*
-           * Hidden while the panel is open, because the panel's own title bar occupies
-           * exactly this spot and carries the button that closes it. Two controls for
-           * the same thing, one on top of the other, is worse than one.
+           * One control, in one place, for both directions.
+           *
+           * This used to disappear when the panel opened, on the grounds that the panel's own
+           * title bar carries a close button in roughly this spot. Roughly is the problem: the
+           * panel insets itself by six pixels and draws a border, so the button landed a few
+           * pixels off from where it had just been and the eye caught every open and close as a
+           * jump. Now it only hands over when the panel genuinely covers this corner — full
+           * screen or compact — and in every other layout it stays put and changes state.
            */}
-          {!panelOpen && !(compact && navOpen) && (
+          {!panelCoversToolbar && !(compact && navOpen) && (
             <ToolbarButton
-              label="展开面板"
-              onClick={() => openPanel(() => reopenPanel())}
+              label={panelOpen ? "收起面板" : "展开面板"}
+              onClick={() => (panelOpen ? closePanel() : openPanel(() => reopenPanel()))}
             >
-              <RightPanelIcon active={false} />
+              <RightPanelIcon active={panelOpen} />
             </ToolbarButton>
           )}
         </div>
@@ -366,45 +378,35 @@ function ChatShell() {
        * Being last in the DOM costs nothing in the wide layout: the toolbar is absolute
        * and takes no part in the flex row, so this is still the third and rightmost item.
        */}
-      {panelOpen && (
-        <div
-          className={
-            compact
-              ? "dw-fade-in absolute inset-0 z-50"
-              : fullScreen
-                ? "dw-opaque dw-fade-in absolute inset-y-0 right-0 z-50"
-                : "dw-opaque dw-slide-in relative z-50 shrink-0 transition-[width] duration-200"
-          }
-          style={
-            compact
-              ? undefined
-              : fullScreen
-                ? { left: navOpen ? sidebarWidth : 0 }
-                : { width: panelWidth }
-          }
-        >
-          <SidePanel />
+      <SidePane
+        width={panelWidth}
+        open={panelOpen}
+        fullScreen={fullScreen}
+        offset={navOpen ? sidebarWidth : 0}
+      >
+        <SidePanel />
 
-          {/*
-           * Not in compact or full screen, where the panel covers the column rather than
-           * sharing it: there is no boundary between two things to move.
-           */}
-          {!compact && !fullScreen && (
-            <ResizeHandle
-              edge="start"
-              width={panelWidth}
-              min={bounds.panel.min}
-              max={Math.max(
-                bounds.panel.min,
-                Math.min(bounds.panel.max, available - CONTENT_MIN),
-              )}
-              onResize={setPanelWidth}
-              onReset={resetPanelWidth}
-              label="调整面板宽度"
-            />
-          )}
-        </div>
-      )}
+        {/*
+         * Not in compact or full screen, where the panel covers the column rather than
+         * sharing it: there is no boundary between two things to move. Nor while closed —
+         * the pane is still mounted then, and an edge with nothing on one side of it is
+         * not an edge.
+         */}
+        {panelOpen && !compact && !fullScreen && (
+          <ResizeHandle
+            edge="start"
+            width={panelWidth}
+            min={bounds.panel.min}
+            max={Math.max(
+              bounds.panel.min,
+              Math.min(bounds.panel.max, available - CONTENT_MIN),
+            )}
+            onResize={setPanelWidth}
+            onReset={resetPanelWidth}
+            label="调整面板宽度"
+          />
+        )}
+      </SidePane>
 
       {/*
        * The window's own controls.

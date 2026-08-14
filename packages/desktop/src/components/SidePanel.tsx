@@ -380,15 +380,24 @@ export function SidePanel() {
 							{expanded ? <Minimize2 size={12.5} strokeWidth={1.9} /> : <Maximize2 size={12.5} strokeWidth={1.9} />}
 						</button>
 					)}
-					<button
-						type="button"
-						title="收起面板"
-						aria-label="收起面板"
-						onClick={closePanel}
-						className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
-					>
-						<PanelRight size={13} strokeWidth={1.8} />
-					</button>
+					{/*
+					 * Only while the panel is over the toolbar's own corner.
+					 *
+					 * Otherwise the toolbar keeps this control, in a position that does not shift
+					 * when the panel opens — two buttons a few pixels apart, swapping as the panel
+					 * comes and goes, read as the whole corner jumping.
+					 */}
+					{(compact || expanded) && (
+						<button
+							type="button"
+							title="收起面板"
+							aria-label="收起面板"
+							onClick={closePanel}
+							className="no-drag flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
+						>
+							<PanelRight size={13} strokeWidth={1.8} />
+						</button>
+					)}
 				</div>
 
 				{/*

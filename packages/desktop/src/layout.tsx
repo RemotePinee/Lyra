@@ -342,6 +342,82 @@ export function NavPane({
 	);
 }
 
+
+/**
+ * The panel side of the window, animated the same way the navigation is.
+ *
+ * It used to be mounted only while open, which produced three separate complaints and all of
+ * them were the same fact: a subtree that appears fully formed cannot animate. The width was
+ * final on the first frame, so the resize handle drew as a bare vertical line before there was
+ * anything beside it; the entrance was a 24px nudge rather than the navigation's unfolding; and
+ * the contents simply blinked into place. Keeping it mounted and moving it out past the edge
+ * fixes all three, and has a fourth benefit — a terminal or a page in here survives the panel
+ * being closed, which it never used to.
+ */
+export function SidePane({
+	width,
+	open,
+	fullScreen,
+	offset,
+	children,
+}: {
+	width: number;
+	open: boolean;
+	/** Covering the content column rather than sharing the row with it. */
+	fullScreen: boolean;
+	/** Where the covering form starts, so it stops short of the navigation. */
+	offset: number;
+	children: React.ReactNode;
+}) {
+	const { compact } = useLayout();
+	const ref = useRef<HTMLElement>(null);
+	/** Same reason as NavPane: the two forms animate different properties. */
+	const [snap, setSnap] = useState(false);
+
+	useFocusTrap(ref, compact && open);
+
+	useEffect(() => {
+		setSnap(true);
+		const id = window.setTimeout(() => setSnap(false), 60);
+		return () => window.clearTimeout(id);
+	}, [compact, fullScreen]);
+
+	const covering = compact || fullScreen;
+
+	return (
+		<aside
+			ref={ref}
+			aria-label="面板"
+			{...(compact ? { role: "dialog" as const, "aria-modal": true } : {})}
+			// A closed pane is otherwise still in the tab order, so Tab walks into what nobody sees.
+			inert={!open}
+			data-pane={covering ? "cover" : "beside"}
+			className={`${
+				covering
+					? `dw-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
+					: "dw-opaque relative z-50 shrink-0 overflow-hidden"
+			} ${snap ? "transition-none" : "transition-[margin-right,transform] duration-[220ms] ease-out"}`}
+			/*
+			 * Moved, never faded.
+			 *
+			 * The navigation can cross-fade because it is translucent by design — it is meant to
+			 * have the desktop behind it. This one is opaque on purpose (a terminal or a web page
+			 * must not have the transcript showing through it), and a half-transparent white panel over
+			 * the window's vibrancy is grey. Fading it in meant every open began with a grey sheet
+			 * that resolved to white, which read as a rendering glitch rather than as an entrance.
+			 * Sliding alone is also simply the truer gesture: the panel arrives from the edge.
+			 */
+			style={
+				covering
+					? { left: compact ? 0 : offset, transform: open ? "none" : "translateX(100%)" }
+					: { width, marginRight: open ? 0 : -width }
+			}
+		>
+			{children}
+		</aside>
+	);
+}
+
 const FOCUSABLE =
 	'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 

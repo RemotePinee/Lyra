@@ -2,8 +2,11 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
+  ChevronDown,
+  Folder,
   GitBranch,
   GitCommitHorizontal,
+  GitBranchPlus,
   GitCompare,
   FolderGit2,
   Minus,
@@ -22,7 +25,9 @@ import type {
 import type { BranchList, RepoRef } from "../../../electron/git.ts";
 import { IconButton } from "../IconButton.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
+import { Popover, usePopover } from "../Popover.tsx";
 import { Scroller } from "../Scroller.tsx";
+import { ScrollText } from "../ScrollText.tsx";
 import { Text } from "../Text.tsx";
 import { useApp } from "../../store.ts";
 import { CommitGraph, LANE_WIDTH } from "./CommitGraph.tsx";
@@ -62,22 +67,55 @@ export function GitPanel() {
    * Assuming the root was the repository meant everything else was invisible.
    */
   const [repos, setRepos] = useState<RepoRef[]>([]);
+  /** Worktrees per repository, keyed by the repository's path. */
+  const [trees, setTrees] = useState<Record<string, RepoRef[]>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Rescan when the workspace changes; the selection follows unless it is still valid.
+  /*
+   * Rescan when the workspace changes; the selection follows unless it is still valid.
+   *
+   * Each repository is asked for its worktrees at the same time. A worktree has a `.git` of its
+   * own, so the directory scan finds it and would list it a second time as a repository in its
+   * own right — the same branch of the same history appearing twice, under two names. Anything
+   * claimed by a repository as a worktree is therefore removed from the top level and shown
+   * beneath the repository it belongs to.
+   */
   useEffect(() => {
-    if (!workspace) return setRepos([]);
-    void window.deepwise.git.repos(workspace.path).then((found) => {
-      setRepos(found);
-      setSelected((current) =>
-        current && found.some((repo) => repo.path === current)
-          ? current
-          : (found[0]?.path ?? null),
+    if (!workspace) {
+      setRepos([]);
+      setTrees({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const found = await window.deepwise.git.repos(workspace.path);
+      const lists = await Promise.all(
+        found.map(async (repo) => [repo.path, await window.deepwise.git.worktrees(repo.path)] as const),
       );
-    });
+      if (cancelled) return;
+
+      const linked = new Map<string, RepoRef[]>();
+      const claimed = new Set<string>();
+      for (const [root, all] of lists) {
+        const attached = all.filter((tree) => tree.worktree);
+        linked.set(root, attached);
+        for (const tree of attached) claimed.add(tree.path);
+      }
+      const roots = found.filter((repo) => !claimed.has(repo.path));
+
+      setRepos(roots);
+      setTrees(Object.fromEntries(roots.map((repo) => [repo.path, linked.get(repo.path) ?? []])));
+      setSelected((current) => {
+        const reachable = [...roots.map((r) => r.path), ...[...claimed]];
+        return current && reachable.includes(current) ? current : (roots[0]?.path ?? null);
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [workspace?.path]);
 
   const cwd = selected ?? workspace?.path ?? null;
@@ -119,6 +157,21 @@ export function GitPanel() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/*
+       * Which checkout everything below is about.
+       *
+       * Only when there is a choice to make. One repository with no worktrees is the common case
+       * and needs no row telling you so — the branch line underneath already says where you are.
+       */}
+      {(repos.length > 1 || Object.values(trees).some((list) => list.length > 0)) && (
+        <RepoPicker
+          repos={repos}
+          trees={trees}
+          selected={cwd}
+          onSelect={setSelected}
+        />
+      )}
+
       {/* Where you are, and the two things you do with a remote. */}
       <div className="flex h-8 shrink-0 items-center gap-1.5 px-2.5">
         <GitBranch
@@ -500,9 +553,12 @@ function HistoryView({ cwd }: { cwd: string }) {
                 className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-card-hover"
               >
                 <span className="min-w-0 flex-1">
-                  <Text as="span" size="label" className="block truncate">
-                    {commit.subject}
-                  </Text>
+                  {/*
+                   * Scrolled on hover rather than cut off. A commit subject is the one line that
+                   * says what a commit was for, and the useful half is regularly past the ellipsis
+                   * — the same reason session titles in the sidebar scroll instead of truncating.
+                   */}
+                  <ScrollText text={commit.subject} className="dw-fade-tail block text-[12.5px]" />
                   <span className="flex items-center gap-1.5">
                     <Text size="caption" tone="faint" mono>
                       {commit.shortSha}
@@ -512,14 +568,24 @@ function HistoryView({ cwd }: { cwd: string }) {
                     </Text>
                   </span>
                 </span>
+                {/*
+                 * Badges give way before the subject does.
+                 *
+                 * A branch name like `origin/fix/forwarded-chain-diagnostics` is wider than half
+                 * this panel, and as an unshrinkable box it pushed the whole row past the panel's
+                 * edge — subject, refs and all, running out of the window. They shrink three times
+                 * as readily as the subject, so the line stays inside and the name that got cut is
+                 * a hover away.
+                 */}
                 {commit.refs.length > 0 && (
-                  <span className="flex shrink-0 gap-1">
+                  <span className="flex min-w-0 shrink-[3] gap-1 overflow-hidden">
                     {commit.refs.slice(0, 2).map((ref) => (
                       <Text
                         key={ref}
                         size="caption"
                         tone="muted"
-                        className="rounded border border-line px-1 py-px"
+                        title={ref}
+                        className="max-w-[132px] shrink truncate rounded border border-line px-1 py-px"
                       >
                         {ref}
                       </Text>
@@ -873,4 +939,130 @@ function relativeTime(iso: string): string {
     month: "long",
     day: "numeric",
   });
+}
+
+/**
+ * The repository this panel is looking at, and everywhere else it could look.
+ *
+ * A workspace is a folder someone opened. Plenty of them hold several repositories — a frontend
+ * beside a backend, services versioned apart on purpose — and any repository may have worktrees,
+ * which are further checkouts of the same history on other branches. All of it was being found
+ * and none of it was reachable: the panel picked whichever repository sorted first and gave no
+ * way to say otherwise.
+ *
+ * Worktrees are nested under the repository they belong to rather than listed as peers, because
+ * that is what they are. Sharing one history is the whole point of a worktree, and a flat list
+ * would put two checkouts of the same project side by side as though they were separate work.
+ */
+function RepoPicker({
+  repos,
+  trees,
+  selected,
+  onSelect,
+}: {
+  repos: RepoRef[];
+  trees: Record<string, RepoRef[]>;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  const menu = usePopover();
+  const everything = repos.flatMap((repo) => [repo, ...(trees[repo.path] ?? [])]);
+  const current = everything.find((entry) => entry.path === selected) ?? repos[0];
+  const total = everything.length;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={menu.toggle}
+        aria-haspopup="menu"
+        aria-expanded={menu.open}
+        className={`flex h-8 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5 text-left transition-colors ${
+          menu.open ? "bg-card-hover" : "hover:bg-card-hover"
+        }`}
+      >
+        {current?.worktree ? (
+          <GitBranchPlus size={12.5} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
+        ) : (
+          <Folder size={12.5} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
+        )}
+        <ScrollText text={current?.label ?? "仓库"} className="dw-fade-tail min-w-0 flex-1 text-[12.5px]" />
+        <Text size="caption" tone="faint" className="shrink-0">
+          {total}
+        </Text>
+        <ChevronDown size={12} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
+      </button>
+
+      {menu.open && (
+        <Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="start" width={260}>
+          <div className="max-h-[320px] overflow-y-auto py-1">
+            {repos.map((repo) => (
+              <div key={repo.path}>
+                <RepoRow
+                  entry={repo}
+                  active={repo.path === selected}
+                  onSelect={() => {
+                    onSelect(repo.path);
+                    menu.close();
+                  }}
+                />
+                {(trees[repo.path] ?? []).map((tree) => (
+                  <RepoRow
+                    key={tree.path}
+                    entry={tree}
+                    nested
+                    active={tree.path === selected}
+                    onSelect={() => {
+                      onSelect(tree.path);
+                      menu.close();
+                    }}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </Popover>
+      )}
+    </>
+  );
+}
+
+function RepoRow({
+  entry,
+  active,
+  nested = false,
+  onSelect,
+}: {
+  entry: RepoRef;
+  active: boolean;
+  nested?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      title={entry.path}
+      className={`flex w-full items-center gap-2 py-1.5 pr-2.5 text-left transition-colors ${
+        nested ? "pl-7" : "pl-2.5"
+      } ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
+    >
+      {nested ? (
+        <GitBranchPlus size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
+      ) : (
+        <Folder size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
+      )}
+      <span className="min-w-0 flex-1">
+        <Text as="span" size="label" className="block truncate">
+          {entry.label}
+        </Text>
+        {entry.branch && (
+          <Text size="caption" tone="faint" className="block truncate">
+            {entry.branch}
+          </Text>
+        )}
+      </span>
+      {active && <Check size={12} strokeWidth={2.2} className="shrink-0 text-accent" />}
+    </button>
+  );
 }
