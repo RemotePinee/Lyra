@@ -19,7 +19,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 	if (!text && !redacted) return null;
 
 	return (
-		<div className="mb-1.5">
+		<div className="mb-2.5">
 			<button
 				type="button"
 				onClick={() => setOpen((v) => !v)}

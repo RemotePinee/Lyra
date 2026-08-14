@@ -178,7 +178,7 @@ export function Conversation() {
                * boundary. Pinned to the bottom it said the opposite of what it meant: that the
                * work still arriving had already been summarised away.
                */
-              <div key={`compaction-${index}`} className="mb-6 flex items-center gap-2 text-[11px] text-ink-faint">
+              <div key={`compaction-${index}`} className="mb-2.5 flex items-center gap-2 text-[11px] text-ink-faint">
                 <span className="h-px flex-1 bg-line-soft" />
                 <span>以上内容已压缩为摘要</span>
                 <span className="h-px flex-1 bg-line-soft" />
@@ -313,7 +313,7 @@ function MessageRow({ message, index }: { message: Message; index: number }) {
     const text = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
     if (text.startsWith("（自动继续）")) {
       return (
-        <div className="mb-6 flex items-center gap-2 text-[11px] text-ink-faint">
+        <div className="mb-2.5 flex items-center gap-2 text-[11px] text-ink-faint">
           <span className="h-px w-6 bg-line-soft" />
           <span>自动继续 · 清单尚未完成</span>
           <span className="h-px flex-1 bg-line-soft" />
@@ -559,7 +559,7 @@ function AssistantRow({
 
   // `group/msg` is what reveals the row below, and it names the whole reply as the target.
   return (
-    <div className="group/msg dw-enter mb-4">
+    <div className="group/msg dw-enter mb-2.5">
       {/*
        * Grouped before rendering, not after.
        *
@@ -584,7 +584,7 @@ function AssistantRow({
           }
           if (block.type === "text") {
             return block.text ? (
-              <div key={index} className="mb-1.5">
+              <div key={index} className="mb-2.5">
                 <Markdown text={block.text} />
               </div>
             ) : null;

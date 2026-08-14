@@ -1,7 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Spinner } from "./RunningIndicator.tsx";
 
 /**
  * A stretch of tool work, said in one line.
@@ -55,20 +54,32 @@ export function ToolGroup({
 	 * every line floating between two paragraphs, belonging to neither.
 	 */
 	return (
-		<div className="mb-3.5">
+		<div className="mb-2.5">
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}
 				aria-expanded={open}
 				className="dw-scroll group/run flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-[12.5px] text-ink-faint transition-colors hover:text-ink-muted"
 			>
-				{running && <Spinner size={11} className="shrink-0" />}
 				{/*
+				 * The line itself says it is running — a highlight glides along it — so there is no
+				 * spinner here. One mark per statement: a spinner beside a moving line is the same
+				 * fact told twice, and the pair of them is what made a long run feel busy.
+				 *
 				 * Keyed on the text so a change is a new element: the old one is gone and the new
 				 * one fades in, which reads as a change rather than as a flicker.
 				 */}
+				{/*
+				 * Two elements, because they are two animations.
+				 *
+				 * `animation` is one property: a second class does not add to the first, it replaces
+				 * it. With both on one span the fade-in won and the glide never ran — while the
+				 * transparent text it relies on stayed, so the line was coloured by a gradient that
+				 * was standing still. The entrance belongs to the outer element, the glide to the
+				 * text inside it.
+				 */}
 				<span key={summary} className="dw-fade-in min-w-0 truncate">
-					{summary}
+					<span className={running ? "dw-glide" : undefined}>{summary}</span>
 				</span>
 				{(added ?? 0) + (removed ?? 0) > 0 && (
 					<span className="shrink-0 font-mono text-[11px]">

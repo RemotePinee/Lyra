@@ -38,7 +38,7 @@ export function MessageActions({
 
 	return (
 		<div
-			className={`mt-1 flex h-[22px] items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
+			className={`flex h-[18px] items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
 		>
 			<Text size="caption" tone="faint" numeric>
 				{formatSentAt(timestamp)}

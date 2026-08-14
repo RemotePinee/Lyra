@@ -66,7 +66,7 @@ export function UserMessage({
 
   if (editing) {
     return (
-      <div className="dw-enter mb-6 flex justify-end">
+      <div className="dw-enter mb-2.5 flex justify-end">
         {/* The same surface as the composer: editing a message is the same act as writing one. */}
         <div className="dw-composer w-full rounded-[18px] border border-line-soft bg-input px-4 pt-3.5 pb-2.5">
           <div className="dw-scroll-host relative">
@@ -122,7 +122,7 @@ export function UserMessage({
   }
 
   return (
-    <div className="group/msg dw-enter mb-6 flex flex-col items-end">
+    <div className="group/msg dw-enter mb-2.5 flex flex-col items-end">
       {/*
        * Always visible, not folded into the hover row below.
        *

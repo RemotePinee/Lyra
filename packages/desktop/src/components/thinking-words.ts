@@ -11,27 +11,29 @@
  * the actual answer. These are picked from what the agent has just done, which the window already
  * knows.
  *
- * The tone is deliberately colloquial. This is the app talking about itself in the corner of the
- * screen, not a progress dialog reporting to a manager.
+ * The tone is deliberately colloquial, and in English — it sits beside `42s · 63.6k tokens`, and
+ * a Chinese phrase in that row read as a different voice interrupting a technical readout. This
+ * is the app muttering to itself in the corner of the screen, not a progress dialog reporting to
+ * a manager.
  */
 
 /** The kinds of waiting worth distinguishing, in the order they get checked. */
 export type Mood = "reading" | "writing" | "running" | "searching" | "testing" | "browsing" | "planning" | "thinking";
 
 const WORDS: Record<Mood, string[]> = {
-	reading: ["翻资料", "读一读", "看看这写了啥", "先把上下文吃透", "扒源码"],
-	writing: ["落笔", "码字中", "写起来了", "敲代码", "把想法写下来"],
-	running: ["跑一下", "让它跑跑看", "执行中", "等命令回话", "开火"],
-	searching: ["翻箱倒柜", "满仓库找", "顺藤摸瓜", "找线索", "大海捞针"],
-	testing: ["验一验", "跑测试", "看看能不能过", "拿证据说话", "压一压"],
-	browsing: ["看看网页", "上网查查", "翻页面", "对着浏览器瞧"],
-	planning: ["排排计划", "捋顺序", "列个单子", "分分步骤"],
-	thinking: ["正在琢磨", "捋一捋思路", "转脑子", "盘一盘", "想办法", "琢磨路子"],
+	reading: ["Reading up", "Skimming", "Digging in", "Getting the lay of it", "Poking around the source"],
+	writing: ["Writing", "Drafting", "Putting it down", "Getting it on paper", "Laying down code"],
+	running: ["Running it", "Kicking it off", "Letting it rip", "Waiting on the shell", "Turning the crank"],
+	searching: ["Hunting", "Rummaging", "Casting about", "Following the thread", "Combing through"],
+	testing: ["Proving it", "Running the gauntlet", "Making sure", "Putting it through its paces"],
+	browsing: ["Having a look", "Loading the page", "Peeking at the web"],
+	planning: ["Plotting", "Lining it up", "Sketching the order", "Working out the steps"],
+	thinking: ["Thinking", "Mulling", "Turning it over", "Chewing on it", "Working it out", "Pondering"],
 };
 
 /** After this long on one step, the wording acknowledges that it is taking a while. */
 const PATIENCE_MS = 45_000;
-const LONG_WORDS = ["还在忙", "这个有点费劲", "慢工出细活", "再等等，快了", "有点难啃"];
+const LONG_WORDS = ["Still at it", "This one's stubborn", "Taking its time", "Nearly there", "Wrestling with it"];
 
 const BY_TOOL: Record<string, Mood> = {
 	read: "reading",

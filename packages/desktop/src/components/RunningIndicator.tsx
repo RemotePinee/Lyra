@@ -52,7 +52,7 @@ export function RunningIndicator() {
 	const phrase = phraseFor(moodFor(toolName || undefined, summary), tick, elapsed);
 
 	return (
-		<div className="dw-enter mb-4 flex items-center gap-2 text-[12px] text-ink-muted">
+		<div className="dw-enter mb-2.5 flex items-center gap-2 text-[12px] text-ink-muted">
 			<Spinner />
 			{/* Keyed on the words so one fades in as the other goes, rather than swapping in place. */}
 			<span key={phrase} className="dw-fade-in">
