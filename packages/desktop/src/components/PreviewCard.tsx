@@ -1,5 +1,5 @@
 import { ExternalLink, Maximize2, Minimize2, RotateCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { IconButton } from "./IconButton.tsx";
 import { useSide } from "../sideStore.ts";
@@ -10,6 +10,26 @@ export interface PreviewInfo {
 	title: string;
 	entry: string;
 }
+
+/**
+ * The card sizes itself to its page, between these.
+ *
+ * The floor keeps a page that reports nothing useful from collapsing to a sliver; the ceiling
+ * keeps one preview from taking the whole transcript, which is what a full-screen layout would
+ * do if asked politely.
+ */
+const MIN_HEIGHT = 160;
+/** Below this, the page has not really told us anything — see where this is used. */
+const MEANINGFUL_HEIGHT = 90;
+const MAX_HEIGHT = 720;
+/** Used while measuring, and if the page never reports anything. */
+const DEFAULT_HEIGHT = 440;
+/** A page whose height depends on its own height would otherwise resize forever. */
+const MAX_ADJUSTMENTS = 8;
+/** If the reporter never runs — blocked, broken, or a page with no head — stop waiting. */
+const PROBE_TIMEOUT_MS = 1500;
+/** How long to keep collecting measurements before committing to one. */
+const PROBE_SETTLE_MS = 400;
 
 export function previewUrl(preview: PreviewInfo): string {
 	return `dw-preview://${preview.sessionId}/${preview.id}/${preview.entry}`;
@@ -34,17 +54,145 @@ export function previewUrl(preview: PreviewInfo): string {
  * walking the disk. The agent wrote this code; it is not trusted with anything but its own
  * canvas.
  */
+const clamp = (value: number) => Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, value)));
+
+/*
+ * A preview is measured once and remembered.
+ *
+ * Without this, every visit to a conversation re-runs the measurement, and a card that settles at
+ * 540 opens at 440 and jumps — which is exactly the kind of movement a transcript should never
+ * have. Kept locally rather than in the session record because it describes this window: the same
+ * conversation opened at another size would measure differently and should.
+ */
+const HEIGHT_KEY = "dw-preview-height:";
+
+function recallHeight(preview: PreviewInfo): number | null {
+	try {
+		const raw = localStorage.getItem(`${HEIGHT_KEY}${preview.sessionId}/${preview.id}`);
+		const value = raw === null ? Number.NaN : Number(raw);
+		return Number.isFinite(value) ? clamp(value) : null;
+	} catch {
+		return null;
+	}
+}
+
+function rememberHeight(preview: PreviewInfo, height: number): void {
+	try {
+		localStorage.setItem(`${HEIGHT_KEY}${preview.sessionId}/${preview.id}`, String(height));
+	} catch {
+		// A full or disabled store costs a re-measure, nothing more.
+	}
+}
+
 export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 	const [nonce, setNonce] = useState(0);
 	const [tall, setTall] = useState(false);
 	const [ready, setReady] = useState(false);
+	const frame = useRef<HTMLIFrameElement>(null);
+	// Straight from the last time this preview was measured, so the first frame is already right.
+	const [measured, setMeasured] = useState<number | null>(() => recallHeight(preview));
+	/*
+	 * Measurement state outlives a render, and has to.
+	 *
+	 * It used to live in the effect, which meant any re-render of the transcript restarted it —
+	 * and since the frame is reused across those renders, the page had already loaded and would
+	 * never report again. The measurement then timed out and every preview came back the same
+	 * default height.
+	 */
+	const survey = useRef({ settled: false, tallest: 0, adjustments: 0, timer: null as ReturnType<typeof setTimeout> | null });
 	const openTab = useSide((s) => s.openTab);
 	const openPreview = useSide((s) => s.openPreview);
 
+	/*
+	 * Grow to the page, within reason.
+	 *
+	 * The height comes from the page itself (see `withHeightReporter` in the main process), which
+	 * means it can move in response to being resized — a layout written against the viewport
+	 * reports whatever it was just given, and taking that at face value would walk the card down
+	 * the screen one message at a time. Three things stop that: the value is clamped, tiny
+	 * differences are ignored, and there is a hard cap on how many times one preview may resize.
+	 * A page whose height genuinely depends on its height settles at the cap rather than running.
+	 */
+	useEffect(() => {
+		const state = survey.current;
+		function commit(height: number) {
+			state.settled = true;
+			setMeasured(height);
+			rememberHeight(preview, height);
+		}
+		function onMessage(event: MessageEvent) {
+			// Identified by the window it came from — a sandboxed frame has no origin to check.
+			if (event.source !== frame.current?.contentWindow) return;
+			const asked = (event.data as { __dwPreviewHeight?: unknown })?.__dwPreviewHeight;
+			if (typeof asked !== "number" || !Number.isFinite(asked)) return;
+
+			if (!state.settled) {
+				/*
+				 * Keep listening for a moment before deciding.
+				 *
+				 * The first number out of a page is almost never its final size — it arrives while
+				 * stylesheets are still landing, web fonts have not swapped and entrance animations
+				 * are mid-flight, and it describes a document that has not finished becoming
+				 * itself. Every report in this window describes the same content, so the largest of
+				 * them is the one that saw all of it.
+				 */
+				state.tallest = Math.max(state.tallest, asked);
+				state.timer ??= setTimeout(() => {
+					/*
+					 * Too small to be a measurement of anything.
+					 *
+					 * A page built entirely out of percentages has no height of its own to report,
+					 * and what comes back is the sum of a few collapsed boxes. Better to give it
+					 * the default and let it fill that than to squeeze it into its own collapse.
+					 */
+					commit(state.tallest < MEANINGFUL_HEIGHT ? DEFAULT_HEIGHT : clamp(state.tallest));
+				}, PROBE_SETTLE_MS);
+				return;
+			}
+			/*
+			 * After that, the page may only ask for more.
+			 *
+			 * It is now being measured at its own height, so "I need exactly what I was given" is
+			 * the answer every elastic layout returns, and honouring it would just be the card
+			 * agreeing with itself. Growth is different: content that overflows the settled height
+			 * is content that would otherwise be cut off — a detail panel opening, a list loading.
+			 */
+			setMeasured((current) => {
+				const next = clamp(asked);
+				if (current === null || next <= current + 8 || state.adjustments >= MAX_ADJUSTMENTS) return current;
+				state.adjustments++;
+				rememberHeight(preview, next);
+				return next;
+			});
+		}
+		window.addEventListener("message", onMessage);
+		// Nothing arrived, so nothing is coming; settle on something sensible rather than waiting.
+		const giveUp = setTimeout(() => {
+			if (!state.settled) commit(DEFAULT_HEIGHT);
+		}, PROBE_TIMEOUT_MS);
+		return () => {
+			window.removeEventListener("message", onMessage);
+			clearTimeout(giveUp);
+		};
+	}, [preview]);
+
+	// Asking for more space is a decision the page does not get to overrule.
+	const height = tall ? MAX_HEIGHT : (measured ?? DEFAULT_HEIGHT);
+	// Held back until it has been measured, so the probe height is never a frame anyone sees.
+	const visible = ready && measured !== null;
+
 	return (
 		<div
-			className={`dw-enter relative my-2.5 overflow-hidden rounded-[12px] border border-line-soft transition-[height] duration-200 ${
-				tall ? "h-[620px]" : "h-[440px]"
+			style={{ height }}
+			/*
+			 * No animation while measuring.
+			 *
+			 * The probe works by observing the page at a deliberately small height, and an animated
+			 * height is not at that height yet — it is somewhere on the way there. The page loaded
+			 * mid-transition and reported the height it happened to see, which was the old one.
+			 */
+			className={`dw-enter relative my-2.5 overflow-hidden rounded-[12px] border border-line-soft ${
+				measured === null ? "" : "transition-[height] duration-300"
 			}`}
 		>
 			{/*
@@ -56,12 +204,13 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 			 */}
 			<div className="h-full w-full bg-card">
 				<iframe
+					ref={frame}
 					key={nonce}
 					src={previewUrl(preview)}
 					title={preview.title}
 					sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals"
 					onLoad={() => setReady(true)}
-					className={`block h-full w-full transition-opacity duration-200 ${ready ? "opacity-100" : "opacity-0"}`}
+					className={`block h-full w-full transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}
 				/>
 			</div>
 
@@ -86,7 +235,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 				 */}
 				<IconButton
 					icon={tall ? <Minimize2 size={12} strokeWidth={1.9} /> : <Maximize2 size={12} strokeWidth={1.9} />}
-					label={tall ? "还原高度" : "增加高度"}
+					label={tall ? "自适应高度" : "放到最大"}
 					size="sm"
 					tipSide="top"
 					onClick={() => setTall((value) => !value)}
@@ -97,7 +246,10 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					size="sm"
 					tipSide="top"
 					onClick={() => {
+						// A fresh run may draw something a different size, so measure it again.
+						survey.current = { settled: false, tallest: 0, adjustments: 0, timer: null };
 						setReady(false);
+						setMeasured(null);
 						setNonce((value) => value + 1);
 					}}
 				/>
