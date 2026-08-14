@@ -346,16 +346,22 @@ function ChatShell() {
        * makes the holes final — and keeps them clickable above the drawer, which is how
        * a full-window drawer gets closed again.
        */}
+      {/* The draggable top edge. Deliberately below the panel: a full-width band above it would
+       * intercept every click meant for the panel's own title bar — which is exactly what it did
+       * to the sidebar toggle in compact, where the panel covers the window. */}
+      <div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]" />
+
       {/*
-       * Above the panel, not behind it.
+       * The buttons, above the panel rather than behind it.
        *
-       * The panel sits at z-50 and, now that it stays mounted, occupies the right of the window
-       * whenever it is open — which put these buttons underneath it, invisible and unclickable.
-       * Floating them over it is also what keeps them still: the panel's own title bar has the
-       * room for them, so they land in the same place whether it is open or not.
+       * Separate from the band, and only as wide as they are. The panel sits at z-50 and, now
+       * that it stays mounted, occupies the right of the window whenever it is open — which put
+       * these underneath it, invisible and unclickable. Floating them over it is also what keeps
+       * them still: the panel's title bar has the room for them, so they land in the same place
+       * whether it is open or not.
        */}
-      <div className="drag-region absolute inset-x-0 top-0 z-[60] h-[44px]">
-        <div className="no-drag toolbar-right absolute top-0 flex h-[44px] items-center gap-0.5">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-[60] h-[44px]">
+        <div className="no-drag toolbar-right pointer-events-auto absolute top-0 flex h-[44px] items-center gap-0.5">
           {/*
            * One control, in one place, for both directions.
            *
