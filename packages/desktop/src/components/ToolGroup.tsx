@@ -46,8 +46,16 @@ export function ToolGroup({
 		return () => observer.disconnect();
 	}, [children, open]);
 
+	/*
+	 * Close above, open below.
+	 *
+	 * A summary line belongs to the sentence that introduced it — "现在写后端核心文件：" and
+	 * "创建文件 3 个" are one thought — so the gap above it is small and the gap below it is what
+	 * separates this stretch of work from the next. They used to be the same size, which left
+	 * every line floating between two paragraphs, belonging to neither.
+	 */
 	return (
-		<div className="mb-2">
+		<div className="mb-3.5">
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}

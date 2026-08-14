@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { moodFor, phraseFor } from "./thinking-words.ts";
 import { useApp } from "../store.ts";
 
 /**
@@ -14,12 +15,30 @@ export function RunningIndicator() {
 	const messages = useApp((s) => s.messages);
 	const retrying = useApp((s) => s.retrying);
 	const [now, setNow] = useState(() => Date.now());
+	/*
+	 * The phrase advances on its own clock, slower than the seconds.
+	 *
+	 * Tied to the timer it would change four times a second and read as noise; changed only when
+	 * the work changes it would sit still through a long install. Every few seconds is fast
+	 * enough to look alive and slow enough to be read.
+	 */
+	const [tick, setTick] = useState(0);
+	/** What the agent is doing right now, from the newest call that has not finished. */
+	const doing = useApp((s) => {
+		const runs = Object.values(s.toolRuns).filter((run) => run.status === "running");
+		const newest = runs.sort((a, b) => b.startedAt - a.startedAt)[0];
+		return newest ? `${newest.toolName}\u0000${newest.summary}` : "";
+	});
 
 	useEffect(() => {
 		if (!startedAt) return;
 		// Quarter-second so the seconds digit never appears to skip one.
 		const timer = setInterval(() => setNow(Date.now()), 250);
-		return () => clearInterval(timer);
+		const words = setInterval(() => setTick((n) => n + 1), 4200);
+		return () => {
+			clearInterval(timer);
+			clearInterval(words);
+		};
 	}, [startedAt]);
 
 	// The reply still streaming has usage of its own; counting it keeps the number moving
@@ -28,9 +47,18 @@ export function RunningIndicator() {
 	const live = last?.role === "assistant" && last.stopReason === "pending" ? last.usage.total : 0;
 	const total = tokens + live;
 
+	const [toolName, summary] = doing.split("\u0000");
+	const elapsed = startedAt ? now - startedAt : 0;
+	const phrase = phraseFor(moodFor(toolName || undefined, summary), tick, elapsed);
+
 	return (
-		<div className="dw-enter mb-6 flex items-center gap-2 text-[12px] text-ink-muted">
+		<div className="dw-enter mb-4 flex items-center gap-2 text-[12px] text-ink-muted">
 			<Spinner />
+			{/* Keyed on the words so one fades in as the other goes, rather than swapping in place. */}
+			<span key={phrase} className="dw-fade-in">
+				{phrase}…
+			</span>
+			<span className="text-ink-faint">·</span>
 			{startedAt && <span className="tabular-nums">{formatElapsed(now - startedAt)}</span>}
 			{total > 0 && (
 				<>

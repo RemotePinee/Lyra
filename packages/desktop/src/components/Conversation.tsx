@@ -196,7 +196,15 @@ export function Conversation() {
             ),
           )}
 
-          {running && lastIsSettledOrEmpty(messages) && <RunningIndicator />}
+          {/*
+           * Present for the whole turn, not between the parts of one.
+           *
+           * It used to appear only when the last message had settled — so it came and went with
+           * every tool call, and its 46px came and went with it, shifting the transcript up and
+           * down all through a turn. A turn either is running or is not; the indicator should
+           * say which, and stay put while it does.
+           */}
+          {running && <RunningIndicator />}
           {/* Where the running indicator would have been, saying why it is not there. */}
           <ResumeRow />
         </div>
@@ -551,7 +559,7 @@ function AssistantRow({
 
   // `group/msg` is what reveals the row below, and it names the whole reply as the target.
   return (
-    <div className="group/msg dw-enter mb-6">
+    <div className="group/msg dw-enter mb-4">
       {/*
        * Grouped before rendering, not after.
        *
@@ -576,7 +584,7 @@ function AssistantRow({
           }
           if (block.type === "text") {
             return block.text ? (
-              <div key={index} className="mb-2">
+              <div key={index} className="mb-1.5">
                 <Markdown text={block.text} />
               </div>
             ) : null;
