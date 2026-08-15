@@ -10,6 +10,7 @@
 import type { AgentEvent, Message, TodoItem } from "@deepwise/core";
 import { nextActivity } from "@deepwise/core/activity";
 import { coalesce, flushCoalesced } from "./coalesce.ts";
+import { applyToolEvent } from "./apply-tool.ts";
 import { useSide } from "../sideStore.ts";
 import type { AppState } from "../store.ts";
 import { settleTail } from "../transcript.ts";
@@ -159,59 +160,10 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
     }
 
     case "tool_start":
-      set({
-        toolRuns: {
-          ...get().toolRuns,
-          [event.toolCallId]: {
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            summary: event.summary,
-            args: event.args,
-            status: "running",
-            startedAt: Date.now(),
-          },
-        },
-      });
+    case "tool_update":
+    case "tool_end":
+      applyToolEvent(event, set, get);
       break;
-
-    case "tool_update": {
-      const run = get().toolRuns[event.toolCallId];
-      if (run)
-        set({
-          toolRuns: {
-            ...get().toolRuns,
-            [event.toolCallId]: { ...run, result: event.partial },
-          },
-        });
-      break;
-    }
-
-    case "tool_end": {
-      const run = get().toolRuns[event.toolCallId];
-      set({
-        toolRuns: {
-          ...get().toolRuns,
-          [event.toolCallId]: {
-            ...(run ?? {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              summary: event.toolName,
-              args: {},
-              startedAt: Date.now(),
-            }),
-            status: event.isError ? "error" : "done",
-            result: event.result,
-            finishedAt: Date.now(),
-          },
-        },
-      });
-      // The task list arrives as the result of writing it; nothing else announces it.
-      const written = event.result.details as { kind?: string; todos?: TodoItem[] } | undefined;
-      if (!event.isError && written?.kind === "todo" && Array.isArray(written.todos)) {
-        set({ todos: written.todos });
-      }
-      break;
-    }
 
     case "approval_request":
       set({
