@@ -5,7 +5,7 @@ import type { AssistantMessage, Message } from "@deepwise/core";
 
 import { emptyUsage } from "@deepwise/core";
 
-import { rebuildToolRuns } from "../src/store.ts";
+import { rebuildToolRuns } from "../src/store/derive.ts";
 import { settleTail } from "../src/transcript.ts";
 
 function reply(stopReason: AssistantMessage["stopReason"], text = "你好！"): AssistantMessage {
