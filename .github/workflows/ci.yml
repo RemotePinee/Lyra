@@ -17,11 +17,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # Electron's own binary is not needed to typecheck, lint or unit-test; skipping the download
-  # takes a couple of minutes off every job that does not build the app.
-  ELECTRON_SKIP_BINARY_DOWNLOAD: 1
-
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -57,8 +52,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-        with:
-          electron: "true"
       - run: pnpm build
       - run: pnpm test:e2e
 
@@ -78,9 +71,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-        with:
-          # The renderer bundle needs the real Electron package present.
-          electron: "true"
       - run: pnpm build
       - uses: actions/upload-artifact@v4
         with:
