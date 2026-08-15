@@ -1,0 +1,13 @@
+# Who gets asked to look. One name today; the file exists so that adding the second one is an
+# edit rather than a decision about where such a thing would live.
+*                               @kittors
+
+# The seams. A change here can alter what every session does, so it is worth naming separately
+# even while the owner is the same person.
+/packages/core/src/agent/       @kittors
+/packages/core/src/runtime/     @kittors
+/packages/core/src/tools/risk*  @kittors
+
+# Anything that decides what runs on push, or what ships.
+/.github/                       @kittors
+/lefthook.yml                   @kittors

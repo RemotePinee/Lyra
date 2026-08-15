@@ -1,0 +1,38 @@
+name: 提一个需求
+description: 有件事现在做不到，或者做起来别扭
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先说你想完成的事，再说你设想的做法。前者比后者重要——同一件事往往有更好的解法。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想完成什么
+      description: 现在是怎么绕过去的？绕不过去的话，卡在哪一步？
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你设想的做法
+      description: 可选。有想法就写，没有也没关系。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 属于哪一块
+      options:
+        - Agent 循环与工具
+        - 模型与供应商
+        - 会话、轨迹与历史
+        - 插件与技能
+        - 桌面端界面
+        - 移动端
+        - 工程与构建
+        - 其他
+    validations:
+      required: true

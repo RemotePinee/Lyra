@@ -1,0 +1,59 @@
+# What a release actually contains.
+#
+# Without this file electron-builder falls back to defaults — an app named after the package, no
+# entitlements, and every workspace dependency copied in whether it is needed at runtime or not.
+appId: dev.deepwise.app
+productName: DeepWise
+copyright: Copyright © 2026 kittors
+
+directories:
+  output: release
+  buildResources: build
+
+# `out/` is what electron-vite produced; nothing else in the package belongs in the bundle.
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+
+# node-pty is a native addon: it cannot live inside the asar, because the OS has to be able to
+# open the .node file by path.
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # The app shells out, reads the projects you point it at, and talks to model endpoints.
+  # Hardened runtime without these entitlements would stop all three.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Unsigned builds are the norm for a self-hosted tool; signing turns on when a certificate
+  # is present in the environment.
+  identity: null
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+linux:
+  category: Development
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+
+publish: null

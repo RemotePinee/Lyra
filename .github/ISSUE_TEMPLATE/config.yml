@@ -1,0 +1,7 @@
+# Blank issues stay on: a report that does not fit either template is still a report worth having.
+blank_issues_enabled: true
+
+contact_links:
+  - name: 提问与讨论
+    url: https://github.com/kittors/deepwise/discussions
+    about: 不确定是不是 bug、想聊聊用法或者架构，都到这里

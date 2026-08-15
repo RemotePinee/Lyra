@@ -1,8 +1,24 @@
 # DeepWise
 
+[![CI](https://github.com/kittors/deepwise/actions/workflows/ci.yml/badge.svg)](https://github.com/kittors/deepwise/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg)](.nvmrc)
+
 一个自带模型配置的独立 code agent。桌面端用 Electron，移动端用 React Native，两端共用同一份会话数据。
 
 不是 Claude Code 或 Codex 的前端壳 —— agent 内核、工具集、skill 与 MCP 都在这个仓库里，模型完全由你自己配。
+
+## 快速开始
+
+```bash
+pnpm install
+pnpm dev
+```
+
+首次启动后在「设置 → 模型设置」里加一个供应商，填 Base URL 和 API Key，然后添加模型。
+
+想参与开发看 [CONTRIBUTING.md](CONTRIBUTING.md)；如果你是被叫来改这份代码的 agent，
+看 [AGENTS.md](AGENTS.md)。
 
 ## 能力
 

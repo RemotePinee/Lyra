@@ -1,0 +1,106 @@
+# Cut a release: build on each platform's own runner, then publish one draft.
+#
+# Drafted rather than published, so the notes can be read before anyone downloads anything. The
+# tag is what triggers it, because a tag is the one thing that is already a decision.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (must already exist)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: mac
+          - os: windows-latest
+            artifact: win
+          - os: ubuntu-latest
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: ./.github/actions/setup
+        with:
+          electron: "true"
+
+      - name: Verify before building
+        run: pnpm lint && pnpm typecheck && pnpm test
+
+      - name: Build and package
+        run: pnpm package
+        env:
+          # electron-builder publishes by itself when it sees a token; we want the artifacts
+          # collected here and released once, at the end, from one place.
+          GH_TOKEN: ""
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deepwise-${{ matrix.artifact }}
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.zip
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.AppImage
+            packages/desktop/release/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Notes from the log
+        id: notes
+        shell: bash
+        # Every commit since the previous tag. A generated list is worth more than an empty
+        # body, and the draft is there precisely so it can be edited before anyone sees it.
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          previous=$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || echo "")
+          {
+            echo "notes<<EOF"
+            if [ -n "$previous" ]; then
+              echo "自 ${previous} 以来的改动："
+              echo
+              git log --no-merges --pretty='- %s' "${previous}..${tag}"
+            else
+              echo "首个发布。"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: dist/*
+          draft: true
+          fail_on_unmatched_files: true

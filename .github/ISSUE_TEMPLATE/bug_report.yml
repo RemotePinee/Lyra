@@ -1,0 +1,78 @@
+name: 报告一个 Bug
+description: 有东西没按它该有的样子工作
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        写清楚"你做了什么、看到什么、期望什么"就够了。三者缺一，问题就得靠猜。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你看到的现象。有错误信息就原样贴进来，不要转述。
+      placeholder: |
+        点击「停止」之后转圈没有停，输入框一直是禁用的。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望是什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开应用开始，一步一步。能稳定复现比描述得漂亮重要得多。
+      placeholder: |
+        1. 新建对话
+        2. 发送"帮我读一下 package.json"
+        3. 在工具卡出现的瞬间点「停止」
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: 在哪一端
+      options:
+        - 桌面端（Electron）
+        - 移动端（React Native）
+        - 两端都有
+        - 说不好
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 设置页底部的版本号，或者 `git rev-parse --short HEAD`
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 系统
+      placeholder: macOS 26.1 / Windows 11 / Ubuntu 24.04
+
+  - type: input
+    id: model
+    attributes:
+      label: 用的哪个模型
+      description: 只有和 agent 行为相关的问题才需要填。
+      placeholder: deepseek-v4-flash
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或轨迹
+      description: |
+        轨迹面板（⌘L）里的相关条目，或者主进程终端的输出。粘贴前请自行去掉 API key。
+      render: text
