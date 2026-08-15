@@ -42,8 +42,13 @@ pnpm test        # 190 个单元测试
 - **Node 的 `--experimental-strip-types` 不支持构造函数参数属性**。`constructor(private x: T) {}`
   能通过 tsc 但会让测试整个文件挂掉。写成显式字段赋值。
 - **测试用 `node:test`**，不是 vitest/jest。别引测试框架。
-- **core 不能 import 任何端上的东西**。渲染进程能用的浏览器 API 在 core 里不存在——
-  需要浏览器安全的代码走 `@deepwise/core/trajectory-view` 这类子入口。
+- **core 不能 import 任何端上的东西**，反过来也一样：**渲染进程不能从 `@deepwise/core`
+  根入口导入"值"**。类型（`import type`）编译期就擦掉了，没有代价；值会把整个 index 拉进
+  浏览器，而 index 一路连到 `node:fs`、`node:child_process`——bundle 加载、在第一个 Node
+  内置模块上抛错、窗口一片空白。浏览器要用的东西走子入口：`@deepwise/core/schedule`、
+  `@deepwise/core/trajectory-view`、`@deepwise/core/activity`。
+- **给 core 加了新的子入口，要重启 dev server**。Vite 缓存 exports 解析，不重启会报
+  "not exported under the conditions"。
 - **改了 core 要重启桌面端**，HMR 只覆盖渲染进程；主进程里的 core 代码不会热更新。
 - **`position: sticky` 会被任何祖先的 `overflow: hidden` 破坏**。
 

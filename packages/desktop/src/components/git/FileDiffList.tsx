@@ -13,7 +13,7 @@ import { Text } from "../Text.tsx";
  * final segment is the empty string — which showed up in the list as a row with an icon, a
  * status letter, and no name at all.
  */
-export function baseName(path: string): string {
+function baseName(path: string): string {
   const parts = path.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
 }

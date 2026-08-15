@@ -15,7 +15,7 @@ import type { ComponentType } from "react";
 import type { GitCompare } from "lucide-react";
 import type { PanelKind } from "../sideStore.ts";
 
-export interface PanelAvailability {
+interface PanelAvailability {
 	workspace: boolean;
 	session: boolean;
 }

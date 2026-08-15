@@ -20,7 +20,7 @@ export const PANEL_INSET = 4;
 export const STRIP_HEIGHT = 34;
 export const TAB_HEIGHT = 26;
 export const CARD_RADIUS = 12;
-export const CARD_BORDER = 1;
+const CARD_BORDER = 1;
 export const TAB_RADIUS = CARD_RADIUS - CARD_BORDER - PANEL_INSET;
 
 /**

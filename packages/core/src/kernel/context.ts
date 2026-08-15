@@ -1,22 +1,5 @@
 import { EventBus, type Middleware, type Observer, type Responder } from "./events.ts";
 
-/**
- * The repository every capability is found in.
- *
- * A plugin never imports the thing it needs. It names a key — `llm`, `tools`, `sessions` — and
- * takes whatever is registered under it, which is the entire point: the model adapter, the store,
- * the approval policy can each be swapped for another implementation without a line changing in
- * anything that uses them.
- *
- * Load order follows from that. A plugin that declares `inject: ["llm"]` is not started until an
- * `llm` exists, so nothing has to be sequenced by hand, and a capability arriving late simply
- * starts what was waiting for it.
- */
-export interface ServiceMap {
-	// Declared by the plugins that provide them; see `kernel/services.ts` for the seams we define.
-	[key: string]: unknown;
-}
-
 export type Disposer = () => void | Promise<void>;
 
 /** A plugin: something that installs capabilities into a context and can take them back out. */
@@ -35,6 +18,16 @@ interface Pending {
 
 /**
  * A context: services, events, and the undo log that ties them together.
+ *
+ * This is the repository every capability is found in. A plugin never imports the thing it needs;
+ * it names a key — `llm`, `tools`, `sessions` — and takes whatever is registered under it, which
+ * is the entire point: the model adapter, the store, the approval policy can each be swapped for
+ * another implementation without a line changing in anything that uses them. See
+ * `kernel/services.ts` for the seams we define.
+ *
+ * Load order follows from that. A plugin that declares `inject: ["llm"]` is not started until an
+ * `llm` exists, so nothing has to be sequenced by hand, and a capability arriving late simply
+ * starts what was waiting for it.
  *
  * Everything installed through a context is recorded so it can be reversed — that is what makes
  * a plugin swappable rather than merely present. A registration with no disposer is a leak that

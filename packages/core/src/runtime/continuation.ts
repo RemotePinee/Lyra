@@ -26,7 +26,7 @@ import type { Message } from "../types.ts";
  * much work is reasonable. Ten is two thousand rounds — far past anything a real task needs, and
  * long before it the repetition watch would have called a genuine loop.
  */
-export const MAX_CONTINUATIONS = 10;
+const MAX_CONTINUATIONS = 10;
 
 export interface ContinuationDeps {
 	/** Start another turn with the accumulated history. */

@@ -12,7 +12,7 @@ const LANE_COLOURS = [
 
 export const LANE_WIDTH = 13;
 
-export function laneColour(index: number): string {
+function laneColour(index: number): string {
   return LANE_COLOURS[index % LANE_COLOURS.length];
 }
 

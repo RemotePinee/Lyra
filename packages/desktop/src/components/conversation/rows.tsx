@@ -28,14 +28,6 @@ export function settled(stopReason: AssistantMessage["stopReason"]): boolean {
   return stopReason !== "pending" && stopReason !== "toolUse";
 }
 
-/** True while we are waiting on the model rather than rendering its live output. */
-export function lastIsSettledOrEmpty(messages: Message[]): boolean {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") return true;
-  return !last.content.some(
-    (c) => (c.type === "text" && c.text) || c.type === "toolCall",
-  );
-}
 
 export function messageKey(message: Message, index: number): string {
   if (message.role === "toolResult") return `tr-${message.toolCallId}`;

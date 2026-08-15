@@ -172,7 +172,7 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 }
 
 /** A call with no record is still going only while the message that made it is unfinished. */
-export function isLive(run: ToolRunState | undefined, stopReason: AssistantMessage["stopReason"]): boolean {
+function isLive(run: ToolRunState | undefined, stopReason: AssistantMessage["stopReason"]): boolean {
   return run?.status === "running" || (!run && stopReason === "pending");
 }
 
@@ -237,12 +237,12 @@ export const ToolRun = memo(ToolRunGroup, (before, after) => {
 
 
 /** The file a call is about, when it is about one — the part worth naming in a summary. */
-export function subjectOf(block: Extract<AssistantContent, { type: "toolCall" }>): string | undefined {
+function subjectOf(block: Extract<AssistantContent, { type: "toolCall" }>): string | undefined {
   const path = (block.arguments as { path?: unknown } | undefined)?.path;
   return typeof path === "string" ? path.split("/").pop() : undefined;
 }
 
-export function diffOf(run: ToolRunState | undefined, key: "added" | "removed"): number {
+function diffOf(run: ToolRunState | undefined, key: "added" | "removed"): number {
   const value = (run?.result?.details as Record<string, unknown> | undefined)?.[key];
   return typeof value === "number" ? value : 0;
 }

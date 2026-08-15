@@ -84,7 +84,7 @@ export async function driveTurn(input: TurnInputs): Promise<void> {
  * finishing, and the difference matters: one means the work is done, the other means it is stuck
  * and waiting for a person to say something it has not thought of.
  */
-export async function recordTurnEvent(log: SessionLog, event: AgentEvent): Promise<void> {
+async function recordTurnEvent(log: SessionLog, event: AgentEvent): Promise<void> {
 	if (event.type === "agent_end" && event.reason === "stalled") {
 		await log.emit({
 			type: "notice",
@@ -96,7 +96,7 @@ export async function recordTurnEvent(log: SessionLog, event: AgentEvent): Promi
 	await log.emit(event);
 }
 
-export async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig; systemPrompt: string }> {
+async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig; systemPrompt: string }> {
 	const { cwd, can, log, settings } = input;
 
 	const turn = await prepareTurn({

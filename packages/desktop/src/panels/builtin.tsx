@@ -19,7 +19,7 @@ import { registerPanels, type PanelDefinition } from "./registry.ts";
 const needsWorkspace = (state: { workspace: boolean }) => (state.workspace ? undefined : "先打开一个项目");
 const needsSession = (state: { session: boolean }) => (state.session ? undefined : "先开始一个对话");
 
-export const BUILTIN_PANELS: PanelDefinition[] = [
+const BUILTIN_PANELS: PanelDefinition[] = [
 	{ kind: "files", label: "文件", icon: Folder, shortcut: "⌘P", unavailable: needsWorkspace, render: FileBrowser },
 	{
 		kind: "chat",

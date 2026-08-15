@@ -22,13 +22,23 @@ concurrency:
 
 jobs:
   review:
-    # A fork's pull request runs with `pull_request_target`, which has access to secrets. The
-    # checkout below is deliberately of *our* base ref, never the contributor's branch: the agent
-    # reads the diff through the API instead, so no untrusted code is executed here.
     runs-on: ubuntu-latest
-    # Dependabot has no business being reviewed by a model, and its pull requests do not carry
-    # the secrets this needs anyway.
-    if: github.actor != 'dependabot[bot]' && !github.event.pull_request.draft
+    # Three things this does not review, each for its own reason:
+    #
+    # Dependabot — a model has nothing useful to say about a version bump, and those pull
+    # requests do not carry the secrets this needs anyway.
+    #
+    # Drafts — a draft is by definition not finished being written.
+    #
+    # Forks — `pull_request_target` hands secrets to a workflow triggered by someone else's
+    # branch. The checkout below is of our own base ref and the diff is read through the API, so
+    # no untrusted code runs; but a fork's pull request is exactly where a mistake in that
+    # reasoning would cost the most, so it is left to a human until this repository actually
+    # takes external contributions.
+    if: >-
+      github.actor != 'dependabot[bot]'
+      && !github.event.pull_request.draft
+      && github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v5
         with:
@@ -37,10 +47,17 @@ jobs:
       - uses: ./.github/actions/setup
 
       - name: Review
-        run: node --experimental-strip-types packages/agent-cli/src/main.ts review "${{ github.event.pull_request.number }}"
+        # Skipped rather than failed when the model is not configured: a repository without these
+        # secrets is a repository that has not turned this on, which is not an error.
         env:
           DEEPWISE_BASE_URL: ${{ secrets.DEEPWISE_BASE_URL }}
           DEEPWISE_API_KEY: ${{ secrets.DEEPWISE_API_KEY }}
           DEEPWISE_MODEL: ${{ vars.DEEPWISE_MODEL || 'deepseek-v4-flash' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ -z "$DEEPWISE_API_KEY" ] || [ -z "$DEEPWISE_BASE_URL" ]; then
+            echo "::notice::DEEPWISE_API_KEY / DEEPWISE_BASE_URL 未配置，跳过 agent 审查"
+            exit 0
+          fi
+          node --experimental-strip-types packages/agent-cli/src/main.ts review "${{ github.event.pull_request.number }}"

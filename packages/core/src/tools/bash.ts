@@ -14,7 +14,7 @@ interface BashArgs {
 	run_in_background?: boolean;
 }
 
-export interface BackgroundJob {
+interface BackgroundJob {
 	id: string;
 	command: string;
 	startedAt: number;
@@ -23,7 +23,7 @@ export interface BackgroundJob {
 	kill: () => void;
 }
 
-export const BACKGROUND_JOBS_KEY = "backgroundJobs";
+const BACKGROUND_JOBS_KEY = "backgroundJobs";
 
 function jobs(ctx: ToolContext): Map<string, BackgroundJob> {
 	let map = ctx.state.get(BACKGROUND_JOBS_KEY) as Map<string, BackgroundJob> | undefined;

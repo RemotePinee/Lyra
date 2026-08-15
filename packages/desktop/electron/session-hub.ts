@@ -82,7 +82,7 @@ export async function getOrCreateSession(cwd: string, _modelId: string): Promise
  * unbounded map meant an afternoon of browsing left a dozen sets of them running. Three keeps
  * the conversations you are actually moving between instant without hoarding processes.
  */
-export const MAX_LIVE_SESSIONS = 3;
+const MAX_LIVE_SESSIONS = 3;
 
 /** Move a session to the end of the map, which is the recency order eviction walks. */
 export function touchSession(sessionId: string): void {

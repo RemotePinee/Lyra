@@ -60,7 +60,7 @@ export function MessageActions({
 }
 
 /** Same shape as the reference: month, day, time — the year only once it stops being obvious. */
-export function formatSentAt(timestamp: number): string {
+function formatSentAt(timestamp: number): string {
 	const sent = new Date(timestamp);
 	const sameYear = sent.getFullYear() === new Date().getFullYear();
 	return sent.toLocaleString("zh-CN", {

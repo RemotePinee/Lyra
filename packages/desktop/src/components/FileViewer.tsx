@@ -18,7 +18,7 @@ function extensionOf(name: string): string {
 
 export type FileKind = "image" | "video" | "audio" | "markdown" | "json" | "text" | "binary";
 
-export function kindOf(name: string, contents: FileContents | null): FileKind {
+function kindOf(name: string, contents: FileContents | null): FileKind {
 	const ext = extensionOf(name);
 	if (IMAGE.has(ext)) return "image";
 	if (VIDEO.has(ext)) return "video";
@@ -243,7 +243,7 @@ function Toggle({
 	);
 }
 
-export function formatBytes(bytes: number): string {
+function formatBytes(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;

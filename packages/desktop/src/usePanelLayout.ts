@@ -22,7 +22,7 @@ import { useLayout } from "./layout.tsx";
 import { useSide } from "./sideStore.ts";
 
 /** What the conversation keeps for itself before the panel is allowed any more. */
-export const CONTENT_MIN = 420;
+const CONTENT_MIN = 420;
 
 export function usePanelLayout() {
 	const {

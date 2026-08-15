@@ -46,7 +46,7 @@ interface WindowState {
  * theme wins, `system` follows the OS. Falls back to the palette defaults when settings have
  * not loaded yet, which is the case for the very first launch.
  */
-export function resolvedBackground(): string {
+function resolvedBackground(): string {
 	return bootTheme().background;
 }
 
@@ -55,7 +55,7 @@ export function applyNativeAppearance(): void {
 	nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
 }
 
-export function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string; vibrancy: boolean } {
+function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string; vibrancy: boolean } {
 	const appearance = readSettings()?.appearance;
 	const dark = appearance
 		? appearance.theme === "dark" || (appearance.theme === "system" && nativeTheme.shouldUseDarkColors)
@@ -218,7 +218,7 @@ function readWindowState(): WindowState | null {
 	}
 }
 
-export function writeWindowState(): void {
+function writeWindowState(): void {
 	if (!mainWindow || mainWindow.isDestroyed()) return;
 	// Fullscreen and maximised bounds are the screen's, not the user's choice of window size.
 	if (mainWindow.isFullScreen() || mainWindow.isMaximized() || mainWindow.isMinimized()) return;

@@ -8,6 +8,7 @@
  * The tick is one minute, which is the finest granularity the schedule kinds express.
  */
 
+import { isDue } from "@deepwise/core";
 import type { AgentSession, ScheduledTask, Settings } from "@deepwise/core";
 
 const TICK_MS = 60_000;
@@ -82,51 +83,4 @@ export class Scheduler {
 			});
 		}
 	}
-}
-
-export function isDue(task: ScheduledTask, now: number): boolean {
-	if (task.schedule.kind === "interval") {
-		const period = Math.max(1, task.schedule.minutes) * 60_000;
-		return task.lastRunAt === undefined || now - task.lastRunAt >= period;
-	}
-
-	const [hours, minutes] = task.schedule.time.split(":").map(Number);
-	if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false;
-
-	const today = new Date(now);
-	const target = new Date(now);
-	target.setHours(hours, minutes, 0, 0);
-	if (now < target.getTime()) return false;
-
-	// Already ran today?
-	if (task.lastRunAt === undefined) return true;
-	const last = new Date(task.lastRunAt);
-	return (
-		last.getFullYear() !== today.getFullYear() ||
-		last.getMonth() !== today.getMonth() ||
-		last.getDate() !== today.getDate()
-	);
-}
-
-/** When the task will next fire, for display. */
-export function nextRunAt(task: ScheduledTask, now = Date.now()): number | null {
-	if (!task.enabled) return null;
-	if (task.schedule.kind === "interval") {
-		const period = Math.max(1, task.schedule.minutes) * 60_000;
-		return task.lastRunAt === undefined ? now : task.lastRunAt + period;
-	}
-	const [hours, minutes] = task.schedule.time.split(":").map(Number);
-	if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-	const target = new Date(now);
-	target.setHours(hours, minutes, 0, 0);
-	if (target.getTime() <= now || (task.lastRunAt && sameDay(task.lastRunAt, now))) {
-		target.setDate(target.getDate() + 1);
-	}
-	return target.getTime();
-}
-
-function sameDay(a: number, b: number): boolean {
-	const x = new Date(a);
-	const y = new Date(b);
-	return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
 }

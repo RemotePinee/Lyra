@@ -5,7 +5,7 @@ import { Popover, type Anchor } from "./Popover.tsx";
 import { useApp } from "../store.ts";
 
 /** Ordered low to high; the slider index maps straight onto this. */
-export const EFFORT_LEVELS: { value: ThinkingLevel; label: string; detail: string }[] = [
+const EFFORT_LEVELS: { value: ThinkingLevel; label: string; detail: string }[] = [
 	{ value: "off", label: "关闭", detail: "不推理，直接作答。最快。" },
 	{ value: "minimal", label: "极简", detail: "只做最低限度的思考。" },
 	{ value: "low", label: "低", detail: "简单任务够用。" },

@@ -122,7 +122,7 @@ export type AgentEvent =
 	| { type: "title"; title: string }
 	| { type: "rewound"; messageCount: number };
 
-export interface RemoteModel {
+interface RemoteModel {
 	id: string;
 	name: string;
 	provider: string;

@@ -266,13 +266,6 @@ export function CodeEditor({
 	);
 }
 
-/** Which files this editor can colour at all — used to pick a viewer. */
-export function isEditable(name: string): boolean {
-	const lower = name.toLowerCase();
-	if (lower === "dockerfile" || lower === "makefile" || lower.startsWith(".")) return true;
-	const dot = lower.lastIndexOf(".");
-	return dot > 0;
-}
 
 /** The grammar for a path, or null when nothing here can parse it. */
 function languageFor(path: string): Promise<Extension | null> | null {

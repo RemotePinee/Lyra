@@ -252,7 +252,7 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
 }
 
 /** Match an incoming final message to the slot its streaming version occupies. */
-export function findMessageSlot(messages: Message[], incoming: Message): number {
+function findMessageSlot(messages: Message[], incoming: Message): number {
   if (incoming.role === "toolResult") {
     return messages.findIndex((m) => m.role === "toolResult" && m.toolCallId === incoming.toolCallId);
   }

@@ -17,7 +17,7 @@ import { settleTail } from "./transcript.ts";
 export type PanelKind = "files" | "chat" | "terminal" | "review" | "browser" | "tasks" | "trajectory";
 
 /** Just enough of a preview for the panel to load it; the card owns the full record. */
-export interface BrowserPreview {
+interface BrowserPreview {
 	id: string;
 	sessionId: string;
 	title: string;

@@ -70,11 +70,11 @@ export function classify(code: string): WorkspaceDiffFile["status"] {
 	return "modified";
 }
 
-export async function showHead(cwd: string, path: string): Promise<string | null> {
+async function showHead(cwd: string, path: string): Promise<string | null> {
 	return git(cwd, ["show", `HEAD:${path}`]).catch(() => "");
 }
 
-export async function readWorking(cwd: string, path: string): Promise<string | null> {
+async function readWorking(cwd: string, path: string): Promise<string | null> {
 	const buffer = await readFile(join(cwd, path)).catch(() => null);
 	if (!buffer) return "";
 	// Binary blobs and huge generated files are listed but not diffed line by line.

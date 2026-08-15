@@ -15,7 +15,7 @@ interface ReadArgs {
 }
 
 /** Tracks which files the agent has read, so `edit` can refuse to patch unseen files. */
-export const READ_FILES_KEY = "readFiles";
+const READ_FILES_KEY = "readFiles";
 
 export function markRead(ctx: ToolContext, absolute: string): void {
 	const seen = (ctx.state.get(READ_FILES_KEY) as Set<string> | undefined) ?? new Set<string>();

@@ -1,4 +1,13 @@
 import type { ScheduledTask } from "@deepwise/core";
+/*
+ * From the sub-entry, not from the package root.
+ *
+ * Importing a *value* from "@deepwise/core" pulls the whole index into the renderer, and the whole
+ * index reaches `node:fs`, `node:child_process` and the rest — the bundle loads, throws on the
+ * first Node builtin, and the window renders nothing at all. Types are erased at compile time and
+ * cost nothing; values have to come from an entry that is browser-safe on its own.
+ */
+import { nextRunAt } from "@deepwise/core/schedule";
 import { Clock, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Scroller } from "./Scroller.tsx";
@@ -85,6 +94,13 @@ export function ScheduledView() {
 			</Scroller>
 		</div>
 	);
+}
+
+/** When it fires next, in words. Disabled tasks say so rather than showing a date they will ignore. */
+function describeNext(task: ScheduledTask): string {
+	if (!task.enabled) return "已停用";
+	const at = nextRunAt(task);
+	return at === null ? "—" : new Date(at).toLocaleString("zh-CN");
 }
 
 function TaskCard({
@@ -202,6 +218,12 @@ function TaskCard({
 
 				<div className="flex flex-wrap items-center gap-x-3 text-[11.5px] text-ink-faint">
 					<span>上次运行：{task.lastRunAt ? new Date(task.lastRunAt).toLocaleString("zh-CN") : "从未"}</span>
+					{/*
+					 * Computed from the same rules the scheduler runs on, not from a second copy of
+					 * them: `nextRunAt` lives in core precisely so the badge and the run cannot
+					 * disagree about when 09:00 is.
+					 */}
+					<span>下次运行：{describeNext(task)}</span>
 					{task.lastSessionId && lastSessionTitle && (
 						<button type="button" onClick={onOpenLast} className="text-ink-muted transition-colors hover:text-ink">
 							打开上次会话

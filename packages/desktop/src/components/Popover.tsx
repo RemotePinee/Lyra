@@ -12,7 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
  * A point to hang a menu from, for right-click — where the thing being acted on is a whole
  * row and the only meaningful position is the cursor itself.
  */
-export interface PointAnchor {
+interface PointAnchor {
 	x: number;
 	y: number;
 }

@@ -44,6 +44,7 @@ export {
 	type TrajectoryFilter,
 } from "./trajectory/index.ts";
 export { nextTask, useScheduler } from "./runtime/scheduling.ts";
+export { isDue, nextRunAt } from "./config/schedule.ts";
 export { prepareTurn, useTurnPipeline, type TurnContext, type TurnMiddleware } from "./runtime/turn.ts";
 export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
 export { loadCapabilityPlugins, type LoadedCapabilityPlugins } from "./plugins/capability.ts";

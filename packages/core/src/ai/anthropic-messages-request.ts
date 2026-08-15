@@ -14,7 +14,7 @@ import type { Message, ToolSpec } from "../types.ts";
  * Open-ended on purpose: the API keeps adding block kinds, and a closed type would mean this file
  * has to be edited before a new one can be passed through untouched.
  */
-export interface AnthropicBlock {
+interface AnthropicBlock {
 	type: string;
 	[key: string]: unknown;
 }

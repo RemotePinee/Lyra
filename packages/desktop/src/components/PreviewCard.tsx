@@ -31,7 +31,7 @@ const PROBE_TIMEOUT_MS = 1500;
 /** How long to keep collecting measurements before committing to one. */
 const PROBE_SETTLE_MS = 400;
 
-export function previewUrl(preview: PreviewInfo): string {
+function previewUrl(preview: PreviewInfo): string {
 	return `dw-preview://${preview.sessionId}/${preview.id}/${preview.entry}`;
 }
 

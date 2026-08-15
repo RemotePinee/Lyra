@@ -24,9 +24,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { PANEL_DEFAULT, PANEL_MAX, PANEL_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout-widths.ts";
 
 /** Below this the sidebar and a readable content column no longer fit side by side. */
-export const COMPACT_MAX = 760;
+const COMPACT_MAX = 760;
 /** Above this the review panel can sit beside the transcript without starving either. */
-export const WIDE_MIN = 1180;
+const WIDE_MIN = 1180;
 
 export type LayoutMode = "compact" | "regular" | "wide";
 
