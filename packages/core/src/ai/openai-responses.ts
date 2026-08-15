@@ -8,6 +8,7 @@
  * always requested.
  */
 
+import { toResponsesInput, toResponsesTools } from "./openai-responses-request.ts";
 import type {
 	AssistantMessage,
 	LlmContext,
@@ -378,78 +379,3 @@ function applyUsage(usage: Usage, raw: Record<string, any> | undefined): void {
 // ---------------------------------------------------------------------------
 // Message conversion
 // ---------------------------------------------------------------------------
-
-export function toResponsesInput(messages: Message[]): unknown[] {
-	const input: unknown[] = [];
-
-	for (const message of messages) {
-		if (message.role === "user") {
-			input.push({
-				type: "message",
-				role: "user",
-				content: message.content.map((c) =>
-					c.type === "text"
-						? { type: "input_text", text: c.text }
-						: {
-								type: "input_image",
-								image_url: `data:${c.mimeType};base64,${c.data}`,
-							},
-				),
-			});
-			continue;
-		}
-
-		if (message.role === "assistant") {
-			for (const c of message.content) {
-				if (c.type === "thinking") {
-					// Replay requires the original item id; a summary alone is not accepted.
-					if (!c.signature) continue;
-					input.push({
-						type: "reasoning",
-						id: c.signature,
-						summary: c.thinking ? [{ type: "summary_text", text: c.thinking }] : [],
-						...(c.encrypted ? { encrypted_content: c.encrypted } : {}),
-					});
-				} else if (c.type === "text") {
-					if (!c.text) continue;
-					input.push({
-						type: "message",
-						role: "assistant",
-						content: [{ type: "output_text", text: c.text }],
-						...(c.signature ? { id: c.signature } : {}),
-					});
-				} else {
-					input.push({
-						type: "function_call",
-						call_id: c.id,
-						name: c.name,
-						arguments: c.argumentsText ?? JSON.stringify(c.arguments),
-					});
-				}
-			}
-			continue;
-		}
-
-		// Responses only accepts a string output, so images are described rather than attached.
-		const text = message.content
-			.map((c) => (c.type === "text" ? c.text : `[image ${c.mimeType}, ${c.data.length} base64 chars]`))
-			.join("\n");
-		input.push({
-			type: "function_call_output",
-			call_id: message.toolCallId,
-			output: text,
-		});
-	}
-
-	return input;
-}
-
-function toResponsesTools(tools: ToolSpec[]): unknown[] {
-	return tools.map((tool) => ({
-		type: "function",
-		name: tool.name,
-		description: tool.description,
-		parameters: tool.parameters,
-		strict: false,
-	}));
-}

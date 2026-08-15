@@ -59,5 +59,7 @@ export function streamAssistant(
 	return getProvider(providerConfig.api).stream(providerConfig, model, context, options);
 }
 
-export { anthropicMessagesProvider, toAnthropicMessages } from "./anthropic-messages.ts";
-export { openaiResponsesProvider, toResponsesInput } from "./openai-responses.ts";
+export { anthropicMessagesProvider } from "./anthropic-messages.ts";
+export { toAnthropicMessages } from "./anthropic-messages-request.ts";
+export { openaiResponsesProvider } from "./openai-responses.ts";
+export { toResponsesInput } from "./openai-responses-request.ts";

@@ -5,6 +5,7 @@
  * including extended thinking and its signature round-trip.
  */
 
+import { toAnthropicMessages, toAnthropicTools, type AnthropicMessage } from "./anthropic-messages-request.ts";
 import type {
 	AssistantContent,
 	AssistantMessage,
@@ -31,16 +32,6 @@ const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
 	high: 24576,
 	max: 63999,
 };
-
-interface AnthropicBlock {
-	type: string;
-	[key: string]: unknown;
-}
-
-interface AnthropicMessage {
-	role: "user" | "assistant";
-	content: AnthropicBlock[];
-}
 
 export const anthropicMessagesProvider: Provider = {
 	api: "anthropic-messages",
@@ -346,90 +337,6 @@ function applyUsage(usage: Usage, raw: Record<string, any> | undefined): void {
 
 // ---------------------------------------------------------------------------
 // Message conversion
-// ---------------------------------------------------------------------------
-
-/**
- * Anthropic requires tool results to arrive as `tool_result` blocks inside a *user* message,
- * and consecutive results must be merged into one message. Our flat message list has one
- * entry per result, so this collapses runs of them.
- */
-export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
-	const out: AnthropicMessage[] = [];
-
-	for (const message of messages) {
-		if (message.role === "user") {
-			const blocks: AnthropicBlock[] = message.content.map((c) =>
-				c.type === "text"
-					? { type: "text", text: c.text }
-					: {
-							type: "image",
-							source: { type: "base64", media_type: c.mimeType, data: c.data },
-						},
-			);
-			if (blocks.length > 0) out.push({ role: "user", content: blocks });
-			continue;
-		}
-
-		if (message.role === "assistant") {
-			const blocks: AnthropicBlock[] = [];
-			for (const c of message.content) {
-				if (c.type === "text") {
-					if (c.text) blocks.push({ type: "text", text: c.text });
-				} else if (c.type === "thinking") {
-					// A thinking block without its signature is rejected on replay, so drop it.
-					if (c.redacted && c.encrypted) blocks.push({ type: "redacted_thinking", data: c.encrypted });
-					else if (c.signature)
-						blocks.push({
-							type: "thinking",
-							thinking: c.thinking,
-							signature: c.signature,
-						});
-				} else {
-					blocks.push({
-						type: "tool_use",
-						id: c.id,
-						name: c.name,
-						input: c.arguments,
-					});
-				}
-			}
-			if (blocks.length > 0) out.push({ role: "assistant", content: blocks });
-			continue;
-		}
-
-		const block: AnthropicBlock = {
-			type: "tool_result",
-			tool_use_id: message.toolCallId,
-			content: message.content.map((c) =>
-				c.type === "text"
-					? { type: "text", text: c.text }
-					: {
-							type: "image",
-							source: { type: "base64", media_type: c.mimeType, data: c.data },
-						},
-			),
-			...(message.isError ? { is_error: true } : {}),
-		};
-		const last = out[out.length - 1];
-		if (last?.role === "user" && last.content.every((b) => b.type === "tool_result")) last.content.push(block);
-		else out.push({ role: "user", content: [block] });
-	}
-
-	return out;
-}
-
-function toAnthropicTools(tools: ToolSpec[]): unknown[] {
-	return tools.map((tool, index) => ({
-		name: tool.name,
-		description: tool.description,
-		input_schema: tool.parameters,
-		// Cache the tool list too — it is stable for the whole session.
-		...(index === tools.length - 1 ? { cache_control: { type: "ephemeral" } } : {}),
-	}));
-}
-
-// ---------------------------------------------------------------------------
-// Shared helpers
 // ---------------------------------------------------------------------------
 
 export function joinUrl(base: string, path: string): string {
