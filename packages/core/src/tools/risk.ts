@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 /**
  * How dangerous an operation is, so that "帮我批准" can mean what it says.
  *
@@ -143,7 +144,26 @@ function firstWord(command: string): string {
 /**
  * Judge one command — no chaining, no substitution; `assessCommand` splits those first.
  */
-function judgeSingle(command: string, contained = false): RiskVerdict {
+/**
+ * Somewhere a scratch file legitimately lives.
+ *
+ * The system temp directory counts alongside the project, because the agent is *told* to put
+ * scratch there — a preview, a log, a throwaway script. Refusing to let it tidy up after itself
+ * would mean asking a person about `rm -f /tmp/its-own-log-*.log`, which is not a decision anyone
+ * can make better than the rule can.
+ *
+ * The root itself is never "inside" it: `/tmp/x` is housekeeping, `/tmp` is somebody else's files
+ * too. Nor is anything outside these two trees — home, `/etc`, another project.
+ */
+function underScratchRoot(target: string, cwd?: string): boolean {
+	const path = target.replace(/^['"]|['"]$/g, "");
+	if (!path.startsWith("/")) return false;
+	const roots = [tmpdir().replace(/\/+$/, "")];
+	if (cwd) roots.push(cwd.replace(/\/+$/, ""));
+	return roots.some((root) => path.startsWith(`${root}/`) && path !== root);
+}
+
+function judgeSingle(command: string, contained = false, cwd?: string): RiskVerdict {
 	const head = firstWord(command);
 	if (!head) return SAFE;
 
@@ -164,7 +184,13 @@ function judgeSingle(command: string, contained = false): RiskVerdict {
 		if (/\s-[a-zA-Z]*[rR]/.test(command)) {
 			const targets = command.split(/\s+/).slice(1).filter((word) => !word.startsWith("-"));
 			const reckless = targets.some(
-				(t) => !t || t.startsWith("/") || t.startsWith("~") || t === "." || t === ".." || t.includes("*"),
+				(t) =>
+					!t ||
+					t.startsWith("~") ||
+					t === "." ||
+					t === ".." ||
+					t.includes("*") ||
+					(t.startsWith("/") && !underScratchRoot(t, cwd)),
 			);
 			const climbs = targets.some((t) => t.split("/").includes(".."));
 			if (targets.length === 0 || reckless || climbs || !contained) return risky("递归删除目录");
@@ -179,7 +205,7 @@ function judgeSingle(command: string, contained = false): RiskVerdict {
 		 */
 		if (/\s-[a-zA-Z]*f/.test(command) && /[*?]/.test(command)) {
 			const targets = command.split(/\s+/).slice(1).filter((word) => !word.startsWith("-"));
-			const outside = targets.some((t) => t.startsWith("/") || t.startsWith("~"));
+			const outside = targets.some((t) => t.startsWith("~") || (t.startsWith("/") && !underScratchRoot(t, cwd)));
 			if (outside || !contained) return risky("强制删除通配匹配的文件");
 		}
 		if (/(^|\s)\/(\s|$)|\s~\/?(\s|$)/.test(command)) return risky("删除根目录或主目录");
@@ -240,7 +266,7 @@ export function assessCommand(command: string, cwd?: string): RiskVerdict {
 	const contained = cwd ? staysInside(command, cwd) : false;
 
 	for (const piece of splitCommands(command)) {
-		const verdict = judgeSingle(piece, contained);
+		const verdict = judgeSingle(piece, contained, cwd);
 		if (verdict.risky) return verdict;
 	}
 	return SAFE;
@@ -299,8 +325,10 @@ function staysInside(command: string, cwd: string): boolean {
 		const target = match[1].replace(/^['"]|['"]$/g, "");
 		if (target.startsWith("~") || target === "-" || /[$`]/.test(target)) return false;
 		if (target.startsWith("/")) {
-			if (target !== root && !target.startsWith(`${root}/`)) return false;
-			continue;
+			if (target === root || target.startsWith(`${root}/`)) continue;
+			// A scratch directory is somewhere work legitimately happens, not somewhere it escaped to.
+			if (underScratchRoot(target, cwd)) continue;
+			return false;
 		}
 		// A relative `cd` can still climb out with `..`.
 		if (target.split("/").includes("..")) return false;

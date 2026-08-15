@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -179,4 +180,24 @@ test("a recursive delete aimed at anything larger still asks", () => {
 	}
 	// With no workspace to judge against, nothing is known to be contained.
 	assert.equal(assessCommand("rm -rf dist").risky, true);
+});
+
+test("tidying its own scratch files is not a decision worth interrupting", () => {
+	const cwd = "/Users/me/project";
+	const tmp = tmpdir();
+
+	// The case that stopped a real run: clear its own logs, then start the server.
+	assert.equal(
+		assessCommand(`cd ${cwd} && rm -f ${tmp}/inkwell-*.log && node server/index.js`, cwd).risky,
+		false,
+	);
+	assert.equal(assessCommand(`rm -rf ${tmp}/build-cache`, cwd).risky, false);
+	assert.equal(assessCommand(`cd ${tmp}/scratch && rm -f *.log`, cwd).risky, false);
+
+	// And the lines that must still be asked about.
+	assert.equal(assessCommand(`rm -rf ${tmp}`, cwd).risky, true, "the scratch root itself is not scratch");
+	assert.equal(assessCommand("rm -f /etc/*.conf", cwd).risky, true);
+	assert.equal(assessCommand("rm -rf ~/Documents", cwd).risky, true);
+	assert.equal(assessCommand("cd /etc && rm -f *", cwd).risky, true);
+	assert.equal(assessCommand("rm -rf /", cwd).risky, true);
 });

@@ -9,6 +9,7 @@
 
 import type { AgentEvent, Message, TodoItem } from "@deepwise/core";
 import { nextActivity } from "@deepwise/core/activity";
+import { coalesce, flushCoalesced } from "./coalesce.ts";
 import { useSide } from "../sideStore.ts";
 import type { AppState } from "../store.ts";
 import { settleTail } from "../transcript.ts";
@@ -54,6 +55,15 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
     }
     return;
   }
+
+  /*
+   * Anything that is not a streamed update lands after the one still waiting.
+   *
+   * Without this a held update could be applied on the next frame — after the `message_end` that
+   * settles it, or after the tool card that follows it — and overwrite the newer state with the
+   * older one.
+   */
+  if (event.type !== "message_update") flushCoalesced();
 
   switch (event.type) {
     case "agent_start":
@@ -102,12 +112,14 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
     }
 
     case "message_update": {
-      const messages = [...get().messages];
-      const index = messages.length - 1;
-      if (index >= 0 && messages[index].role === "assistant")
-        messages[index] = event.message;
-      else messages.push(event.message);
-      set({ messages });
+      // Held until the next frame; see `coalesce`. The newest update is the only one worth having.
+      coalesce(() => {
+        const messages = [...get().messages];
+        const index = messages.length - 1;
+        if (index >= 0 && messages[index].role === "assistant") messages[index] = event.message;
+        else messages.push(event.message);
+        set({ messages });
+      });
       break;
     }
 

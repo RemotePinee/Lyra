@@ -6,7 +6,7 @@
  * All of that is decided here, on plain data, so the rendering has nothing left to decide.
  */
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
 import { PreviewCard, type PreviewInfo } from "../PreviewCard.tsx";
 import { ToolCard } from "../ToolCard.tsx";
@@ -183,7 +183,7 @@ export function isLive(run: ToolRunState | undefined, stopReason: AssistantMessa
  * unevenness — the same kind of work looked like two different things depending on how many
  * calls happened to fall together, and the boundary moved as the model chose to batch or not.
  */
-export function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] }) {
+const ToolRunGroup = function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] }) {
   /*
    * Primitives, not the map.
    *
@@ -220,6 +220,21 @@ export function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, {
     </ToolGroup>
   );
 }
+/**
+ * A settled group of tool calls never changes again.
+ *
+ * Compared by what the group is made of rather than by the array it arrives in: the array is
+ * rebuilt on every render of the transcript, but the calls in it are the same objects with the
+ * same ids, and a group whose calls are unchanged has nothing new to draw. The live group — the
+ * one still running — fails this comparison on every event, which is exactly when it should.
+ */
+export const ToolRun = memo(ToolRunGroup, (before, after) => {
+	if (before.calls.length !== after.calls.length) return false;
+	return before.calls.every(
+		(call, i) => call.block.id === after.calls[i].block.id && call.stopReason === after.calls[i].stopReason,
+	);
+});
+
 
 /** The file a call is about, when it is about one — the part worth naming in a summary. */
 export function subjectOf(block: Extract<AssistantContent, { type: "toolCall" }>): string | undefined {

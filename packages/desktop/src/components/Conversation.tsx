@@ -1,6 +1,6 @@
 import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
 import { RotateCcw } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { Composer } from "./Composer.tsx";
 import { Markdown } from "./Markdown.tsx";
@@ -100,7 +100,14 @@ export function Conversation() {
     return () => cancelAnimationFrame(frame);
   }, [swapping]);
 
-  const allRuns = runs(messages, compactions);
+  /*
+   * Recomputed when the transcript changes, not on every render.
+   *
+   * A streaming reply re-renders this component on every token; without the memo each one walked
+   * the whole message list again and handed every row a freshly built object, so React rebuilt
+   * three hundred rows to show one more word arriving.
+   */
+  const allRuns = useMemo(() => runs(messages, compactions), [messages, compactions]);
   const hidden = Math.max(0, allRuns.length - windowSize);
   const visibleRuns = hidden > 0 ? allRuns.slice(hidden) : allRuns;
 

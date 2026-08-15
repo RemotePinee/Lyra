@@ -7,6 +7,7 @@
  * person said, and showing it where a person's messages go is a lie about who is talking.
  */
 
+import { memo } from "react";
 import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
 import { Markdown } from "../Markdown.tsx";
 import { MessageActions } from "../MessageActions.tsx";
@@ -42,7 +43,14 @@ export function messageKey(message: Message, index: number): string {
   return `${message.role}-${message.timestamp}-${index}`;
 }
 
-export function MessageRow({
+/**
+ * A row only changes when its own message does.
+ *
+ * The transcript re-renders on every streamed token; the four hundred rows above the one being
+ * written have not changed and must not be rebuilt. Message objects are replaced rather than
+ * mutated, so the default comparison is exactly the right question to ask.
+ */
+export const MessageRow = memo(function MessageRow({
   message,
   index,
   continued,
@@ -81,7 +89,7 @@ export function MessageRow({
   if (message.role === "toolResult") return null;
 
   return <AssistantRow message={message} index={index} continued={continued} />;
-}
+});
 
 export function AssistantRow({
   message,
