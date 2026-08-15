@@ -2,7 +2,7 @@
  * Serving the pages the agent writes.
  *
  * Previews live outside the workspace and are reached over two custom schemes rather than `file://`:
- * `dw-media` for a project's own files, `dw-preview` for generated pages. Both exist so that every
+ * `ly-media` for a project's own files, `ly-preview` for generated pages. Both exist so that every
  * read goes through one door with one check — a page asking for `../../../.ssh/id_rsa` gets a 403
  * instead of a key.
  */
@@ -10,11 +10,11 @@
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { deepwiseHome, previewsHome } from "@deepwise/core";
+import { lyraHome, previewsHome } from "@lyra/core";
 import { net, protocol, session } from "electron";
 
-export const MEDIA_SCHEME = "dw-media";
-export const PREVIEW_SCHEME = "dw-preview";
+export const MEDIA_SCHEME = "ly-media";
+export const PREVIEW_SCHEME = "ly-preview";
 
 /**
  * The theme the very first painted frame should already be wearing.
@@ -77,13 +77,13 @@ function withHeightReporter(html: string): string {
 	 * still scrolls — it wobbles under the wheel, and worse, it swallows the gesture, so scrolling
 	 * with the pointer over a preview stops moving the conversation behind it. Inside the card the
 	 * page therefore does not scroll at all: it was measured to fit, and anything that genuinely
-	 * needs more room has the side panel, where scrolling is what you came for. `dw-inline` is set
+	 * needs more room has the side panel, where scrolling is what you came for. `ly-inline` is set
 	 * by the card and by nothing else, so the same file scrolls normally when opened there.
 	 */
-	const style = `<style>html.dw-inline,html.dw-inline body{overflow:hidden!important}html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`;
+	const style = `<style>html.ly-inline,html.ly-inline body{overflow:hidden!important}html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`;
 	const script = `<script>(function(){
 /* Set before first paint, so the page is never briefly scrollable. */
-if(location.hash==="#dw-inline"&&document.documentElement)document.documentElement.className+=" dw-inline";
+if(location.hash==="#ly-inline"&&document.documentElement)document.documentElement.className+=" ly-inline";
 var last=0;
 function measure(){
 var b=document.body,d=document.documentElement;
@@ -145,7 +145,7 @@ export function registerPreviewProtocols(options: {
 }): void {
 	const { browserPartition, insideAProject } = options;
 
-	// `dw-media://f/<encoded absolute path>`. Decoding it here is the only place it becomes a path
+	// `ly-media://f/<encoded absolute path>`. Decoding it here is the only place it becomes a path
 	// again — and the only place it is checked.
 	protocol.handle(MEDIA_SCHEME, async (request) => {
 		const target = decodeURIComponent(new URL(request.url).pathname.replace(/^\//, ""));
@@ -153,10 +153,10 @@ export function registerPreviewProtocols(options: {
 		return net.fetch(pathToFileURL(target).toString(), { headers: request.headers, method: request.method });
 	});
 
-	// `dw-preview://<sessionId>/<previewId>/<file>`, resolved against the previews directory.
+	// `ly-preview://<sessionId>/<previewId>/<file>`, resolved against the previews directory.
 	const servePreview = async (request: Request): Promise<Response> => {
 		const url = new URL(request.url);
-		const root = previewsHome(deepwiseHome());
+		const root = previewsHome(lyraHome());
 		const target = resolve(root, url.hostname, decodeURIComponent(url.pathname).replace(/^\//, ""));
 		if (target !== root && !target.startsWith(root + sep)) return new Response("forbidden", { status: 403 });
 		const body = await readFile(target).catch(() => null);

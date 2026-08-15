@@ -10,7 +10,7 @@ export function CommandsSettings() {
 
 	useEffect(() => {
 		if (!activeSessionId) return;
-		void window.deepwise.sessions.capabilities(activeSessionId).then(setCapabilities);
+		void window.lyra.sessions.capabilities(activeSessionId).then(setCapabilities);
 	}, [activeSessionId]);
 
 	const tools = capabilities?.toolNames ?? [];

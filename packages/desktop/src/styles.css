@@ -89,8 +89,8 @@
   body {
     background: var(--color-shell);
     color: var(--color-ink);
-    font-family: var(--dw-ui-font, var(--font-sans));
-    font-size: var(--dw-ui-size, 13px);
+    font-family: var(--ly-ui-font, var(--font-sans));
+    font-size: var(--ly-ui-size, 13px);
     line-height: 1.6;
     /*
      * Inter's disambiguating alternates, which are what make it legible at 12px rather than
@@ -250,7 +250,7 @@
    */
   code,
   pre,
-  .dw-cm,
+  .ly-cm,
   .cm-editor,
   .xterm {
     font-variant-ligatures: none;
@@ -267,8 +267,8 @@
   }
 
   .prose-dw code {
-    font-family: var(--dw-code-font, var(--font-mono));
-    font-size: var(--dw-code-size, 12px);
+    font-family: var(--ly-code-font, var(--font-mono));
+    font-size: var(--ly-code-size, 12px);
     background: var(--color-card-hover);
     color: var(--color-ink);
     border-radius: 4px;
@@ -286,7 +286,7 @@
   .prose-dw pre code {
     background: transparent;
     padding: 0;
-    font-size: var(--dw-code-size, 12px);
+    font-size: var(--ly-code-size, 12px);
     line-height: 1.55;
   }
 
@@ -338,26 +338,26 @@
  * depth has to come from a heavier drop plus a slightly brighter edge.
  * ------------------------------------------------------------------------- */
 
-.dw-composer {
+.ly-composer {
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.04),
     0 10px 30px -14px rgb(0 0 0 / 0.16);
 }
 
-.dw-composer:focus-within {
+.ly-composer:focus-within {
   border-color: color-mix(in srgb, var(--color-ink-faint) 55%, transparent);
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.05),
     0 14px 36px -14px rgb(0 0 0 / 0.22);
 }
 
-:root.dark .dw-composer {
+:root.dark .ly-composer {
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.35),
     0 14px 34px -16px rgb(0 0 0 / 0.55);
 }
 
-:root.dark .dw-composer:focus-within {
+:root.dark .ly-composer:focus-within {
   border-color: color-mix(in srgb, var(--color-ink-faint) 70%, transparent);
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.4),
@@ -385,8 +385,8 @@
  * shape even at the instant the arc is furthest away.
  * ------------------------------------------------------------------------- */
 
-.dw-spin {
-  animation: dw-spin 900ms linear infinite;
+.ly-spin {
+  animation: ly-spin 900ms linear infinite;
   transform-origin: center;
 }
 
@@ -397,24 +397,24 @@
  * surface, so a still window shows no chrome at all.
  * ------------------------------------------------------------------------- */
 
-.dw-thumb {
+.ly-thumb {
   opacity: 0;
   transition: opacity 200ms ease-out;
 }
 
-.dw-scroll-host:hover .dw-thumb {
+.ly-scroll-host:hover .ly-thumb {
   opacity: 0.5;
 }
 
-.dw-scroll-host .dw-thumb:hover,
-.dw-thumb.dw-thumb-active {
+.ly-scroll-host .ly-thumb:hover,
+.ly-thumb.ly-thumb-active {
   opacity: 0.85;
 }
 
 /* Dragging the thumb must not select the text it passes over. */
-.dw-scroll-host:has(.dw-thumb-active),
-.dw-scroll-host:has(.dw-hthumb-active),
-.dw-diff-host:has(.dw-hthumb-active) {
+.ly-scroll-host:has(.ly-thumb-active),
+.ly-scroll-host:has(.ly-hthumb-active),
+.ly-diff-host:has(.ly-hthumb-active) {
   user-select: none;
 }
 
@@ -427,18 +427,18 @@
  * there stops being a signal. Both directions now behave the same way, which is also what the
  * platform does.
  */
-.dw-hthumb {
+.ly-hthumb {
   opacity: 0;
   transition: opacity 200ms ease-out;
 }
 
-.dw-diff-host:hover .dw-hthumb,
-.dw-scroll-host:hover .dw-hthumb {
+.ly-diff-host:hover .ly-hthumb,
+.ly-scroll-host:hover .ly-hthumb {
   opacity: 0.55;
 }
 
-.dw-hthumb:hover,
-.dw-hthumb.dw-hthumb-active {
+.ly-hthumb:hover,
+.ly-hthumb.ly-hthumb-active {
   opacity: 0.85;
 }
 
@@ -450,7 +450,7 @@
  * animation is disabled under prefers-reduced-motion.
  * ------------------------------------------------------------------------- */
 
-@keyframes dw-fade-up {
+@keyframes ly-fade-up {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -461,7 +461,7 @@
   }
 }
 
-@keyframes dw-pulse {
+@keyframes ly-pulse {
   0%,
   100% {
     opacity: 0.35;
@@ -472,7 +472,7 @@
 }
 
 /* A light sweeping across a running tool card. */
-@keyframes dw-shimmer {
+@keyframes ly-shimmer {
   from {
     transform: translateX(-100%);
   }
@@ -482,7 +482,7 @@
 }
 
 /* Status icon settling in once a tool finishes. */
-@keyframes dw-pop {
+@keyframes ly-pop {
   0% {
     opacity: 0;
     transform: scale(0.5);
@@ -497,7 +497,7 @@
   }
 }
 
-@keyframes dw-spin {
+@keyframes ly-spin {
   to {
     transform: rotate(360deg);
   }
@@ -516,7 +516,7 @@
  * cycle are off-card, so there is nothing to see at the join. `linear`, because a thing moving
  * past you does not slow down at the edges of the window.
  */
-@keyframes dw-track {
+@keyframes ly-track {
   from {
     transform: translateX(-100%);
   }
@@ -525,8 +525,8 @@
   }
 }
 
-.dw-enter {
-  animation: dw-fade-up 160ms ease-out;
+.ly-enter {
+  animation: ly-fade-up 160ms ease-out;
 }
 
 /*
@@ -537,7 +537,7 @@
  * the disappearance an event you can follow, and the collapse of the height carries the stack
  * below it up smoothly instead of snapping.
  */
-@keyframes dw-fade-out-right {
+@keyframes ly-fade-out-right {
   from {
     opacity: 1;
     transform: none;
@@ -548,8 +548,8 @@
   }
 }
 
-.dw-leave {
-  animation: dw-fade-out-right 160ms ease-in forwards;
+.ly-leave {
+  animation: ly-fade-out-right 160ms ease-in forwards;
   pointer-events: none;
 }
 
@@ -558,8 +558,8 @@
  * Individually the fade-up reads as a message arriving; fifty at once reads as the page
  * lurching.
  */
-.dw-no-enter .dw-enter,
-.dw-no-enter.dw-enter {
+.ly-no-enter .ly-enter,
+.ly-no-enter.ly-enter {
   animation: none;
 }
 
@@ -569,9 +569,9 @@
  * A ring that only rotates reads as static at this size — the eye needs a change in weight, not
  * just in angle. Breathing supplies it, and composes with the rotation because it animates a
  * different property; two `animation` declarations on one element would replace each other, so
- * this rides on `opacity` while `dw-spin` owns `transform`.
+ * this rides on `opacity` while `ly-spin` owns `transform`.
  */
-@keyframes dw-breathe {
+@keyframes ly-breathe {
   0%,
   100% {
     opacity: 1;
@@ -587,35 +587,35 @@
  * The same palette the editor uses, expressed as classes so a small scanner can reach it without
  * loading a grammar. `light-dark()` keeps one definition for both themes, as everywhere else.
  */
-.dw-tok-command {
+.ly-tok-command {
   color: light-dark(#2b62c6, #79b8ff);
 }
 
-.dw-tok-flag {
+.ly-tok-flag {
   color: light-dark(#b07d0d, #e3c07b);
 }
 
-.dw-tok-string {
+.ly-tok-string {
   color: light-dark(#2f7d4f, #7fc98a);
 }
 
-.dw-tok-number {
+.ly-tok-number {
   color: light-dark(#a3562a, #dd9160);
 }
 
-.dw-tok-operator {
+.ly-tok-operator {
   color: light-dark(#6a6d70, #9a9d9f);
 }
 
-.dw-tok-variable {
+.ly-tok-variable {
   color: light-dark(#8a45a5, #c39ac9);
 }
 
-.dw-tok-key {
+.ly-tok-key {
   color: light-dark(#2b62c6, #79b8ff);
 }
 
-.dw-tok-comment {
+.ly-tok-comment {
   color: light-dark(#8a8d90, #7e8184);
   font-style: italic;
 }
@@ -630,15 +630,15 @@
  *
  * Put it on the element that sticks, and let the row inside it keep the radius.
  *
- * The variable is there for a panel that is not the usual colour: set `--dw-behind` on the scroll
+ * The variable is there for a panel that is not the usual colour: set `--ly-behind` on the scroll
  * container and the backing follows it, rather than every such panel needing its own rule.
  */
-.dw-pin {
-  background: var(--dw-behind, var(--color-shell));
+.ly-pin {
+  background: var(--ly-behind, var(--color-shell));
 }
 
-.dw-breathe {
-  animation: dw-breathe 1.6s ease-in-out infinite;
+.ly-breathe {
+  animation: ly-breathe 1.6s ease-in-out infinite;
 }
 
 /*
@@ -648,18 +648,18 @@
  * earlier, and the mark would only ever turn or only ever breathe. Listing both here is the only
  * way to have them compose.
  */
-.dw-spin.dw-breathe {
+.ly-spin.ly-breathe {
   animation:
-    dw-spin 900ms linear infinite,
-    dw-breathe 1.6s ease-in-out infinite;
+    ly-spin 900ms linear infinite,
+    ly-breathe 1.6s ease-in-out infinite;
 }
 
-.dw-pulse {
-  animation: dw-pulse 1.4s ease-in-out infinite;
+.ly-pulse {
+  animation: ly-pulse 1.4s ease-in-out infinite;
 }
 
-.dw-pop {
-  animation: dw-pop 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+.ly-pop {
+  animation: ly-pop 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /*
@@ -674,7 +674,7 @@
  * passes. Nothing ever fades out; the line stays legible at every moment, and what moves is
  * emphasis rather than existence.
  */
-@keyframes dw-glide {
+@keyframes ly-glide {
   from {
     background-position: 200% 0;
   }
@@ -683,7 +683,7 @@
   }
 }
 
-.dw-glide {
+.ly-glide {
   background-image: linear-gradient(
     100deg,
     var(--color-ink-faint) 0%,
@@ -696,12 +696,12 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: dw-glide 2.6s linear infinite;
+  animation: ly-glide 2.6s linear infinite;
 }
 
 /* Without motion it is simply the line in its ordinary colour. */
 @media (prefers-reduced-motion: reduce) {
-  :root[data-reduce-motion="system"] .dw-glide {
+  :root[data-reduce-motion="system"] .ly-glide {
     animation: none;
     background: none;
     color: var(--color-ink-faint);
@@ -710,7 +710,7 @@
   }
 }
 
-:root[data-reduce-motion="on"] .dw-glide {
+:root[data-reduce-motion="on"] .ly-glide {
   animation: none;
   background: none;
   color: var(--color-ink-faint);
@@ -720,12 +720,12 @@
 
 
 /* Indeterminate progress rail shown on a running tool card. */
-.dw-rail {
+.ly-rail {
   position: relative;
   overflow: hidden;
 }
 
-.dw-rail::after {
+.ly-rail::after {
   content: "";
   position: absolute;
   bottom: 0;
@@ -741,7 +741,7 @@
     color-mix(in srgb, var(--color-info) 45%, transparent) 65%,
     transparent 100%
   );
-  animation: dw-track 1.4s linear infinite;
+  animation: ly-track 1.4s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -763,20 +763,20 @@
 }
 
 /* Diff rows can be marked by colour (default) or by a leading +/- for colour-blind users. */
-:root[data-diff-markers="symbols"] .dw-diff-add::before {
+:root[data-diff-markers="symbols"] .ly-diff-add::before {
   content: "+";
 }
 
-:root[data-diff-markers="symbols"] .dw-diff-remove::before {
+:root[data-diff-markers="symbols"] .ly-diff-remove::before {
   content: "-";
 }
 
-:root[data-diff-markers="symbols"] .dw-diff-add,
-:root[data-diff-markers="symbols"] .dw-diff-remove {
+:root[data-diff-markers="symbols"] .ly-diff-add,
+:root[data-diff-markers="symbols"] .ly-diff-remove {
   background: transparent !important;
 }
 
-@keyframes dw-slide-up {
+@keyframes ly-slide-up {
   from {
     opacity: 0;
     transform: translateY(14px);
@@ -787,11 +787,11 @@
   }
 }
 
-.dw-slide-up {
-  animation: dw-slide-up 220ms cubic-bezier(0.22, 1, 0.36, 1);
+.ly-slide-up {
+  animation: ly-slide-up 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@keyframes dw-slide-in {
+@keyframes ly-slide-in {
   from {
     opacity: 0;
     transform: translateX(24px);
@@ -802,7 +802,7 @@
   }
 }
 
-@keyframes dw-fade-in {
+@keyframes ly-fade-in {
   from {
     opacity: 0;
   }
@@ -811,12 +811,12 @@
   }
 }
 
-.dw-slide-in {
-  animation: dw-slide-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+.ly-slide-in {
+  animation: ly-slide-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.dw-fade-in {
-  animation: dw-fade-in 180ms ease-out;
+.ly-fade-in {
+  animation: ly-fade-in 180ms ease-out;
 }
 
 /*
@@ -826,12 +826,12 @@
  * inside one blink reads as a glitch rather than as progress. `both` keeps it fully
  * transparent through the delay, so a fast load shows nothing at all.
  */
-.dw-defer-in {
-  animation: dw-fade-in 220ms ease-out 170ms both;
+.ly-defer-in {
+  animation: ly-fade-in 220ms ease-out 170ms both;
 }
 
 /* Popovers grow from the edge nearest their trigger, so the link between them reads. */
-@keyframes dw-pop-up {
+@keyframes ly-pop-up {
   from {
     opacity: 0;
     transform: scale(0.95);
@@ -842,7 +842,7 @@
   }
 }
 
-@keyframes dw-pop-down {
+@keyframes ly-pop-down {
   from {
     opacity: 0;
     transform: scale(0.95);
@@ -853,17 +853,17 @@
   }
 }
 
-.dw-pop-up {
+.ly-pop-up {
   transform-origin: bottom center;
-  animation: dw-pop-up 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: ly-pop-up 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
-.dw-pop-down {
+.ly-pop-down {
   transform-origin: top center;
-  animation: dw-pop-down 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: ly-pop-down 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
-@keyframes dw-pop-right {
+@keyframes ly-pop-right {
   from {
     opacity: 0;
     transform: scale(0.95);
@@ -874,9 +874,9 @@
   }
 }
 
-.dw-pop-right {
+.ly-pop-right {
   transform-origin: left top;
-  animation: dw-pop-right 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: ly-pop-right 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 /*
@@ -884,15 +884,15 @@
  * Both directions scale rather than travel: a small panel that slides even a few pixels reads
  * as a twitch, and an overshooting curve on top of that reads as a bounce.
  */
-@keyframes dw-pop-out {
+@keyframes ly-pop-out {
   to {
     opacity: 0;
     transform: scale(0.97);
   }
 }
 
-.dw-pop-out {
-  animation: dw-pop-out 120ms ease-in forwards;
+.ly-pop-out {
+  animation: ly-pop-out 120ms ease-in forwards;
   pointer-events: none;
 }
 
@@ -910,7 +910,7 @@
  * Kept as a class rather than repeated utility strings so every menu in the app highlights
  * identically — and so a row with a non-standard shape can still pick up the same states.
  */
-.dw-item {
+.ly-item {
   border-radius: 7px;
   color: var(--color-ink);
   transition:
@@ -925,27 +925,27 @@
  * look permanently hovered — so with the pointer on a different row, two rows appeared active
  * at once and it stopped being obvious which one the next click would take.
  */
-.dw-item:hover:not(:disabled) {
+.ly-item:hover:not(:disabled) {
   background: var(--color-card-hover);
 }
 
-.dw-item:active:not(:disabled) {
+.ly-item:active:not(:disabled) {
   background: var(--color-elevated);
 }
 
-.dw-item:disabled {
+.ly-item:disabled {
   opacity: 0.4;
 }
 
-.dw-item[data-danger="true"] {
+.ly-item[data-danger="true"] {
   color: var(--color-danger);
 }
 
-.dw-item[data-danger="true"]:hover:not(:disabled) {
+.ly-item[data-danger="true"]:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 
-.dw-glass {
+.ly-glass {
   /*
    * `--color-float` and not `--color-elevated`: the elevated token steps toward the
    * foreground, which on a light theme makes a menu darker than the page it floats over — and
@@ -961,7 +961,7 @@
     0 1px 5px -2px rgb(0 0 0 / 0.09);
 }
 
-:root.dark .dw-glass {
+:root.dark .ly-glass {
   background: color-mix(in srgb, var(--color-float) 62%, transparent);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.07),
@@ -970,7 +970,7 @@
 }
 
 @supports not (backdrop-filter: blur(1px)) {
-  .dw-glass {
+  .ly-glass {
     background: var(--color-float);
   }
 }
@@ -999,7 +999,7 @@
  * the column instead of scrolling within it — the file's last line ends up below the panel and
  * unreachable.
  */
-.dw-cm .cm-editor {
+.ly-cm .cm-editor {
   height: 100%;
 }
 
@@ -1009,7 +1009,7 @@
  * A transparent PNG on a white pane looks like a PNG with a white background, and the
  * difference matters exactly when you are checking an asset's transparency.
  */
-.dw-checker {
+.ly-checker {
   background-image:
     linear-gradient(45deg, color-mix(in srgb, var(--color-ink) 6%, transparent) 25%, transparent 25%),
     linear-gradient(-45deg, color-mix(in srgb, var(--color-ink) 6%, transparent) 25%, transparent 25%),
@@ -1031,25 +1031,25 @@
  * already flattened against the surface, which looks identical while giving something to
  * scroll behind.
  */
-.dw-diff-gutter {
+.ly-diff-gutter {
   background: var(--color-shell);
 }
 
-.dw-diff-add .dw-diff-gutter {
+.ly-diff-add .ly-diff-gutter {
   background: color-mix(in srgb, var(--color-ok) 8%, var(--color-shell));
 }
 
-.dw-diff-remove .dw-diff-gutter {
+.ly-diff-remove .ly-diff-gutter {
   background: color-mix(in srgb, var(--color-danger) 8%, var(--color-shell));
 }
 
 /* The rail beside it is pinned too, so it needs the same treatment on context lines. */
-.dw-diff-rail {
+.ly-diff-rail {
   background: var(--color-shell);
 }
 
-.dw-diff-add .dw-diff-rail,
-.dw-diff-remove .dw-diff-rail {
+.ly-diff-add .ly-diff-rail,
+.ly-diff-remove .ly-diff-rail {
   background: transparent;
 }
 
@@ -1060,7 +1060,7 @@
  * backwards: a long line running off the edge with no visible bar reads as truncated. The
  * global rule already hides it; the last row needs room so the thumb does not sit on the code.
  */
-.dw-diff-scroll[data-hscroll="on"] > * {
+.ly-diff-scroll[data-hscroll="on"] > * {
   padding-bottom: 10px;
 }
 
@@ -1093,7 +1093,7 @@
   background: transparent;
 }
 
-.dw-sidebar-fill {
+.ly-sidebar-fill {
   background: var(--color-sidebar);
 }
 
@@ -1105,21 +1105,21 @@
  * through, which is exactly what "everything looks grey" is: a neutral tint desaturating
  * whatever is behind it. White on light and near-black on dark leaves the blur its own colour.
  */
-:root[data-vibrancy="on"] .dw-sidebar-fill {
-  background: color-mix(in srgb, var(--color-shell) calc(var(--dw-sidebar-alpha, 1) * 100%), transparent);
+:root[data-vibrancy="on"] .ly-sidebar-fill {
+  background: color-mix(in srgb, var(--color-shell) calc(var(--ly-sidebar-alpha, 1) * 100%), transparent);
 }
 
-.dw-shell {
+.ly-shell {
   background: var(--color-shell);
 }
 
 /* Under vibrancy the shell steps aside so the sidebar has something to reveal. */
-:root[data-vibrancy="on"] .dw-shell {
+:root[data-vibrancy="on"] .ly-shell {
   background: transparent;
 }
 
 /* Everything that is not the sidebar stays solid, vibrant window or not. */
-.dw-opaque {
+.ly-opaque {
   background: var(--color-shell);
 }
 
@@ -1130,7 +1130,7 @@
  * a bordered panel in the same palette as everything else reads as one more piece of UI to
  * parse. Dark-on-light and light-on-dark both stay legible over whatever it covers.
  */
-.dw-tooltip {
+.ly-tooltip {
   max-width: 260px;
   padding: 4px 8px;
   border-radius: 6px;
@@ -1145,10 +1145,10 @@
   background: color-mix(in srgb, var(--color-ink) 92%, transparent);
   color: var(--color-shell);
   box-shadow: 0 4px 14px -4px rgb(0 0 0 / 0.3);
-  animation: dw-tip-in 120ms ease-out;
+  animation: ly-tip-in 120ms ease-out;
 }
 
-@keyframes dw-tip-in {
+@keyframes ly-tip-in {
   from {
     opacity: 0;
     transform: translateY(-2px);
@@ -1159,13 +1159,13 @@
   }
 }
 
-.dw-knob {
+.ly-knob {
   background: #ffffff;
   border-color: rgb(0 0 0 / 0.14);
   box-shadow: 0 1px 2.5px rgb(0 0 0 / 0.16);
 }
 
-:root.dark .dw-knob {
+:root.dark .ly-knob {
   background: var(--color-ink-muted);
   border-color: rgb(0 0 0 / 0.28);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
@@ -1208,7 +1208,7 @@
    * the send button in half once the padding was added, and it leaves the column free to
    * shrink with a compact window instead of running off the edge.
    */
-  --dw-content: 640px;
+  --ly-content: 640px;
 }
 
 /*
@@ -1230,7 +1230,7 @@
  * Registered so it can be transitioned; a plain custom property would jump between the two
  * mask shapes instead of easing into the left-hand fade as the scroll starts.
  * ------------------------------------------------------------------------- */
-@property --dw-fade-left {
+@property --ly-fade-left {
   syntax: "<length>";
   inherits: false;
   initial-value: 0px;
@@ -1241,17 +1241,17 @@
  * because that is where the text begins; once the text starts scrolling it runs off that side
  * too, so a matching fade appears to catch it.
  */
-.dw-fade-edge {
-  --dw-fade-left: 0px;
+.ly-fade-edge {
+  --ly-fade-left: 0px;
   mask-image: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--dw-fade-left),
+    #000 var(--ly-fade-left),
     #000 calc(100% - 22px),
     transparent 100%
   );
   /* No delay on the way out: the moment the pointer leaves, the line snaps back to its start. */
-  transition: --dw-fade-left 140ms ease-out;
+  transition: --ly-fade-left 140ms ease-out;
 }
 
 /*
@@ -1269,61 +1269,61 @@
  * build targets, and `:has()` took a whole comma-separated group with it once — including the
  * `:hover` half, which silently killed the effect outright.
  */
-.dw-marquee-track {
+.ly-marquee-track {
   display: inline-flex;
   gap: 44px;
   white-space: nowrap;
 }
 
-.dw-scroll:hover .dw-marquee-track {
-  animation: dw-marquee var(--dw-scroll, 8s) linear 300ms infinite;
+.ly-scroll:hover .ly-marquee-track {
+  animation: ly-marquee var(--ly-scroll, 8s) linear 300ms infinite;
 }
 
-.dw-scroll:has(:focus-visible) .dw-marquee-track {
-  animation: dw-marquee var(--dw-scroll, 8s) linear 300ms infinite;
+.ly-scroll:has(:focus-visible) .ly-marquee-track {
+  animation: ly-marquee var(--ly-scroll, 8s) linear 300ms infinite;
 }
 
-.dw-scroll:hover .dw-fade-edge {
-  --dw-fade-left: 13px;
+.ly-scroll:hover .ly-fade-edge {
+  --ly-fade-left: 13px;
   transition-delay: 320ms;
 }
 
-.dw-scroll:has(:focus-visible) .dw-fade-edge {
-  --dw-fade-left: 13px;
+.ly-scroll:has(:focus-visible) .ly-fade-edge {
+  --ly-fade-left: 13px;
   transition-delay: 320ms;
 }
 
 /* One cycle carries the first copy off the left, leaving the second exactly where it began. */
-@keyframes dw-marquee {
+@keyframes ly-marquee {
   to {
-    transform: translateX(var(--dw-marquee, 0));
+    transform: translateX(var(--ly-marquee, 0));
   }
 }
 
 /* Reduced motion needs the scroll gone, not sped up. */
 @media (prefers-reduced-motion: reduce) {
-  :root[data-reduce-motion="system"] .dw-scroll:hover .dw-marquee-track {
+  :root[data-reduce-motion="system"] .ly-scroll:hover .ly-marquee-track {
     animation: none !important;
   }
 }
 
-:root[data-reduce-motion="on"] .dw-scroll:hover .dw-marquee-track {
+:root[data-reduce-motion="on"] .ly-scroll:hover .ly-marquee-track {
   animation: none !important;
 }
 
 /* Lit columns breathe at the top effort level — the one setting worth flagging as costly. */
-@keyframes dw-matrix {
+@keyframes ly-matrix {
   0%,
   100% {
-    opacity: var(--dw-matrix-low, 0.35);
+    opacity: var(--ly-matrix-low, 0.35);
   }
   50% {
     opacity: 1;
   }
 }
 
-.dw-matrix {
-  animation: dw-matrix 1.6s ease-in-out infinite;
+.ly-matrix {
+  animation: ly-matrix 1.6s ease-in-out infinite;
 }
 
 /*
@@ -1337,14 +1337,14 @@
  * A mask fades the text itself, so it needs no fill of its own and works over glass, over a
  * card, and over whatever the desktop happens to be showing through.
  */
-.dw-fade-tail {
+.ly-fade-tail {
   transition: mask-image 150ms ease-out;
 }
 
-.group\/session:hover .dw-fade-tail,
-.group\/session:focus-within .dw-fade-tail,
-.group\/project:hover .dw-fade-tail,
-.group\/project:focus-within .dw-fade-tail {
+.group\/session:hover .ly-fade-tail,
+.group\/session:focus-within .ly-fade-tail,
+.group\/project:hover .ly-fade-tail,
+.group\/project:focus-within .ly-fade-tail {
   mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent calc(100% - 6px));
 }
 
@@ -1355,7 +1355,7 @@
  * drawer covers the content instead, so the same treatment puts the transcript underneath the
  * navigation — every line of one showing through the other.
  */
-[data-pane="drawer"] .dw-sidebar-fill,
-:root[data-vibrancy="on"] [data-pane="drawer"] .dw-sidebar-fill {
+[data-pane="drawer"] .ly-sidebar-fill,
+:root[data-vibrancy="on"] [data-pane="drawer"] .ly-sidebar-fill {
   background: var(--color-sidebar);
 }

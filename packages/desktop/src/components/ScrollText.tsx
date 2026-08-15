@@ -19,7 +19,7 @@ const SPEED = 46;
  * by the time the original has left, the copy is exactly where it began.
  *
  * Nothing animates unless the text really overflows: a row that already fits must not twitch
- * when the pointer crosses it. The parent row carries `dw-scroll`, which is what the hover
+ * when the pointer crosses it. The parent row carries `ly-scroll`, which is what the hover
  * rules in styles.css key off.
  */
 export function ScrollText({ text, className = "" }: { text: string; className?: string }) {
@@ -64,14 +64,14 @@ export function ScrollText({ text, className = "" }: { text: string; className?:
 	return (
 		<span
 			ref={box}
-			className={`block overflow-hidden whitespace-nowrap ${scrolls ? "dw-fade-edge" : ""} ${className}`}
+			className={`block overflow-hidden whitespace-nowrap ${scrolls ? "ly-fade-edge" : ""} ${className}`}
 			style={
 				scrolls
-					? ({ "--dw-marquee": `-${distance}px`, "--dw-scroll": `${duration}ms` } as React.CSSProperties)
+					? ({ "--ly-marquee": `-${distance}px`, "--ly-scroll": `${duration}ms` } as React.CSSProperties)
 					: undefined
 			}
 		>
-			<span className={scrolls ? "dw-marquee-track" : "inline-block"}>
+			<span className={scrolls ? "ly-marquee-track" : "inline-block"}>
 				<span ref={body} className="inline-block">
 					{text}
 				</span>

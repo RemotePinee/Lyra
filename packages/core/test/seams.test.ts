@@ -119,7 +119,7 @@ test("loop: a replacement drives the turn instead", async () => {
 });
 
 test("storage: the runtime accepts any store with the right shape", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-seam-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-seam-"));
 	try {
 		// A real store satisfies the interface, which is the claim that makes it replaceable.
 		const store: SessionStorage = new SessionStore(join(root, "sessions"));

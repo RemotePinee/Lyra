@@ -10,7 +10,7 @@
  * least willing to believe the answer.
  */
 
-import type { ApiFormat, ModelConfig, ProviderConfig } from "@deepwise/core";
+import type { ApiFormat, ModelConfig, ProviderConfig } from "@lyra/core";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
@@ -67,7 +67,7 @@ export function ProviderEditor({
 
 				<Field
 					label="API 格式"
-					hint="DeepWise 只对接 Responses 与 Anthropic Messages，不支持 Chat Completions。"
+					hint="Lyra 只对接 Responses 与 Anthropic Messages，不支持 Chat Completions。"
 				>
 					<Select value={provider.api} onChange={(api) => onChange({ api })} options={API_OPTIONS} />
 				</Field>
@@ -130,7 +130,7 @@ function ProviderHeading({
 					<h2 className="text-[17px] font-semibold tracking-tight text-ink">{provider.name}</h2>
 					<button
 						type="button"
-						data-dw-tip="重命名"
+						data-ly-tip="重命名"
 						aria-label="重命名供应商"
 						onClick={() => setRenaming(true)}
 						className="text-ink-faint transition-colors hover:text-ink"
@@ -148,7 +148,7 @@ function ProviderHeading({
 			<div className="flex-1" />
 			<button
 				type="button"
-				data-dw-tip="删除供应商"
+				data-ly-tip="删除供应商"
 				aria-label="删除供应商"
 				onClick={onRemove}
 				className="text-ink-faint transition-colors hover:text-danger"

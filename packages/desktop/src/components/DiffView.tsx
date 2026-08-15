@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { DiffHunk } from "@deepwise/core";
+import type { DiffHunk } from "@lyra/core";
 
 /**
  * Unified diff, rendered the way the reference review panel does it: a gutter of line numbers,
@@ -19,8 +19,8 @@ export function DiffView({ hunks, path, maxLines = 600 }: { hunks: DiffHunk[]; p
 	const scroller = useRef<HTMLDivElement>(null);
 
 	return (
-		<div className="dw-diff-host relative">
-			<div ref={scroller} className="dw-diff-scroll overflow-x-auto font-mono text-[11.5px] leading-[1.65]">
+		<div className="ly-diff-host relative">
+			<div ref={scroller} className="ly-diff-scroll overflow-x-auto font-mono text-[11.5px] leading-[1.65]">
 				<div className="w-max min-w-full">
 					{path && (
 						<div className="sticky left-0 w-max border-b border-line-soft px-3 py-1.5 text-[11px] text-ink-faint">
@@ -44,16 +44,16 @@ export function DiffView({ hunks, path, maxLines = 600 }: { hunks: DiffHunk[]; p
 								return (
 									<div
 										key={lineIndex}
-										className={`flex ${added ? "dw-diff-add bg-ok/8" : removed ? "dw-diff-remove bg-danger/8" : ""}`}
+										className={`flex ${added ? "ly-diff-add bg-ok/8" : removed ? "ly-diff-remove bg-danger/8" : ""}`}
 									>
 										{/* Pinned columns need an opaque fill of their own: the row's tint is
 										    translucent, and the code would otherwise show through as it passes. */}
-										<span className="dw-diff-gutter sticky left-0 z-[1] w-[42px] shrink-0 pr-2 text-right text-ink-faint/70 select-none">
+										<span className="ly-diff-gutter sticky left-0 z-[1] w-[42px] shrink-0 pr-2 text-right text-ink-faint/70 select-none">
 											{line.newLine ?? line.oldLine ?? ""}
 										</span>
 										<span
 											className={`sticky left-[42px] z-[1] w-[3px] shrink-0 ${
-												added ? "bg-ok/70" : removed ? "bg-danger/70" : "dw-diff-rail"
+												added ? "bg-ok/70" : removed ? "bg-danger/70" : "ly-diff-rail"
 											}`}
 										/>
 										<span
@@ -182,7 +182,7 @@ function HorizontalThumb({ viewport }: { viewport: React.RefObject<HTMLDivElemen
 					setActive(true);
 				}}
 				style={{ left: metrics.left, width: metrics.width }}
-				className={`dw-hthumb absolute bottom-[2px] h-[6px] rounded-full bg-ink-faint ${active ? "dw-hthumb-active" : ""}`}
+				className={`ly-hthumb absolute bottom-[2px] h-[6px] rounded-full bg-ink-faint ${active ? "ly-hthumb-active" : ""}`}
 			/>
 		</div>
 	);

@@ -1,6 +1,6 @@
-# DeepWise
+# Lyra
 
-[![CI](https://github.com/kittors/deepwise/actions/workflows/ci.yml/badge.svg)](https://github.com/kittors/deepwise/actions/workflows/ci.yml)
+[![CI](https://github.com/kittors/lyra/actions/workflows/ci.yml/badge.svg)](https://github.com/kittors/lyra/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg)](.nvmrc)
 
@@ -26,7 +26,7 @@ pnpm dev
 - **12 个内置工具**：`read` `write` `edit` `ls` `glob` `grep` `bash` `bash_output` `todo_write` `task` `skill` `web_fetch`
 - **Skill**：`SKILL.md` + YAML frontmatter。只有名称和描述进系统提示，正文在模型调用 `skill` 工具时才注入 —— 装几十个技能也不烧上下文。
 - **MCP**：stdio / Streamable HTTP / SSE 三种传输，工具以 `mcp__<服务>__<工具>` 命名注入，不会和内置工具撞名。
-- **子智能体**：`task` 工具把工作交给拥有独立上下文窗口的子 agent，只把结论带回主对话。内置 `general` / `explore` / `review`，可用 `.deepwise/agents/*.md` 扩展。
+- **子智能体**：`task` 工具把工作交给拥有独立上下文窗口的子 agent，只把结论带回主对话。内置 `general` / `explore` / `review`，可用 `.lyra/agents/*.md` 扩展。
 - **侧边聊天**：在当前会话旁边再开一个临时对话。它读得到主会话聊了什么，但一个字也不写进去；需要动手的事交给主会话排队执行。
 - **右侧面板**：文件、终端、审阅改动、侧边聊天四个标签页，可同时开着来回切。文件带语法高亮编辑器，终端是真的 pty。
 - **移动端同步**：桌面端跑局域网服务，手机重放同一份会话日志，可以查看进行中的回合、批准操作、继续追问。
@@ -63,19 +63,19 @@ pnpm dev:mobile
 
 | 路径 | 内容 |
 | --- | --- |
-| `~/.deepwise/settings.json` | 供应商、模型、MCP、权限模式 |
-| `~/.deepwise/sessions/` | 会话日志（JSONL，一行一条记录） |
-| `~/.deepwise/skills/` | 用户级技能 |
-| `<项目>/.deepwise/skills/` | 项目级技能（优先级更高） |
-| `<项目>/.deepwise/agents/` | 项目级子智能体 |
-| `<项目>/DEEPWISE.md`、`AGENTS.md`、`CLAUDE.md` | 项目指令，按此优先级取第一个存在的 |
+| `~/.lyra/settings.json` | 供应商、模型、MCP、权限模式 |
+| `~/.lyra/sessions/` | 会话日志（JSONL，一行一条记录） |
+| `~/.lyra/skills/` | 用户级技能 |
+| `<项目>/.lyra/skills/` | 项目级技能（优先级更高） |
+| `<项目>/.lyra/agents/` | 项目级子智能体 |
+| `<项目>/LYRA.md`、`AGENTS.md`、`CLAUDE.md` | 项目指令，按此优先级取第一个存在的 |
 
 ## 扩展与机制
 
 插件、技能、MCP、子智能体的目录结构与文件格式，以及浏览器、索引库、钩子、移动端同步
 的工作方式，都在 [`docs/`](docs/README.md)：
 
-- [扩展 DeepWise](docs/extending.md)：插件目录结构、`SKILL.md` 格式、MCP 声明、子智能体定义
+- [扩展 Lyra](docs/extending.md)：插件目录结构、`SKILL.md` 格式、MCP 声明、子智能体定义
 - [内置能力](docs/capabilities.md)：浏览器与其安全边界、索引库、钩子、移动端同步
 
 要点：插件是一个**打包**，不是第三种机制——一份清单 + 一组技能 + 可选的 MCP 服务器声明。
@@ -183,6 +183,6 @@ Current working directory: …
 ```bash
 pnpm typecheck              # 全部包类型检查
 pnpm -r test                # core 与 desktop 的测试
-pnpm --filter @deepwise/desktop build
-pnpm --filter @deepwise/mobile exec expo export --platform web
+pnpm --filter @lyra/desktop build
+pnpm --filter @lyra/mobile exec expo export --platform web
 ```

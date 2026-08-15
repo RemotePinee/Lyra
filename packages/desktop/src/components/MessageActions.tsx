@@ -45,14 +45,14 @@ export function MessageActions({
 			</Text>
 			<button
 				type="button"
-				data-dw-tip="复制"
+				data-ly-tip="复制"
 				aria-label="复制这条消息"
 				onClick={() => {
 					void navigator.clipboard.writeText(text).then(() => setCopied(true));
 				}}
 				className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
 			>
-				{copied ? <Check size={12.5} strokeWidth={2.2} className="dw-pop text-ok" /> : <Copy size={12.5} strokeWidth={1.8} />}
+				{copied ? <Check size={12.5} strokeWidth={2.2} className="ly-pop text-ok" /> : <Copy size={12.5} strokeWidth={1.8} />}
 			</button>
 			{children}
 		</div>

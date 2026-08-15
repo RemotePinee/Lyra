@@ -114,8 +114,8 @@ export function Scroller({
 
 	return (
 		<div
-			style={fadeColor ? ({ "--dw-fade-color": fadeColor } as React.CSSProperties) : undefined}
-			className={`dw-scroll-host relative flex min-h-0 flex-col ${className}`}
+			style={fadeColor ? ({ "--ly-fade-color": fadeColor } as React.CSSProperties) : undefined}
+			className={`ly-scroll-host relative flex min-h-0 flex-col ${className}`}
 		>
 			<div
 				ref={viewport}
@@ -134,7 +134,7 @@ export function Scroller({
 				 * item hands the sizing to the flex algorithm, which honours both a fixed height
 				 * and a `max-height` — so one Scroller works in a pane and in a popover.
 				 */
-				className={`dw-scroll-view min-h-0 flex-auto overflow-y-auto overscroll-contain ${contentClassName}`}
+				className={`ly-scroll-view min-h-0 flex-auto overflow-y-auto overscroll-contain ${contentClassName}`}
 			>
 				{children}
 			</div>
@@ -153,7 +153,7 @@ export function Scroller({
 				className="pointer-events-none absolute inset-x-0 top-0 h-8 transition-opacity duration-200"
 				style={{
 					opacity: showTopFade ? 1 : 0,
-					background: "linear-gradient(to bottom, var(--dw-fade-color, var(--color-shell)), transparent)",
+					background: "linear-gradient(to bottom, var(--ly-fade-color, var(--color-shell)), transparent)",
 				}}
 			/>
 			<div
@@ -161,7 +161,7 @@ export function Scroller({
 				className="pointer-events-none absolute inset-x-0 bottom-0 h-10 transition-opacity duration-200"
 				style={{
 					opacity: showBottomFade ? 1 : 0,
-					background: "linear-gradient(to top, var(--dw-fade-color, var(--color-shell)), transparent)",
+					background: "linear-gradient(to top, var(--ly-fade-color, var(--color-shell)), transparent)",
 				}}
 			/>
 
@@ -199,7 +199,7 @@ export function Scroller({
 							setActive(true);
 						}}
 						style={{ top: metrics.thumbTop, height: metrics.thumbHeight }}
-						className={`dw-thumb absolute right-[2px] w-[6px] rounded-full bg-ink-faint ${active ? "dw-thumb-active" : ""}`}
+						className={`ly-thumb absolute right-[2px] w-[6px] rounded-full bg-ink-faint ${active ? "ly-thumb-active" : ""}`}
 					/>
 				</div>
 			)}

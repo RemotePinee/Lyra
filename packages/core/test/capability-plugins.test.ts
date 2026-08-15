@@ -2,7 +2,7 @@
  * Plugins that arrive on disk.
  *
  * The claim this test defends is the strong reading of "everything is a plugin": not merely that
- * the host can assemble a different set, but that dropping a directory into `~/.deepwise/plugins`
+ * the host can assemble a different set, but that dropping a directory into `~/.lyra/plugins`
  * changes what the agent is made of — including replacing a seam the app ships with.
  */
 
@@ -28,7 +28,7 @@ async function bundle(root: string, id: string, body: string) {
 }
 
 test("a plugin on disk can replace a seam the app ships with", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-cap-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-cap-"));
 	try {
 		await bundle(
 			root,
@@ -64,7 +64,7 @@ test("a plugin on disk can replace a seam the app ships with", async () => {
 });
 
 test("a broken plugin is reported and skipped, not fatal", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-cap-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-cap-"));
 	try {
 		await bundle(root, "throws", "throw new Error('boom');");
 		await bundle(root, "empty", "export const nothing = 1;");
@@ -86,7 +86,7 @@ test("a broken plugin is reported and skipped, not fatal", async () => {
 });
 
 test("a bundle with no capability.js is simply a bundle, not an error", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-cap-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-cap-"));
 	try {
 		const dir = join(root, "skills-only");
 		await mkdir(dir, { recursive: true });
@@ -102,7 +102,7 @@ test("a bundle with no capability.js is simply a bundle, not an error", async ()
 });
 
 test("a run can decline every plugin without naming any of them", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-cap-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-cap-"));
 	try {
 		await bundle(root, "one", "export default { name: 'one', apply() {} };");
 		await bundle(root, "two", "export default { name: 'two', apply() {} };");

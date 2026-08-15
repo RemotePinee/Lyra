@@ -11,7 +11,7 @@
  */
 
 import { BrowserWindow } from "electron";
-import type { Tool, ToolResult } from "@deepwise/core";
+import type { Tool, ToolResult } from "@lyra/core";
 
 /** A page that has not answered in this long is not going to. */
 const EVAL_TIMEOUT_MS = 15_000;

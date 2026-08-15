@@ -87,7 +87,7 @@ export function FileViewer({
 		if (!dirty || saving || readOnly) return;
 		setSaving(true);
 		setError(null);
-		const result = await window.deepwise.files.write(path, text);
+		const result = await window.lyra.files.write(path, text);
 		setSaving(false);
 		if (!result.ok) {
 			setError(result.error ?? "写入失败");
@@ -108,7 +108,7 @@ export function FileViewer({
 		}
 	}
 
-	const media = window.deepwise.files.mediaUrl(path);
+	const media = window.lyra.files.mediaUrl(path);
 
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -130,7 +130,7 @@ export function FileViewer({
 					 * place a file is on screen with a path in hand, so it is where it belongs.
 					 */}
 					<Toggle
-						onClick={() => void window.deepwise.system.openIn(openTarget, path)}
+						onClick={() => void window.lyra.system.openIn(openTarget, path)}
 						icon={<ExternalLink size={12} strokeWidth={1.9} />}
 						label={`在 ${openTarget} 中打开`}
 					/>
@@ -151,7 +151,7 @@ export function FileViewer({
 
 					{readOnly && <span className="shrink-0 text-[11px] text-ink-faint">文件过大，只读</span>}
 					{error && (
-						<span data-dw-tip={error} className="min-w-0 truncate text-[11px] text-danger">
+						<span data-ly-tip={error} className="min-w-0 truncate text-[11px] text-danger">
 							{error}
 						</span>
 					)}
@@ -160,15 +160,15 @@ export function FileViewer({
 							type="button"
 							onClick={() => void save()}
 							disabled={saving}
-							data-dw-tip="保存 ⌘S"
-							className="dw-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
+							data-ly-tip="保存 ⌘S"
+							className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
 						>
 							<Save size={11.5} strokeWidth={1.9} />
 							{saving ? "保存中…" : "未保存"}
 						</button>
 					)}
 					{justSaved && !dirty && (
-						<span className="dw-pop flex shrink-0 items-center gap-1 text-[11px] text-ok">
+						<span className="ly-pop flex shrink-0 items-center gap-1 text-[11px] text-ok">
 							<Check size={11.5} strokeWidth={2.2} />
 							已保存
 						</span>
@@ -179,7 +179,7 @@ export function FileViewer({
 			{kind === "image" ? (
 				<Scroller className="flex-1" fadeColor="var(--color-shell)">
 					{/* Checkerboard, so transparent images do not read as white ones. */}
-					<div className="dw-checker flex min-h-full items-center justify-center p-3">
+					<div className="ly-checker flex min-h-full items-center justify-center p-3">
 						<img src={media} alt={name} className="max-w-full rounded-md object-contain" />
 					</div>
 				</Scroller>
@@ -235,7 +235,7 @@ function Toggle({
 			type="button"
 			onClick={onClick}
 			data-selected={active ? "true" : undefined}
-			className="dw-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
+			className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
 		>
 			{icon}
 			{label}

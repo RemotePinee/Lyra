@@ -9,7 +9,7 @@
  * shape as a conversation grows is one you have to re-learn every time.
  */
 
-import { SOURCE_LABEL, SOURCE_ORDER, type Source as TrajectorySourceKind } from "@deepwise/core/trajectory-view";
+import { SOURCE_LABEL, SOURCE_ORDER, type Source as TrajectorySourceKind } from "@lyra/core/trajectory-view";
 
 export function SourceFilter({
 	selected,
@@ -29,7 +29,7 @@ export function SourceFilter({
 			<button
 				type="button"
 				onClick={onClear}
-				className={`dw-item rounded-full px-2 py-[3px] text-[11px] ${
+				className={`ly-item rounded-full px-2 py-[3px] text-[11px] ${
 					active.size === 0 ? "bg-accent/12 text-accent" : "text-ink-faint"
 				}`}
 			>
@@ -43,7 +43,7 @@ export function SourceFilter({
 						type="button"
 						disabled={count === 0}
 						onClick={() => onToggle(source)}
-						className={`dw-item rounded-full px-2 py-[3px] text-[11px] disabled:opacity-40 ${
+						className={`ly-item rounded-full px-2 py-[3px] text-[11px] disabled:opacity-40 ${
 							active.has(source) ? "bg-accent/12 text-accent" : "text-ink-muted"
 						}`}
 					>

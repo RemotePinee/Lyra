@@ -1,4 +1,4 @@
-import type { McpServerConfig } from "@deepwise/core";
+import type { McpServerConfig } from "@lyra/core";
 import { Cable, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentCapabilities } from "../../../electron/ipc-types.ts";
@@ -44,7 +44,7 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 
 	useEffect(() => {
 		if (!activeSessionId) return;
-		void window.deepwise.sessions.capabilities(activeSessionId).then(setCapabilities);
+		void window.lyra.sessions.capabilities(activeSessionId).then(setCapabilities);
 	}, [activeSessionId]);
 
 	if (!settings) return null;
@@ -145,7 +145,7 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 									<Toggle checked={server.enabled} onChange={(enabled) => update(server.id, { enabled })} />
 									<button
 										type="button"
-										data-dw-tip="删除"
+										data-ly-tip="删除"
 										onClick={() => remove(server.id)}
 										className="text-ink-faint transition-colors hover:text-danger"
 									>

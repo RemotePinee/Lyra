@@ -7,10 +7,35 @@
  * size and position are restored from disk rather than guessed.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { deepwiseHome, type Settings } from "@deepwise/core";
-import { BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electron";
+import { lyraHome, type Settings } from "@lyra/core";
+import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electron";
+
+/**
+ * Where the icon file is, packaged or not.
+ *
+ * Packaged, `build/` is copied next to the bundle; in development the source tree is right there.
+ * Returns undefined rather than a wrong path, because Electron falls back to its own logo on a
+ * missing file without saying so — and a silently wrong icon is harder to notice than none.
+ */
+export function appIconPath(): string | undefined {
+	/*
+	 * `app.getAppPath()`, not `__dirname`.
+	 *
+	 * The main process is built as an ES module, where `__dirname` does not exist — and reaching
+	 * for it here threw inside `whenReady`, which took the rest of startup with it: no kernel, no
+	 * IPC handlers, and a window whose session list came back empty for reasons that had nothing
+	 * to do with sessions. Electron's own answer works packaged and unpackaged alike.
+	 */
+	const base = app.getAppPath();
+	const candidates = [
+		join(base, "build", "icon.png"),
+		join(base, "..", "build", "icon.png"),
+		join(process.resourcesPath ?? "", "build", "icon.png"),
+	];
+	return candidates.find((path) => existsSync(path));
+}
 
 /**
  * How this module reaches the rest of the app.
@@ -72,6 +97,15 @@ function bootTheme(): { dark: boolean; background: string; foreground: string; a
 export function createWindow(): void {
 	const saved = readWindowState();
 	mainWindow = new BrowserWindow({
+		/*
+		 * The icon, for the layouts that read it from the window.
+		 *
+		 * Windows and Linux take the taskbar icon from here; macOS takes it from the bundle, which
+		 * only exists once the app is packaged — so in development it is set on the dock instead
+		 * (see `main.ts`). Without both, a dev build shows Electron's own logo, which is the one
+		 * thing an application icon must never be.
+		 */
+		icon: appIconPath(),
 		// Matches the reference screenshots: a 272px sidebar plus a main column wide enough
 		// for the four suggestion cards to sit on one row.
 		width: saved?.width ?? 980,
@@ -134,7 +168,7 @@ export function createWindow(): void {
 			 */
 			webviewTag: true,
 			// Read by the preload before the first frame, so the app never opens in the wrong theme.
-			additionalArguments: [`--dw-boot=${encodeURIComponent(JSON.stringify(bootTheme()))}`],
+			additionalArguments: [`--ly-boot=${encodeURIComponent(JSON.stringify(bootTheme()))}`],
 		},
 	});
 
@@ -186,7 +220,7 @@ interface WindowState {
 }
 
 function windowStatePath(): string {
-	return join(deepwiseHome(), "window.json");
+	return join(lyraHome(), "window.json");
 }
 
 /**

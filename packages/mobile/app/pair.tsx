@@ -19,8 +19,8 @@ export default function PairScreen() {
 
 	async function pastePairingUrl() {
 		const text = await Clipboard.getStringAsync().catch(() => "");
-		// The desktop copies a deepwise://pair?host=…&port=…&token=… payload.
-		const match = /deepwise:\/\/pair\?(.*)/.exec(text.trim());
+		// The desktop copies a lyra://pair?host=…&port=…&token=… payload.
+		const match = /lyra:\/\/pair\?(.*)/.exec(text.trim());
 		if (!match) {
 			setMessage({ tone: "error", text: "剪贴板里没有找到配对链接" });
 			return;

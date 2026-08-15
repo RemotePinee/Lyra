@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { countBySource, filterTrajectory, type Entry as TrajectoryEntry, type Source as TrajectorySourceKind } from "@deepwise/core/trajectory-view";
+import { countBySource, filterTrajectory, type Entry as TrajectoryEntry, type Source as TrajectorySourceKind } from "@lyra/core/trajectory-view";
 import { useApp } from "../../store.ts";
 
 export interface TrajectoryView {
@@ -37,7 +37,7 @@ export function useTrajectory(sources: TrajectorySourceKind[], query: string): T
 		}
 		let live = true;
 		setLoading(true);
-		void window.deepwise.sessions
+		void window.lyra.sessions
 			.trajectory(projectId, sessionId)
 			.then((entries) => {
 				if (live) setAll(entries);

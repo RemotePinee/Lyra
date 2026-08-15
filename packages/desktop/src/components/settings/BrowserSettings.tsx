@@ -22,7 +22,7 @@ export function BrowserSettings() {
 	// observable through a live session's tool list.
 	const check = async () => {
 		if (!activeSessionId) return;
-		const caps = await window.deepwise.sessions.capabilities(activeSessionId);
+		const caps = await window.lyra.sessions.capabilities(activeSessionId);
 		setTools(caps?.toolNames.filter((t) => t.startsWith("browser_")) ?? []);
 	};
 

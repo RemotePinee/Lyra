@@ -159,7 +159,7 @@ function NotPaired() {
 		<View className="flex-1 items-center justify-center bg-shell px-8">
 			<Text className="text-center text-[22px] font-semibold text-ink">连接你的桌面端</Text>
 			<Text className="mt-3 text-center text-[13.5px] leading-6 text-ink-muted">
-				DeepWise 的文件、终端和 MCP 都跑在电脑上。{"\n"}
+				Lyra 的文件、终端和 MCP 都跑在电脑上。{"\n"}
 				手机连上以后可以查看进行中的回合、批准操作、继续追问。
 			</Text>
 			<Link href="/pair" asChild>

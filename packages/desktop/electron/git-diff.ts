@@ -8,7 +8,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { computeDiff, type DiffHunk } from "@deepwise/core";
+import { computeDiff, type DiffHunk } from "@lyra/core";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
 import { git, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { gitBranch, isGitRepo } from "./git.ts";

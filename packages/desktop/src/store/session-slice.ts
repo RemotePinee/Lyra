@@ -6,7 +6,7 @@
  * warming an index takes. The agent starts when something is actually asked of it.
  */
 
-import type { SessionMeta } from "@deepwise/core";
+import type { SessionMeta } from "@lyra/core";
 import { prune, rebuildToolRuns, todosFrom, wasCutShort, without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
@@ -98,8 +98,8 @@ export function sessionSlice(set: Set, get: Get) {
      * not wait for the log either.
      */
     const [snapshot, workspace] = await Promise.all([
-      window.deepwise.sessions.transcript(meta.projectId, meta.id),
-      window.deepwise.workspace.info(meta.cwd),
+      window.lyra.sessions.transcript(meta.projectId, meta.id),
+      window.lyra.workspace.info(meta.cwd),
     ]);
 
     // A second click while this was in flight wins; discard the stale arrival.
@@ -136,7 +136,7 @@ export function sessionSlice(set: Set, get: Get) {
 
     // Capabilities describe a running agent; a transcript read from disk has none until the
     // session is activated, which the first message does.
-    const capabilities = await window.deepwise.sessions.capabilities(
+    const capabilities = await window.lyra.sessions.capabilities(
       snapshot.meta.id,
     );
     if (get().activeSessionId === meta.id) set({ capabilities });
@@ -144,8 +144,8 @@ export function sessionSlice(set: Set, get: Get) {
 
   async deleteSession(meta: SessionMeta) {
     set({ sessionCache: without(get().sessionCache, meta.id) });
-    await window.deepwise.sessions.remove(meta.projectId, meta.id);
-    const sessions = await window.deepwise.sessions.list();
+    await window.lyra.sessions.remove(meta.projectId, meta.id);
+    const sessions = await window.lyra.sessions.list();
     set({ sessions });
     if (get().activeSessionId === meta.id) {
       set({
@@ -180,7 +180,7 @@ export function sessionSlice(set: Set, get: Get) {
       });
     }
     set({
-      sessions: await window.deepwise.sessions.setArchived(
+      sessions: await window.lyra.sessions.setArchived(
         meta.projectId,
         meta.id,
         archived,
@@ -189,7 +189,7 @@ export function sessionSlice(set: Set, get: Get) {
   },
 
   async deleteArchivedSessions() {
-    set({ sessions: await window.deepwise.sessions.removeArchived() });
+    set({ sessions: await window.lyra.sessions.removeArchived() });
   },
   };
 }

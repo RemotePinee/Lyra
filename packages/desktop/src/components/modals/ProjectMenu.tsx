@@ -40,7 +40,7 @@ export function ProjectMenu({
 		const branch = draft.trim();
 		if (!branch || busy) return;
 		setBusy(true);
-		const result = await window.deepwise.git.createWorktree(path, branch);
+		const result = await window.lyra.git.createWorktree(path, branch);
 		setBusy(false);
 		if (!result.ok) {
 			notify(result.error ?? "创建工作树失败", "error");
@@ -127,7 +127,7 @@ export function ProjectMenu({
 				<MenuItem
 					icon={<FolderOpen size={13} strokeWidth={1.8} />}
 					onClick={() => {
-						void window.deepwise.workspace.reveal(path);
+						void window.lyra.workspace.reveal(path);
 						onClose();
 					}}
 				>

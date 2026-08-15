@@ -36,7 +36,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	useEffect(() => {
 		if (!workspace) return;
 		let live = true;
-		void window.deepwise.git.branches(workspace.path).then((list) => {
+		void window.lyra.git.branches(workspace.path).then((list) => {
 			lastSeen.set(workspace.path, list);
 			if (live) setBranches(list);
 		});
@@ -57,7 +57,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 		const target = branch.includes("/") && !branches?.local.includes(branch)
 			? branch.split("/").slice(1).join("/")
 			: branch;
-		const result = await window.deepwise.git.switchBranch(workspace.path, target);
+		const result = await window.lyra.git.switchBranch(workspace.path, target);
 		setBusy(null);
 		if (!result.ok) {
 			notify(result.error ?? "切换分支失败", "error");
@@ -92,9 +92,9 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 				{!branches &&
 					[0, 1, 2, 3, 4].map((i) => (
 						<div key={i} className="flex h-[30px] items-center gap-2 px-2">
-							<span className="dw-pulse h-[13px] w-[13px] shrink-0 rounded bg-card" />
+							<span className="ly-pulse h-[13px] w-[13px] shrink-0 rounded bg-card" />
 							<span
-								className="dw-pulse h-[11px] rounded bg-card"
+								className="ly-pulse h-[11px] rounded bg-card"
 								style={{ width: `${58 - i * 7}%` }}
 							/>
 						</div>
@@ -142,7 +142,7 @@ function Row({
 }) {
 	return (
 		<MenuItem
-			icon={<GitBranch size={13} strokeWidth={1.8} className={busy ? "dw-pulse" : undefined} />}
+			icon={<GitBranch size={13} strokeWidth={1.8} className={busy ? "ly-pulse" : undefined} />}
 			title={name}
 			selected={current}
 			disabled={busy}

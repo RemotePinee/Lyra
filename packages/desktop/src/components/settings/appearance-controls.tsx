@@ -95,7 +95,7 @@ export function ThemePreview({ variant, accent }: { variant: "system" | "light" 
 	return (
 		<svg viewBox="0 0 120 80" className="w-full rounded-[7px]" aria-hidden>
 			<defs>
-				<clipPath id={`dw-half-${variant}`}>
+				<clipPath id={`ly-half-${variant}`}>
 					<rect x="0" y="0" width="60" height="80" />
 				</clipPath>
 			</defs>
@@ -104,7 +104,7 @@ export function ThemePreview({ variant, accent }: { variant: "system" | "light" 
 			{variant === "system" && (
 				<>
 					{half(dark)}
-					{half(light, `url(#dw-half-${variant})`)}
+					{half(light, `url(#ly-half-${variant})`)}
 				</>
 			)}
 		</svg>

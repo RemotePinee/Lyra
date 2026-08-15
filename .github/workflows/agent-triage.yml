@@ -32,14 +32,14 @@ jobs:
       - name: Triage
         # Skipped rather than failed when the model is not configured; see agent-review.yml.
         env:
-          DEEPWISE_BASE_URL: ${{ secrets.DEEPWISE_BASE_URL }}
-          DEEPWISE_API_KEY: ${{ secrets.DEEPWISE_API_KEY }}
-          DEEPWISE_MODEL: ${{ vars.DEEPWISE_MODEL || 'deepseek-v4-flash' }}
+          LYRA_BASE_URL: ${{ secrets.LYRA_BASE_URL }}
+          LYRA_API_KEY: ${{ secrets.LYRA_API_KEY }}
+          LYRA_MODEL: ${{ vars.LYRA_MODEL || 'deepseek-v4-flash' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          if [ -z "$DEEPWISE_API_KEY" ] || [ -z "$DEEPWISE_BASE_URL" ]; then
-            echo "::notice::DEEPWISE_API_KEY / DEEPWISE_BASE_URL 未配置，跳过 agent 分类"
+          if [ -z "$LYRA_API_KEY" ] || [ -z "$LYRA_BASE_URL" ]; then
+            echo "::notice::LYRA_API_KEY / LYRA_BASE_URL 未配置，跳过 agent 分类"
             exit 0
           fi
           node --experimental-strip-types packages/agent-cli/src/main.ts triage "${{ github.event.issue.number || inputs.issue }}"

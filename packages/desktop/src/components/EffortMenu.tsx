@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@deepwise/core";
+import type { ThinkingLevel } from "@lyra/core";
 import { CircleHelp } from "lucide-react";
 import { useState } from "react";
 import { Popover, type Anchor } from "./Popover.tsx";
@@ -58,7 +58,7 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					<div className="flex-1" />
 					<button
 						type="button"
-						data-dw-tip="各档位说明"
+						data-ly-tip="各档位说明"
 						onClick={() => setShowHelp((v) => !v)}
 						className={`transition-colors ${showHelp ? "text-ink" : "text-ink-faint hover:text-ink"}`}
 					>
@@ -78,7 +78,7 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 				</p>
 
 				{showHelp && (
-					<div className="dw-enter mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-[11px] leading-relaxed text-ink-faint">
+					<div className="ly-enter mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-[11px] leading-relaxed text-ink-faint">
 						{EFFORT_LEVELS.map((entry) => (
 							<div key={entry.value} className="flex gap-2">
 								<span className={`w-7 shrink-0 ${entry.value === level ? "text-ink" : ""}`}>{entry.label}</span>
@@ -133,7 +133,7 @@ function DotSlider({
 								<span
 									key={row}
 									className={`h-[3px] w-[3px] rounded-[0.5px] transition-[background-color,opacity] duration-200 ${
-										lit && atMax ? "dw-matrix" : ""
+										lit && atMax ? "ly-matrix" : ""
 									}`}
 									style={{
 										background: lit ? "var(--color-info)" : "var(--color-ink-faint)",
@@ -149,7 +149,7 @@ function DotSlider({
 
 			{/* Handle sits on the boundary between lit and unlit columns. */}
 			<div
-				className="dw-knob pointer-events-none absolute top-1/2 h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 rounded-[5px] border transition-[left] duration-200"
+				className="ly-knob pointer-events-none absolute top-1/2 h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 rounded-[5px] border transition-[left] duration-200"
 				style={{ left: `calc(8px + ${ratio} * (100% - 16px))` }}
 			/>
 

@@ -61,8 +61,8 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 /** A record as supplied by callers, before the store stamps `seq` and `ts`. */
 export type SessionRecordInput = DistributiveOmit<SessionRecord, "seq" | "ts">;
 
-export function deepwiseHome(): string {
-	return process.env.DEEPWISE_HOME || join(homedir(), ".deepwise");
+export function lyraHome(): string {
+	return process.env.LYRA_HOME || join(homedir(), ".lyra");
 }
 
 export function projectIdFor(cwd: string): string {
@@ -83,7 +83,7 @@ export class SessionStore implements SessionStorage {
 	private writeQueues = new Map<string, Promise<SessionMeta>>();
 	private latestMeta = new Map<string, SessionMeta>();
 
-	constructor(root = join(deepwiseHome(), "sessions")) {
+	constructor(root = join(lyraHome(), "sessions")) {
 		this.root = root;
 	}
 

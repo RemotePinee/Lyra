@@ -52,10 +52,10 @@ export function RunningIndicator() {
 	const phrase = phraseFor(moodFor(toolName || undefined, summary), tick, elapsed);
 
 	return (
-		<div className="dw-enter mb-2.5 flex items-center gap-2 text-[12px] text-ink-muted">
+		<div className="ly-enter mb-2.5 flex items-center gap-2 text-[12px] text-ink-muted">
 			<Spinner />
 			{/* Keyed on the words so one fades in as the other goes, rather than swapping in place. */}
-			<span key={phrase} className="dw-fade-in">
+			<span key={phrase} className="ly-fade-in">
 				{phrase}…
 			</span>
 			<span className="text-ink-faint">·</span>
@@ -103,7 +103,7 @@ export function Spinner({ size = 14, className = "" }: { size?: number; classNam
 	 */
 	const circumference = 2 * Math.PI * 9;
 	return (
-		<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className={`dw-spin shrink-0 ${className}`}>
+		<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className={`ly-spin shrink-0 ${className}`}>
 			<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3.4" className="text-ink-faint/25" />
 			<circle
 				cx="12"

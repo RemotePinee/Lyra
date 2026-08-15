@@ -29,11 +29,11 @@ type WebviewElement = HTMLElement & {
 	getURL(): string;
 };
 
-const PREVIEW_PREFIX = "dw-preview";
+const PREVIEW_PREFIX = "ly-preview";
 
 function targetUrl(target: ReturnType<typeof useSide.getState>["browserTarget"]): string {
 	if (!target) return "";
-	return target.kind === "url" ? target.url : `dw-preview://${target.preview.sessionId}/${target.preview.id}/${target.preview.entry}`;
+	return target.kind === "url" ? target.url : `ly-preview://${target.preview.sessionId}/${target.preview.id}/${target.preview.entry}`;
 }
 
 /**
@@ -127,7 +127,7 @@ export function BrowserPanel() {
 					onClick={() => view.current?.canGoForward() && view.current.goForward()}
 				/>
 				<IconButton
-					icon={<RotateCw size={12.5} strokeWidth={1.9} className={loading ? "dw-pulse" : undefined} />}
+					icon={<RotateCw size={12.5} strokeWidth={1.9} className={loading ? "ly-pulse" : undefined} />}
 					label="刷新"
 					size="sm"
 					disabled={!url}
@@ -174,7 +174,7 @@ export function BrowserPanel() {
 					src={url}
 					// No preload, no node integration: it renders pages, it does not run our code.
 					className="min-h-0 flex-1 bg-white"
-					partition="persist:dw-browser"
+					partition="persist:ly-browser"
 					allowpopups={undefined}
 				/>
 			) : (

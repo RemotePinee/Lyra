@@ -57,7 +57,7 @@ export class SyncClient {
 			});
 			if (!response.ok) return false;
 			const body = (await response.json()) as { app?: string };
-			return body.app === "deepwise";
+			return body.app === "lyra";
 		} catch {
 			return false;
 		}

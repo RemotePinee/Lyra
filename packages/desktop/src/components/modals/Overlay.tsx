@@ -44,7 +44,7 @@ export function Overlay({
         ref={cardRef}
         // The width is a preference, not a promise — a 460px card does not fit a 380px window.
         style={{ width, maxWidth: "100%" }}
-        className="dw-enter max-h-[80vh] overflow-hidden rounded-[14px] border border-line bg-float shadow-2xl shadow-black/50"
+        className="ly-enter max-h-[80vh] overflow-hidden rounded-[14px] border border-line bg-float shadow-2xl shadow-black/50"
       >
         {children}
       </div>

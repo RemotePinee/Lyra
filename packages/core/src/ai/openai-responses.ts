@@ -62,7 +62,7 @@ async function* streamResponses(
 		model: model.modelId,
 		input: toResponsesInput(context.messages),
 		stream: true,
-		// Sessions live in DeepWise's own store, not on the provider.
+		// Sessions live in Lyra's own store, not on the provider.
 		store: false,
 		max_output_tokens: options.maxTokens ?? model.maxOutputTokens,
 		...(context.systemPrompt ? { instructions: context.systemPrompt } : {}),

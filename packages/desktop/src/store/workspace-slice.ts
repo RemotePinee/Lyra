@@ -14,13 +14,13 @@ type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>
 export function workspaceSlice(set: Set, get: Get) {
   return {
   async pickWorkspace() {
-    const workspace = await window.deepwise.workspace.pick();
+    const workspace = await window.lyra.workspace.pick();
     if (!workspace) return;
     await get().openWorkspace(workspace.path);
   },
 
   async openWorkspace(path: string) {
-    const workspace = await window.deepwise.workspace.info(path);
+    const workspace = await window.lyra.workspace.info(path);
     if (!workspace) return;
     const settings = get().settings;
     if (settings) {
@@ -55,7 +55,7 @@ export function workspaceSlice(set: Set, get: Get) {
   async refreshWorkspace() {
     const current = get().workspace;
     if (!current) return;
-    const workspace = await window.deepwise.workspace.info(current.path);
+    const workspace = await window.lyra.workspace.info(current.path);
     if (workspace) set({ workspace });
   },
 
@@ -133,7 +133,7 @@ export function workspaceSlice(set: Set, get: Get) {
     // Sequential rather than parallel: each call rewrites the shared session index.
     let latest = get().sessions;
     for (const session of targets) {
-      latest = await window.deepwise.sessions.setArchived(
+      latest = await window.lyra.sessions.setArchived(
         session.projectId,
         session.id,
         true,

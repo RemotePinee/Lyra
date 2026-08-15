@@ -7,7 +7,7 @@
  */
 
 import { memo } from "react";
-import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
+import type { AssistantContent, AssistantMessage, Message } from "@lyra/core";
 import { PreviewCard, type PreviewInfo } from "../PreviewCard.tsx";
 import { ToolCard } from "../ToolCard.tsx";
 import { describeRun } from "../ToolGroup.tsx";

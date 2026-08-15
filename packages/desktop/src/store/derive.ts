@@ -8,8 +8,8 @@
  * The session cache lives here too, for the same reason: it is a pure function of transcripts.
  */
 
-import type { Message, TodoItem } from "@deepwise/core";
-import type { SessionMeta } from "@deepwise/core";
+import type { Message, TodoItem } from "@lyra/core";
+import type { SessionMeta } from "@lyra/core";
 import { summarizeToolCall } from "../toolSummary.ts";
 import type { ToolRun } from "../store.ts";
 

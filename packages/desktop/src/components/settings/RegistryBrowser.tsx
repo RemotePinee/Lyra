@@ -41,7 +41,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 	useEffect(() => {
 		let cancelled = false;
 		setLoading(true);
-		void Promise.all(urls.map((url) => window.deepwise.plugins.fetchRegistry(url))).then((results) => {
+		void Promise.all(urls.map((url) => window.lyra.plugins.fetchRegistry(url))).then((results) => {
 			if (cancelled) return;
 			setRegistries(results.flatMap((r, _i) => (r.ok ? [r.registry] : [])));
 			setErrors(results.flatMap((r, i) => (r.ok ? [] : [{ url: urls[i], message: r.message }])));
@@ -67,7 +67,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 
 	const install = async (entry: RegistryEntry) => {
 		setInstalling(entry.id);
-		const result = await window.deepwise.plugins.installFromRegistry(entry);
+		const result = await window.lyra.plugins.installFromRegistry(entry);
 		setInstalling(null);
 		if (result.ok) setInstalled((current) => new Set(current).add(entry.id));
 		else setErrors((current) => [...current, { url: entry.name, message: result.message }]);
@@ -101,7 +101,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 									{failed && <span className="shrink-0 text-danger">{failed.message}</span>}
 									<button
 										type="button"
-										data-dw-tip="移除这个市场"
+										data-ly-tip="移除这个市场"
 										onClick={() => removeRegistry(url)}
 										className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
 									>
@@ -128,7 +128,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 
 					{loading ? (
 						<p className="flex items-center justify-center gap-2 py-10 text-[12.5px] text-ink-faint">
-							<Loader2 size={13} strokeWidth={2} className="dw-spin" />
+							<Loader2 size={13} strokeWidth={2} className="ly-spin" />
 							读取中…
 						</p>
 					) : entries.length === 0 ? (
@@ -161,7 +161,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 											onClick={() => void install(entry)}
 											icon={
 												installing === entry.id ? (
-													<Loader2 size={12} strokeWidth={2} className="dw-spin" />
+													<Loader2 size={12} strokeWidth={2} className="ly-spin" />
 												) : (
 													<Download size={12} strokeWidth={1.9} />
 												)

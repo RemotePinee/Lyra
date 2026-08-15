@@ -7,7 +7,7 @@
  */
 
 import { ipcMain, dialog, shell } from "electron";
-import type { Settings } from "@deepwise/core";
+import type { Settings } from "@lyra/core";
 import type { WorkspaceInfo } from "../ipc-types.ts";
 import { applySettings, settings } from "../app-settings.ts";
 import { getWindow } from "../window.ts";

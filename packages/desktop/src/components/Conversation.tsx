@@ -142,7 +142,7 @@ export function Conversation() {
          */}
         <div
           key={activeSessionId ?? "blank"}
-          className={`dw-fade-in mx-auto w-full max-w-[var(--dw-content)] py-5 ${swapping ? "dw-no-enter" : ""}`}
+          className={`ly-fade-in mx-auto w-full max-w-[var(--ly-content)] py-5 ${swapping ? "ly-no-enter" : ""}`}
         >
           {/*
            * Runs of tool calls are gathered across messages, not just inside one.
@@ -229,7 +229,7 @@ export function Conversation() {
         <ApprovalOverlay />
         {!roomToFloat && (
           <div className={`${compact ? "px-4" : "px-8"} pb-1.5`}>
-            <div className="mx-auto w-full max-w-[var(--dw-content)]">
+            <div className="mx-auto w-full max-w-[var(--ly-content)]">
               <TaskList placement="inline" />
             </div>
           </div>
@@ -255,11 +255,11 @@ export function ConversationSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
-        className={`dw-defer-in min-h-0 flex-1 overflow-hidden ${compact ? "px-4" : "px-8"}`}
+        className={`ly-defer-in min-h-0 flex-1 overflow-hidden ${compact ? "px-4" : "px-8"}`}
         aria-busy
       >
-        <div className="mx-auto w-full max-w-[var(--dw-content)] py-5">
-          <div className="dw-pulse flex flex-col gap-3">
+        <div className="mx-auto w-full max-w-[var(--ly-content)] py-5">
+          <div className="ly-pulse flex flex-col gap-3">
             <div className="ml-auto h-[38px] w-[45%] rounded-[16px] rounded-br-[6px] bg-card" />
             {rows.map((width, index) => (
               <div

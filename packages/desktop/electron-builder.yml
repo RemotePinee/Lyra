@@ -2,8 +2,8 @@
 #
 # Without this file electron-builder falls back to defaults — an app named after the package, no
 # entitlements, and every workspace dependency copied in whether it is needed at runtime or not.
-appId: dev.deepwise.app
-productName: DeepWise
+appId: dev.lyra.app
+productName: Lyra
 copyright: Copyright © 2026 kittors
 
 directories:
@@ -24,6 +24,7 @@ asarUnpack:
 
 mac:
   category: public.app-category.developer-tools
+  icon: build/icon.icns
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -39,6 +40,7 @@ mac:
   identity: null
 
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch: [x64, arm64]
@@ -49,6 +51,7 @@ nsis:
   perMachine: false
 
 linux:
+  icon: build/icon.png
   category: Development
   target:
     - target: AppImage

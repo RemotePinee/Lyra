@@ -28,7 +28,7 @@ import {
 	type ProviderConfig,
 	type Settings,
 	type Tool,
-} from "@deepwise/core";
+} from "@lyra/core";
 
 /** Read, look, search. Nothing that writes, runs or reaches the network on its own. */
 const READ_ONLY: Tool[] = [readTool, lsTool, globTool, grepTool] as unknown as Tool[];
@@ -50,17 +50,17 @@ export async function runOnce(options: RunOptions): Promise<string> {
 	useToolRegistry({ all: () => READ_ONLY });
 
 	// Sessions are written somewhere; in CI that somewhere is thrown away with the runner.
-	const root = await mkdtemp(join(tmpdir(), "deepwise-ci-"));
+	const root = await mkdtemp(join(tmpdir(), "lyra-ci-"));
 
 	/*
 	 * A home of its own, so this run loads nothing it was not given.
 	 *
-	 * Capabilities are discovered from `$DEEPWISE_HOME/plugins` as well as the workspace, and a
+	 * Capabilities are discovered from `$LYRA_HOME/plugins` as well as the workspace, and a
 	 * plugin there can bring MCP servers with it — real processes, started on someone's laptop
 	 * during a local run of this command. What the agent may reach has to be a property of the
 	 * invocation, not of whoever's machine it happens to be running on.
 	 */
-	process.env.DEEPWISE_HOME = join(root, "home");
+	process.env.LYRA_HOME = join(root, "home");
 	const store = new SessionStore(join(root, "sessions"));
 	const answers: string[] = [];
 
@@ -104,16 +104,16 @@ function collect(event: AgentEvent, answers: string[], verbose: boolean): void {
  * endpoint would produce a review nobody could account for.
  */
 function settingsFromEnv(): Settings {
-	const baseUrl = need("DEEPWISE_BASE_URL");
-	const apiKey = need("DEEPWISE_API_KEY");
-	const modelId = process.env.DEEPWISE_MODEL ?? "deepseek-v4-flash";
+	const baseUrl = need("LYRA_BASE_URL");
+	const apiKey = need("LYRA_API_KEY");
+	const modelId = process.env.LYRA_MODEL ?? "deepseek-v4-flash";
 
 	const model: ModelConfig = {
 		id: `ci/${modelId}`,
 		providerId: "ci",
 		modelId,
 		name: modelId,
-		contextWindow: Number(process.env.DEEPWISE_CONTEXT ?? 128_000),
+		contextWindow: Number(process.env.LYRA_CONTEXT ?? 128_000),
 		maxOutputTokens: 8192,
 		supportsThinking: true,
 		supportsImages: false,
@@ -124,7 +124,7 @@ function settingsFromEnv(): Settings {
 		id: "ci",
 		name: "CI",
 		baseUrl,
-		api: (process.env.DEEPWISE_API_FORMAT as ProviderConfig["api"]) ?? "openai-responses",
+		api: (process.env.LYRA_API_FORMAT as ProviderConfig["api"]) ?? "openai-responses",
 		apiKey,
 		enabled: true,
 		models: [model],

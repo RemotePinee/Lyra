@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { AssistantMessage, Message } from "@deepwise/core";
+import type { AssistantMessage, Message } from "@lyra/core";
 
-import { emptyUsage } from "@deepwise/core";
+import { emptyUsage } from "@lyra/core";
 
 import { rebuildToolRuns, wasCutShort } from "../src/store/derive.ts";
 import { settleTail } from "../src/transcript.ts";

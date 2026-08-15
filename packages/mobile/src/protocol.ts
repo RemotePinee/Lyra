@@ -1,7 +1,7 @@
 /**
  * Wire types shared with the desktop sync server.
  *
- * Duplicated here rather than imported from @deepwise/core: Metro would have to bundle a
+ * Duplicated here rather than imported from @lyra/core: Metro would have to bundle a
  * package full of `node:` imports, and the mobile client only ever sees this JSON subset.
  */
 

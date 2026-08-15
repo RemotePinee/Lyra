@@ -38,14 +38,14 @@ export interface Token {
 
 /** One class per kind, defined in the stylesheet against the editor's own colours. */
 export const TOKEN_CLASS: Record<TokenKind, string> = {
-	command: "dw-tok-command",
-	flag: "dw-tok-flag",
-	string: "dw-tok-string",
-	number: "dw-tok-number",
-	operator: "dw-tok-operator",
-	variable: "dw-tok-variable",
-	key: "dw-tok-key",
-	comment: "dw-tok-comment",
+	command: "ly-tok-command",
+	flag: "ly-tok-flag",
+	string: "ly-tok-string",
+	number: "ly-tok-number",
+	operator: "ly-tok-operator",
+	variable: "ly-tok-variable",
+	key: "ly-tok-key",
+	comment: "ly-tok-comment",
 	plain: "",
 };
 

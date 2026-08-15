@@ -2,13 +2,13 @@
  * Everything the renderer may ask the main process to do.
  *
  * One interface, grouped by subject, and the only description of the boundary there is — the
- * preload builds `window.deepwise` against it and the handlers are registered against the same
+ * preload builds `window.lyra` against it and the handlers are registered against the same
  * channel names, so a call that is not written here does not exist.
  *
  * The values it passes are in `ipc-shapes`, re-exported below so a caller still imports one thing.
  */
 
-import type { TrajectoryEntry } from "@deepwise/core";
+import type { TrajectoryEntry } from "@lyra/core";
 import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
 
 import type {
@@ -23,7 +23,7 @@ import type {
 	Settings,
 	Skill,
 	UserContent,
-} from "@deepwise/core";
+} from "@lyra/core";
 
 import type {
 	AgentCapabilities,
@@ -41,7 +41,7 @@ import type {
 
 export * from "./ipc-shapes.ts";
 
-export interface DeepWiseApi {
+export interface LyraApi {
 	settings: {
 		get(): Promise<Settings>;
 		save(settings: Settings): Promise<Settings>;
@@ -244,6 +244,6 @@ export interface DeepWiseApi {
 
 declare global {
 	interface Window {
-		deepwise: DeepWiseApi;
+		lyra: LyraApi;
 	}
 }

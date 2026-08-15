@@ -7,7 +7,7 @@
  * projects they belong to.
  */
 
-import type { SessionMeta } from "@deepwise/core";
+import type { SessionMeta } from "@lyra/core";
 
 export interface Group {
 	path: string;

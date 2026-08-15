@@ -6,7 +6,7 @@
  * is created reads as broken — and the stored copy replaces it when the runtime confirms it.
  */
 
-import type { ApprovalDecision, Message, UserContent } from "@deepwise/core";
+import type { ApprovalDecision, Message, UserContent } from "@lyra/core";
 import { without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
@@ -44,7 +44,7 @@ export function turnSlice(set: Set, get: Get) {
     // first thing worth storing, so it is also the first thing that creates a session.
     if (!sessionId) {
       try {
-        const snapshot = await window.deepwise.sessions.create(
+        const snapshot = await window.lyra.sessions.create(
           workspace!.path,
           settings?.defaultModelId ?? "",
         );
@@ -61,7 +61,7 @@ export function turnSlice(set: Set, get: Get) {
           // title arrives with the refresh at `agent_end`.
           sessions: [snapshot.meta, ...get().sessions],
         });
-        void window.deepwise.sessions
+        void window.lyra.sessions
           .capabilities(sessionId)
           .then((capabilities) => {
             if (get().activeSessionId === sessionId) set({ capabilities });
@@ -85,7 +85,7 @@ export function turnSlice(set: Set, get: Get) {
       }
     }
 
-    await window.deepwise.agent.prompt(sessionId, content);
+    await window.lyra.agent.prompt(sessionId, content);
   },
 
   /**
@@ -131,19 +131,19 @@ export function turnSlice(set: Set, get: Get) {
       sessionCache: without(get().sessionCache, sessionId),
     });
 
-    await window.deepwise.agent.editMessage(sessionId, index, content);
+    await window.lyra.agent.editMessage(sessionId, index, content);
   },
 
   async abort() {
     const sessionId = get().activeSessionId;
-    if (sessionId) await window.deepwise.agent.abort(sessionId);
+    if (sessionId) await window.lyra.agent.abort(sessionId);
   },
 
   async respondToApproval(id: string, decision: ApprovalDecision) {
     const sessionId = get().activeSessionId;
     if (!sessionId) return;
     set({ approvals: get().approvals.filter((a) => a.id !== id) });
-    await window.deepwise.agent.approve(sessionId, id, decision);
+    await window.lyra.agent.approve(sessionId, id, decision);
   },
 
   /**
@@ -169,14 +169,14 @@ export function turnSlice(set: Set, get: Get) {
       return;
     }
     if (activeSessionId)
-      await window.deepwise.agent.setModel(activeSessionId, modelId);
+      await window.lyra.agent.setModel(activeSessionId, modelId);
     if (meta) set({ meta: { ...meta, modelId } });
     if (settings)
       await get().saveSettings({ ...settings, defaultModelId: modelId });
   },
 
   async refreshSync() {
-    set({ sync: await window.deepwise.sync.status() });
+    set({ sync: await window.lyra.sync.status() });
   },
   };
 }

@@ -12,7 +12,7 @@
 
 import { History, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { Source as TrajectorySourceKind } from "@deepwise/core/trajectory-view";
+import type { Source as TrajectorySourceKind } from "@lyra/core/trajectory-view";
 
 import { PanelEmpty } from "../PanelEmpty.tsx";
 import { Scroller } from "../Scroller.tsx";
@@ -53,7 +53,7 @@ export function TrajectoryPanel() {
 
 	async function fork(seq: number) {
 		if (!meta) return;
-		const result = await window.deepwise.sessions.fork(meta.projectId, meta.id, seq);
+		const result = await window.lyra.sessions.fork(meta.projectId, meta.id, seq);
 		if (!result) {
 			notify("分叉失败", "error");
 			return;
@@ -70,7 +70,7 @@ export function TrajectoryPanel() {
 					value={query}
 					onChange={(event) => setQuery(event.target.value)}
 					placeholder="搜索这条轨迹…"
-					className="dw-input min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-faint"
+					className="ly-input min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-faint"
 				/>
 				<Text size="caption" tone="faint" numeric className="shrink-0">
 					{entries.length}/{total}
@@ -118,7 +118,7 @@ export function TrajectoryPanel() {
 					<button
 						type="button"
 						onClick={() => setWindowSize((size) => size + WINDOW_STEP)}
-						className="dw-item mt-1 w-full rounded-md px-1.5 py-1.5 text-[11.5px] text-ink-faint"
+						className="ly-item mt-1 w-full rounded-md px-1.5 py-1.5 text-[11.5px] text-ink-faint"
 					>
 						还有 {hidden} 条，展开更多
 					</button>

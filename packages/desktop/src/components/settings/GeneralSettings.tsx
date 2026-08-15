@@ -1,4 +1,4 @@
-import type { PermissionMode } from "@deepwise/core";
+import type { PermissionMode } from "@lyra/core";
 import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
 import {
@@ -36,7 +36,7 @@ function useAppIcons(names: string[]): Record<string, string> {
     void Promise.all(
       names.map(
         async (name) =>
-          [name, await window.deepwise.system.appIcon(name)] as const,
+          [name, await window.lyra.system.appIcon(name)] as const,
       ),
     ).then((pairs) => {
       if (!live) return;
@@ -62,7 +62,7 @@ export function GeneralSettings() {
   const editorIcons = useAppIcons(EDITORS);
 
   useEffect(() => {
-    void window.deepwise.system.platform().then(setPlatform);
+    void window.lyra.system.platform().then(setPlatform);
   }, []);
 
   if (!settings) return null;
@@ -90,7 +90,7 @@ export function GeneralSettings() {
          */}
         <Row
           title="默认权限"
-          detail="DeepWise 始终可以读取和编辑当前工作区内的文件。需要时它会请求额外的访问权限。"
+          detail="Lyra 始终可以读取和编辑当前工作区内的文件。需要时它会请求额外的访问权限。"
           control={
             <span className="text-[12.5px] text-ink-faint">始终开启</span>
           }
@@ -107,7 +107,7 @@ export function GeneralSettings() {
         />
         <Row
           title="完整访问权限"
-          detail="开启后 DeepWise 无需批准即可修改文件、执行命令并访问网络。这会显著提高数据丢失或意外行为的风险。"
+          detail="开启后 Lyra 无需批准即可修改文件、执行命令并访问网络。这会显著提高数据丢失或意外行为的风险。"
           control={
             <Toggle
               checked={mode === "full"}

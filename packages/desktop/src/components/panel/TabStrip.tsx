@@ -135,7 +135,7 @@ export function TabStrip({
 			{tabs.length > 0 && (
 				<button
 					type="button"
-					data-dw-tip="新建"
+					data-ly-tip="新建"
 					aria-label="新建面板内容"
 					aria-haspopup="menu"
 					aria-expanded={adderOpen}
@@ -183,7 +183,7 @@ function Tab({
 			<button
 				type="button"
 				onClick={onOpen}
-				data-dw-tip={def.label}
+				data-ly-tip={def.label}
 				style={{ borderRadius: TAB_RADIUS }}
 				className={`flex h-full min-w-0 items-center gap-1.5 pl-2 text-[12px] ${
 					active ? "pr-1 text-ink" : "pr-2 text-ink-muted"
@@ -200,7 +200,7 @@ function Tab({
 			{active && (
 				<button
 					type="button"
-					data-dw-tip={`关闭${def.label}`}
+					data-ly-tip={`关闭${def.label}`}
 					aria-label={`关闭${def.label}`}
 					onClick={onClose}
 					className="mr-1 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded text-ink-faint transition-colors duration-150 hover:bg-elevated hover:text-ink"

@@ -68,13 +68,13 @@ export function SideChat() {
 					 * somewhere around 90 characters, and the panel is over twice that when it
 					 * takes the whole column.
 					 */}
-					<div className="mx-auto w-full max-w-[var(--dw-content)] py-3">
+					<div className="mx-auto w-full max-w-[var(--ly-content)] py-3">
 						{messages.map((message, index) => (
 							<MessageRow key={rowKey(message, index)} message={message} />
 						))}
 						{running && lastIsSettled(messages) && (
 							<div className="flex items-center gap-2 py-1 text-[12px] text-ink-faint">
-								<CircleDashed size={13} strokeWidth={1.8} className="dw-spin" />
+								<CircleDashed size={13} strokeWidth={1.8} className="ly-spin" />
 								思考中…
 							</div>
 						)}

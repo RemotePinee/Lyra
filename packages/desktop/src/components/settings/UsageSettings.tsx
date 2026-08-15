@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ScrollText } from "../ScrollText.tsx";
-import type { SessionMeta } from "@deepwise/core";
+import type { SessionMeta } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { Card, EmptyHint, SectionTitle } from "./controls.tsx";
 
@@ -9,7 +9,7 @@ export function UsageSettings() {
   const [sessions, setSessions] = useState<SessionMeta[]>(sessionsFromStore);
 
   useEffect(() => {
-    void window.deepwise.sessions.list().then(setSessions);
+    void window.lyra.sessions.list().then(setSessions);
   }, []);
 
   const totals = sessions.reduce(

@@ -1,4 +1,4 @@
-import type { DiffHunk, ToolResult } from "@deepwise/core";
+import type { DiffHunk, ToolResult } from "@lyra/core";
 import { Scroller } from "./Scroller.tsx";
 import {
 	ChevronRight,
@@ -63,19 +63,19 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 
 	return (
 		<div
-			className={`dw-enter mb-2 overflow-hidden rounded-[10px] border transition-colors duration-200 ${
-				running ? "dw-rail border-info/30 bg-card/60" : "border-line-soft bg-card/45"
+			className={`ly-enter mb-2 overflow-hidden rounded-[10px] border transition-colors duration-200 ${
+				running ? "ly-rail border-info/30 bg-card/60" : "border-line-soft bg-card/45"
 			}`}
 		>
 			<button
 				type="button"
 				onClick={() => setOpen((v) => !v)}
-				className="dw-scroll flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors duration-150 hover:bg-card-hover/50"
+				className="ly-scroll flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors duration-150 hover:bg-card-hover/50"
 			>
 				<Icon
 					size={14}
 					strokeWidth={1.8}
-					className={`shrink-0 transition-colors duration-200 ${running ? "dw-pulse text-info" : "text-ink-faint"}`}
+					className={`shrink-0 transition-colors duration-200 ${running ? "ly-pulse text-info" : "text-ink-faint"}`}
 				/>
 				<span
 					className={`min-w-0 flex-1 truncate text-[12.5px] transition-colors duration-200 ${
@@ -88,14 +88,14 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				{running && (
 					<span className="flex shrink-0 items-center gap-1.5 text-[11px] text-info/80">
 						{elapsed > 0 && <span className="tabular-nums">{elapsed}s</span>}
-						<Loader2 size={12} strokeWidth={2.2} className="dw-spin" />
+						<Loader2 size={12} strokeWidth={2.2} className="ly-spin" />
 					</span>
 				)}
-				{status === "done" && <CircleCheck size={13} strokeWidth={1.9} className="dw-pop shrink-0 text-ok/75" />}
-				{status === "error" && <CircleX size={13} strokeWidth={1.9} className="dw-pop shrink-0 text-danger/85" />}
+				{status === "done" && <CircleCheck size={13} strokeWidth={1.9} className="ly-pop shrink-0 text-ok/75" />}
+				{status === "error" && <CircleX size={13} strokeWidth={1.9} className="ly-pop shrink-0 text-danger/85" />}
 
 				{hasDiff && (
-					<span className="dw-pop shrink-0 font-mono text-[11px]">
+					<span className="ly-pop shrink-0 font-mono text-[11px]">
 						<span className="text-ok">+{String(details?.added ?? 0)}</span>{" "}
 						<span className="text-danger">-{String(details?.removed ?? 0)}</span>
 					</span>
@@ -110,7 +110,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 			</button>
 
 			{open && (
-				<div className="dw-enter border-t border-line-soft">
+				<div className="ly-enter border-t border-line-soft">
 					{hasDiff ? (
 						<DiffView hunks={details?.hunks as DiffHunk[]} path={String(details?.path ?? "")} />
 					) : (

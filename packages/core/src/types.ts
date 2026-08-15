@@ -1,5 +1,5 @@
 /**
- * DeepWise core type model.
+ * Lyra core type model.
  *
  * Split by what the types are about — a message, a tool, a provider — and re-exported here so the
  * hundred imports of `../types.ts` across the codebase keep meaning what they meant. The three

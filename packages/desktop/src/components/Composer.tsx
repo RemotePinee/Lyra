@@ -1,4 +1,4 @@
-import type { UserContent } from "@deepwise/core";
+import type { UserContent } from "@lyra/core";
 import { CircleAlert, Folder, GitBranch, Plus, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
@@ -92,7 +92,7 @@ export function Composer() {
 
 	return (
 		<div className={`shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
-			<div className="mx-auto w-full max-w-[var(--dw-content)]">
+			<div className="mx-auto w-full max-w-[var(--ly-content)]">
 				{/*
 				 * Where the turn will run, and what it has already changed.
 				 *
@@ -157,7 +157,7 @@ export function Composer() {
 						<>
 							<button
 								type="button"
-								data-dw-tip="添加图片"
+								data-ly-tip="添加图片"
 								aria-label="添加图片"
 								onClick={() => fileRef.current?.click()}
 								className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
@@ -179,8 +179,8 @@ export function Composer() {
 							<button
 								type="button"
 								/* The app's own tooltip, so the icon-only form still says what it is. */
-								data-dw-tip={PERMISSION_LABEL[permissionMode]}
-								data-dw-tip-side="top"
+								data-ly-tip={PERMISSION_LABEL[permissionMode]}
+								data-ly-tip-side="top"
 								aria-label={PERMISSION_LABEL[permissionMode]}
 								onClick={permissionMenu.toggle}
 								aria-haspopup="menu"
@@ -222,7 +222,7 @@ export function Composer() {
 								// A label, not a disabled button: nothing here is going to become
 								// clickable, so it should not look like something that might.
 								<span
-									data-dw-tip={`${modelName ?? "模型"} · 对话开始后不能更换，新建对话可选`}
+									data-ly-tip={`${modelName ?? "模型"} · 对话开始后不能更换，新建对话可选`}
 									className="h-7 min-w-0 truncate px-2 text-[12.5px] leading-7 text-ink-faint"
 								>
 									{modelName ?? "未配置模型"}
@@ -231,7 +231,7 @@ export function Composer() {
 								<button
 									type="button"
 									onClick={modelMenu.toggle}
-									data-dw-tip={modelName ?? "选择模型"}
+									data-ly-tip={modelName ?? "选择模型"}
 									aria-haspopup="menu"
 									aria-expanded={modelMenu.open}
 									className={`h-7 min-w-0 truncate rounded-md px-2 text-[12.5px] transition-colors ${
@@ -246,7 +246,7 @@ export function Composer() {
 								onClick={effortMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
-								data-dw-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium")}`}
+								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium")}`}
 								className={`mr-1.5 h-7 shrink-0 rounded-md px-2 text-[12.5px] transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
@@ -288,11 +288,11 @@ function Chip({
 	return (
 		<button
 			type="button"
-			data-dw-tip={label}
+			data-ly-tip={label}
 			aria-haspopup="menu"
 			aria-expanded={active}
 			onClick={onClick}
-			className={`dw-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] transition-colors duration-150 ${
+			className={`ly-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] transition-colors duration-150 ${
 				active ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
 			}`}
 		>

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { SessionStore } from "../src/session/store.ts";
 
 test("archiving does not reorder the list", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-arch-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-arch-"));
 	try {
 		const store = new SessionStore(root);
 		const older = await store.create("/tmp/a", "m");
@@ -29,7 +29,7 @@ test("archiving does not reorder the list", async () => {
 });
 
 test("archive state survives a reload from the log", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-arch-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-arch-"));
 	try {
 		const store = new SessionStore(root);
 		const meta = await store.create("/tmp/a", "m");
@@ -48,7 +48,7 @@ test("archive state survives a reload from the log", async () => {
 });
 
 test("deleteMany empties the archive in one index rewrite", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-arch-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-arch-"));
 	try {
 		const store = new SessionStore(root);
 		const a = await store.create("/tmp/a", "m");
@@ -68,7 +68,7 @@ test("deleteMany empties the archive in one index rewrite", async () => {
 });
 
 test("setArchived on an unknown session returns null rather than throwing", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-arch-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-arch-"));
 	try {
 		const store = new SessionStore(root);
 		await store.create("/tmp/a", "m");
@@ -79,7 +79,7 @@ test("setArchived on an unknown session returns null rather than throwing", asyn
 });
 
 test("pruneEmpty drops unused sessions but spares recent and used ones", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-prune-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-prune-"));
 	try {
 		const store = new SessionStore(root);
 		const used = await store.create("/tmp/a", "m");
@@ -104,7 +104,7 @@ test("pruneEmpty drops unused sessions but spares recent and used ones", async (
 });
 
 test("truncateFrom drops a message and everything after it", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-trunc-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-trunc-"));
 	try {
 		const store = new SessionStore(root);
 		let meta = await store.create("/tmp/a", "m");
@@ -159,7 +159,7 @@ test("truncateFrom drops a message and everything after it", async () => {
 });
 
 test("truncateFrom refuses an index that is not there", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-trunc-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-trunc-"));
 	try {
 		const store = new SessionStore(root);
 		const meta = await store.create("/tmp/a", "m");

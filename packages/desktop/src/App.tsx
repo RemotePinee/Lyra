@@ -105,12 +105,12 @@ function ChatShell() {
 	});
 
 	return (
-		<div className="dw-shell relative flex h-full overflow-hidden">
+		<div className="ly-shell relative flex h-full overflow-hidden">
 			<NavPane width={sidebarWidth} label="侧边栏">
 				<Sidebar />
 			</NavPane>
 
-			<main className="dw-opaque relative flex min-w-0 flex-1 flex-col">
+			<main className="ly-opaque relative flex min-w-0 flex-1 flex-col">
 				{/* Space for the window toolbar, which is rendered last so its no-drag holes stick. */}
 				<div className="h-[44px] shrink-0" />
 

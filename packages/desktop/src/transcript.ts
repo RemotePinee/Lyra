@@ -5,7 +5,7 @@
  * would make the pair circular.
  */
 
-import type { AgentEvent, AssistantMessage, Message } from "@deepwise/core";
+import type { AgentEvent, AssistantMessage, Message } from "@lyra/core";
 
 /**
  * Close out a reply the stream never finished.

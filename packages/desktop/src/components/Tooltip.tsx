@@ -20,5 +20,5 @@ export function Tooltip({
 	children: React.ReactElement;
 	side?: "top" | "bottom";
 }) {
-	return cloneElement(children, { "data-dw-tip": label, "data-dw-tip-side": side } as Record<string, string>);
+	return cloneElement(children, { "data-ly-tip": label, "data-ly-tip-side": side } as Record<string, string>);
 }

@@ -37,9 +37,14 @@ export function EmptyState() {
 						}`}
 					>
 						要在{" "}
-						<span className="underline decoration-ink-faint decoration-dotted underline-offset-[6px]">
-							{workspace?.name ?? "未选择项目"}
-						</span>{" "}
+						{/*
+						 * The project name carries itself.
+						 *
+						 * It used to be underlined with a dotted rule, which is the convention for
+						 * "there is a definition behind this" — and there is not. A heading that
+						 * hints at an interaction it does not have is worse than a plain one.
+						 */}
+						<span className="text-ink">{workspace?.name ?? "未选择项目"}</span>{" "}
 						内开发什么？
 					</h1>
 
@@ -53,7 +58,7 @@ export function EmptyState() {
 					 * 4×120px they go two by two, which keeps 2×2 symmetry for the four of them.
 					 */}
 					<div
-						className={`@container w-full max-w-[var(--dw-content)] shrink-0 ${compact ? "mt-6" : "mt-9"}`}
+						className={`@container w-full max-w-[var(--ly-content)] shrink-0 ${compact ? "mt-6" : "mt-9"}`}
 					>
 						<div className="grid grid-cols-4 gap-2.5 @max-[510px]:grid-cols-2">
 							{CARDS.map((card) => (

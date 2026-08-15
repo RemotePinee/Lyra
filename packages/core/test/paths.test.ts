@@ -5,10 +5,10 @@ import { test } from "node:test";
 import { scratchHome } from "../src/runtime/previews.ts";
 import { resolveWorkspacePath } from "../src/tools/paths.ts";
 
-const HOME = join(tmpdir(), "dw-paths-home");
-process.env.DEEPWISE_HOME = HOME;
+const HOME = join(tmpdir(), "ly-paths-home");
+process.env.LYRA_HOME = HOME;
 
-const CWD = join(tmpdir(), "dw-paths-project");
+const CWD = join(tmpdir(), "ly-paths-project");
 
 test("paths inside the workspace resolve, relative or absolute", () => {
 	assert.equal(resolveWorkspacePath(CWD, "src/index.ts"), join(CWD, "src/index.ts"));

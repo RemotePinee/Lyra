@@ -19,7 +19,7 @@ export function PullRequestsView() {
 		if (!workspace) return;
 		setLoading(true);
 		try {
-			const result = await window.deepwise.git.pullRequests(workspace.path);
+			const result = await window.lyra.git.pullRequests(workspace.path);
 			setItems(result.pullRequests);
 			setError(result.error ?? null);
 		} finally {
@@ -43,11 +43,11 @@ export function PullRequestsView() {
 					</div>
 					<button
 						type="button"
-						data-dw-tip="刷新"
+						data-ly-tip="刷新"
 						onClick={() => void refresh()}
 						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 					>
-						<RefreshCw size={14} strokeWidth={1.8} className={loading ? "dw-spin" : undefined} />
+						<RefreshCw size={14} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
 					</button>
 				</header>
 
@@ -63,7 +63,7 @@ export function PullRequestsView() {
 
 				<div className="space-y-2">
 					{items.map((pr) => (
-						<div key={pr.number} className="dw-scroll dw-enter rounded-[10px] border border-line bg-card/40 px-4 py-3">
+						<div key={pr.number} className="ly-scroll ly-enter rounded-[10px] border border-line bg-card/40 px-4 py-3">
 							<div className="flex items-center gap-2">
 								<GitPullRequest
 									size={14}
@@ -74,8 +74,8 @@ export function PullRequestsView() {
 								<span className="shrink-0 font-mono text-[11.5px] text-ink-faint">#{pr.number}</span>
 								<button
 									type="button"
-									data-dw-tip="在浏览器中打开"
-									onClick={() => void window.deepwise.system.openExternal(pr.url)}
+									data-ly-tip="在浏览器中打开"
+									onClick={() => void window.lyra.system.openExternal(pr.url)}
 									className="shrink-0 text-ink-faint transition-colors hover:text-ink"
 								>
 									<ExternalLink size={13} strokeWidth={1.8} />

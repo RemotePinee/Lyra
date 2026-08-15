@@ -5,13 +5,13 @@ import type {
   Settings,
   ToolResult,
   UserContent,
-} from "@deepwise/core";
-import { type SessionActivity } from "@deepwise/core/activity";
+} from "@lyra/core";
+import { type SessionActivity } from "@lyra/core/activity";
 import { applyAgentEvent } from "./store/apply-event.ts";
 import { sessionSlice } from "./store/session-slice.ts";
 import { turnSlice } from "./store/turn-slice.ts";
 import { workspaceSlice } from "./store/workspace-slice.ts";
-import type { TodoItem } from "@deepwise/core";
+import type { TodoItem } from "@lyra/core";
 import { create } from "zustand";
 import type {
   AgentCapabilities,
@@ -220,23 +220,23 @@ export const useApp = create<AppState>((set, get) => ({
     booted = true;
 
     const [settings, sessions] = await Promise.all([
-      window.deepwise.settings.get(),
-      window.deepwise.sessions.list(),
+      window.lyra.settings.get(),
+      window.lyra.sessions.list(),
     ]);
     const lastProject = settings.projects
       .slice()
       .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0];
     const workspace = lastProject
-      ? await window.deepwise.workspace.info(lastProject.path)
+      ? await window.lyra.workspace.info(lastProject.path)
       : null;
     set({ settings, sessions, workspace, ready: true });
 
-    window.deepwise.agent.onEvent(({ sessionId, event }) =>
+    window.lyra.agent.onEvent(({ sessionId, event }) =>
       get().applyEvent(sessionId, event),
     );
     // The side chat is a separate conversation on a separate channel, for the same reason
     // it is a separate store: its replies must never land in the main transcript.
-    window.deepwise.sideChat.onEvent(({ sessionId, event }) =>
+    window.lyra.sideChat.onEvent(({ sessionId, event }) =>
       useSide.getState().applyEvent(sessionId, event),
     );
     void get().refreshSync();
@@ -246,7 +246,7 @@ export const useApp = create<AppState>((set, get) => ({
   setSettingsSection: (settingsSection) => set({ settingsSection }),
 
   async saveSettings(settings) {
-    const saved = await window.deepwise.settings.save(settings);
+    const saved = await window.lyra.settings.save(settings);
     set({ settings: saved });
   },
 

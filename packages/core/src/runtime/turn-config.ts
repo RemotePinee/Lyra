@@ -23,7 +23,7 @@ import type {
 	ThinkingLevel,
 	Tool,
 } from "../types.ts";
-import { deepwiseHome } from "../session/store.ts";
+import { lyraHome } from "../session/store.ts";
 import { compactWith } from "./compaction.ts";
 import { writePreview } from "./previews.ts";
 import { runSubAgent } from "./sub-agent.ts";
@@ -77,7 +77,7 @@ export function buildTurnConfig(
 			 * so it can be thrown away with the conversation that produced it.
 			 */
 			writePreview: (input) =>
-				writePreview(deepwiseHome(), { ...input, sessionId: deps.sessionId }),
+				writePreview(lyraHome(), { ...input, sessionId: deps.sessionId }),
 			requestApproval: (request) => deps.requestApproval(request),
 			spawnSubAgent: (input) =>
 				runSubAgent(

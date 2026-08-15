@@ -84,15 +84,15 @@ export function FileDiffList({
              * than stacking up. The opaque fill is what makes that work: a transparent
              * sticky row has the diff scrolling through it.
              *
-             * The fill is on `dw-pin`, which is square, rather than on the rounded row
+             * The fill is on `ly-pin`, which is square, rather than on the rounded row
              * inside it: a radius over a scrolling diff shows the row tints through its
              * corners, which is a red notch travelling up the header as you scroll.
              */}
-            <div className="dw-pin sticky top-0 z-10">
+            <div className="ly-pin sticky top-0 z-10">
               <div className="flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-card-hover">
                 <button
                   type="button"
-                  data-dw-tip={file.path}
+                  data-ly-tip={file.path}
                   onClick={() => toggle(file.path)}
                   aria-expanded={expanded}
                   className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-1 text-left"
@@ -145,7 +145,7 @@ export function FileDiffList({
              * opaque strip, so the border was separating two things already legible apart.
              */}
             {expanded && (
-              <div className="dw-enter mt-0.5 mb-1.5 border-y border-line-soft">
+              <div className="ly-enter mt-0.5 mb-1.5 border-y border-line-soft">
                 {isDirectory(file.path) ? (
                   <Text
                     as="p"

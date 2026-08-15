@@ -7,7 +7,7 @@
  */
 
 import { Check } from "lucide-react";
-import type { TodoItem } from "@deepwise/core";
+import type { TodoItem } from "@lyra/core";
 
 export /**
  * Three states, three marks, all on the same 13px grid so the column of them stays a column.
@@ -42,7 +42,7 @@ function Mark({ status, paused, failed }: { status: TodoItem["status"]; paused?:
 	}
 	if (status === "in_progress") {
 		return (
-			<svg width={13} height={13} viewBox="0 0 24 24" aria-hidden className="dw-spin dw-breathe shrink-0">
+			<svg width={13} height={13} viewBox="0 0 24 24" aria-hidden className="ly-spin ly-breathe shrink-0">
 				<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3.4" className="text-line" />
 				<circle
 					cx="12"

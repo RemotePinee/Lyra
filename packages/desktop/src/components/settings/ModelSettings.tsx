@@ -6,7 +6,7 @@
  * and what a provider looks like is in `ProviderEditor`. Three files, three questions.
  */
 
-import type { ModelConfig } from "@deepwise/core";
+import type { ModelConfig } from "@lyra/core";
 import { Box, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Scroller } from "../Scroller.tsx";
@@ -36,7 +36,7 @@ export function ModelSettings() {
         </div>
         <button
           type="button"
-          data-dw-tip="测试当前供应商连接"
+          data-ly-tip="测试当前供应商连接"
           aria-label="测试当前供应商连接"
           onClick={() => void p.test()}
           className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
@@ -44,7 +44,7 @@ export function ModelSettings() {
           <RefreshCw
             size={16}
             strokeWidth={1.8}
-            className={p.testing ? "dw-pulse" : undefined}
+            className={p.testing ? "ly-pulse" : undefined}
           />
         </button>
       </header>

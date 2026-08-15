@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { networkInterfaces } from "node:os";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { AgentEvent, AgentSession, SessionStorage, Settings, UserContent } from "@deepwise/core";
+import type { AgentEvent, AgentSession, SessionStorage, Settings, UserContent } from "@lyra/core";
 import type { SyncStatus } from "./ipc-types.ts";
 
 export interface SyncServerDeps {
@@ -109,7 +109,7 @@ export class SyncServer {
 			clients: this.clients.size,
 			pairingUrl:
 				this.running && this.token && addresses[0]
-					? `deepwise://pair?host=${addresses[0]}&port=${this.port}&token=${this.token}`
+					? `lyra://pair?host=${addresses[0]}&port=${this.port}&token=${this.token}`
 					: null,
 		};
 	}
@@ -135,9 +135,9 @@ export class SyncServer {
 			return;
 		}
 
-		// Unauthenticated: lets the phone confirm it found a DeepWise host before pairing.
+		// Unauthenticated: lets the phone confirm it found a Lyra host before pairing.
 		if (url.pathname === "/api/ping") {
-			send(200, { app: "deepwise", version: 1, requiresToken: true });
+			send(200, { app: "lyra", version: 1, requiresToken: true });
 			return;
 		}
 

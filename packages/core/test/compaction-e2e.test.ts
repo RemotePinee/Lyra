@@ -63,7 +63,7 @@ function reply(text: string): AssistantMessage {
 }
 
 test("a session that overflows its window compacts, and says so", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-compact-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-compact-"));
 	const events: AgentEvent[] = [];
 	/** What the provider was asked to answer, per call. */
 	const seen: Message[][] = [];

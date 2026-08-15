@@ -8,7 +8,7 @@
  */
 
 import {
-	deepwiseHome,
+	lyraHome,
 	forkSession,
 	readTrajectory,
 	removeSessionArtifacts,
@@ -18,7 +18,7 @@ import {
 	type SessionStorage,
 	type Settings,
 	type UserContent,
-} from "@deepwise/core";
+} from "@lyra/core";
 import { ipcMain } from "electron";
 import type { AgentCapabilities } from "../ipc-types.ts";
 import {
@@ -124,7 +124,7 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	ipcMain.handle("sessions:remove", async (_event, projectId: string, sessionId: string) => {
 		await disposeSession(sessionId);
 		await store.delete(projectId, sessionId);
-		await removeSessionArtifacts(deepwiseHome(), sessionId);
+		await removeSessionArtifacts(lyraHome(), sessionId);
 	});
 
 	ipcMain.handle(
@@ -141,7 +141,7 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 		const archived = (await store.listSessions()).filter((s) => s.archived);
 		await Promise.all(archived.map((s) => disposeSession(s.id)));
 		await store.deleteMany(archived.map((s) => ({ projectId: s.projectId, id: s.id })));
-		await Promise.all(archived.map((s) => removeSessionArtifacts(deepwiseHome(), s.id)));
+		await Promise.all(archived.map((s) => removeSessionArtifacts(lyraHome(), s.id)));
 		return store.listSessions();
 	});
 

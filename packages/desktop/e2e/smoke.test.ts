@@ -30,7 +30,7 @@ const output: string[] = [];
 
 before(async () => {
 	// A profile of its own: this must not read, or write to, whatever is on the machine already.
-	home = await mkdtemp(join(tmpdir(), "deepwise-e2e-"));
+	home = await mkdtemp(join(tmpdir(), "lyra-e2e-"));
 
 	/*
 	 * Its own process group.
@@ -41,7 +41,7 @@ before(async () => {
 	 */
 	app = spawn("pnpm", ["exec", "electron-vite", "preview", "--", `--remote-debugging-port=${PORT}`], {
 		cwd: ROOT,
-		env: { ...process.env, DEEPWISE_HOME: home, ELECTRON_ENABLE_LOGGING: "1" },
+		env: { ...process.env, LYRA_HOME: home, ELECTRON_ENABLE_LOGGING: "1" },
 		stdio: "pipe",
 		detached: true,
 	});
@@ -70,20 +70,20 @@ after(async () => {
 
 test("the window opens and paints the shell", async () => {
 	const shape = await evaluate<{ shell: boolean; sidebar: boolean; title: string }>(`({
-		shell: Boolean(document.querySelector(".dw-shell")),
-		sidebar: Boolean(document.querySelector(".dw-sidebar-fill")),
+		shell: Boolean(document.querySelector(".ly-shell")),
+		sidebar: Boolean(document.querySelector(".ly-sidebar-fill")),
 		title: document.title,
 	})`);
 
 	assert.equal(shape.shell, true, "the app shell rendered");
 	assert.equal(shape.sidebar, true, "so did the navigation pane");
-	assert.equal(shape.title, "DeepWise");
+	assert.equal(shape.title, "Lyra");
 });
 
 test("the preload exposed the API the renderer is written against", async () => {
-	const api = await evaluate<string[]>(`Object.keys(window.deepwise ?? {}).sort()`);
+	const api = await evaluate<string[]>(`Object.keys(window.lyra ?? {}).sort()`);
 	for (const area of ["agent", "files", "sessions", "settings", "workspace"]) {
-		assert.ok(api.includes(area), `window.deepwise.${area} is missing`);
+		assert.ok(api.includes(area), `window.lyra.${area} is missing`);
 	}
 });
 
@@ -145,7 +145,7 @@ async function waitForShell(): Promise<void> {
 	let last = "";
 	while (Date.now() < deadline) {
 		const state = await evaluate<{ shell: boolean; body: string }>(
-			`({ shell: Boolean(document.querySelector(".dw-shell")), body: document.body.innerText.slice(0, 120) })`,
+			`({ shell: Boolean(document.querySelector(".ly-shell")), body: document.body.innerText.slice(0, 120) })`,
 		).catch(() => null);
 		if (state?.shell) return;
 		last = state?.body ?? "(no answer from the renderer)";

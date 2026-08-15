@@ -171,7 +171,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 	 * platform and for the ordinary windowed case.
 	 */
 	const [nativeFullScreen, setNativeFullScreen] = useState(false);
-	useEffect(() => window.deepwise?.onFullScreenChange?.(setNativeFullScreen), []);
+	useEffect(() => window.lyra?.onFullScreenChange?.(setNativeFullScreen), []);
 
 	// Crossing the breakpoint in either direction dismisses the drawer; it is a transient
 	// overlay, and carrying it across a reflow leaves it stranded over the wrong layout.

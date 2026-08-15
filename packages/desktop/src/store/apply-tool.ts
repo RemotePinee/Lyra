@@ -7,7 +7,7 @@
  * that they are a different clock.
  */
 
-import type { AgentEvent, TodoItem } from "@deepwise/core";
+import type { AgentEvent, TodoItem } from "@lyra/core";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;

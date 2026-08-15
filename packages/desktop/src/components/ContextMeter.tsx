@@ -1,12 +1,12 @@
 /*
  * The subpath, not the package root.
  *
- * `@deepwise/core` is the kernel's entry point and pulls in the bash tool, the settings loader
+ * `@lyra/core` is the kernel's entry point and pulls in the bash tool, the settings loader
  * and the plugin host with it — all of which reach for `process`, which the renderer does not
  * have. Importing the root here took the whole window white on load.
  */
-import { estimateTokens } from "@deepwise/core/tokens";
-import type { Message, Settings } from "@deepwise/core";
+import { estimateTokens } from "@lyra/core/tokens";
+import type { Message, Settings } from "@lyra/core";
 import { useEffect, useState } from "react";
 
 import type { ContextBreakdown, ContextSegmentKey } from "../../electron/ipc-types.ts";
@@ -50,7 +50,7 @@ export function ContextMeter({
 	useEffect(() => {
 		if (!open || !sessionId) return;
 		let cancelled = false;
-		void window.deepwise.sessions.contextBreakdown(sessionId).then((result) => {
+		void window.lyra.sessions.contextBreakdown(sessionId).then((result) => {
 			if (!cancelled) setDetail(result);
 		});
 		return () => {
@@ -83,7 +83,7 @@ export function ContextMeter({
 		<>
 			<button
 				type="button"
-				data-dw-tip={`上下文占用 ${percent}%`}
+				data-ly-tip={`上下文占用 ${percent}%`}
 				aria-label={`上下文占用 ${percent}%`}
 				aria-haspopup="dialog"
 				aria-expanded={open}
@@ -96,7 +96,7 @@ export function ContextMeter({
 				 * for, the proportion, impossible to see. Brightening the mark itself says the
 				 * same "this is a control" without erasing what it shows.
 				 */
-				className={`dw-ring-button flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-opacity ${
+				className={`ly-ring-button flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-opacity ${
 					open ? "opacity-100" : "opacity-80 hover:opacity-100"
 				}`}
 			>
@@ -142,7 +142,7 @@ export function ContextMeter({
 							// One row per segment we are about to show, so opening does not jump.
 							<div className="mt-2.5 flex flex-col gap-[3px]">
 								{[0, 1, 2, 3].map((i) => (
-									<div key={i} className="dw-pulse h-[17px] rounded bg-card" />
+									<div key={i} className="ly-pulse h-[17px] rounded bg-card" />
 								))}
 							</div>
 						)}

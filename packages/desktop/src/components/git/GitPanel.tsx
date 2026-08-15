@@ -78,9 +78,9 @@ export function GitPanel() {
     let cancelled = false;
     setScanning(true);
     void (async () => {
-      const found = await window.deepwise.git.repos(workspacePath);
+      const found = await window.lyra.git.repos(workspacePath);
       const lists = await Promise.all(
-        found.map(async (repo) => [repo.path, await window.deepwise.git.worktrees(repo.path)] as const),
+        found.map(async (repo) => [repo.path, await window.lyra.git.worktrees(repo.path)] as const),
       );
       if (cancelled) return;
 
@@ -118,7 +118,7 @@ export function GitPanel() {
 
   const refresh = useCallback(async () => {
     if (!cwd) return setStatus(null);
-    setStatus(await window.deepwise.git.status(cwd));
+    setStatus(await window.lyra.git.status(cwd));
   }, [cwd]);
 
   // Re-read when a turn ends: the agent's edits are the changes this panel is here to show.
@@ -159,7 +159,7 @@ export function GitPanel() {
           type="button"
           disabled={busy}
           onClick={() => {
-            void act(() => window.deepwise.git.init(workspace.path)).then((ok) => {
+            void act(() => window.lyra.git.init(workspace.path)).then((ok) => {
               // Re-scan rather than assume: the new repository has to come back through the
               // same path as any other, or the panel would be showing something it invented.
               if (ok) setRescan((n) => n + 1);
@@ -219,14 +219,14 @@ export function GitPanel() {
           label="拉取（--ff-only）"
           size="sm"
           disabled={busy}
-          onClick={() => void act(() => window.deepwise.git.pull(cwd))}
+          onClick={() => void act(() => window.lyra.git.pull(cwd))}
         />
         <IconButton
           icon={<ArrowUpFromLine size={12} strokeWidth={1.9} />}
           label="推送"
           size="sm"
           disabled={busy}
-          onClick={() => void act(() => window.deepwise.git.push(cwd))}
+          onClick={() => void act(() => window.lyra.git.push(cwd))}
         />
         <IconButton
           icon={<RefreshCw size={12} strokeWidth={1.9} />}

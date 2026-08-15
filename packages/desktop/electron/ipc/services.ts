@@ -6,7 +6,7 @@
  * or not anything is running.
  */
 
-import { buildIndex, indexStats, loadIndex, saveIndex, searchIndex } from "@deepwise/core";
+import { buildIndex, indexStats, loadIndex, saveIndex, searchIndex } from "@lyra/core";
 import { ipcMain } from "electron";
 import type { ProviderTestResult, SyncStatus } from "../ipc-types.ts";
 import { applySettings, settings } from "../app-settings.ts";

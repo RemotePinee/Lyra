@@ -7,7 +7,7 @@
  * and invite exactly the bug that makes a side-chat reply appear in the main thread.
  */
 
-import type { AgentEvent, Message, QueuedTask, UserContent } from "@deepwise/core";
+import type { AgentEvent, Message, QueuedTask, UserContent } from "@lyra/core";
 import { create } from "zustand";
 import { summarizeToolCall } from "./toolSummary.ts";
 import type { ToolRun } from "./store.ts";
@@ -169,8 +169,8 @@ export const useSide = create<SideState>((set, get) => ({
 		if (!sessionId) return;
 
 		const [state, tasks] = await Promise.all([
-			window.deepwise.sideChat.state(sessionId),
-			window.deepwise.tasks.list(sessionId),
+			window.lyra.sideChat.state(sessionId),
+			window.lyra.tasks.list(sessionId),
 		]);
 		// A second switch while this was in flight wins.
 		if (get().sessionId !== sessionId) return;
@@ -195,19 +195,19 @@ export const useSide = create<SideState>((set, get) => ({
 		 */
 		const pending: Message = { role: "user", content, timestamp: Date.now() };
 		set({ messages: [...get().messages, pending], pending, running: true });
-		await window.deepwise.sideChat.ask(sessionId, content);
+		await window.lyra.sideChat.ask(sessionId, content);
 	},
 
 	async abort() {
 		const sessionId = get().sessionId;
-		if (sessionId) await window.deepwise.sideChat.abort(sessionId);
+		if (sessionId) await window.lyra.sideChat.abort(sessionId);
 		set({ running: false });
 	},
 
 	async reset() {
 		const sessionId = get().sessionId;
 		set({ ...EMPTY, tasks: get().tasks });
-		if (sessionId) await window.deepwise.sideChat.reset(sessionId);
+		if (sessionId) await window.lyra.sideChat.reset(sessionId);
 	},
 
 	async cancelTask(taskId) {
@@ -217,7 +217,7 @@ export const useSide = create<SideState>((set, get) => ({
 		set({
 			tasks: get().tasks.map((t) => (t.id === taskId && t.status === "queued" ? { ...t, status: "cancelled" } : t)),
 		});
-		await window.deepwise.tasks.cancel(sessionId, taskId);
+		await window.lyra.tasks.cancel(sessionId, taskId);
 	},
 
 	setTasks: (tasks) => set({ tasks }),

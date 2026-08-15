@@ -1,4 +1,4 @@
-import type { ModelConfig } from "@deepwise/core";
+import type { ModelConfig } from "@lyra/core";
 import { Scroller } from "../Scroller.tsx";
 import { useState } from "react";
 import { Overlay } from "../modals/Overlay.tsx";

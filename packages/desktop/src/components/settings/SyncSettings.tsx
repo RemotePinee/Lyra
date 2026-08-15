@@ -35,7 +35,7 @@ export function SyncSettings() {
 						<Toggle
 							checked={sync?.running ?? settings.sync.enabled}
 							onChange={(on) => {
-								void (on ? window.deepwise.sync.start() : window.deepwise.sync.stop()).then(() => void refreshSync());
+								void (on ? window.lyra.sync.start() : window.lyra.sync.stop()).then(() => void refreshSync());
 							}}
 						/>
 					}
@@ -90,7 +90,7 @@ export function SyncSettings() {
 								<span className="text-[12.5px] text-ink-muted">配对令牌</span>
 								<GhostButton
 									onClick={() => {
-										void window.deepwise.sync.rotateToken().then(() => void refreshSync());
+										void window.lyra.sync.rotateToken().then(() => void refreshSync());
 									}}
 								>
 									<span className="flex items-center gap-1.5">
@@ -103,7 +103,7 @@ export function SyncSettings() {
 								<span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{sync.token}</span>
 								<button
 									type="button"
-									data-dw-tip="复制"
+									data-ly-tip="复制"
 									onClick={() => {
 										void navigator.clipboard.writeText(sync.token ?? "");
 										setCopied(true);
@@ -121,7 +121,7 @@ export function SyncSettings() {
 							<div className="rounded-[10px] border border-line bg-shell/60 p-4">
 								<div className="mb-2 flex items-center gap-1.5 text-[12.5px] text-ink">
 									<Smartphone size={13} strokeWidth={1.9} />
-									在手机上打开 DeepWise，输入下面的地址和令牌
+									在手机上打开 Lyra，输入下面的地址和令牌
 								</div>
 								<code className="block break-all font-mono text-[11.5px] text-ink-muted">{sync.pairingUrl}</code>
 							</div>

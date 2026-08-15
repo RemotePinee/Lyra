@@ -53,7 +53,7 @@ export const webFetchTool: Tool<FetchArgs> = {
 			response = await fetch(url, {
 				signal: ctx.signal,
 				redirect: "follow",
-				headers: { "user-agent": "DeepWise/0.1 (+https://github.com/deepwise)", accept: "text/html,text/plain,*/*" },
+				headers: { "user-agent": "Lyra/0.1 (+https://github.com/lyra)", accept: "text/html,text/plain,*/*" },
 			});
 		} catch (error) {
 			return errorResult(`Request failed: ${error instanceof Error ? error.message : String(error)}`);

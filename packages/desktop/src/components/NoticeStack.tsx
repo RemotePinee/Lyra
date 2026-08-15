@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store.ts";
 
-/** Matches `.dw-leave` in the stylesheet; the row is removed once it has played. */
+/** Matches `.ly-leave` in the stylesheet; the row is removed once it has played. */
 const LEAVE_MS = 160;
 
 const TONE: Record<string, string> = {
@@ -51,7 +51,7 @@ export function NoticeStack() {
 				<div
 					key={notice.id}
 					className={`pointer-events-auto flex items-start gap-2 rounded-[10px] border px-3 py-2 text-[12px] shadow-lg shadow-black/25 ${
-						leaving.includes(notice.id) ? "dw-leave" : "dw-enter"
+						leaving.includes(notice.id) ? "ly-leave" : "ly-enter"
 					} ${TONE[notice.level]}`}
 				>
 					<span className="min-w-0 flex-1 leading-[18px] break-words">{notice.message}</span>
@@ -67,7 +67,7 @@ export function NoticeStack() {
 						type="button"
 						onClick={() => dismiss(notice.id)}
 						className="flex h-[18px] shrink-0 items-center opacity-60 transition-opacity hover:opacity-100"
-						data-dw-tip="关闭"
+						data-ly-tip="关闭"
 						aria-label="关闭"
 					>
 						<X size={12} strokeWidth={2} />

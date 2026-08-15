@@ -55,13 +55,13 @@ export function DetailCard({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className={`dw-enter mb-1 ${open ? "relative z-20" : ""}`}>
-			<div className={open ? "dw-pin sticky top-0 z-10" : ""}>
+		<div className={`ly-enter mb-1 ${open ? "relative z-20" : ""}`}>
+			<div className={open ? "ly-pin sticky top-0 z-10" : ""}>
 				<button
 					type="button"
 					onClick={onToggle}
 					style={{ borderRadius: open ? `${RADIUS} ${RADIUS} 0 0` : RADIUS }}
-					className={`dw-scroll flex w-full items-center gap-2 border px-2 py-[6px] text-left transition-colors duration-150 hover:bg-card-hover/50 ${
+					className={`ly-scroll flex w-full items-center gap-2 border px-2 py-[6px] text-left transition-colors duration-150 hover:bg-card-hover/50 ${
 						open ? "border-line-soft bg-card" : "border-transparent"
 					}`}
 				>

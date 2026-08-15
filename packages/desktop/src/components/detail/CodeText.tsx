@@ -11,7 +11,7 @@
  * straddles two different things.
  */
 
-import { matchRanges } from "@deepwise/core/trajectory-view";
+import { matchRanges } from "@lyra/core/trajectory-view";
 import { TOKEN_CLASS, tokenizeJson, tokenizeShell, type Token } from "./tokens.ts";
 
 export type CodeKind = "shell" | "json" | "text";

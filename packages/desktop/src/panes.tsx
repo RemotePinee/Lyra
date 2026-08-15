@@ -147,8 +147,8 @@ export function SidePane({
 			data-pane={covering ? "cover" : "beside"}
 			className={`${
 				covering
-					? `dw-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
-					: "dw-opaque relative z-50 shrink-0 overflow-hidden"
+					? `ly-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
+					: "ly-opaque relative z-50 shrink-0 overflow-hidden"
 			} ${snap ? "transition-none" : "transition-[margin-right,transform] duration-[220ms] ease-out"}`}
 			/*
 			 * Moved, never faded.

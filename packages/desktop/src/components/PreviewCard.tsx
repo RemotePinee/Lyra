@@ -32,7 +32,7 @@ const PROBE_TIMEOUT_MS = 1500;
 const PROBE_SETTLE_MS = 400;
 
 function previewUrl(preview: PreviewInfo): string {
-	return `dw-preview://${preview.sessionId}/${preview.id}/${preview.entry}`;
+	return `ly-preview://${preview.sessionId}/${preview.id}/${preview.entry}`;
 }
 
 /**
@@ -50,7 +50,7 @@ function previewUrl(preview: PreviewInfo): string {
  *
  * Inside a sandboxed frame with `allow-scripts` and nothing else — no same-origin, so it cannot
  * reach this window; no top-navigation, so it cannot replace the app with something else. It is
- * served from its own `dw-preview://` origin rather than `file://`, which is what keeps it from
+ * served from its own `ly-preview://` origin rather than `file://`, which is what keeps it from
  * walking the disk. The agent wrote this code; it is not trusted with anything but its own
  * canvas.
  */
@@ -64,7 +64,7 @@ const clamp = (value: number) => Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HE
  * have. Kept locally rather than in the session record because it describes this window: the same
  * conversation opened at another size would measure differently and should.
  */
-const HEIGHT_KEY = "dw-preview-height:";
+const HEIGHT_KEY = "ly-preview-height:";
 
 function recallHeight(preview: PreviewInfo): number | null {
 	try {
@@ -198,7 +198,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 			 * height is not at that height yet — it is somewhere on the way there. The page loaded
 			 * mid-transition and reported the height it happened to see, which was the old one.
 			 */
-			className={`dw-enter relative my-2.5 overflow-hidden rounded-[12px] border border-line-soft ${
+			className={`ly-enter relative my-2.5 overflow-hidden rounded-[12px] border border-line-soft ${
 				measured === null ? "" : "transition-[height] duration-300"
 			}`}
 		>
@@ -214,11 +214,11 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					ref={frame}
 					key={nonce}
 					/*
-					 * `#dw-inline` tells the page it is in the transcript rather than the panel, and
+					 * `#ly-inline` tells the page it is in the transcript rather than the panel, and
 					 * a fragment does it without touching the request — same URL, same file, one
 					 * fetch. The injected stylesheet keys off it to stop the page scrolling here.
 					 */
-					src={`${previewUrl(preview)}#dw-inline`}
+					src={`${previewUrl(preview)}#ly-inline`}
 					title={preview.title}
 					sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals"
 					onLoad={() => setReady(true)}
@@ -253,13 +253,13 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					}}
 					className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-2"
 				>
-					<span className="dw-glass rounded-full px-2.5 py-1 text-[11.5px] text-ink-muted transition-colors hover:text-ink">
+					<span className="ly-glass rounded-full px-2.5 py-1 text-[11.5px] text-ink-muted transition-colors hover:text-ink">
 						内容更长 · 在侧栏中查看
 					</span>
 				</button>
 			)}
 
-			<div className="dw-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
+			<div className="ly-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
 				{/*
 				 * Taller, because the frame cannot ask for a size.
 				 *

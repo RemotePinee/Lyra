@@ -104,10 +104,10 @@ export function SettingsShell() {
 		 * two columns read as one undifferentiated field. The workspace already answers this: the
 		 * nav is tinted and the thing you are working in is the plain page.
 		 */
-		<div className="dw-shell relative flex h-full">
+		<div className="ly-shell relative flex h-full">
 			<NavPane width={sidebarWidth} label="设置导航">
 				{/* Same as the workspace sidebar: separated by its tint, not by a rule. */}
-				<nav className="dw-sidebar-fill flex h-full w-full flex-col">
+				<nav className="ly-sidebar-fill flex h-full w-full flex-col">
 					<div className="h-[44px] shrink-0" />
 
 					{/*
@@ -184,7 +184,7 @@ export function SettingsShell() {
 				</nav>
 			</NavPane>
 
-			<main className="dw-opaque flex min-w-0 flex-1 flex-col">
+			<main className="ly-opaque flex min-w-0 flex-1 flex-col">
 				<div className="h-[44px] shrink-0" />
 				{/*
 				 * Most sections are a column of settings and scroll as one page. A few are
@@ -215,7 +215,7 @@ export function SettingsShell() {
 					 */}
 					<button
 						type="button"
-						data-dw-tip={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
+						data-ly-tip={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
 						aria-label={navOpen ? "隐藏设置导航" : "显示设置导航"}
 						aria-pressed={compact && navOpen}
 						onClick={toggleNav}
@@ -241,7 +241,7 @@ export function SettingsShell() {
 					</button>
 					<button
 						type="button"
-						data-dw-tip="返回工作区"
+						data-ly-tip="返回工作区"
 						aria-label="返回工作区"
 						onClick={() => setView("chat")}
 						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-150 hover:bg-card-hover hover:text-ink"

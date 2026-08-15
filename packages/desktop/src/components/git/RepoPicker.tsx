@@ -47,11 +47,11 @@ export function RepoPicker({
         onClick={menu.toggle}
         aria-haspopup="menu"
         aria-expanded={menu.open}
-        data-dw-tip={`${repos.length} 个仓库${
+        data-ly-tip={`${repos.length} 个仓库${
           total > repos.length ? ` · ${total - repos.length} 个工作树` : ""
         } · 点击切换`}
-        data-dw-tip-side="bottom"
-        className={`dw-scroll flex h-8 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5 text-left transition-colors ${
+        data-ly-tip-side="bottom"
+        className={`ly-scroll flex h-8 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5 text-left transition-colors ${
           menu.open ? "bg-card-hover" : "hover:bg-card-hover"
         }`}
       >
@@ -60,7 +60,7 @@ export function RepoPicker({
         ) : (
           <Folder size={12.5} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
         )}
-        <ScrollText text={current?.label ?? "仓库"} className="dw-fade-tail min-w-0 flex-1 text-[12.5px]" />
+        <ScrollText text={current?.label ?? "仓库"} className="ly-fade-tail min-w-0 flex-1 text-[12.5px]" />
         {/* A bare total says nothing about what it counts; the split does. */}
         <Text size="caption" tone="faint" className="shrink-0 tabular-nums">
           {repos.length}

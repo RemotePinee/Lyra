@@ -37,7 +37,7 @@ function assistant(content: AssistantMessage["content"]): AssistantMessage {
 }
 
 async function seeded() {
-	const root = await mkdtemp(join(tmpdir(), "dw-traj-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-traj-"));
 	const store = new SessionStore(join(root, "sessions"));
 	let meta = await store.create(root, "fake/model");
 
@@ -45,7 +45,7 @@ async function seeded() {
 	meta = await store.append(meta, { type: "message", message: user });
 	meta = await store.append(meta, {
 		type: "event",
-		event: { type: "context", systemPrompt: "You are DeepWise.", tools: ["bash", "read"], skills: [] },
+		event: { type: "context", systemPrompt: "You are Lyra.", tools: ["bash", "read"], skills: [] },
 	});
 	meta = await store.append(meta, {
 		type: "message",
@@ -132,7 +132,7 @@ test("the system prompt is kept whole, so it can be read back", async () => {
 	try {
 		const entries = await readTrajectory(h.store, h.meta.projectId, h.meta.id);
 		const system = entries.find((entry) => entry.source === "system");
-		assert.equal(system?.detail, "You are DeepWise.");
+		assert.equal(system?.detail, "You are Lyra.");
 	} finally {
 		await h.cleanup();
 	}

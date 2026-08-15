@@ -14,7 +14,7 @@ import { ScrollText } from "./ScrollText.tsx";
  *
  * Every menu in the app had grown its own version of this — different heights, different
  * corner radii, one with no radius at all — so the same gesture looked different depending on
- * which menu you were in. The visual states live in `.dw-item` so a row that needs a
+ * which menu you were in. The visual states live in `.ly-item` so a row that needs a
  * different shape (the permission picker's two-line entries) can still opt into them.
  */
 export function MenuItem({
@@ -54,11 +54,11 @@ export function MenuItem({
 			type="button"
 			role="menuitem"
 			disabled={disabled}
-			data-dw-tip={title}
+			data-ly-tip={title}
 			data-selected={selected ? "true" : undefined}
 			data-danger={danger ? "true" : undefined}
 			onClick={onClick}
-			className={`dw-scroll dw-item flex w-full gap-2.5 px-2 text-left text-[12.5px] ${
+			className={`ly-scroll ly-item flex w-full gap-2.5 px-2 text-left text-[12.5px] ${
 				detail ? "items-start py-1.5" : "h-[28px] items-center"
 			}`}
 		>

@@ -5,7 +5,7 @@
     "types": ["node"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "paths": { "@deepwise/core": ["../core/src/index.ts"] }
+    "paths": { "@lyra/core": ["../core/src/index.ts"] }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

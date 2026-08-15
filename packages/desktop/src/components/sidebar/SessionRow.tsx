@@ -13,8 +13,8 @@
  * characters and cannot go wrong; the full title is a hover away in the scroller either way.
  */
 
-import type { SessionMeta } from "@deepwise/core";
-import { visibleActivity } from "@deepwise/core/activity";
+import type { SessionMeta } from "@lyra/core";
+import { visibleActivity } from "@lyra/core/activity";
 import { Archive } from "lucide-react";
 import { useLayout } from "../../layout.tsx";
 import { useApp } from "../../store.ts";
@@ -39,7 +39,7 @@ export function SessionRow({
 
 	return (
 		<div
-			className={`dw-scroll group/session relative rounded-lg transition-colors duration-150 active:bg-elevated ${
+			className={`ly-scroll group/session relative rounded-lg transition-colors duration-150 active:bg-elevated ${
 				active ? "bg-card-hover" : "hover:bg-card-hover"
 			}`}
 		>
@@ -52,7 +52,7 @@ export function SessionRow({
 			>
 				{/* In the indent the titles already had, so nothing moved to make room for it. */}
 				<SessionStatus activity={visibleActivity(activity[session.id] ?? null, active)} />
-				<ScrollText text={session.title} className="dw-fade-tail min-w-0 flex-1" />
+				<ScrollText text={session.title} className="ly-fade-tail min-w-0 flex-1" />
 			</button>
 
 			{/* The strip never takes pointer events; only the button does. Anything wider would
@@ -60,7 +60,7 @@ export function SessionRow({
 			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/session:opacity-100 focus-within:opacity-100">
 				<button
 					type="button"
-					data-dw-tip="归档会话"
+					data-ly-tip="归档会话"
 					aria-label={`归档会话「${session.title}」`}
 					onClick={onArchive}
 					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"

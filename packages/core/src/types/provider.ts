@@ -1,7 +1,7 @@
 /**
  * Models, providers, and the stream a request comes back as.
  *
- * DeepWise speaks two wire formats and no others. Everything above this line is expressed in the
+ * Lyra speaks two wire formats and no others. Everything above this line is expressed in the
  * neutral message shape; everything below it is a provider's own idea of a request.
  */
 
@@ -13,7 +13,7 @@ import type { ToolSpec } from "./tool.ts";
 // ---------------------------------------------------------------------------
 
 /**
- * Wire formats DeepWise speaks. Chat Completions is deliberately excluded: the product
+ * Wire formats Lyra speaks. Chat Completions is deliberately excluded: the product
  * targets Responses and Anthropic Messages only.
  */
 export type ApiFormat = "openai-responses" | "anthropic-messages";

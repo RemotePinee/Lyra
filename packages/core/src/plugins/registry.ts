@@ -16,7 +16,7 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { deepwiseHome } from "../session/store.ts";
+import { lyraHome } from "../session/store.ts";
 
 const run = promisify(execFile);
 
@@ -92,7 +92,7 @@ export async function fetchRegistry(url: string, signal?: AbortSignal): Promise<
  * update mechanism of ours.
  */
 export async function installEntry(entry: RegistryEntry): Promise<string> {
-	const root = join(deepwiseHome(), "plugins");
+	const root = join(lyraHome(), "plugins");
 	await mkdir(root, { recursive: true });
 
 	const target = join(root, entry.id);
@@ -113,7 +113,7 @@ export async function installEntry(entry: RegistryEntry): Promise<string> {
 /** Drop an installed bundle from the user's plugin directory. */
 export async function uninstallEntry(id: string): Promise<void> {
 	if (!id || id.includes("/") || id.includes("..")) throw new Error("非法的插件 id");
-	await rm(join(deepwiseHome(), "plugins", id), { recursive: true, force: true });
+	await rm(join(lyraHome(), "plugins", id), { recursive: true, force: true });
 }
 
 function normalise(item: unknown): RegistryEntry | null {

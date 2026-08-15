@@ -1,9 +1,9 @@
-import type { AppearanceSettings as Appearance } from "@deepwise/core";
+import type { AppearanceSettings as Appearance } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { Card, GhostButton, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
 
 /**
- * Mirrors `DEFAULT_APPEARANCE` in @deepwise/core.
+ * Mirrors `DEFAULT_APPEARANCE` in @lyra/core.
  *
  * It is duplicated rather than imported because a value import from the core package would
  * pull its `node:` modules into the renderer bundle; only types may cross that boundary.
@@ -28,7 +28,7 @@ const FACTORY_APPEARANCE: Appearance = {
 };
 
 const PRESETS: { id: string; label: string; patch: Partial<Appearance> }[] = [
-	{ id: "deepwise", label: "DeepWise", patch: { accent: "#339CFF", darkBackground: "#171717", darkForeground: "#EDEDED" } },
+	{ id: "lyra", label: "Lyra", patch: { accent: "#339CFF", darkBackground: "#171717", darkForeground: "#EDEDED" } },
 	{ id: "graphite", label: "Graphite", patch: { accent: "#8E8E93", darkBackground: "#1C1C1E", darkForeground: "#F2F2F7" } },
 	{ id: "moss", label: "Moss", patch: { accent: "#3ECF8E", darkBackground: "#121614", darkForeground: "#E6F2EC" } },
 	{ id: "ember", label: "Ember", patch: { accent: "#FF8B3D", darkBackground: "#1A1412", darkForeground: "#F5E9E2" } },
@@ -81,7 +81,7 @@ export function AppearanceSettings() {
 							<button
 								key={preset.id}
 								type="button"
-								data-dw-tip={preset.label}
+								data-ly-tip={preset.label}
 								onClick={() => patch(preset.patch)}
 								className="h-6 w-6 rounded-full border border-line transition-transform duration-150 hover:scale-110"
 								style={{ background: preset.patch.accent }}
@@ -178,7 +178,7 @@ export function AppearanceSettings() {
 				/>
 				<Row
 					title="UI 字号"
-					detail="调整 DeepWise 界面使用的基准字号"
+					detail="调整 Lyra 界面使用的基准字号"
 					control={
 						<NumberField
 							value={appearance.uiFontSize}

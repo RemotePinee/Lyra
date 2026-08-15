@@ -28,7 +28,7 @@ import type {
 	QueuedTask,
 	SessionMeta,
 	Skill,
-} from "@deepwise/core";
+} from "@lyra/core";
 
 export type { ContextBreakdown, ContextSegmentKey, QueuedTask, Registry, RegistryEntry };
 
@@ -44,7 +44,7 @@ export interface WorkspaceInfo {
 
 export interface SessionSnapshot {
 	meta: SessionMeta;
-	messages: import("@deepwise/core").Message[];
+	messages: import("@lyra/core").Message[];
 	running: boolean;
 	pendingApprovals: { id: string; kind: string; title: string; detail: string }[];
 	/** Message positions where history was summarised, so the mark survives a reload. */
@@ -56,7 +56,7 @@ export interface SessionSnapshot {
  * and never reaches the session log.
  */
 export interface SideChatSnapshot {
-	messages: import("@deepwise/core").Message[];
+	messages: import("@lyra/core").Message[];
 	running: boolean;
 }
 
@@ -125,5 +125,5 @@ export interface WorkspaceDiffFile {
 	status: "added" | "modified" | "deleted" | "renamed" | "untracked";
 	added: number;
 	removed: number;
-	hunks: import("@deepwise/core").DiffHunk[];
+	hunks: import("@lyra/core").DiffHunk[];
 }

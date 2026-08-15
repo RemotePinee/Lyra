@@ -18,7 +18,7 @@ function toolResult(id: string): Message {
 }
 
 test("concurrent appends get distinct, gapless sequence numbers", async (t) => {
-	const root = await mkdtemp(join(tmpdir(), "dw-store-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-store-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const store = new SessionStore(root);
 
@@ -43,7 +43,7 @@ test("concurrent appends get distinct, gapless sequence numbers", async (t) => {
 });
 
 test("incremental read returns every record after the given sequence", async (t) => {
-	const root = await mkdtemp(join(tmpdir(), "dw-store-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-store-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const store = new SessionStore(root);
 
@@ -60,7 +60,7 @@ test("incremental read returns every record after the given sequence", async (t)
 });
 
 test("reopening a session continues numbering instead of restarting", async (t) => {
-	const root = await mkdtemp(join(tmpdir(), "dw-store-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-store-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 
 	const first = new SessionStore(root);

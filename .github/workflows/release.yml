@@ -56,7 +56,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: deepwise-${{ matrix.artifact }}
+          name: lyra-${{ matrix.artifact }}
           path: |
             packages/desktop/release/*.dmg
             packages/desktop/release/*.zip

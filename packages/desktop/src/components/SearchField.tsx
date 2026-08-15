@@ -63,7 +63,7 @@ export function SearchField({
 			{value && (
 				<button
 					type="button"
-					data-dw-tip="清除"
+					data-ly-tip="清除"
 					aria-label="清除搜索"
 					onClick={() => {
 						onChange("");

@@ -1,20 +1,20 @@
 {
-  "name": "deepwise",
+  "name": "lyra",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DeepWise — a fully self-hosted code agent with custom models, tools, skills and MCP. Desktop (Electron) + Mobile (React Native), fully synced.",
+  "description": "Lyra — a fully self-hosted code agent with custom models, tools, skills and MCP. Desktop (Electron) + Mobile (React Native), fully synced.",
   "engines": {
     "node": ">=24",
     "pnpm": ">=11"
   },
   "packageManager": "pnpm@11.9.0",
   "scripts": {
-    "dev": "pnpm --filter @deepwise/desktop dev",
-    "dev:mobile": "pnpm --filter @deepwise/mobile start",
-    "build": "pnpm --filter @deepwise/core build && pnpm --filter @deepwise/desktop build",
-    "build:core": "pnpm --filter @deepwise/core build",
-    "package": "pnpm build && pnpm --filter @deepwise/desktop package",
+    "dev": "pnpm --filter @lyra/desktop dev",
+    "dev:mobile": "pnpm --filter @lyra/mobile start",
+    "build": "pnpm --filter @lyra/core build && pnpm --filter @lyra/desktop build",
+    "build:core": "pnpm --filter @lyra/core build",
+    "package": "pnpm build && pnpm --filter @lyra/desktop package",
     "typecheck": "pnpm -r typecheck",
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --fix",
@@ -23,7 +23,7 @@
     "test:unit": "pnpm -r --no-bail test",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "prepare": "lefthook install",
-    "test:e2e": "pnpm --filter @deepwise/desktop test:e2e"
+    "test:e2e": "pnpm --filter @lyra/desktop test:e2e"
   },
   "devDependencies": {
     "@types/node": "24.12.4",
@@ -35,6 +35,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kittors/deepwise.git"
+    "url": "git+https://github.com/kittors/lyra.git"
   }
 }

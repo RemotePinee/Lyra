@@ -1,7 +1,7 @@
 /**
  * Anthropic Messages API adapter.
  *
- * Maps the neutral DeepWise message model onto `/v1/messages` with `stream: true`,
+ * Maps the neutral Lyra message model onto `/v1/messages` with `stream: true`,
  * including extended thinking and its signature round-trip.
  */
 

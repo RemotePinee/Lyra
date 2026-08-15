@@ -19,7 +19,7 @@ export function editorTheme(): Extension {
 	return EditorView.theme({
 		"&": { backgroundColor: "transparent", color: "var(--color-ink)", height: "100%" },
 		".cm-content": {
-			fontFamily: "var(--dw-code-font)",
+			fontFamily: "var(--ly-code-font)",
 			fontSize: "12px",
 			padding: "6px 0 40px",
 			caretColor: "var(--color-ink)",
@@ -38,7 +38,7 @@ export function editorTheme(): Extension {
 			backgroundColor: "var(--color-shell)",
 			color: "var(--color-ink-faint)",
 			border: "none",
-			fontFamily: "var(--dw-code-font)",
+			fontFamily: "var(--ly-code-font)",
 			fontSize: "11px",
 		},
 		// Matches `.cm-activeLine` exactly, so the highlight reads as one band across both.
@@ -117,7 +117,7 @@ export function editorTheme(): Extension {
 			flexWrap: "wrap",
 			alignItems: "center",
 			gap: "3px",
-			fontFamily: "var(--dw-ui-font)",
+			fontFamily: "var(--ly-ui-font)",
 			fontSize: "12px",
 		},
 		/*
@@ -150,7 +150,7 @@ export function editorTheme(): Extension {
 		 * 240px basis in a narrow pane put each field on a row of its own and made the panel
 		 * taller instead of narrower. Growing up to a limit collapses gracefully instead.
 		 */
-		".cm-panel.cm-search button[name=dw-replace-toggle]": {
+		".cm-panel.cm-search button[name=ly-replace-toggle]": {
 			order: 0,
 			width: "18px",
 			height: "22px",
@@ -161,12 +161,12 @@ export function editorTheme(): Extension {
 			fontSize: "9px",
 			lineHeight: "22px",
 		},
-		".cm-panel.cm-search button[name=dw-replace-toggle]:hover": { color: "var(--color-ink)" },
+		".cm-panel.cm-search button[name=ly-replace-toggle]:hover": { color: "var(--color-ink)" },
 		".cm-panel.cm-search input[name=replace], .cm-panel.cm-search button[name=replace], .cm-panel.cm-search button[name=replaceAll], .cm-panel.cm-search::before":
 			{ display: "none" },
-		".cm-panel.cm-search.dw-replace-open input[name=replace], .cm-panel.cm-search.dw-replace-open button[name=replace], .cm-panel.cm-search.dw-replace-open button[name=replaceAll]":
+		".cm-panel.cm-search.ly-replace-open input[name=replace], .cm-panel.cm-search.ly-replace-open button[name=replace], .cm-panel.cm-search.ly-replace-open button[name=replaceAll]":
 			{ display: "inline-flex" },
-		".cm-panel.cm-search.dw-replace-open::before": { display: "block" },
+		".cm-panel.cm-search.ly-replace-open::before": { display: "block" },
 		".cm-panel.cm-search input[name=search]": { order: 1, flex: "1 1 36px", minWidth: "36px", maxWidth: "236px" },
 		".cm-panel.cm-search [name=next], .cm-panel.cm-search [name=prev], .cm-panel.cm-search [name=select]": {
 			order: 3,
@@ -185,7 +185,7 @@ export function editorTheme(): Extension {
 			padding: "0 8px",
 			height: "24px",
 			fontSize: "12px",
-			fontFamily: "var(--dw-ui-font)",
+			fontFamily: "var(--ly-ui-font)",
 			outline: "none",
 		},
 		".cm-textfield:focus": { borderColor: "var(--color-ink-faint)" },
@@ -265,7 +265,7 @@ export function editorTheme(): Extension {
 			padding: "0 9px",
 			height: "26px",
 			fontSize: "11.5px",
-			fontFamily: "var(--dw-ui-font)",
+			fontFamily: "var(--ly-ui-font)",
 		},
 		".cm-button:hover": { backgroundColor: "var(--color-card-hover)", color: "var(--color-ink)" },
 		".cm-button:active": { backgroundColor: "var(--color-card-hover)" },
@@ -295,7 +295,7 @@ export function editorTheme(): Extension {
 		 * the outer element leaves the inner one — which carries the grammar's own plain-text
 		 * colour — to win. Both, and the value takes the mark's colour either way.
 		 */
-		".dw-yaml-atom, .dw-yaml-atom span": { color: ATOM },
+		".ly-yaml-atom, .ly-yaml-atom span": { color: ATOM },
 		".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--color-info) 24%, transparent)" },
 		".cm-searchMatch.cm-searchMatch-selected": {
 			backgroundColor: "color-mix(in srgb, var(--color-accent) 42%, transparent)",

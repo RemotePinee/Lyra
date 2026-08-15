@@ -9,7 +9,7 @@
  * keeps the map from being reachable — and therefore mutable — from six different files.
  */
 
-import { AgentSession, type AgentEvent, type SessionStorage, type Settings, type SideChat } from "@deepwise/core";
+import { AgentSession, type AgentEvent, type SessionStorage, type Settings, type SideChat } from "@lyra/core";
 import type { BrowserWindow } from "electron";
 import { createBrowserTools } from "./browser-tools.ts";
 import type { SessionSnapshot } from "./ipc-types.ts";

@@ -43,7 +43,7 @@ export function ApprovalOverlay() {
        * and that it stops the turn; the chrome only has to say "this is a layer above". The one
        * accent left is the warning mark, which is the part that is actually about caution.
        */}
-      <div className="dw-glass dw-slide-up pointer-events-auto w-full max-w-[var(--dw-content)] overflow-hidden rounded-[10px] border border-line">
+      <div className="ly-glass ly-slide-up pointer-events-auto w-full max-w-[var(--ly-content)] overflow-hidden rounded-[10px] border border-line">
         <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
           <TriangleAlert
             size={15}

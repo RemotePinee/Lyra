@@ -63,7 +63,7 @@ export function SecretInput({
 			/>
 			<button
 				type="button"
-				data-dw-tip={visible ? "隐藏" : "显示"}
+				data-ly-tip={visible ? "隐藏" : "显示"}
 				onClick={() => setVisible((v) => !v)}
 				className="absolute top-1/2 right-2.5 -translate-y-1/2 text-ink-faint transition-colors hover:text-ink"
 			>

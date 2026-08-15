@@ -11,7 +11,7 @@
  * scaled by the contrast slider.
  */
 
-import type { AppearanceSettings } from "@deepwise/core";
+import type { AppearanceSettings } from "@lyra/core";
 
 interface Rgb {
 	r: number;
@@ -126,10 +126,10 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		 */
 		"--color-accent": accent,
 		"--color-info": accent,
-		"--dw-ui-font": appearance.uiFont,
-		"--dw-code-font": appearance.codeFont,
-		"--dw-ui-size": `${appearance.uiFontSize}px`,
-		"--dw-code-size": `${appearance.codeFontSize}px`,
+		"--ly-ui-font": appearance.uiFont,
+		"--ly-code-font": appearance.codeFont,
+		"--ly-ui-size": `${appearance.uiFontSize}px`,
+		"--ly-code-size": `${appearance.codeFontSize}px`,
 		/*
 		 * A tint over the material, not a pane in front of it.
 		 *
@@ -148,7 +148,7 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		 * every other surface in the app is a fixed colour and this one drifts. At 0.72 the tint
 		 * dominates and the material shows through as a subtle shift rather than as the subject.
 		 */
-		"--dw-sidebar-alpha": appearance.translucentSidebar ? (dark ? "0.78" : "0.72") : "1",
+		"--ly-sidebar-alpha": appearance.translucentSidebar ? (dark ? "0.78" : "0.72") : "1",
 	};
 
 	for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
@@ -161,14 +161,14 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 	 * that shows through whenever a resize outruns the renderer's reflow — dragging an edge
 	 * quickly is exactly that, and a stale colour there is the black frame that flashes.
 	 */
-	window.deepwise?.setWindowTheme?.({ color: toHex(background), symbolColor: text(0.62) });
+	window.lyra?.setWindowTheme?.({ color: toHex(background), symbolColor: text(0.62) });
 	/*
 	 * The window has to be told too: vibrancy is a native layer, not a CSS effect.
 	 *
 	 * Nothing in the stylesheet can sample the desktop behind the window, so the alpha above only
 	 * has anything to reveal once the platform is compositing a vibrant layer underneath it.
 	 */
-	window.deepwise?.setVibrancy?.(appearance.translucentSidebar);
+	window.lyra?.setVibrancy?.(appearance.translucentSidebar);
 	root.dataset.vibrancy = appearance.translucentSidebar ? "on" : "off";
 
 	root.classList.toggle("dark", dark);

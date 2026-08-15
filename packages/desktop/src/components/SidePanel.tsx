@@ -51,7 +51,7 @@ export function SidePanel() {
 			 */}
 			<div
 				style={{ borderRadius: CARD_RADIUS }}
-				className="dw-panel flex min-h-0 flex-1 flex-col overflow-hidden border border-line-soft bg-shell"
+				className="ly-panel flex min-h-0 flex-1 flex-col overflow-hidden border border-line-soft bg-shell"
 			>
 				<TabStrip
 					tabs={tabs}

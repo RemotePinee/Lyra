@@ -103,7 +103,7 @@ function yamlScalarMarks(view: EditorView): DecorationSet {
 	return builder.finish();
 }
 
-const ATOM_MARK = Decoration.mark({ class: "dw-yaml-atom" });
+const ATOM_MARK = Decoration.mark({ class: "ly-yaml-atom" });
 
 const yamlScalars = ViewPlugin.fromClass(
 	class {

@@ -42,7 +42,7 @@ class StubSandbox implements Sandbox {
 }
 
 test("a replaced sandbox is where commands go", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-sandbox-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-sandbox-"));
 	const stub = new StubSandbox();
 	useSandbox(stub);
 
@@ -58,7 +58,7 @@ test("a replaced sandbox is where commands go", async () => {
 });
 
 test("with nothing bound, commands still run locally", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-sandbox-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-sandbox-"));
 	try {
 		const result = await bashTool.execute({ command: "echo hello" }, context(root));
 		assert.equal(result.content[0]?.type === "text" && result.content[0].text, "hello");

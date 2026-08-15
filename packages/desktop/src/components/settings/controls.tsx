@@ -14,7 +14,7 @@ export * from "./layout.tsx";
  *
  * Both colours came from a hard-coded pair — an iOS blue and a dark grey — so it ignored the
  * accent the user picked and, on a light theme, showed a near-black track for "off" against a
- * pale card. The track now follows the theme in both states, and the knob reuses `.dw-knob`,
+ * pale card. The track now follows the theme in both states, and the knob reuses `.ly-knob`,
  * which is the same treatment the appearance sliders use: white with a hairline and a shadow so
  * it stays visible on a pale track, lightened on dark so it does not glare.
  */
@@ -30,7 +30,7 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (che
 			}`}
 		>
 			<span
-				className="dw-knob absolute top-[3px] h-4 w-4 rounded-full border transition-[left] duration-200"
+				className="ly-knob absolute top-[3px] h-4 w-4 rounded-full border transition-[left] duration-200"
 				style={{ left: checked ? 19 : 3 }}
 			/>
 		</button>
@@ -103,7 +103,7 @@ export function GhostButton({
 			type="button"
 			disabled={disabled}
 			onClick={onClick}
-			data-dw-tip={title}
+			data-ly-tip={title}
 			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] transition-colors duration-150 disabled:opacity-45 disabled: ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"

@@ -1,7 +1,7 @@
 import type {
   UserContent,
   UserMessage as UserMessageType,
-} from "@deepwise/core";
+} from "@lyra/core";
 import { MessageSquarePlus, Pencil } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MessageActions } from "./MessageActions.tsx";
@@ -66,10 +66,10 @@ export function UserMessage({
 
   if (editing) {
     return (
-      <div className="dw-enter mb-2.5 flex justify-end">
+      <div className="ly-enter mb-2.5 flex justify-end">
         {/* The same surface as the composer: editing a message is the same act as writing one. */}
-        <div className="dw-composer w-full rounded-[18px] border border-line-soft bg-input px-4 pt-3.5 pb-2.5">
-          <div className="dw-scroll-host relative">
+        <div className="ly-composer w-full rounded-[18px] border border-line-soft bg-input px-4 pt-3.5 pb-2.5">
+          <div className="ly-scroll-host relative">
             <textarea
               ref={textareaRef}
               autoFocus
@@ -122,7 +122,7 @@ export function UserMessage({
   }
 
   return (
-    <div className="group/msg dw-enter mb-2.5 flex flex-col items-end">
+    <div className="group/msg ly-enter mb-2.5 flex flex-col items-end">
       {/*
        * Always visible, not folded into the hover row below.
        *
@@ -161,7 +161,7 @@ export function UserMessage({
       >
         <button
           type="button"
-          data-dw-tip={running ? "回合进行中，无法编辑" : "编辑并重新发送"}
+          data-ly-tip={running ? "回合进行中，无法编辑" : "编辑并重新发送"}
           aria-label="编辑并重新发送"
           disabled={running}
           onClick={() => {

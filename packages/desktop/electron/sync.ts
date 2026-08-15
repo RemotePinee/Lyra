@@ -6,7 +6,7 @@
  * exposing a port is not something to do just in case.
  */
 
-import { AgentSession, type SessionStorage } from "@deepwise/core";
+import { AgentSession, type SessionStorage } from "@lyra/core";
 import { applySettings, settings } from "./app-settings.ts";
 import type { SyncStatus } from "./ipc-types.ts";
 import { broadcast, getOrCreateSession, sessions } from "./session-hub.ts";

@@ -8,7 +8,7 @@
  * queued"; the list matters only when you want to withdraw one.
  */
 
-import type { QueuedTask } from "@deepwise/core";
+import type { QueuedTask } from "@lyra/core";
 import { Ban, Check, ChevronDown, CircleDashed, Clock, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSide } from "../../sideStore.ts";
@@ -52,15 +52,15 @@ export function TaskStrip() {
 		// The rule spans the panel because it separates two regions; what sits on it lines up
 		// with the conversation, so the strip does not drift away from the messages full screen.
 		<div className="shrink-0 border-t border-line">
-			<div className="mx-auto w-full max-w-[var(--dw-content)] px-2 pt-2">
+			<div className="mx-auto w-full max-w-[var(--ly-content)] px-2 pt-2">
 				<button
 					type="button"
 					onClick={() => setOpen((v) => !v)}
 					aria-expanded={open}
-					className="dw-item flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left text-[12px]"
+					className="ly-item flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left text-[12px]"
 				>
 					{active.some((t) => t.status === "running") ? (
-						<CircleDashed size={12.5} strokeWidth={1.9} className="dw-spin shrink-0 text-ink-muted" />
+						<CircleDashed size={12.5} strokeWidth={1.9} className="ly-spin shrink-0 text-ink-muted" />
 					) : (
 						<Clock size={12.5} strokeWidth={1.9} className="shrink-0 text-ink-muted" />
 					)}
@@ -101,7 +101,7 @@ function TaskRow({ task }: { task: QueuedTask }) {
 						: task.status === "done"
 							? "text-ok"
 							: task.status === "running"
-								? "dw-spin text-ink-muted"
+								? "ly-spin text-ink-muted"
 								: "text-ink-faint"
 				}`}
 			/>
@@ -115,7 +115,7 @@ function TaskRow({ task }: { task: QueuedTask }) {
 			{task.status === "queued" && (
 				<button
 					type="button"
-					data-dw-tip="撤回这个任务"
+					data-ly-tip="撤回这个任务"
 					onClick={() => void cancelTask(task.id)}
 					className="shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
 				>

@@ -6,7 +6,7 @@
  * conversation has no project of its own and cannot act on one.
  */
 
-import type { UserContent } from "@deepwise/core";
+import type { UserContent } from "@lyra/core";
 import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { useApp } from "../../store.ts";
@@ -47,7 +47,7 @@ export function SideComposer({
 	 */
 	return (
 		// Same cap as the transcript above it, so the field stays under the messages it answers.
-		<div className="mx-auto w-full max-w-[var(--dw-content)] shrink-0 px-3 pt-2 pb-[15px]">
+		<div className="mx-auto w-full max-w-[var(--ly-content)] shrink-0 px-3 pt-2 pb-[15px]">
 			<ComposerShell
 				value={text}
 				onChange={setText}
@@ -56,7 +56,7 @@ export function SideComposer({
 				placeholder={disabled ? "还没有可以聊的会话" : "问点关于这个会话的事"}
 				left={
 					<span
-						data-dw-tip={modelName ? `跟随主会话：${modelName}` : undefined}
+						data-ly-tip={modelName ? `跟随主会话：${modelName}` : undefined}
 						className="h-7 min-w-0 truncate px-2 text-[12.5px] leading-7 text-ink-faint"
 					>
 						{modelName ?? "未配置模型"}
@@ -67,7 +67,7 @@ export function SideComposer({
 						{onReset && !running && (
 							<button
 								type="button"
-								data-dw-tip="新的侧边聊天"
+								data-ly-tip="新的侧边聊天"
 								aria-label="新的侧边聊天"
 								onClick={onReset}
 								className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"

@@ -37,7 +37,7 @@ async function renderAppIcon(appName: string): Promise<string | null> {
 	if (!icns) return null;
 
 	// A temporary file, because `sips` writes to a path and not to a pipe.
-	const out = join(tmpdir(), `dw-icon-${Buffer.from(appName).toString("hex")}.png`);
+	const out = join(tmpdir(), `ly-icon-${Buffer.from(appName).toString("hex")}.png`);
 	await execFileAsync("sips", ["-s", "format", "png", "--resampleWidth", "128", icns, "--out", out]);
 	const png = await readFile(out).catch(() => null);
 	await rm(out, { force: true }).catch(() => {});

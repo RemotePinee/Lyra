@@ -5,7 +5,7 @@
  * of rendering, and wording rules are exactly the kind of thing that quietly stops being true.
  */
 
-import type { QueuedTask } from "@deepwise/core";
+import type { QueuedTask } from "@lyra/core";
 
 /**
  * The count matters even while something is running.

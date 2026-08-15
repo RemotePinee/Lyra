@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "DeepWise",
-    "slug": "deepwise",
+    "name": "Lyra",
+    "slug": "lyra",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "deepwise",
+    "scheme": "lyra",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "backgroundColor": "#171717",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "dev.deepwise.app",
+      "bundleIdentifier": "dev.lyra.app",
       "infoPlist": {
         "UIUserInterfaceStyle": "Dark",
         "NSAppTransportSecurity": {
@@ -19,7 +19,7 @@
       }
     },
     "android": {
-      "package": "dev.deepwise.app",
+      "package": "dev.lyra.app",
       "edgeToEdgeEnabled": true,
       "usesCleartextTraffic": true
     },

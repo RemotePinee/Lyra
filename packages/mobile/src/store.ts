@@ -11,7 +11,7 @@ import type {
 	UserContent,
 } from "./protocol";
 
-const CONNECTION_KEY = "deepwise.connection";
+const CONNECTION_KEY = "lyra.connection";
 
 export interface ToolRun {
 	toolCallId: string;

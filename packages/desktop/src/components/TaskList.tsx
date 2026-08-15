@@ -1,4 +1,4 @@
-import type { TodoItem } from "@deepwise/core";
+import type { TodoItem } from "@lyra/core";
 import { ChevronDown, ListTodo, Pause, Play, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -91,15 +91,15 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 		<div
 			className={
 				placement === "floating"
-					? "dw-glass pointer-events-auto w-full overflow-hidden rounded-[11px] border border-line-soft shadow-lg shadow-black/[0.06]"
-					: "dw-enter overflow-hidden rounded-[11px] border border-line-soft bg-card/40"
+					? "ly-glass pointer-events-auto w-full overflow-hidden rounded-[11px] border border-line-soft shadow-lg shadow-black/[0.06]"
+					: "ly-enter overflow-hidden rounded-[11px] border border-line-soft bg-card/40"
 			}
 		>
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}
 				aria-expanded={open}
-				className="dw-scroll flex h-9 w-full items-center gap-2 px-3 text-left transition-colors hover:bg-card-hover"
+				className="ly-scroll flex h-9 w-full items-center gap-2 px-3 text-left transition-colors hover:bg-card-hover"
 			>
 				<ListTodo size={13} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
 				{/*
@@ -118,7 +118,7 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 								? "全部完成"
 								: "待开始"
 					}
-					className="dw-fade-tail min-w-0 flex-1 text-[12.5px]"
+					className="ly-fade-tail min-w-0 flex-1 text-[12.5px]"
 				/>
 				<Text size="caption" tone="faint" numeric className="shrink-0">
 					{done}/{todos.length}
@@ -136,8 +136,8 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 					<span
 						role="button"
 						tabIndex={0}
-						data-dw-tip={action.label}
-						data-dw-tip-side="bottom"
+						data-ly-tip={action.label}
+						data-ly-tip-side="bottom"
 						aria-label={action.label}
 						onClick={(event) => {
 							event.stopPropagation();
@@ -204,13 +204,13 @@ function Row({
 	action?: { icon: typeof Pause; label: string; run: () => void };
 }) {
 	return (
-		<div className="dw-scroll group/step flex items-center gap-2 rounded-md px-1.5 py-[5px]">
+		<div className="ly-scroll group/step flex items-center gap-2 rounded-md px-1.5 py-[5px]">
 			{action ? (
 				<button
 					type="button"
 					onClick={action.run}
-					data-dw-tip={action.label}
-					data-dw-tip-side="right"
+					data-ly-tip={action.label}
+					data-ly-tip-side="right"
 					aria-label={action.label}
 					className="flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-sm text-ink-faint transition-colors hover:text-ink"
 				>
@@ -225,7 +225,7 @@ function Row({
 			)}
 			<ScrollText
 				text={todo.content}
-				className={`dw-fade-tail min-w-0 flex-1 text-[12px] ${
+				className={`ly-fade-tail min-w-0 flex-1 text-[12px] ${
 					todo.status === "completed"
 						? "text-ink-faint line-through decoration-line"
 						: todo.status === "in_progress"

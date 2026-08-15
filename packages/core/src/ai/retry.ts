@@ -141,7 +141,7 @@ export function toolCallId(given: unknown, outputIndex: number, invented: Map<nu
 	if (supplied) return supplied;
 	let generated = invented.get(outputIndex);
 	if (!generated) {
-		generated = `dw-call-${outputIndex}-${Math.random().toString(36).slice(2, 10)}`;
+		generated = `ly-call-${outputIndex}-${Math.random().toString(36).slice(2, 10)}`;
 		invented.set(outputIndex, generated);
 	}
 	return generated;

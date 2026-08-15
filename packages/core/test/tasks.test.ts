@@ -69,7 +69,7 @@ interface Harness {
  * dispatched into a session that is genuinely busy — the case the queue exists for.
  */
 async function harness(duringTurn?: (session: AgentSession) => void): Promise<Harness> {
-	const root = await mkdtemp(join(tmpdir(), "dw-task-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-task-"));
 	const store = new SessionStore(join(root, "sessions"));
 	const events: AgentEvent[] = [];
 	const turns: string[] = [];
@@ -261,7 +261,7 @@ test("changing the model is refused once there is history to replay", async () =
 });
 
 test("running out of rounds with work left starts another turn rather than stopping", async () => {
-	const root = await mkdtemp(join(tmpdir(), "dw-cont-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-cont-"));
 	const store = new SessionStore(join(root, "sessions"));
 	const notices: string[] = [];
 	let calls = 0;

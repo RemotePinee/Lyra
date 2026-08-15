@@ -30,7 +30,7 @@ export function ResumeRow() {
 	if (running || (!interrupted && unfinished === 0)) return null;
 
 	return (
-		<div className="dw-enter mb-2.5 flex items-center gap-2 text-[11.5px] text-ink-faint">
+		<div className="ly-enter mb-2.5 flex items-center gap-2 text-[11.5px] text-ink-faint">
 			<span>{interrupted ? "上次执行被中断" : `计划还有 ${unfinished} 项未完成`}</span>
 			<span className="text-line">·</span>
 			<button

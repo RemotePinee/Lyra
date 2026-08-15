@@ -67,7 +67,7 @@ export function ComposerShell({
        * of room rather than when the window does. The two are not the same question: at
        * 1100px wide with a sidebar and a panel open, this field is 350px.
        */
-      className="dw-composer @container rounded-[18px] border border-line-soft bg-input transition-[border-color,box-shadow] duration-200"
+      className="ly-composer @container rounded-[18px] border border-line-soft bg-input transition-[border-color,box-shadow] duration-200"
       onDragOver={onFiles ? (e) => e.preventDefault() : undefined}
       onDrop={
         onFiles
@@ -85,7 +85,7 @@ export function ComposerShell({
        * other scroller. Native bars are hidden globally, which left a long draft scrolling
        * with nothing to say so — and no way to see how much of it was above the fold.
        */}
-      <div className="dw-scroll-host relative">
+      <div className="ly-scroll-host relative">
         <textarea
           ref={field}
           value={value}
@@ -146,10 +146,10 @@ export function ComposerSend({
     return (
       <button
         type="button"
-        data-dw-tip="停止"
+        data-ly-tip="停止"
         aria-label="停止"
         onClick={onStop}
-        className="dw-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-150 hover:opacity-85"
+        className="ly-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-150 hover:opacity-85"
       >
         <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
           <rect width="11" height="11" rx="1.5" fill="currentColor" />
@@ -160,7 +160,7 @@ export function ComposerSend({
   return (
     <button
       type="button"
-      data-dw-tip="发送"
+      data-ly-tip="发送"
       aria-label="发送"
       disabled={disabled}
       onClick={onSend}

@@ -60,7 +60,7 @@ export function BranchesView({
   const checkouts = repos.flatMap((repo) => [repo, ...(trees[repo.path] ?? [])]);
 
   const load = useCallback(() => {
-    void window.deepwise.git.branches(cwd).then(setBranches);
+    void window.lyra.git.branches(cwd).then(setBranches);
   }, [cwd]);
 
   useEffect(load, [load, status?.branch]);
@@ -68,7 +68,7 @@ export function BranchesView({
   useEffect(() => {
     if (!compare) return setDiff(null);
     let live = true;
-    void window.deepwise.git
+    void window.lyra.git
       .diffRefs(cwd, compare.base, compare.head)
       .then((result) => live && setDiff(result));
     return () => {
@@ -137,7 +137,7 @@ export function BranchesView({
                 <button
                   key={entry.path}
                   type="button"
-                  data-dw-tip={entry.path}
+                  data-ly-tip={entry.path}
                   onClick={() => onSelectRepo(entry.path)}
                   className={`flex w-full items-center gap-1.5 rounded-md py-1 pr-1.5 text-left transition-colors ${
                     entry.worktree ? "pl-5" : "pl-1.5"
@@ -179,7 +179,7 @@ export function BranchesView({
               onSubmit={(event) => {
                 event.preventDefault();
                 void act(() =>
-                  window.deepwise.git.createBranch(cwd, name),
+                  window.lyra.git.createBranch(cwd, name),
                 ).then((ok) => {
                   if (ok) {
                     setCreating(false);
@@ -213,7 +213,7 @@ export function BranchesView({
               current={branch === current}
               busy={busy}
               onSwitch={() =>
-                void act(() => window.deepwise.git.switchBranch(cwd, branch))
+                void act(() => window.lyra.git.switchBranch(cwd, branch))
               }
               onCompare={
                 current && branch !== current
@@ -226,7 +226,7 @@ export function BranchesView({
                   : () => {
                       if (window.confirm(`删除分支 ${branch}？`)) {
                         void act(() =>
-                          window.deepwise.git.deleteBranch(cwd, branch),
+                          window.lyra.git.deleteBranch(cwd, branch),
                         ).then(load);
                       }
                     }
@@ -251,7 +251,7 @@ export function BranchesView({
               busy={busy}
               remote
               onSwitch={() =>
-                void act(() => window.deepwise.git.switchBranch(cwd, branch))
+                void act(() => window.lyra.git.switchBranch(cwd, branch))
               }
               onCompare={
                 current

@@ -7,8 +7,8 @@
  * the event belongs to the conversation on screen.
  */
 
-import type { AgentEvent, Message } from "@deepwise/core";
-import { nextActivity } from "@deepwise/core/activity";
+import type { AgentEvent, Message } from "@lyra/core";
+import { nextActivity } from "@lyra/core/activity";
 import { coalesce, flushCoalesced } from "./coalesce.ts";
 import { applyToolEvent } from "./apply-tool.ts";
 import { useSide } from "../sideStore.ts";
@@ -50,7 +50,7 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
     // A turn driven from the phone still has to move the session up the sidebar and
     // update its title, even though its transcript is not on screen.
     if (event.type === "agent_end" || event.type === "turn_end") {
-      void window.deepwise.sessions
+      void window.lyra.sessions
         .list()
         .then((sessions) => set({ sessions }));
     }
@@ -244,7 +244,7 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
         turnStartedAt: null,
         messages: settleTail(get().messages, event),
       });
-      void window.deepwise.sessions
+      void window.lyra.sessions
         .list()
         .then((sessions) => set({ sessions }));
       break;

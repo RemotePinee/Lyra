@@ -45,6 +45,7 @@ export {
 } from "./trajectory/index.ts";
 export { nextTask, useScheduler } from "./runtime/scheduling.ts";
 export { isDue, nextRunAt } from "./config/schedule.ts";
+export { migratePreviousHome, type MigrationResult } from "./session/migrate-home.ts";
 export { prepareTurn, useTurnPipeline, type TurnContext, type TurnMiddleware } from "./runtime/turn.ts";
 export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
 export { loadCapabilityPlugins, type LoadedCapabilityPlugins } from "./plugins/capability.ts";
@@ -110,7 +111,7 @@ export type { SessionStatus } from "./runtime/reporting.ts";
 export { AgentSession, type AgentSessionOptions,  } from "./runtime/session.ts";
 export { SideChat, type SideChatOptions, type SideChatState } from "./runtime/sidechat.ts";
 export {
-	deepwiseHome,
+	lyraHome,
 	projectIdFor,
 	SessionStore,
 	type SessionMeta,

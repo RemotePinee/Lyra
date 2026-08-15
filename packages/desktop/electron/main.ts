@@ -4,7 +4,8 @@ import { spawn as spawnPty, type IPty } from "node-pty";
 import { app, BrowserWindow, protocol } from "electron";
 import {
 	createContext,
-	deepwiseHome,
+	lyraHome,
+	migratePreviousHome,
 	loadCapabilityPlugins,
 	loadPlugins,
 	DEFAULT_PLUGINS,
@@ -42,7 +43,7 @@ import {
 	type TaskScheduler,
 	type TurnPipeline,
 	type ToolRegistry,
-} from "@deepwise/core";
+} from "@lyra/core";
 import {
 	broadcastSideChat,
 	browsers,
@@ -60,6 +61,7 @@ import { idleSyncStatus, testProvider } from "./providers.ts";
 import { registerSessionsIpc } from "./ipc/sessions.ts";
 import { ensureLiveSession } from "./session-hub.ts";
 import {
+	appIconPath,
 	applyNativeAppearance,
 	createWindow,
 	getWindow,
@@ -85,7 +87,7 @@ import { Scheduler } from "./scheduler.ts";
  */
 
 /** Shared with the renderer's `<webview partition>`; they must name the same partition. */
-const BROWSER_PARTITION = "persist:dw-browser";
+const BROWSER_PARTITION = "persist:ly-browser";
 
 /**
  * Whether a path is inside a project the user has opened.
@@ -148,8 +150,39 @@ protocol.registerSchemesAsPrivileged([
 	{ scheme: PREVIEW_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
 
+/*
+ * The name, before anything can ask for it.
+ *
+ * Packaged, this comes from the bundle. Run from source it does not exist, so macOS falls back to
+ * the binary's name — and the dock, the menu bar and the "force quit" list all say Electron. It
+ * also decides where `app.getPath("userData")` points, which is why it is set here rather than
+ * after the app is ready.
+ */
+app.setName("Lyra");
+
 app.whenReady().then(async () => {
-	await mkdir(deepwiseHome(), { recursive: true });
+	/*
+	 * Before anything reads or writes it: the home directory was called `.deepwise` until the app
+	 * was renamed, and to someone who had been using it, a fresh empty one is indistinguishable
+	 * from having lost every session.
+	 */
+	const migration = await migratePreviousHome(lyraHome());
+	if (migration.moved) console.log(`[lyra] 已把 ${migration.from} 迁移到 ${migration.to}`);
+	if (migration.error) console.warn(`[lyra] 旧目录迁移失败：${migration.error}`);
+
+	await mkdir(lyraHome(), { recursive: true });
+
+	/*
+	 * The dock icon, which macOS otherwise takes from the bundle.
+	 *
+	 * In development there is no bundle, so it shows Electron's own logo — on the dock, in the
+	 * app switcher and in the "force quit" list. Setting it here is the only way to be looking at
+	 * this application rather than at Electron while developing it.
+	 */
+	if (process.platform === "darwin") {
+		const icon = appIconPath();
+		if (icon) app.dock?.setIcon(icon);
+	}
 
 	/*
 	 * Capabilities first, everything else after.
@@ -169,7 +202,7 @@ app.whenReady().then(async () => {
 	 */
 	settings = await loadAppSettings();
 	const bundles = await loadPlugins(
-		[{ dir: join(deepwiseHome(), "plugins"), source: "user" as const }],
+		[{ dir: join(lyraHome(), "plugins"), source: "user" as const }],
 		settings.disabledPlugins,
 	);
 	const extra = await loadCapabilityPlugins(bundles.plugins);
@@ -213,7 +246,7 @@ app.whenReady().then(async () => {
 	// Clear out sessions that were reserved and never used — including any left over from
 	// when clicking "新对话" created one up front.
 	const pruned = await store.pruneEmpty().catch(() => 0);
-	if (pruned > 0) console.log(`[deepwise] 清理了 ${pruned} 个空会话`);
+	if (pruned > 0) console.log(`[lyra] 清理了 ${pruned} 个空会话`);
 
 	/*
 	 * Previews outlive nothing. Anything belonging to a conversation that is gone goes with it,
@@ -222,9 +255,9 @@ app.whenReady().then(async () => {
 	 */
 	void store
 		.listSessions()
-		.then((all) => pruneSessionArtifacts(deepwiseHome(), new Set(all.map((s) => s.id))))
+		.then((all) => pruneSessionArtifacts(lyraHome(), new Set(all.map((s) => s.id))))
 		.then((gone) => {
-			if (gone > 0) console.log(`[deepwise] 清理了 ${gone} 个会话的临时文件`);
+			if (gone > 0) console.log(`[lyra] 清理了 ${gone} 个会话的临时文件`);
 		})
 		.catch(() => {});
 	registerIpc();

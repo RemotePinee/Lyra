@@ -12,7 +12,7 @@ export function AgentsSettings() {
 
 	useEffect(() => {
 		if (!activeSessionId) return;
-		void window.deepwise.sessions.capabilities(activeSessionId).then(setCapabilities);
+		void window.lyra.sessions.capabilities(activeSessionId).then(setCapabilities);
 	}, [activeSessionId]);
 
 	const agents = capabilities?.agents ?? [];

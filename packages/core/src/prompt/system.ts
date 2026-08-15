@@ -37,7 +37,7 @@ export interface SystemPromptInput {
 	scratchDir?: string;
 }
 
-const IDENTITY = `You are DeepWise, a coding agent that works directly inside the user's project. You help by reading files, running commands, editing code, and writing new files. You are judged on whether the code works, not on how the answer reads.`;
+const IDENTITY = `You are Lyra, a coding agent that works directly inside the user's project. You help by reading files, running commands, editing code, and writing new files. You are judged on whether the code works, not on how the answer reads.`;
 
 /** Rules that hold regardless of which tools are loaded. */
 const BASE_GUIDELINES = [
@@ -194,13 +194,13 @@ function escapeXml(text: string): string {
 		.replace(/"/g, "&quot;");
 }
 
-const INSTRUCTION_FILES = ["DEEPWISE.md", "AGENTS.md", "CLAUDE.md"];
+const INSTRUCTION_FILES = ["LYRA.md", "AGENTS.md", "CLAUDE.md"];
 
 /**
  * Load project instruction files.
  *
  * Only the first file that exists is used, in the listed priority order, so a project with
- * both DEEPWISE.md and AGENTS.md does not get contradictory instructions injected twice.
+ * both LYRA.md and AGENTS.md does not get contradictory instructions injected twice.
  */
 export async function loadProjectInstructions(cwd: string): Promise<{ path: string; content: string }[]> {
 	for (const name of INSTRUCTION_FILES) {

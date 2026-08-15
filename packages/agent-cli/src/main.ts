@@ -6,7 +6,7 @@
  * the same three environment variables, which is the difference between a thing you can debug and
  * a thing that only ever fails in CI.
  *
- *   DEEPWISE_BASE_URL=… DEEPWISE_API_KEY=… GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo \
+ *   LYRA_BASE_URL=… LYRA_API_KEY=… GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo \
  *     node --experimental-strip-types packages/agent-cli/src/main.ts review 42
  */
 
@@ -15,13 +15,13 @@ import { reviewPullRequest } from "./tasks/review.ts";
 import { triageIssue } from "./tasks/triage.ts";
 
 const USAGE = `用法:
-  deepwise-agent review <pr-number>    审查一个 PR，把结果写成评论
-  deepwise-agent triage <issue-number> 给一个 issue 分类并指出缺什么
+  lyra-agent review <pr-number>    审查一个 PR，把结果写成评论
+  lyra-agent triage <issue-number> 给一个 issue 分类并指出缺什么
 
 环境变量:
-  DEEPWISE_BASE_URL   模型端点
-  DEEPWISE_API_KEY    模型密钥
-  DEEPWISE_MODEL      模型名，默认 deepseek-v4-flash
+  LYRA_BASE_URL   模型端点
+  LYRA_API_KEY    模型密钥
+  LYRA_MODEL      模型名，默认 deepseek-v4-flash
   GITHUB_TOKEN        写评论和标签用
   GITHUB_REPOSITORY   owner/name`;
 
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
 
 	const { repo, token } = contextFromEnv();
 	const cwd = process.env.GITHUB_WORKSPACE ?? process.cwd();
-	const verbose = process.env.RUNNER_DEBUG === "1" || process.env.DEEPWISE_VERBOSE === "1";
+	const verbose = process.env.RUNNER_DEBUG === "1" || process.env.LYRA_VERBOSE === "1";
 
 	if (command === "review") {
 		await reviewPullRequest({ token, repo, number, cwd, verbose });

@@ -25,7 +25,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 				onClick={() => setOpen((v) => !v)}
 				className="flex items-center gap-1.5 rounded-md py-0.5 text-[12px] text-ink-faint transition-colors hover:text-ink-muted"
 			>
-				<Brain size={13} strokeWidth={1.8} className={live ? "dw-pulse" : undefined} />
+				<Brain size={13} strokeWidth={1.8} className={live ? "ly-pulse" : undefined} />
 				{redacted ? "思考过程（已被安全过滤）" : "思考过程"}
 				<ChevronRight
 					size={12}
@@ -36,7 +36,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 			</button>
 
 			{open && !redacted && (
-				<div className="dw-enter mt-1.5 border-l-2 border-line pl-3">
+				<div className="ly-enter mt-1.5 border-l-2 border-line pl-3">
 					{/*
 					 * Rendered, not raw. Models write their reasoning in markdown — backticked
 					 * identifiers, numbered steps, the occasional block — so showing it verbatim

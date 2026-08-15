@@ -10,7 +10,7 @@
  * only a layout.
  */
 
-import type { ModelConfig, ProviderConfig } from "@deepwise/core";
+import type { ModelConfig, ProviderConfig } from "@lyra/core";
 import { useEffect, useMemo, useState } from "react";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
 import { useApp } from "../../store.ts";
@@ -114,7 +114,7 @@ export function useProviders() {
 		setTesting(true);
 		setTestResult(null);
 		try {
-			setTestResult(await window.deepwise.providers.test(selected.id));
+			setTestResult(await window.lyra.providers.test(selected.id));
 		} finally {
 			setTesting(false);
 		}

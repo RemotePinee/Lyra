@@ -151,8 +151,8 @@ export function OverlayScrollbar({
 				}
 				className={`absolute rounded-full bg-ink-faint ${
 					vertical
-						? `dw-thumb right-[2px] w-[6px] ${active ? "dw-thumb-active" : ""}`
-						: `dw-hthumb bottom-[2px] h-[6px] ${active ? "dw-hthumb-active" : ""}`
+						? `ly-thumb right-[2px] w-[6px] ${active ? "ly-thumb-active" : ""}`
+						: `ly-hthumb bottom-[2px] h-[6px] ${active ? "ly-hthumb-active" : ""}`
 				}`}
 			/>
 		</div>

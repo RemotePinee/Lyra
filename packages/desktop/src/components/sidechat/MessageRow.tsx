@@ -6,7 +6,7 @@
  * would be noise on one that is thrown away at quit.
  */
 
-import type { AssistantMessage, Message } from "@deepwise/core";
+import type { AssistantMessage, Message } from "@lyra/core";
 import { useSide } from "../../sideStore.ts";
 import { Markdown } from "../Markdown.tsx";
 import { ThinkingBlock } from "../ThinkingBlock.tsx";
@@ -24,7 +24,7 @@ export function MessageRow({ message }: { message: Message }) {
 			.map((block) => block.text)
 			.join("\n");
 		return (
-			<div className="dw-enter mb-4 flex justify-end">
+			<div className="ly-enter mb-4 flex justify-end">
 				<div className="max-w-[88%] rounded-[13px] rounded-br-[5px] bg-card px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
 					{text}
 				</div>
@@ -39,7 +39,7 @@ function AssistantRow({ message }: { message: AssistantMessage }) {
 	const toolRuns = useSide((s) => s.toolRuns);
 
 	return (
-		<div className="dw-enter mb-4">
+		<div className="ly-enter mb-4">
 			{message.content.map((block, index) => {
 				if (block.type === "thinking") {
 					return (

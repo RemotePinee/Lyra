@@ -1,4 +1,4 @@
-import type { HookConfig } from "@deepwise/core";
+import type { HookConfig } from "@lyra/core";
 import { ScrollText } from "../ScrollText.tsx";
 import { Anchor, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -20,7 +20,7 @@ const PRESETS: { label: string; hook: Omit<HookConfig, "id"> }[] = [
     label: "记录所有命令",
     hook: {
       command:
-        'echo "$(date -u +%FT%TZ) $DW_TOOL $DW_ARGS" >> .deepwise/tool-audit.log',
+        'echo "$(date -u +%FT%TZ) $DW_TOOL $DW_ARGS" >> .lyra/tool-audit.log',
       tools: ["bash"],
       event: "after-tool",
       enabled: true,
@@ -195,7 +195,7 @@ function HookCard({
         />
         <button
           type="button"
-          data-dw-tip="删除"
+          data-ly-tip="删除"
           onClick={onRemove}
           className="text-ink-faint transition-colors hover:text-danger"
         >

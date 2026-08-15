@@ -1,9 +1,9 @@
 {
-  "name": "@deepwise/core",
+  "name": "@lyra/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DeepWise agent kernel: providers, agent loop, tools, skills, MCP, sessions",
+  "description": "Lyra agent kernel: providers, agent loop, tools, skills, MCP, sessions",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {

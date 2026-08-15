@@ -5,7 +5,7 @@
  * column of dots would be a list, not a history.
  */
 
-import { computeDiff } from "@deepwise/core";
+import { computeDiff } from "@lyra/core";
 import type { GitCommit, WorkspaceDiffFile } from "./ipc-types.ts";
 import { git, run, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { capHunks, classify } from "./git-diff.ts";

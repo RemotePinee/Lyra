@@ -16,7 +16,7 @@ import {
 } from "../src/runtime/previews.ts";
 
 async function sandbox(t: { after: (fn: () => unknown) => void }): Promise<string> {
-	const home = await mkdtemp(join(tmpdir(), "dw-previews-"));
+	const home = await mkdtemp(join(tmpdir(), "ly-previews-"));
 	t.after(() => rm(home, { recursive: true, force: true }));
 	return home;
 }

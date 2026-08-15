@@ -130,7 +130,7 @@ export function ResizeHandle({
 				event.preventDefault();
 			}}
 			style={{ width: HIT_WIDTH, [edge === "end" ? "right" : "left"]: 0 }}
-			className="group/resize absolute top-0 bottom-0 z-30 cursor-col-resize [--dw-grip:30px]"
+			className="group/resize absolute top-0 bottom-0 z-30 cursor-col-resize [--ly-grip:30px]"
 		>
 			{/*
 			 * The grip: a short rounded bar centred on the pointer, pinned to the boundary itself.
@@ -143,7 +143,7 @@ export function ResizeHandle({
 				<span
 					aria-hidden
 					style={{ top: `clamp(${GRIP_HEIGHT / 2 + 8}px, ${grip}px, calc(100% - ${GRIP_HEIGHT / 2 + 8}px))` }}
-					className={`absolute h-[var(--dw-grip)] w-[3px] -translate-y-1/2 rounded-full transition-colors duration-150 ${
+					className={`absolute h-[var(--ly-grip)] w-[3px] -translate-y-1/2 rounded-full transition-colors duration-150 ${
 						edge === "end" ? "right-[1px]" : "left-[1px]"
 					} ${active ? "bg-accent" : "bg-ink-faint/45"}`}
 				/>

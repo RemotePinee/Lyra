@@ -1,4 +1,4 @@
-import type { SessionActivity } from "@deepwise/core/activity";
+import type { SessionActivity } from "@lyra/core/activity";
 
 import { Spinner } from "./RunningIndicator.tsx";
 
@@ -26,8 +26,8 @@ export function SessionStatus({ activity }: { activity: SessionActivity | null }
 	return (
 		<span
 			className="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
-			data-dw-tip={activity ? LABEL[activity] : undefined}
-			data-dw-tip-side="right"
+			data-ly-tip={activity ? LABEL[activity] : undefined}
+			data-ly-tip-side="right"
 			aria-label={activity ? LABEL[activity] : undefined}
 			role={activity ? "img" : undefined}
 		>
@@ -43,7 +43,7 @@ export function SessionStatus({ activity }: { activity: SessionActivity | null }
 				 * new amber: it is the colour this app already uses to mean "you", and a palette
 				 * gains nothing from a sixth hue that appears in one place.
 				 */
-				<span className="dw-pulse block h-[7px] w-[7px] rounded-full bg-accent" />
+				<span className="ly-pulse block h-[7px] w-[7px] rounded-full bg-accent" />
 			) : activity === "done" ? (
 				<span className="block h-[7px] w-[7px] rounded-full bg-ok" />
 			) : activity === "failed" ? (

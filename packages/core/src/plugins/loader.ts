@@ -10,7 +10,7 @@
  * Layout (compatible with Codex's, so existing bundles drop straight in):
  *
  *   my-plugin/
- *     .deepwise-plugin/plugin.json   (or .codex-plugin/plugin.json, or ./plugin.json)
+ *     .lyra-plugin/plugin.json   (or .codex-plugin/plugin.json, or ./plugin.json)
  *     skills/<name>/SKILL.md
  *     skills/<name>/scripts/…
  *     .mcp.json
@@ -68,7 +68,7 @@ export interface PluginDiagnostic {
 }
 
 const MANIFEST_LOCATIONS = [
-	join(".deepwise-plugin", "plugin.json"),
+	join(".lyra-plugin", "plugin.json"),
 	join(".codex-plugin", "plugin.json"),
 	"plugin.json",
 ];

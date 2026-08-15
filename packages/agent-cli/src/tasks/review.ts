@@ -14,7 +14,7 @@
 import { pullRequestDiff, upsertComment, type Repo } from "../github.ts";
 import { runOnce } from "../agent.ts";
 
-const REVIEW_MARKER = "<!-- deepwise-agent: review -->";
+const REVIEW_MARKER = "<!-- lyra-agent: review -->";
 
 /** Past this the diff is truncated: a review of the first thousand lines is worth more than none. */
 const MAX_DIFF_CHARS = 40_000;

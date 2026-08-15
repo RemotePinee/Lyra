@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { deepwiseHome } from "../session/store.ts";
+import { lyraHome } from "../session/store.ts";
 import { looksBinary } from "../tools/paths.ts";
 
 export interface SymbolEntry {
@@ -133,12 +133,12 @@ export async function buildIndex(cwd: string, signal?: AbortSignal): Promise<Sym
 
 function indexPath(cwd: string): string {
 	const id = createHash("sha256").update(cwd).digest("hex").slice(0, 16);
-	return join(deepwiseHome(), "index", `${id}.json`);
+	return join(lyraHome(), "index", `${id}.json`);
 }
 
 export async function saveIndex(index: SymbolIndex): Promise<void> {
 	const path = indexPath(index.cwd);
-	await mkdir(join(deepwiseHome(), "index"), { recursive: true });
+	await mkdir(join(lyraHome(), "index"), { recursive: true });
 	const tmp = `${path}.${process.pid}.tmp`;
 	await writeFile(tmp, JSON.stringify(index), "utf8");
 	await rename(tmp, path);

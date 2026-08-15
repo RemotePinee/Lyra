@@ -60,11 +60,11 @@ export function TaskPanel() {
 				<>
 					<Header label="计划" hint={`${done}/${todos.length}`} />
 					{todos.map((todo, index) => (
-						<div key={`${index}-${todo.content}`} className="dw-scroll flex items-center gap-2 rounded-md px-1.5 py-[5px]">
+						<div key={`${index}-${todo.content}`} className="ly-scroll flex items-center gap-2 rounded-md px-1.5 py-[5px]">
 							<Mark status={todo.status} paused={!running && !failed} failed={failed} />
 							<ScrollText
 								text={todo.content}
-								className={`dw-fade-tail min-w-0 flex-1 text-[12px] ${
+								className={`ly-fade-tail min-w-0 flex-1 text-[12px] ${
 									todo.status === "completed" ? "text-ink-faint line-through decoration-line" : "text-ink-muted"
 								}`}
 							/>
@@ -81,12 +81,12 @@ export function TaskPanel() {
 							key={run.toolCallId}
 							open={openId === run.toolCallId}
 							onToggle={() => setOpenId(openId === run.toolCallId ? null : run.toolCallId)}
-							summary={<ScrollText text={run.summary} className="dw-fade-tail min-w-0 flex-1 text-[12px]" />}
+							summary={<ScrollText text={run.summary} className="ly-fade-tail min-w-0 flex-1 text-[12px]" />}
 							trailing={
 								<>
 									<span
 										className={`h-[6px] w-[6px] shrink-0 rounded-full ${
-											run.status === "running" ? "dw-pulse bg-info" : run.status === "error" ? "bg-danger" : "bg-ok/70"
+											run.status === "running" ? "ly-pulse bg-info" : run.status === "error" ? "bg-danger" : "bg-ok/70"
 										}`}
 									/>
 									<Text size="caption" tone="faint" numeric className="shrink-0">

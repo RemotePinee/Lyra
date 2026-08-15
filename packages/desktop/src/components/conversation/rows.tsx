@@ -8,7 +8,7 @@
  */
 
 import { memo } from "react";
-import type { AssistantMessage, Message } from "@deepwise/core";
+import type { AssistantMessage, Message } from "@lyra/core";
 import { Markdown } from "../Markdown.tsx";
 import { MessageActions } from "../MessageActions.tsx";
 import { ThinkingBlock } from "../ThinkingBlock.tsx";
@@ -101,7 +101,7 @@ function AssistantRow({
 
   // `group/msg` is what reveals the row below, and it names the whole reply as the target.
   return (
-    <div className="group/msg dw-enter mb-2.5">
+    <div className="group/msg ly-enter mb-2.5">
       {/*
        * Grouped before rendering, not after.
        *

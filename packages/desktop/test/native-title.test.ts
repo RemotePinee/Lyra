@@ -3,7 +3,7 @@
  *
  * `title` on a DOM element draws a tooltip nobody here designed: a system panel with its own delay,
  * its own font and its own colours, which on macOS looks like it belongs to a different program.
- * The app has `data-dw-tip`, drawn by one document-level listener, so a stray `title` is not a
+ * The app has `data-ly-tip`, drawn by one document-level listener, so a stray `title` is not a
  * second style — it is a second tooltip that appears *beside* the first one on the same hover.
  *
  * They came back one at a time, in ones and twos, whenever a button was added. So this is a test
@@ -52,7 +52,7 @@ test("no DOM element carries a native title attribute", () => {
 		}
 	}
 
-	assert.deepEqual(offenders, [], `use data-dw-tip instead of title:\n${offenders.join("\n")}`);
+	assert.deepEqual(offenders, [], `use data-ly-tip instead of title:\n${offenders.join("\n")}`);
 });
 
 test("an attribute after an arrow-function handler is still seen", () => {

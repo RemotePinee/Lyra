@@ -7,8 +7,8 @@
  */
 
 import { ipcMain } from "electron";
-import type { AgentEvent, AgentSession, Settings, UserContent } from "@deepwise/core";
-import { SideChat } from "@deepwise/core";
+import type { AgentEvent, AgentSession, Settings, UserContent } from "@lyra/core";
+import { SideChat } from "@lyra/core";
 
 export interface SideChatIpcDeps {
 	sideChats: Map<string, SideChat>;

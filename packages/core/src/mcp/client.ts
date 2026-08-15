@@ -88,7 +88,7 @@ export class McpManager {
 	}
 
 	async connect(server: McpServerConfig): Promise<McpConnection> {
-		const client = new Client({ name: "deepwise", version: "0.1.0" }, { capabilities: {} });
+		const client = new Client({ name: "lyra", version: "0.1.0" }, { capabilities: {} });
 		const transport =
 			server.transport === "stdio"
 				? new StdioClientTransport({

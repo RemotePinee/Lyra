@@ -173,16 +173,16 @@ export function CodeEditor({
 			 */
 			const panel = element.querySelector<HTMLElement>(".cm-panel.cm-search");
 			// The app's floating surface, so the find card matches every menu and popover in it.
-			panel?.classList.add("dw-glass", "dw-pop-down");
-			if (panel && !panel.querySelector("[name=dw-replace-toggle]")) {
+			panel?.classList.add("ly-glass", "ly-pop-down");
+			if (panel && !panel.querySelector("[name=ly-replace-toggle]")) {
 				const toggle = document.createElement("button");
-				toggle.setAttribute("name", "dw-replace-toggle");
+				toggle.setAttribute("name", "ly-replace-toggle");
 				toggle.setAttribute("type", "button");
 				toggle.setAttribute("aria-label", "显示替换");
 				toggle.dataset.dwTip = "显示替换";
 				toggle.innerHTML = CHEVRON_RIGHT;
 				toggle.addEventListener("click", () => {
-					const open = panel.classList.toggle("dw-replace-open");
+					const open = panel.classList.toggle("ly-replace-open");
 					toggle.setAttribute("aria-label", open ? "隐藏替换" : "显示替换");
 					toggle.dataset.dwTip = open ? "隐藏替换" : "显示替换";
 					toggle.innerHTML = open ? CHEVRON_DOWN : CHEVRON_RIGHT;
@@ -254,8 +254,8 @@ export function CodeEditor({
 
 	return (
 		// `relative` so the thumbs can be positioned against the pane rather than the window.
-		<div className="dw-scroll-host relative flex min-h-0 flex-1">
-			<div ref={host} className="dw-cm min-h-0 min-w-0 flex-1 overflow-hidden" />
+		<div className="ly-scroll-host relative flex min-h-0 flex-1">
+			<div ref={host} className="ly-cm min-h-0 min-w-0 flex-1 overflow-hidden" />
 			{scroller && (
 				<>
 					<OverlayScrollbar viewport={scrollerRef} orientation="vertical" />

@@ -1,13 +1,13 @@
-import type { ScheduledTask } from "@deepwise/core";
+import type { ScheduledTask } from "@lyra/core";
 /*
  * From the sub-entry, not from the package root.
  *
- * Importing a *value* from "@deepwise/core" pulls the whole index into the renderer, and the whole
+ * Importing a *value* from "@lyra/core" pulls the whole index into the renderer, and the whole
  * index reaches `node:fs`, `node:child_process` and the rest — the bundle loads, throws on the
  * first Node builtin, and the window renders nothing at all. Types are erased at compile time and
  * cost nothing; values have to come from an entry that is browser-safe on its own.
  */
-import { nextRunAt } from "@deepwise/core/schedule";
+import { nextRunAt } from "@lyra/core/schedule";
 import { Clock, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Scroller } from "./Scroller.tsx";
@@ -121,7 +121,7 @@ function TaskCard({
 	const [running, setRunning] = useState(false);
 
 	return (
-		<div className="dw-enter overflow-hidden rounded-[10px] border border-line bg-card/40">
+		<div className="ly-enter overflow-hidden rounded-[10px] border border-line bg-card/40">
 			<div className="flex items-center gap-2.5 border-b border-line-soft px-4 py-2.5">
 				<Clock size={14} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
 				<input
@@ -132,12 +132,12 @@ function TaskCard({
 				/>
 				<button
 					type="button"
-					data-dw-tip="立即运行一次"
+					data-ly-tip="立即运行一次"
 					disabled={running}
 					onClick={async () => {
 						setRunning(true);
 						try {
-							await window.deepwise.scheduler.runNow(task.id);
+							await window.lyra.scheduler.runNow(task.id);
 						} finally {
 							setTimeout(() => setRunning(false), 1500);
 						}
@@ -149,7 +149,7 @@ function TaskCard({
 				<Toggle checked={task.enabled} onChange={(enabled) => onChange({ enabled })} />
 				<button
 					type="button"
-					data-dw-tip="删除"
+					data-ly-tip="删除"
 					onClick={onRemove}
 					className="text-ink-faint transition-colors hover:text-danger"
 				>

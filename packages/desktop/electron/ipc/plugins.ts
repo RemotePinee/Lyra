@@ -1,7 +1,7 @@
 /**
  * Installing and listing plugins.
  *
- * Two kinds live side by side: what the workspace carries in `.deepwise/plugins`, and what the user
+ * Two kinds live side by side: what the workspace carries in `.lyra/plugins`, and what the user
  * installed for themselves. Both are directories of code, so both are listed with their source
  * attached — where a plugin came from is the first thing anyone asks when it misbehaves.
  */
@@ -9,7 +9,7 @@
 import { ipcMain, shell } from "electron";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { deepwiseHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uninstallEntry } from "@deepwise/core";
+import { lyraHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uninstallEntry } from "@lyra/core";
 import type { RegistryEntry } from "../ipc-types.ts";
 
 export interface PluginsIpcDeps {
@@ -47,14 +47,14 @@ export function registerPluginsIpc({ disabledPlugins }: PluginsIpcDeps): void {
 		const [plugins, skills] = await Promise.all([
 			loadPlugins(
 				[
-					...(cwd ? [{ dir: join(cwd, ".deepwise", "plugins"), source: "workspace" as const }] : []),
-					{ dir: join(deepwiseHome(), "plugins"), source: "user" as const },
+					...(cwd ? [{ dir: join(cwd, ".lyra", "plugins"), source: "workspace" as const }] : []),
+					{ dir: join(lyraHome(), "plugins"), source: "user" as const },
 				],
 				disabledPlugins(),
 			),
 			loadSkills([
-				...(cwd ? [{ dir: join(cwd, ".deepwise", "skills"), source: "workspace" as const }] : []),
-				{ dir: join(deepwiseHome(), "skills"), source: "user" as const },
+				...(cwd ? [{ dir: join(cwd, ".lyra", "skills"), source: "workspace" as const }] : []),
+				{ dir: join(lyraHome(), "skills"), source: "user" as const },
 			]),
 		]);
 		const looseNames = new Set(skills.skills.map((skill) => skill.name));
@@ -80,7 +80,7 @@ export function registerPluginsIpc({ disabledPlugins }: PluginsIpcDeps): void {
 	});
 
 	ipcMain.handle("plugins:installExample", async (_event, scope: "workspace" | "user", cwd: string) => {
-		const dir = join(pluginsDir(scope, cwd), "hello-deepwise");
+		const dir = join(pluginsDir(scope, cwd), "hello-lyra");
 		await writeExamplePlugin(dir);
 		await shell.openPath(dir);
 		return dir;
@@ -88,7 +88,7 @@ export function registerPluginsIpc({ disabledPlugins }: PluginsIpcDeps): void {
 }
 
 function pluginsDir(scope: "workspace" | "user", cwd: string): string {
-	return scope === "workspace" ? join(cwd, ".deepwise", "plugins") : join(deepwiseHome(), "plugins");
+	return scope === "workspace" ? join(cwd, ".lyra", "plugins") : join(lyraHome(), "plugins");
 }
 
 /**
@@ -98,21 +98,21 @@ function pluginsDir(scope: "workspace" | "user", cwd: string): string {
  * real script, and an MCP declaration pointing at Context7 — the three pieces a plugin can carry.
  */
 async function writeExamplePlugin(dir: string): Promise<void> {
-	await mkdir(join(dir, ".deepwise-plugin"), { recursive: true });
+	await mkdir(join(dir, ".lyra-plugin"), { recursive: true });
 	await mkdir(join(dir, "skills", "changelog", "scripts"), { recursive: true });
 
 	await writeFile(
-		join(dir, ".deepwise-plugin", "plugin.json"),
+		join(dir, ".lyra-plugin", "plugin.json"),
 		`${JSON.stringify(
 			{
-				name: "hello-deepwise",
+				name: "hello-lyra",
 				version: "0.1.0",
 				description: "示例插件：一个技能 + 配套脚本 + 一个 MCP 服务器。",
 				author: { name: "You" },
 				skills: "./skills/",
 				mcpServers: "./.mcp.json",
 				interface: {
-					displayName: "Hello DeepWise",
+					displayName: "Hello Lyra",
 					shortDescription: "示例插件，演示技能、脚本与 MCP 的打包方式",
 					category: "Developer Tools",
 					capabilities: ["Read", "Write"],

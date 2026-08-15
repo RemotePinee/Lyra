@@ -1,4 +1,4 @@
-import type { Plugin } from "@deepwise/core";
+import type { Plugin } from "@lyra/core";
 import { Cable, FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
@@ -11,10 +11,10 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	const workspace = useApp((s) => s.workspace);
-	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.deepwise.plugins.list>> | null>(null);
+	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
 	const [busy, setBusy] = useState(false);
 
-	const refresh = async () => setScan(await window.deepwise.plugins.list(workspace?.path ?? ""));
+	const refresh = async () => setScan(await window.lyra.plugins.list(workspace?.path ?? ""));
 
 	useEffect(() => {
 		void refresh();
@@ -57,14 +57,14 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 		<div>
 			<header className="flex items-start justify-end pb-4">
 				<div className="flex shrink-0 gap-2">
-					<GhostButton onClick={() => void window.deepwise.plugins.revealDir("user", workspace?.path ?? "")}>
+					<GhostButton onClick={() => void window.lyra.plugins.revealDir("user", workspace?.path ?? "")}>
 						<span className="flex items-center gap-1.5">
 							<FolderOpen size={12} strokeWidth={1.9} />
 							用户目录
 						</span>
 					</GhostButton>
 					{workspace && (
-						<GhostButton onClick={() => void window.deepwise.plugins.revealDir("workspace", workspace.path)}>
+						<GhostButton onClick={() => void window.lyra.plugins.revealDir("workspace", workspace.path)}>
 							<span className="flex items-center gap-1.5">
 								<FolderOpen size={12} strokeWidth={1.9} />
 								项目目录
@@ -104,7 +104,7 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 							onClick={async () => {
 								setBusy(true);
 								try {
-									await window.deepwise.plugins.installExample(workspace ? "workspace" : "user", workspace?.path ?? "");
+									await window.lyra.plugins.installExample(workspace ? "workspace" : "user", workspace?.path ?? "");
 									await refresh();
 								} finally {
 									setBusy(false);
@@ -183,7 +183,7 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 				</button>
 				<button
 					type="button"
-					onClick={() => void window.deepwise.system.openPath(plugin.dir)}
+					onClick={() => void window.lyra.system.openPath(plugin.dir)}
 					className="text-[12px] text-ink-faint transition-colors hover:text-ink"
 				>
 					打开目录
@@ -191,7 +191,7 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 			</div>
 
 			{open && (
-				<div className="dw-enter space-y-3 border-t border-line-soft px-4 py-3">
+				<div className="ly-enter space-y-3 border-t border-line-soft px-4 py-3">
 					{ui?.longDescription && (
 						<p className="text-[12.5px] leading-relaxed text-ink-muted">{ui.longDescription}</p>
 					)}

@@ -50,8 +50,8 @@ export function ChangesView({
   useEffect(() => {
     let live = true;
     void Promise.all([
-      window.deepwise.git.diffRefs(cwd, "HEAD", null),
-      window.deepwise.diff.workspaceDiff(cwd),
+      window.lyra.git.diffRefs(cwd, "HEAD", null),
+      window.lyra.diff.workspaceDiff(cwd),
     ]).then(([indexDiff, treeDiff]) => {
       if (!live) return;
       const stagedPaths = new Set(
@@ -75,7 +75,7 @@ export function ChangesView({
   const nothing = stagedPaths.length === 0 && unstagedPaths.length === 0;
 
   async function commit() {
-    const ok = await act(() => window.deepwise.git.commitStaged(cwd, message));
+    const ok = await act(() => window.lyra.git.commitStaged(cwd, message));
     if (ok) setMessage("");
   }
 
@@ -97,7 +97,7 @@ export function ChangesView({
             action="取消全部"
             disabled={busy}
             onAction={() =>
-              void act(() => window.deepwise.git.unstage(cwd, stagedPaths))
+              void act(() => window.lyra.git.unstage(cwd, stagedPaths))
             }
           />
         )}
@@ -111,7 +111,7 @@ export function ChangesView({
                 size="sm"
                 disabled={busy}
                 onClick={() =>
-                  void act(() => window.deepwise.git.unstage(cwd, [file.path]))
+                  void act(() => window.lyra.git.unstage(cwd, [file.path]))
                 }
               />
             )}
@@ -125,7 +125,7 @@ export function ChangesView({
             action="全部暂存"
             disabled={busy}
             onAction={() =>
-              void act(() => window.deepwise.git.stage(cwd, unstagedPaths))
+              void act(() => window.lyra.git.stage(cwd, unstagedPaths))
             }
           />
         )}
@@ -148,7 +148,7 @@ export function ChangesView({
                       )
                     ) {
                       void act(() =>
-                        window.deepwise.git.discard(cwd, [file.path]),
+                        window.lyra.git.discard(cwd, [file.path]),
                       );
                     }
                   }}
@@ -159,7 +159,7 @@ export function ChangesView({
                   size="sm"
                   disabled={busy}
                   onClick={() =>
-                    void act(() => window.deepwise.git.stage(cwd, [file.path]))
+                    void act(() => window.lyra.git.stage(cwd, [file.path]))
                   }
                 />
               </>

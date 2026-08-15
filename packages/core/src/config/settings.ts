@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { McpServerConfig } from "../mcp/client.ts";
-import { deepwiseHome } from "../session/store.ts";
+import { lyraHome } from "../session/store.ts";
 import type { ProviderConfig, ThinkingLevel } from "../types.ts";
 
 /** How much the agent may do without stopping to ask. */
@@ -160,7 +160,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export function settingsPath(): string {
-	return join(deepwiseHome(), "settings.json");
+	return join(lyraHome(), "settings.json");
 }
 
 export async function loadSettings(): Promise<Settings> {
@@ -212,7 +212,7 @@ function migrateAppearance(appearance: AppearanceSettings): AppearanceSettings {
 
 export async function saveSettings(settings: Settings): Promise<void> {
 	const path = settingsPath();
-	await mkdir(deepwiseHome(), { recursive: true });
+	await mkdir(lyraHome(), { recursive: true });
 	const tmp = `${path}.${process.pid}.tmp`;
 	await writeFile(tmp, JSON.stringify(settings, null, 2), "utf8");
 	await rename(tmp, path);

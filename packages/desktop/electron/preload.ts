@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DeepWiseApi } from "./ipc-types.ts";
+import type { LyraApi } from "./ipc-types.ts";
 
 /**
  * Paint the saved theme onto the document before anything else runs.
@@ -11,12 +11,12 @@ import type { DeepWiseApi } from "./ipc-types.ts";
  * derived scale still comes from `applyAppearance` once the settings arrive.
  */
 function paintBootTheme(): void {
-	const flag = process.argv.find((arg) => arg.startsWith("--dw-boot="));
+	const flag = process.argv.find((arg) => arg.startsWith("--ly-boot="));
 	if (!flag) return;
 
 	let boot: { dark: boolean; background: string; foreground: string; accent: string; vibrancy?: boolean };
 	try {
-		boot = JSON.parse(decodeURIComponent(flag.slice("--dw-boot=".length)));
+		boot = JSON.parse(decodeURIComponent(flag.slice("--ly-boot=".length)));
 	} catch {
 		return;
 	}
@@ -57,7 +57,7 @@ paintBootTheme();
  * The renderer gets exactly this surface and nothing else — no `ipcRenderer`, no `require`.
  * Every method maps to one named channel so a compromised renderer cannot invoke arbitrary IPC.
  */
-const api: DeepWiseApi = {
+const api: LyraApi = {
 	settings: {
 		get: () => ipcRenderer.invoke("settings:get"),
 		save: (settings) => ipcRenderer.invoke("settings:save", settings),
@@ -120,7 +120,7 @@ const api: DeepWiseApi = {
 		 * `/users/...` and failed the (case-sensitive) project check. The path component keeps
 		 * its case, and encoding it whole means a Windows `C:\` or a space survives too.
 		 */
-		mediaUrl: (path) => `dw-media://f/${encodeURIComponent(path)}`,
+		mediaUrl: (path) => `ly-media://f/${encodeURIComponent(path)}`,
 	},
 	terminal: {
 		create: (cwd, cols, rows) => ipcRenderer.invoke("terminal:create", cwd, cols, rows),
@@ -209,4 +209,4 @@ const api: DeepWiseApi = {
 	},
 };
 
-contextBridge.exposeInMainWorld("deepwise", api);
+contextBridge.exposeInMainWorld("lyra", api);

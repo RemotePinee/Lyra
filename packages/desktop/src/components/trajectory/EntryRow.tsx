@@ -15,7 +15,7 @@
 
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { SOURCE_LABEL, matchRanges, type Entry as TrajectoryEntry } from "@deepwise/core/trajectory-view";
+import { SOURCE_LABEL, matchRanges, type Entry as TrajectoryEntry } from "@lyra/core/trajectory-view";
 import { CodeText } from "../detail/CodeText.tsx";
 import { DetailCard } from "../detail/DetailCard.tsx";
 import { Section } from "../detail/Section.tsx";
@@ -90,7 +90,7 @@ export function EntryRow({
 						<button
 							type="button"
 							onClick={() => setWhole(true)}
-							className="dw-item mt-1.5 block rounded px-1 py-[2px] font-sans text-[11px] text-ink-faint"
+							className="ly-item mt-1.5 block rounded px-1 py-[2px] font-sans text-[11px] text-ink-faint"
 						>
 							…显示全部 {entry.detail.length} 字
 						</button>
@@ -105,8 +105,8 @@ export function EntryRow({
 				<button
 					type="button"
 					onClick={onFork}
-					className="dw-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11px] text-ink-muted"
-					data-dw-tip="用这一刻之前的历史开一个新会话，原会话不受影响"
+					className="ly-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11px] text-ink-muted"
+					data-ly-tip="用这一刻之前的历史开一个新会话，原会话不受影响"
 				>
 					<GitBranch size={11} strokeWidth={1.8} />
 					从这里分叉

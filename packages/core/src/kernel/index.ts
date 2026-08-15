@@ -47,7 +47,7 @@ export { storagePlugin } from "./plugins/storage.ts";
 export { AGENT_TOOLS, FILE_TOOLS, SHELL_TOOLS, WEB_TOOLS, toolsPlugin } from "./plugins/tools.ts";
 
 /**
- * The set that makes an ordinary DeepWise.
+ * The set that makes an ordinary Lyra.
  *
  * Listed rather than discovered, because the default configuration should be something you can
  * read. A host that wants a different shape — no shell, a remote sandbox, another model API —

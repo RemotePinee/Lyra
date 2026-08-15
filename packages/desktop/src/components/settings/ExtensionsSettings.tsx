@@ -32,7 +32,7 @@ export function ExtensionsSettings() {
 	const add = usePopover();
 
 	useEffect(() => {
-		void window.deepwise.plugins.list(workspace?.path ?? "").then((scan) => {
+		void window.lyra.plugins.list(workspace?.path ?? "").then((scan) => {
 			setCounts({ plugins: scan.plugins.length, skills: scan.skills.length });
 		});
 	}, [workspace?.path, settings?.disabledPlugins.length]);
@@ -95,7 +95,7 @@ export function ExtensionsSettings() {
 							icon={<Plus size={14} strokeWidth={1.8} />}
 							onClick={() => {
 								add.close();
-								void window.deepwise.plugins.installExample("user", workspace?.path ?? "");
+								void window.lyra.plugins.installExample("user", workspace?.path ?? "");
 							}}
 						>
 							安装示例插件

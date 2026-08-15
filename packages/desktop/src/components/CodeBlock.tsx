@@ -82,7 +82,7 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 			{SHELL.has(lang.toLowerCase()) && commandFrom(code) && (
 				<button
 					type="button"
-					data-dw-tip="在终端运行"
+					data-ly-tip="在终端运行"
 					onClick={() => useSide.getState().runInTerminal(commandFrom(code))}
 					className="absolute top-2 right-10 hidden rounded-md border border-line bg-float p-1.5 text-ink-muted transition-colors group-hover:block hover:text-ink"
 				>
@@ -91,7 +91,7 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 			)}
 			<button
 				type="button"
-				data-dw-tip="复制"
+				data-ly-tip="复制"
 				onClick={() => {
 					void navigator.clipboard.writeText(code);
 					setCopied(true);

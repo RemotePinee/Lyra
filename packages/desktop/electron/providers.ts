@@ -6,7 +6,7 @@
  */
 
 import type { ProviderTestResult, SyncStatus } from "./ipc-types.ts";
-import { type Settings } from "@deepwise/core";
+import { type Settings } from "@lyra/core";
 import { getSettings } from "./app-settings.ts";
 
 /** What sync looks like when it is not running: the port it would use, and nothing else. */

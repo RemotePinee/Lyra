@@ -11,7 +11,7 @@
  * do; this decides when.
  */
 
-import { loadSettings, saveSettings as persist, type Settings } from "@deepwise/core";
+import { loadSettings, saveSettings as persist, type Settings } from "@lyra/core";
 
 type Listener = (next: Settings) => void | Promise<void>;
 

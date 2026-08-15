@@ -35,7 +35,7 @@ export function ChangeBar() {
       setStat(null);
       return;
     }
-    const next = await window.deepwise.git.stat(cwd);
+    const next = await window.lyra.git.stat(cwd);
     setStat({ added: next.added, removed: next.removed, files: next.files });
   }, [cwd, isRepo]);
 
@@ -54,9 +54,9 @@ export function ChangeBar() {
     <>
       <button
         type="button"
-        data-dw-tip={`${stat.files} 个文件有未提交的改动 · 点击查看`}
+        data-ly-tip={`${stat.files} 个文件有未提交的改动 · 点击查看`}
         onClick={() => openTab("review")}
-        className="dw-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors duration-150 hover:bg-card-hover"
+        className="ly-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors duration-150 hover:bg-card-hover"
       >
         <span className="font-mono text-[11.5px] text-ok">
           +{stat.added.toLocaleString()}
@@ -68,7 +68,7 @@ export function ChangeBar() {
 
       <button
         type="button"
-        data-dw-tip="在 Git 面板中查看并提交"
+        data-ly-tip="在 Git 面板中查看并提交"
         onClick={() => openTab("review")}
         className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink"
       >

@@ -47,7 +47,7 @@ export function TerminalPane() {
 		 * runs a command.
 		 */
 		useSide.getState().commandTaken();
-		window.deepwise.terminal.write(id, `${pending}\r`);
+		window.lyra.terminal.write(id, `${pending}\r`);
 		term.current?.focus();
 	}, [pending, ready]);
 
@@ -58,8 +58,8 @@ export function TerminalPane() {
 		if (!element || !cwd) return;
 
 		const terminal = new Terminal({
-			fontFamily: readVar("--dw-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
-			fontSize: Number.parseFloat(readVar("--dw-code-size")) || 12,
+			fontFamily: readVar("--ly-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
+			fontSize: Number.parseFloat(readVar("--ly-code-size")) || 12,
 			lineHeight: 1.35,
 			cursorBlink: true,
 			// The panel draws its own edges; the terminal should sit flush inside them.
@@ -86,25 +86,25 @@ export function TerminalPane() {
 		 */
 		const early = new Map<string, string[]>();
 
-		void window.deepwise.terminal.create(cwd, terminal.cols, terminal.rows).then((id) => {
+		void window.lyra.terminal.create(cwd, terminal.cols, terminal.rows).then((id) => {
 			// The panel can be closed before the shell finishes starting.
 			if (disposed) {
-				window.deepwise.terminal.kill(id);
+				window.lyra.terminal.kill(id);
 				return;
 			}
 			sessionId.current = id;
 			setReady(true);
 			for (const chunk of early.get(id) ?? []) terminal.write(chunk);
 			early.clear();
-			terminal.onData((data) => window.deepwise.terminal.write(id, data));
+			terminal.onData((data) => window.lyra.terminal.write(id, data));
 			terminal.focus();
 		});
 
-		const offData = window.deepwise.terminal.onData(({ id, data }) => {
+		const offData = window.lyra.terminal.onData(({ id, data }) => {
 			if (id === sessionId.current) terminal.write(data);
 			else if (sessionId.current === null) early.set(id, [...(early.get(id) ?? []), data]);
 		});
-		const offExit = window.deepwise.terminal.onExit(({ id, code }) => {
+		const offExit = window.lyra.terminal.onExit(({ id, code }) => {
 			if (id !== sessionId.current) return;
 			sessionId.current = null;
 			setExited(code);
@@ -120,7 +120,7 @@ export function TerminalPane() {
 			} catch {
 				return;
 			}
-			if (sessionId.current) window.deepwise.terminal.resize(sessionId.current, terminal.cols, terminal.rows);
+			if (sessionId.current) window.lyra.terminal.resize(sessionId.current, terminal.cols, terminal.rows);
 		});
 		observer.observe(element);
 
@@ -129,7 +129,7 @@ export function TerminalPane() {
 			observer.disconnect();
 			offData();
 			offExit();
-			if (sessionId.current) window.deepwise.terminal.kill(sessionId.current);
+			if (sessionId.current) window.lyra.terminal.kill(sessionId.current);
 			sessionId.current = null;
 			terminal.dispose();
 			term.current = null;
@@ -152,7 +152,7 @@ export function TerminalPane() {
 
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col">
-			<div ref={host} className="dw-term min-h-0 flex-1 px-2 pt-1.5" />
+			<div ref={host} className="ly-term min-h-0 flex-1 px-2 pt-1.5" />
 			{exited !== null && (
 				<div className="shrink-0 px-3 pb-2 text-[11.5px] text-ink-faint">
 					shell 已退出（代码 {exited}）。关掉这个标签再打开一个新的。

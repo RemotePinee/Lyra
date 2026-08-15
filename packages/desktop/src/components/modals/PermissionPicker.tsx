@@ -1,4 +1,4 @@
-import type { PermissionMode } from "@deepwise/core";
+import type { PermissionMode } from "@lyra/core";
 import {
   Check,
   CircleAlert,
@@ -83,7 +83,7 @@ export function PermissionPicker({
           width={276}
         >
           <MenuBody>
-            <MenuLabel>应如何批准 DeepWise 操作？</MenuLabel>
+            <MenuLabel>应如何批准 Lyra 操作？</MenuLabel>
             {MODES.map((mode) => (
               <MenuItem
                 key={mode.value}
@@ -150,7 +150,7 @@ export function PermissionPicker({
                   tone="muted"
                   className="mt-1.5 leading-relaxed"
                 >
-                  DeepWise 将不再就任何操作征求你的同意——包括删除文件、改写 Git
+                  Lyra 将不再就任何操作征求你的同意——包括删除文件、改写 Git
                   历史、访问网络，以及读写这台电脑上的任意位置，不限于当前项目。
                 </Text>
                 <Text

@@ -11,7 +11,7 @@
  */
 
 import { Link2, Pencil, Plus, Trash2 } from "lucide-react";
-import type { ModelConfig } from "@deepwise/core";
+import type { ModelConfig } from "@lyra/core";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
 import { formatWindow } from "../ModelMenu.tsx";
 import { Scroller } from "../Scroller.tsx";
@@ -96,7 +96,7 @@ function ModelRow({
 			</span>
 			<button
 				type="button"
-				data-dw-tip="设为默认模型"
+				data-ly-tip="设为默认模型"
 				aria-label="设为默认模型"
 				onClick={onSetDefault}
 				className="text-ink-faint transition-colors hover:text-ink"
@@ -105,7 +105,7 @@ function ModelRow({
 			</button>
 			<button
 				type="button"
-				data-dw-tip="编辑"
+				data-ly-tip="编辑"
 				aria-label="编辑模型"
 				onClick={onEdit}
 				className="text-ink-faint transition-colors hover:text-ink"
@@ -114,7 +114,7 @@ function ModelRow({
 			</button>
 			<button
 				type="button"
-				data-dw-tip="删除"
+				data-ly-tip="删除"
 				aria-label="删除模型"
 				onClick={onRemove}
 				className="text-ink-faint transition-colors hover:text-danger"

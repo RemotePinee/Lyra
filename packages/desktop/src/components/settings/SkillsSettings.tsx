@@ -8,11 +8,11 @@ const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用�
 
 export function SkillsSettings({ filter = "" }: { filter?: string }) {
 	const workspace = useApp((s) => s.workspace);
-	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.deepwise.plugins.list>> | null>(null);
+	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
 
 	// Scanned directly so the page works before any session exists.
 	useEffect(() => {
-		void window.deepwise.plugins.list(workspace?.path ?? "").then(setScan);
+		void window.lyra.plugins.list(workspace?.path ?? "").then(setScan);
 	}, [workspace?.path]);
 
 	// Name or description, because you remember a skill by either.
@@ -27,7 +27,7 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 			<header className="flex items-start justify-end pb-4">
 				<div className="flex shrink-0 gap-2">
 					<GhostButton
-						onClick={() => void window.deepwise.system.revealSkillsDir("user", workspace?.path ?? "")}
+						onClick={() => void window.lyra.system.revealSkillsDir("user", workspace?.path ?? "")}
 					>
 						<span className="flex items-center gap-1.5">
 							<FolderOpen size={12} strokeWidth={1.9} />
@@ -35,7 +35,7 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 						</span>
 					</GhostButton>
 					{workspace && (
-						<GhostButton onClick={() => void window.deepwise.system.revealSkillsDir("workspace", workspace.path)}>
+						<GhostButton onClick={() => void window.lyra.system.revealSkillsDir("workspace", workspace.path)}>
 							<span className="flex items-center gap-1.5">
 								<FolderOpen size={12} strokeWidth={1.9} />
 								项目目录
@@ -80,7 +80,7 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 								<div className="flex-1" />
 								<button
 									type="button"
-									onClick={() => void window.deepwise.system.openPath(skill.path)}
+									onClick={() => void window.lyra.system.openPath(skill.path)}
 									className="text-[12px] text-ink-faint transition-colors hover:text-ink"
 								>
 									打开

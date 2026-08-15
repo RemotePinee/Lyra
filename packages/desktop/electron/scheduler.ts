@@ -8,8 +8,8 @@
  * The tick is one minute, which is the finest granularity the schedule kinds express.
  */
 
-import { isDue } from "@deepwise/core";
-import type { AgentSession, ScheduledTask, Settings } from "@deepwise/core";
+import { isDue } from "@lyra/core";
+import type { AgentSession, ScheduledTask, Settings } from "@lyra/core";
 
 const TICK_MS = 60_000;
 

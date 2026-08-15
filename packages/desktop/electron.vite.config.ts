@@ -5,9 +5,9 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 export default defineConfig({
 	main: {
-		// @deepwise/core ships TypeScript sources, so it must be bundled rather than
+		// @lyra/core ships TypeScript sources, so it must be bundled rather than
 		// externalised — Node cannot require a .ts entry point at runtime.
-		plugins: [externalizeDepsPlugin({ exclude: ["@deepwise/core"] })],
+		plugins: [externalizeDepsPlugin({ exclude: ["@lyra/core"] })],
 		build: {
 			rollupOptions: {
 				input: { index: resolve("electron/main.ts") },
@@ -32,7 +32,7 @@ export default defineConfig({
 		},
 	},
 	preload: {
-		plugins: [externalizeDepsPlugin({ exclude: ["@deepwise/core"] })],
+		plugins: [externalizeDepsPlugin({ exclude: ["@lyra/core"] })],
 		build: {
 			rollupOptions: {
 				input: { index: resolve("electron/preload.ts") },

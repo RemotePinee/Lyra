@@ -56,7 +56,7 @@ export function Sidebar() {
 	return (
 		// No right border: the sidebar's own tint is what sets it apart from the column beside
 		// it. A rule on top of that reads as a seam rather than a boundary.
-		<div className="dw-sidebar-fill flex h-full w-full flex-col">
+		<div className="ly-sidebar-fill flex h-full w-full flex-col">
 			<div className="h-[44px] shrink-0" />
 
 			<div className="flex h-[34px] shrink-0 items-center justify-between px-4">
@@ -65,11 +65,11 @@ export function Sidebar() {
 				 * same control in two places and read as a dropdown over the whole window. Switching
 				 * projects belongs on the composer's project chip, next to what it actually scopes.
 				 */}
-				<span className="text-[16px] font-semibold tracking-tight text-ink">DeepWise</span>
+				<span className="text-[16px] font-semibold tracking-tight text-ink">Lyra</span>
 				<div className="flex items-center gap-0.5">
 					<button
 						type="button"
-						data-dw-tip="搜索会话"
+						data-ly-tip="搜索会话"
 						aria-label="搜索会话"
 						onClick={() => setSearching((v) => !v)}
 						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
@@ -78,7 +78,7 @@ export function Sidebar() {
 					</button>
 					<button
 						type="button"
-						data-dw-tip="通知"
+						data-ly-tip="通知"
 						aria-label="通知"
 						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 					>
@@ -183,7 +183,7 @@ export function Sidebar() {
 						setView("settings");
 						dismissNav();
 					}}
-					className={`dw-scroll flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-150 hover:bg-card-hover active:bg-elevated ${
+					className={`ly-scroll flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-150 hover:bg-card-hover active:bg-elevated ${
 						compact ? "h-[40px]" : "h-[34px]"
 					}`}
 				>

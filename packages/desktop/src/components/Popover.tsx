@@ -60,7 +60,7 @@ const MARGIN = 12;
  */
 function columnBounds(anchor: Anchor, width: number): { left: number; right: number } | null {
 	if (!(anchor instanceof HTMLElement)) return null;
-	const column = anchor.closest("main, aside, .dw-panel");
+	const column = anchor.closest("main, aside, .ly-panel");
 	if (!column) return null;
 	const rect = column.getBoundingClientRect();
 	return rect.width - 8 < width ? null : { left: rect.left + 4, right: rect.right - 4 };
@@ -255,15 +255,15 @@ export function Popover({
 			 * panel — and a menu opened near it was simply cut in half. A popover is transient
 			 * and belongs on top of whatever it was opened over, always.
 			 */
-			className={`dw-glass dw-scroll-host dw-scroll-view fixed z-[60] overflow-x-hidden overflow-y-auto rounded-[10px] border border-line ${
+			className={`ly-glass ly-scroll-host ly-scroll-view fixed z-[60] overflow-x-hidden overflow-y-auto rounded-[10px] border border-line ${
 				leaving
-					? "dw-pop-out"
+					? "ly-pop-out"
 					: placed
 						? side === "top"
-							? "dw-pop-up"
+							? "ly-pop-up"
 							: side === "right"
-								? "dw-pop-right"
-								: "dw-pop-down"
+								? "ly-pop-right"
+								: "ly-pop-down"
 						: ""
 			} ${className}`}
 		>

@@ -34,13 +34,13 @@ export function HistoryView({ cwd }: { cwd: string }) {
   const [diff, setDiff] = useState<WorkspaceDiffFile[]>([]);
 
   useEffect(() => {
-    void window.deepwise.git.log(cwd, 80).then(setCommits);
+    void window.lyra.git.log(cwd, 80).then(setCommits);
   }, [cwd]);
 
   useEffect(() => {
     if (!open) return setDiff([]);
     let live = true;
-    void window.deepwise.git
+    void window.lyra.git
       .commitDiff(cwd, open)
       .then((result) => live && setDiff(result.files));
     return () => {
@@ -77,10 +77,10 @@ export function HistoryView({ cwd }: { cwd: string }) {
                 onClick={() => setOpen(expanded ? null : commit.sha)}
                 aria-expanded={expanded}
                 style={{ height: ROW_HEIGHT }}
-                /* `dw-scroll` is what lets the subject scroll on hover — the marquee keys off an
+                /* `ly-scroll` is what lets the subject scroll on hover — the marquee keys off an
                  * ancestor carrying it, which is why the same component scrolls in the sidebar
                  * and merely clipped here. */
-                className="dw-scroll flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-card-hover"
+                className="ly-scroll flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-card-hover"
               >
                 <span className="min-w-0 flex-1">
                   {/*
@@ -88,7 +88,7 @@ export function HistoryView({ cwd }: { cwd: string }) {
                    * says what a commit was for, and the useful half is regularly past the ellipsis
                    * — the same reason session titles in the sidebar scroll instead of truncating.
                    */}
-                  <ScrollText text={commit.subject} className="dw-fade-tail block text-[12.5px]" />
+                  <ScrollText text={commit.subject} className="ly-fade-tail block text-[12.5px]" />
                   <span className="flex items-center gap-1.5">
                     <Text size="caption" tone="faint" mono>
                       {commit.shortSha}
@@ -125,7 +125,7 @@ export function HistoryView({ cwd }: { cwd: string }) {
               </button>
             </div>
             {expanded && (
-              <div className="dw-enter mb-1.5" style={{ marginLeft: width }}>
+              <div className="ly-enter mb-1.5" style={{ marginLeft: width }}>
                 <FileDiffList
                   files={diff}
                   emptyLabel="正在读取这次提交的改动…"

@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { deepwiseHome } from "@deepwise/core";
+import { lyraHome } from "@lyra/core";
 import { ipcMain, shell } from "electron";
 import { appIcon } from "../app-icon.ts";
 
@@ -33,7 +33,7 @@ export function registerSystemIpc(): void {
 	});
 
 	ipcMain.handle("system:revealSkillsDir", async (_event, scope: "workspace" | "user", cwd: string) => {
-		const dir = scope === "workspace" ? join(cwd, ".deepwise", "skills") : join(deepwiseHome(), "skills");
+		const dir = scope === "workspace" ? join(cwd, ".lyra", "skills") : join(lyraHome(), "skills");
 		await mkdir(dir, { recursive: true });
 		await shell.openPath(dir);
 		return dir;

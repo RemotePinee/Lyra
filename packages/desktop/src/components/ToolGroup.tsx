@@ -59,7 +59,7 @@ export function ToolGroup({
 				type="button"
 				onClick={() => setOpen((value) => !value)}
 				aria-expanded={open}
-				className="dw-scroll group/run flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-[12.5px] text-ink-faint transition-colors hover:text-ink-muted"
+				className="ly-scroll group/run flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-[12.5px] text-ink-faint transition-colors hover:text-ink-muted"
 			>
 				{/*
 				 * The line itself says it is running — a highlight glides along it — so there is no
@@ -78,8 +78,8 @@ export function ToolGroup({
 				 * was standing still. The entrance belongs to the outer element, the glide to the
 				 * text inside it.
 				 */}
-				<span key={summary} className="dw-fade-in min-w-0 truncate">
-					<span className={running ? "dw-glide" : undefined}>{summary}</span>
+				<span key={summary} className="ly-fade-in min-w-0 truncate">
+					<span className={running ? "ly-glide" : undefined}>{summary}</span>
 				</span>
 				{(added ?? 0) + (removed ?? 0) > 0 && (
 					<span className="shrink-0 font-mono text-[11px]">

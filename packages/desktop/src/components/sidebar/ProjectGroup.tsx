@@ -13,7 +13,7 @@
  * to press this".
  */
 
-import type { SessionMeta } from "@deepwise/core";
+import type { SessionMeta } from "@lyra/core";
 import { Folder, SquarePen } from "lucide-react";
 import { useLayout } from "../../layout.tsx";
 import { useApp } from "../../store.ts";
@@ -54,7 +54,7 @@ export function ProjectGroup({
 			{/* Same hover-owner arrangement as the session rows: the fill belongs to the row so
 			    reaching for the menu button does not drop it. */}
 			<div
-				className="dw-scroll group/project relative rounded-lg transition-colors duration-150 hover:bg-card-hover active:bg-elevated"
+				className="ly-scroll group/project relative rounded-lg transition-colors duration-150 hover:bg-card-hover active:bg-elevated"
 				onContextMenu={(event) => {
 					event.preventDefault();
 					// At the cursor: right-click acts on the row as a whole, so there is no one
@@ -73,13 +73,13 @@ export function ProjectGroup({
 					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
 				>
 					<Folder size={15} strokeWidth={1.8} className={`shrink-0 ${active ? "text-accent" : "text-ink-muted"}`} />
-					<ScrollText text={group.name} className="dw-fade-tail min-w-0 flex-1" />
+					<ScrollText text={group.name} className="ly-fade-tail min-w-0 flex-1" />
 				</button>
 
 				<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/project:opacity-100 focus-within:opacity-100">
 					<button
 						type="button"
-						data-dw-tip="项目操作"
+						data-ly-tip="项目操作"
 						aria-label={`「${group.name}」的项目操作`}
 						aria-haspopup="menu"
 						onClick={menu.toggle}

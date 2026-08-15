@@ -23,9 +23,9 @@ export function PanelChooser({
 					key={def.kind}
 					type="button"
 					disabled={Boolean(def.unavailable)}
-					data-dw-tip={def.unavailable}
+					data-ly-tip={def.unavailable}
 					onClick={() => onPick(def.kind)}
-					className="dw-item flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px]"
+					className="ly-item flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px]"
 				>
 					<def.icon size={16} strokeWidth={1.6} className="shrink-0 text-ink-muted" />
 					<span className="min-w-0 flex-1 truncate">{def.label}</span>

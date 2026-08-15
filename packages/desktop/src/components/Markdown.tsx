@@ -265,7 +265,7 @@ function renderInline(text: string): ReactNode[] {
 							href={href}
 							onClick={(event) => {
 								event.preventDefault();
-								void window.deepwise.system.openExternal(href);
+								void window.lyra.system.openExternal(href);
 							}}
 						>
 							{link[1]}

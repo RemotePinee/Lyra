@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { scratchHome } from "../runtime/previews.ts";
-import { deepwiseHome } from "../session/store.ts";
+import { lyraHome } from "../session/store.ts";
 
 function contains(root: string, absolute: string): boolean {
 	const rel = relative(resolve(root), absolute);
@@ -19,13 +19,13 @@ function contains(root: string, absolute: string): boolean {
  * for anything that should not end up in the user's repository. Refusing it would be telling the
  * model to write somewhere and then stopping it — which is exactly what happened before this,
  * and what it worked around by reaching for an MCP filesystem server instead. Only the scratch
- * subtree is opened up: `~/.deepwise` itself still holds settings and transcripts, and stays shut.
+ * subtree is opened up: `~/.lyra` itself still holds settings and transcripts, and stays shut.
  */
 export function resolveWorkspacePath(cwd: string, input: string): string {
 	if (!input || typeof input !== "string") throw new Error("A path is required.");
 	const expanded = input.startsWith("~/") ? input.replace("~", process.env.HOME ?? "~") : input;
 	const absolute = isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
-	if (contains(cwd, absolute) || contains(scratchHome(deepwiseHome()), absolute)) return absolute;
+	if (contains(cwd, absolute) || contains(scratchHome(lyraHome()), absolute)) return absolute;
 	throw new Error(`Path escapes the workspace root (${cwd}): ${input}`);
 }
 

@@ -61,7 +61,7 @@ function reply(text: string): AssistantMessage {
 }
 
 async function harness(script?: (turn: number) => AssistantMessage) {
-	const root = await mkdtemp(join(tmpdir(), "dw-log-"));
+	const root = await mkdtemp(join(tmpdir(), "ly-log-"));
 	let turn = 0;
 	const store = new SessionStore(join(root, "sessions"));
 	const session = new AgentSession({
@@ -98,7 +98,7 @@ test("the context the model was given is written down, once", async () => {
 		const first = contexts[0];
 		assert.equal(first.type, "event");
 		if (first.type !== "event" || first.event.type !== "context") throw new Error("wrong record");
-		assert.match(first.event.systemPrompt, /DeepWise/, "the prompt itself is kept, not a hash of it");
+		assert.match(first.event.systemPrompt, /Lyra/, "the prompt itself is kept, not a hash of it");
 		assert.ok(first.event.tools.includes("bash"), "and which tools it could reach");
 		assert.deepEqual([...first.event.tools].sort(), first.event.tools, "recorded in a stable order");
 	} finally {
@@ -113,7 +113,7 @@ test("a changed context is written again", async () => {
 
 		// A skill appearing mid-session is exactly the kind of change the log must not miss: the
 		// same messages, a different set of things the model could have done about them.
-		const dir = join(h.root, ".deepwise", "skills", "greet");
+		const dir = join(h.root, ".lyra", "skills", "greet");
 		await mkdir(dir, { recursive: true });
 		await writeFile(join(dir, "SKILL.md"), "---\nname: greet\ndescription: Say hello\n---\n\nSay hello.\n");
 		await h.session.initialize();

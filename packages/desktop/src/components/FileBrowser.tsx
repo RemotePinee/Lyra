@@ -48,7 +48,7 @@ export function FileBrowser() {
 	const root = workspace?.path;
 
 	const load = useCallback(async (dir: string) => {
-		const entries = await window.deepwise.files.list(dir);
+		const entries = await window.lyra.files.list(dir);
 		setChildren((current) => ({ ...current, [dir]: entries }));
 	}, []);
 
@@ -97,7 +97,7 @@ export function FileBrowser() {
 		setSelected(entry.path);
 		setLoadingFile(true);
 		try {
-			const read = await window.deepwise.files.read(entry.path);
+			const read = await window.lyra.files.read(entry.path);
 			// A second click while this was in flight wins.
 			setSelected((current) => {
 				if (current === entry.path) setContents(read);
@@ -110,7 +110,7 @@ export function FileBrowser() {
 
 	/** Re-read after a save so the viewer's "saved" baseline matches what is on disk. */
 	async function reread(path: string) {
-		const read = await window.deepwise.files.read(path);
+		const read = await window.lyra.files.read(path);
 		if (read) setContents(read);
 	}
 
@@ -205,9 +205,9 @@ export function FileBrowser() {
 							<button
 								key={entry.path}
 								type="button"
-								data-dw-tip={entry.path}
+								data-ly-tip={entry.path}
 								onClick={() => (entry.isDirectory ? toggleDirectory(entry.path) : void openFile(entry))}
-								className={`dw-scroll flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-[12px] transition-colors ${
+								className={`ly-scroll flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-[12px] transition-colors ${
 									// Marked at every width now that the tree stays visible beside what it opened.
 									selected === entry.path ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover/60"
 								}`}
@@ -240,7 +240,7 @@ export function FileBrowser() {
 								{drafts[entry.path] !== undefined && (
 									// The dot is the only trace an unsaved file leaves in the tree.
 									<span
-										data-dw-tip="有未保存的修改"
+										data-ly-tip="有未保存的修改"
 										className="h-[5px] w-[5px] shrink-0 rounded-full bg-info"
 									/>
 								)}
@@ -265,7 +265,7 @@ export function FileBrowser() {
 						{!selected ? (
 							<p className="p-6 text-center text-[12px] text-ink-faint">选择左侧文件查看内容</p>
 						) : loadingFile ? (
-							<p className="dw-pulse p-6 text-center text-[12px] text-ink-faint">读取中…</p>
+							<p className="ly-pulse p-6 text-center text-[12px] text-ink-faint">读取中…</p>
 						) : !contents ? (
 							<p className="p-6 text-center text-[12px] text-ink-faint">读不到这个文件</p>
 						) : (

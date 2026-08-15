@@ -5,7 +5,7 @@
  * search panel itself, so its buttons were stuck with the native `title` — a different shape, a
  * different delay, and the wrong colour against the rest of the app.
  *
- * An attribute works on anything: `data-dw-tip="下一个"` on a React node or on a DOM node
+ * An attribute works on anything: `data-ly-tip="下一个"` on a React node or on a DOM node
  * CodeMirror just created behaves identically, because the thing that shows the bubble is a
  * single listener on the document rather than a component per target.
  */
@@ -21,7 +21,7 @@ let current: HTMLElement | null = null;
 function ensureHost(): HTMLElement {
 	if (host) return host;
 	host = document.createElement("div");
-	host.className = "dw-tooltip";
+	host.className = "ly-tooltip";
 	host.setAttribute("role", "tooltip");
 	host.style.position = "fixed";
 	host.style.zIndex = "200";
@@ -34,7 +34,7 @@ function ensureHost(): HTMLElement {
 /** The nearest ancestor carrying a tip, so an icon inside a button still counts as the button. */
 function targetOf(node: EventTarget | null): HTMLElement | null {
 	if (!(node instanceof Element)) return null;
-	const el = node.closest<HTMLElement>("[data-dw-tip]");
+	const el = node.closest<HTMLElement>("[data-ly-tip]");
 	return el && el.dataset.dwTip ? el : null;
 }
 

@@ -26,7 +26,7 @@ export default function RootLayout() {
 						contentStyle: { backgroundColor: "#171717" },
 					}}
 				>
-					<Stack.Screen name="index" options={{ title: "DeepWise" }} />
+					<Stack.Screen name="index" options={{ title: "Lyra" }} />
 					<Stack.Screen name="pair" options={{ title: "连接桌面端", presentation: "modal" }} />
 					<Stack.Screen name="session/[id]" options={{ title: "会话" }} />
 				</Stack>

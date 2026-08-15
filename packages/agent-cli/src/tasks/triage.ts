@@ -14,7 +14,7 @@
 import { addLabels, readIssue, removeLabel, upsertComment, type Repo } from "../github.ts";
 import { runOnce } from "../agent.ts";
 
-const TRIAGE_MARKER = "<!-- deepwise-agent: triage -->";
+const TRIAGE_MARKER = "<!-- lyra-agent: triage -->";
 
 /** The areas an issue can be about. The agent picks from this list and nothing else. */
 export const AREAS = [
