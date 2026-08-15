@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { access, readdir, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { platform } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentEventSink, QueuedTask } from "../agent/events.ts";
@@ -15,15 +15,16 @@ import { runTurn } from "../agent/runner.ts";
 import type { PermissionMode, Settings } from "../config/settings.ts";
 import { resolveModel } from "../config/settings.ts";
 import { McpManager, type McpServerStatus } from "../mcp/client.ts";
-import { loadPlugins, type Plugin, type PluginDiagnostic } from "../plugins/loader.ts";
+import type { Plugin, PluginDiagnostic } from "../plugins/loader.ts";
 import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
-import { formatSkillCatalogue, loadSkills, parseFrontmatter, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
-import { registeredSkills } from "../skills/registry.ts";
+import { formatSkillCatalogue, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { deepwiseHome, type SessionMeta } from "../session/store.ts";
 import type { SessionStorage } from "../session/storage.ts";
 import { writePreview } from "./previews.ts";
-import { assessCommand, assessNetwork, assessWrite } from "../tools/risk.ts";
+import { ApprovalGate } from "./approvals.ts";
+import { runSubAgent } from "./sub-agent.ts";
+import { loadCapabilities } from "./session-setup.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
 import type {
@@ -38,7 +39,7 @@ import type {
 } from "../types.ts";
 import { compactWith } from "./compaction.ts";
 import { buildContextBreakdown, type ContextBreakdown } from "./context.ts";
-import { nextTask } from "./scheduling.ts";
+import { TaskQueue } from "./task-queue.ts";
 import { prepareTurn, type TurnContext } from "./turn.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 
@@ -122,19 +123,16 @@ export class AgentSession {
 	 * messages in the log — and in the right position, after the turn they interrupted.
 	 */
 	private committed = new WeakSet<Message>();
-	private pendingApprovals = new Map<string, PendingApproval>();
-	/** Subjects the user chose "always allow" for, within this process. */
-	private allowList = new Set<string>();
-	/**
-	 * Work waiting behind whatever is running, plus a short tail of what already ran.
-	 *
-	 * Deliberately not the steering queue. Steering splices a message between turns of the
-	 * current run, which is right for "actually, also check X" but wrong for a dispatched
-	 * task — that is a separate piece of work and must not blur into the one in progress.
-	 */
-	private tasks: QueuedTask[] = [];
-	/** Guards the drain loop against the re-entry its own `run()` would otherwise cause. */
-	private draining = false;
+	private readonly approvals: ApprovalGate;
+	private readonly tasks: TaskQueue = new TaskQueue({
+		run: (task) => this.prompt([{ type: "text", text: task.text }], { origin: task.origin }),
+		busy: () => this.running,
+		// Copied, not the live list: an event holding a reference would report whatever the
+		// queue looked like when someone got round to reading it, not when it was sent.
+		changed: (): Promise<void> => this.emit({ type: "tasks", tasks: this.tasks.list().map((task) => ({ ...task })) }),
+		newId: () => randomUUID().slice(0, 8),
+		now: () => Date.now(),
+	});
 
 	constructor(options: AgentSessionOptions) {
 		this.cwd = options.cwd;
@@ -144,7 +142,23 @@ export class AgentSession {
 		this.extraTools = options.extraTools ?? [];
 		this.streamFn = options.streamFn;
 		if (options.meta) this.meta = options.meta;
-		for (const subject of options.settings.alwaysAllow) this.allowList.add(subject);
+		this.approvals = new ApprovalGate(
+			{
+				mode: () => this.settings.permissionMode,
+				cwd: () => this.cwd,
+				ask: (pending) =>
+					this.emit({
+						type: "approval_request",
+						requestId: pending.id,
+						toolCallId: pending.id,
+						kind: pending.request.kind,
+						title: pending.request.title,
+						detail: pending.request.detail,
+					}),
+				remember: () => {},
+			},
+			options.settings.alwaysAllow,
+		);
 	}
 
 	get running(): boolean {
@@ -157,43 +171,16 @@ export class AgentSession {
 			this.meta = await this.store.create(this.cwd, this.settings.defaultModelId ?? "");
 		}
 
-		const loadedPlugins = await loadPlugins(
-			[
-				{ dir: join(this.cwd, ".deepwise", "plugins"), source: "workspace" as const },
-				{ dir: join(deepwiseHome(), "plugins"), source: "user" as const },
-			],
-			this.settings.disabledPlugins,
-		);
-		this.plugins = loadedPlugins.plugins;
-		this.pluginDiagnostics = loadedPlugins.diagnostics;
-
-		const loaded = await loadSkills([
-			{ dir: join(this.cwd, ".deepwise", "skills"), source: "workspace" as const },
-			{ dir: join(deepwiseHome(), "skills"), source: "user" as const },
-		]);
-		// Loose skills win over bundled ones with the same name, so a project can override a
-		// plugin's skill by dropping a directory next to it.
-		const looseNames = new Set(loaded.skills.map((skill) => skill.name));
-		const pluginSkills = this.plugins
-			.filter((plugin) => plugin.enabled)
-			.flatMap((plugin) => plugin.skills)
-			.filter((skill) => !looseNames.has(skill.name));
-
-		// Code-provided skills sit behind both, for the same reason: what the user put on disk is
-		// the most specific statement of intent in the room.
-		const known = new Set([...looseNames, ...pluginSkills.map((skill) => skill.name)]);
-		const fromPlugins = registeredSkills().filter((skill) => !known.has(skill.name));
-
-		this.skills = [...loaded.skills, ...pluginSkills, ...fromPlugins];
-		this.skillDiagnostics = loaded.diagnostics;
+		const loaded = await loadCapabilities(this.cwd, this.settings, this.mcp, this.extraTools);
+		this.plugins = loaded.plugins;
+		this.pluginDiagnostics = loaded.pluginDiagnostics;
+		this.skills = loaded.skills;
+		this.skillDiagnostics = loaded.skillDiagnostics;
+		this.agents = loaded.agents;
+		this.mcpStatuses = loaded.mcpStatuses;
+		this.tools = loaded.tools;
 		this.state.set(SKILLS_KEY, this.skills);
-
-		this.agents = [...BUILTIN_AGENTS, ...(await loadAgentDefinitions(this.cwd))];
 		this.state.set(AGENTS_KEY, this.agents);
-
-		const pluginServers = this.plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
-		this.mcpStatuses = await this.mcp.connectAll([...this.settings.mcpServers, ...pluginServers]);
-		this.tools = [...builtinTools(), ...this.extraTools, ...this.mcp.allTools()];
 	}
 
 	async status(): Promise<SessionStatus> {
@@ -264,7 +251,7 @@ export class AgentSession {
 
 	updateSettings(settings: Settings): void {
 		this.settings = settings;
-		for (const subject of settings.alwaysAllow) this.allowList.add(subject);
+		for (const subject of settings.alwaysAllow) this.approvals.allow(subject);
 	}
 
 	/**
@@ -384,7 +371,25 @@ export class AgentSession {
 					writePreview: (input) =>
 						writePreview(deepwiseHome(), { ...input, sessionId: this.meta?.id ?? "unsaved" }),
 					requestApproval: (request) => this.requestApproval(request),
-					spawnSubAgent: (input) => this.runSubAgent(input, resolved.provider, resolved.model, systemPrompt),
+					spawnSubAgent: (input) =>
+						runSubAgent(
+							{
+								sessionId: this.meta.id,
+								cwd: this.cwd,
+								settings: this.settings,
+								tools: this.tools,
+								skills: this.skills,
+								agents: this.agents,
+								signal: this.controller?.signal,
+								streamFn: this.streamFn,
+								requestApproval: (request) => this.requestApproval(request),
+								emit: (event) => this.emit(event),
+							},
+							input,
+							resolved.provider,
+							resolved.model,
+							systemPrompt,
+						),
 					drainSteering: () => this.steering.splice(0, this.steering.length),
 					beforeToolCall: makeBeforeToolCall(this.settings.hooks, this.cwd, this.controller.signal),
 					afterToolCall: makeAfterToolCall(this.settings.hooks, this.cwd, this.controller.signal),
@@ -398,22 +403,20 @@ export class AgentSession {
 		} finally {
 			this.controller = null;
 			// Anything still waiting for approval would hang forever once the run is over.
-			for (const pending of this.pendingApprovals.values()) pending.resolve("reject");
-			this.pendingApprovals.clear();
+			this.approvals.rejectAll();
 		}
 
 		// The queue moves the moment the workspace is free again. Skipped while draining,
 		// because that loop is already the thing calling us.
-		if (!this.draining) void this.drainTasks();
+		void this.tasks.drain();
 	}
 
 	abort(): void {
 		this.controller?.abort();
-		for (const pending of this.pendingApprovals.values()) pending.resolve("reject");
-		this.pendingApprovals.clear();
+		this.approvals.rejectAll();
 		// Stop means stop. Letting the queue carry on after the button was pressed would be
 		// the opposite of what pressing it asks for.
-		void this.cancelAllTasks();
+		void this.tasks.cancelAll();
 	}
 
 	// -------------------------------------------------------------------------
@@ -421,93 +424,15 @@ export class AgentSession {
 	// -------------------------------------------------------------------------
 
 	get taskQueue(): QueuedTask[] {
-		return this.tasks;
+		return this.tasks.list();
 	}
 
-	/**
-	 * Hand this session a piece of work to run once it is free.
-	 *
-	 * Runs immediately when nothing is in progress, which is the whole point: you dispatch it
-	 * and walk away. Approvals still reach the user through the ordinary path — a task can ask
-	 * for a file to be written, it cannot grant itself permission to write it.
-	 */
 	async enqueueTask(text: string, origin: QueuedTask["origin"] = "side-chat"): Promise<QueuedTask> {
-		const task: QueuedTask = {
-			id: randomUUID(),
-			text,
-			origin,
-			status: "queued",
-			createdAt: Date.now(),
-		};
-		this.tasks = [...trimTaskHistory(this.tasks), task];
-		await this.emitTasks();
-		void this.drainTasks();
-		return task;
+		return this.tasks.enqueue(text, origin);
 	}
 
-	/** Withdraw a task that has not started. One already running is not cancellable — that is `abort`. */
 	async cancelTask(taskId: string): Promise<boolean> {
-		const task = this.tasks.find((t) => t.id === taskId);
-		if (!task || task.status !== "queued") return false;
-		task.status = "cancelled";
-		task.finishedAt = Date.now();
-		await this.emitTasks();
-		return true;
-	}
-
-	private async cancelAllTasks(): Promise<void> {
-		let changed = false;
-		for (const task of this.tasks) {
-			if (task.status !== "queued" && task.status !== "running") continue;
-			task.status = "cancelled";
-			task.finishedAt = Date.now();
-			changed = true;
-		}
-		if (changed) await this.emitTasks();
-	}
-
-	private async emitTasks(): Promise<void> {
-		await this.emit({ type: "tasks", tasks: this.tasks.map((task) => ({ ...task })) });
-	}
-
-	private async drainTasks(): Promise<void> {
-		if (this.draining || this.running) return;
-		this.draining = true;
-		try {
-			while (true) {
-				const next = nextTask(this.tasks);
-				if (!next) return;
-
-				next.status = "running";
-				next.startedAt = Date.now();
-				await this.emitTasks();
-
-				let failure: string | null = null;
-				try {
-					await this.prompt([{ type: "text", text: next.text }], { origin: next.origin });
-				} catch (cause) {
-					failure = cause instanceof Error ? cause.message : String(cause);
-				}
-
-				/*
-				 * Re-read rather than writing to `next` directly.
-				 *
-				 * `abort` cancels whatever is running, and it can land at any point during the
-				 * await above. Its verdict is the user's; ours is a guess made before the fact.
-				 * Looking the task up again is also what stops the compiler assuming the status
-				 * is still what we set it to a few lines ago — it genuinely might not be.
-				 */
-				const settled = this.tasks.find((t) => t.id === next.id);
-				if (settled?.status === "running") {
-					settled.status = failure ? "failed" : "done";
-					if (failure) settled.error = failure;
-					settled.finishedAt = Date.now();
-				}
-				await this.emitTasks();
-			}
-		} finally {
-			this.draining = false;
-		}
+		return this.tasks.cancel(taskId);
 	}
 
 	private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -559,140 +484,20 @@ export class AgentSession {
 	// Approvals
 	// -------------------------------------------------------------------------
 
-	private async requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
-		const mode: PermissionMode = this.settings.permissionMode;
-		if (mode === "full") return "once";
-		if (this.allowList.has(request.subject)) return "once";
-		/*
-		 * "帮我批准" asks about what cannot be taken back, and nothing else.
-		 *
-		 * It used to allow only a list of read-only commands, which meant it interrupted almost
-		 * every turn — models write `cd x && git log; echo ---`, not bare `ls`. A prompt that
-		 * fires constantly is not a safeguard; it is something you learn to click through, which
-		 * is worse than not having it. Writing files, installing packages and committing are the
-		 * work. Deleting trees, rewriting history, escalating privileges and reaching outside the
-		 * project are the things worth stopping for.
-		 */
-		if (mode === "auto") {
-			const verdict =
-				request.kind === "bash"
-					? assessCommand(request.subject, this.cwd)
-					: request.kind === "edit" || request.kind === "write"
-						? assessWrite(request.subject, this.cwd)
-						: request.kind === "network"
-							? assessNetwork(request.subject)
-							: { risky: true as const };
-			if (!verdict.risky) return "once";
-			if (verdict.reason) request.detail = `${verdict.reason}\n\n${request.detail ?? ""}`.trim();
-		}
+	// -------------------------------------------------------------------------
+	// Approvals
+	// -------------------------------------------------------------------------
 
-		const id = randomUUID();
-		return new Promise<ApprovalDecision>((resolve) => {
-			this.pendingApprovals.set(id, {
-				id,
-				request,
-				resolve: (decision) => {
-					this.pendingApprovals.delete(id);
-					if (decision === "always") this.allowList.add(request.subject);
-					resolve(decision === "always" ? "once" : decision);
-				},
-			});
-			void this.emit({
-				type: "approval_request",
-				requestId: id,
-				toolCallId: id,
-				kind: request.kind,
-				title: request.title,
-				detail: request.detail,
-			});
-		});
+	private requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
+		return this.approvals.request(request);
 	}
 
 	resolveApproval(requestId: string, decision: ApprovalDecision): boolean {
-		const pending = this.pendingApprovals.get(requestId);
-		if (!pending) return false;
-		pending.resolve(decision);
-		return true;
+		return this.approvals.resolve(requestId, decision);
 	}
 
 	listPendingApprovals(): { id: string; request: ApprovalRequest }[] {
-		return [...this.pendingApprovals.values()].map(({ id, request }) => ({ id, request }));
-	}
-
-	// -------------------------------------------------------------------------
-	// Sub-agents
-	// -------------------------------------------------------------------------
-
-	private async runSubAgent(
-		input: { description: string; prompt: string; agentType?: string },
-		provider: ProviderConfig,
-		model: ModelConfig,
-		parentSystemPrompt: string,
-	): Promise<string> {
-		const definition = this.agents.find((a) => a.name === (input.agentType ?? "general")) ?? BUILTIN_AGENTS[0];
-		const allowed =
-			definition.tools === "*" ? this.tools : this.tools.filter((t) => (definition.tools as string[]).includes(t.name));
-
-		// The sub-agent gets its own message list and its own state map, so its file reads and
-		// todo list cannot leak into the parent's.
-		const id = `${this.meta.id}:sub:${randomUUID().slice(0, 8)}`;
-		const steps: string[] = [];
-		await this.emit({
-			type: "subagent",
-			id,
-			agent: definition.name,
-			description: input.description,
-			prompt: input.prompt,
-			tools: allowed.map((tool) => tool.name),
-		});
-
-		const result = await runTurn(
-			{
-				sessionId: id,
-				cwd: this.cwd,
-				provider,
-				model,
-				systemPrompt: `${definition.systemPrompt}\n\n${parentSystemPrompt.split("# Environment")[1] ? `# Environment${parentSystemPrompt.split("# Environment")[1].split("\n\n#")[0]}` : ""}`,
-				tools: allowed,
-				messages: [{ role: "user", content: [{ type: "text", text: input.prompt }], timestamp: Date.now() }],
-				thinking: this.settings.thinking,
-					retryAttempts: this.settings.retryAttempts,
-				signal: this.controller?.signal,
-				state: new Map<string, unknown>([
-					[SKILLS_KEY, this.skills],
-					[AGENTS_KEY, this.agents],
-				]),
-				requestApproval: (request) => this.requestApproval(request),
-				// Inherited, so a host that replaced the provider call replaced it for the whole
-				// tree — a sub-agent quietly dialling out would defeat the point of overriding it.
-				streamFn: this.streamFn,
-				maxTurns: 60,
-			},
-			(event) => {
-				// Surfaced as a notice for the live view, kept as a step for the log.
-				if (event.type === "tool_start") {
-					steps.push(event.summary);
-					void this.emit({
-						type: "notice",
-						level: "info",
-						message: `[${definition.name}] ${event.summary}`,
-					});
-				}
-			},
-		);
-
-		const last = [...result.messages].reverse().find((m) => m.role === "assistant");
-		const answer =
-			last?.role === "assistant"
-				? last.content
-						.filter((c) => c.type === "text")
-						.map((c) => c.text)
-						.join("\n")
-						.trim()
-				: "";
-
-		await this.emit({ type: "subagent_done", id, steps, answer });
-		return answer;
+		return this.approvals.list();
 	}
 
 	// -------------------------------------------------------------------------
@@ -755,40 +560,4 @@ async function pathExists(path: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Load custom sub-agent definitions from `.deepwise/agents/*.md`, mirroring the skill format:
- * YAML frontmatter for metadata, markdown body for the system prompt.
- */
-async function loadAgentDefinitions(cwd: string): Promise<AgentDefinition[]> {
-	const out: AgentDefinition[] = [];
-
-	for (const [dir, source] of [
-		[join(cwd, ".deepwise", "agents"), "workspace"],
-		[join(deepwiseHome(), "agents"), "user"],
-	] as const) {
-		const entries = await readdir(dir).catch(() => []);
-		for (const entry of entries) {
-			if (!entry.endsWith(".md")) continue;
-			const raw = await readFile(join(dir, entry), "utf8").catch(() => null);
-			if (!raw) continue;
-			const parsed = parseFrontmatter(raw);
-			if (!parsed) continue;
-			const { frontmatter, body } = parsed;
-			const name = typeof frontmatter.name === "string" ? frontmatter.name : entry.replace(/\.md$/, "");
-			if (out.some((a) => a.name === name)) continue;
-			out.push({
-				name,
-				description: typeof frontmatter.description === "string" ? frontmatter.description : name,
-				systemPrompt: body,
-				tools: Array.isArray(frontmatter.tools)
-					? (frontmatter.tools as unknown[]).filter((t): t is string => typeof t === "string")
-					: "*",
-				model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
-				source,
-			});
-		}
-	}
-	return out;
 }

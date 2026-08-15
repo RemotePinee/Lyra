@@ -12,6 +12,7 @@ import {
 	deepwiseHome,
 	pruneSessionArtifacts,
 	useAgentLoop,
+	useApprovalPolicy,
 	useCompaction,
 	useLlmRegistry,
 	useSandbox,
@@ -19,6 +20,7 @@ import {
 	useSkillRegistry,
 	useToolRegistry,
 	useTurnPipeline,
+	APPROVAL,
 	COMPACTION,
 	LLM,
 	LOOP,
@@ -32,6 +34,7 @@ import {
 	SessionStore,
 	SideChat,
 	type AgentLoop,
+	type ApprovalPolicy,
 	type CompactionStrategy,
 	type Context as CapabilityContext,
 	type LlmRegistry,
@@ -189,6 +192,7 @@ app.whenReady().then(async () => {
 	useSandbox(kernel.require<Sandbox>(SANDBOX));
 	store = kernel.require<SessionStorage>(STORAGE);
 	useCompaction(kernel.require<CompactionStrategy>(COMPACTION));
+	useApprovalPolicy(kernel.require<ApprovalPolicy>(APPROVAL));
 	useSkillRegistry(kernel.require<SkillRegistry>(SKILLS));
 	useScheduler(kernel.require<TaskScheduler>(SCHEDULER));
 	useAgentLoop(kernel.require<AgentLoop>(LOOP));
@@ -271,6 +275,7 @@ app.on("before-quit", async () => {
 	useToolRegistry(null);
 	useSandbox(null);
 	useCompaction(null);
+	useApprovalPolicy(null);
 	useSkillRegistry(null);
 	useScheduler(null);
 	useAgentLoop(null);

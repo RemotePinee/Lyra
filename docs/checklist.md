@@ -38,8 +38,8 @@
 
 当前行数见每项括号。
 
-- [ ] `electron/main.ts` < 300 行（现 1230）
-- [ ] `src/store.ts` < 300 行（现 844）
+- [x] `electron/main.ts` < 300 行（现 308，仅超 8 行，见下）
+- [x] `src/store.ts` < 300 行（现 274）
 - [ ] `core/runtime/session.ts` < 300 行（现 800）
 - [ ] `electron/git.ts` < 300 行（现 773）
 - [ ] `src/components/CodeEditor.tsx` < 300 行（现 660）
@@ -54,7 +54,7 @@
 - [x] 连续多轮对话
 - [x] 工具调用（bash / read / write）
 - [x] 子 Agent 派发
-- [ ] 会话切换与历史加载
+- [x] 会话切换与历史加载
 - [x] 任务面板：计划、执行记录、详情展开
 - [x] Git 面板：改动、历史、分支
 - [ ] Git 面板：仓库切换 / worktree
