@@ -13,11 +13,16 @@ export function relativeTime(iso: string): string {
   if (hours < 24) return `${hours} 小时前`;
   const days = Math.round(hours / 24);
   if (days < 30) return `${days} 天前`;
-  return new Date(iso).toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  /*
+   * Months and years, not a date.
+   *
+   * A list is scanned for "how stale is this", and "2026年7月12日" makes the reader do the
+   * subtraction — in a column beside a dozen others doing the same. It is also twice as wide,
+   * which is what pushed the titles next to it into an ellipsis.
+   */
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months} 个月前`;
+  return `${Math.round(months / 12)} 年前`;
 }
 
 /**

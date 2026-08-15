@@ -107,17 +107,60 @@ export interface SyncStatus {
 	pairingUrl: string | null;
 }
 
+/**
+ * A pull request as the list shows it.
+ *
+ * `relation` is why it is in the list at all, and what decides which group it appears under. The
+ * three nullable fields come from a second request: search does not return them, and fetching
+ * them per row would mean thirty round trips to decorate a list nobody has clicked yet.
+ */
 export interface PullRequestSummary {
+	repo: string;
 	number: number;
 	title: string;
 	author: string;
 	state: string;
 	isDraft: boolean;
 	url: string;
+	createdAt: string;
 	updatedAt: string;
+	comments: number;
+	relation: "reviewing" | "authored" | "reviewed";
+	additions: number | null;
+	deletions: number | null;
+	headRefName: string | null;
+}
+
+/** One review already left on a pull request. */
+export interface PullRequestReview {
+	author: string;
+	state: string;
+	body: string;
+	submittedAt: string;
+}
+
+/** A top-level comment. Line comments live on the diff and are not part of this. */
+export interface PullRequestComment {
+	author: string;
+	body: string;
+	createdAt: string;
+}
+
+/** Everything the detail pane shows, which is one request for the row that was opened. */
+export interface PullRequestDetail extends PullRequestSummary {
+	body: string;
 	additions: number;
 	deletions: number;
+	changedFiles: number;
 	headRefName: string;
+	baseRefName: string;
+	threads: PullRequestComment[];
+	reviews: PullRequestReview[];
+	reviewers: { login: string; state: string }[];
+	/** Null when the repository runs no checks at all, which is different from "none passed". */
+	checks: { total: number; passed: number; failed: number; pending: number } | null;
+	mergeable: string;
+	labels: string[];
 }
 
 export interface WorkspaceDiffFile {

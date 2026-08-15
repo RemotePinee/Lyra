@@ -20,7 +20,6 @@ import {
 	gitStatus,
 	initRepo,
 	listBranches,
-	listPullRequests,
 	listRepos,
 	listWorktrees,
 	pullBranch,
@@ -31,6 +30,14 @@ import {
 	unstagePaths,
 	workspaceStat,
 } from "../git.ts";
+import {
+	commentOnPullRequest,
+	listMyPullRequests,
+	pullRequestDetail,
+	pullRequestDiff,
+	reviewPullRequest,
+	type ReviewVerdict,
+} from "../git-pr.ts";
 
 export interface GitIpcDeps {
 	/** Whether a path lies inside a project the user has opened. */
@@ -38,7 +45,21 @@ export interface GitIpcDeps {
 }
 
 export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
-	ipcMain.handle("git:pullRequests", async (_event, cwd: string) => listPullRequests(cwd));
+	ipcMain.handle("git:myPullRequests", async () => listMyPullRequests());
+
+	ipcMain.handle("git:pullRequest", async (_event, repo: string, number: number) => pullRequestDetail(repo, number));
+
+	ipcMain.handle("git:pullRequestDiff", async (_event, repo: string, number: number) => pullRequestDiff(repo, number));
+
+	ipcMain.handle("git:commentOnPullRequest", async (_event, repo: string, number: number, body: string) =>
+		commentOnPullRequest(repo, number, body),
+	);
+
+	ipcMain.handle(
+		"git:reviewPullRequest",
+		async (_event, repo: string, number: number, verdict: ReviewVerdict, body: string) =>
+			reviewPullRequest(repo, number, verdict, body),
+	);
 
 	ipcMain.handle("git:branches", async (_event, cwd: string) => listBranches(cwd));
 

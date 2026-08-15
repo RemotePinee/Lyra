@@ -11,7 +11,14 @@ import { git } from "./git-exec.ts";
 
 export { git, run } from "./git-exec.ts";
 export { collectWorkspaceDiff } from "./git-diff.ts";
-export { listPullRequests, type PullRequest } from "./git-pr.ts";
+export {
+	commentOnPullRequest,
+	listMyPullRequests,
+	pullRequestDetail,
+	pullRequestDiff,
+	reviewPullRequest,
+	type ReviewVerdict,
+} from "./git-pr.ts";
 export {
 	commitAll,
 	discardPaths,

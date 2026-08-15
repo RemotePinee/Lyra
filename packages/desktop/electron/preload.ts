@@ -182,7 +182,12 @@ const api: LyraApi = {
 		runNow: (taskId) => ipcRenderer.invoke("scheduler:runNow", taskId),
 	},
 	git: {
-		pullRequests: (cwd) => ipcRenderer.invoke("git:pullRequests", cwd),
+		myPullRequests: () => ipcRenderer.invoke("git:myPullRequests"),
+		pullRequest: (repo, number) => ipcRenderer.invoke("git:pullRequest", repo, number),
+		pullRequestDiff: (repo, number) => ipcRenderer.invoke("git:pullRequestDiff", repo, number),
+		commentOnPullRequest: (repo, number, body) => ipcRenderer.invoke("git:commentOnPullRequest", repo, number, body),
+		reviewPullRequest: (repo, number, verdict, body) =>
+			ipcRenderer.invoke("git:reviewPullRequest", repo, number, verdict, body),
 		branches: (cwd) => ipcRenderer.invoke("git:branches", cwd),
 		switchBranch: (cwd, branch) => ipcRenderer.invoke("git:switchBranch", cwd, branch),
 		createWorktree: (cwd, branch) => ipcRenderer.invoke("git:createWorktree", cwd, branch),

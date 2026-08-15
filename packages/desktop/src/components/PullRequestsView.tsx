@@ -1,115 +1,142 @@
-import { ExternalLink, GitPullRequest, RefreshCw } from "lucide-react";
-import { ScrollText } from "./ScrollText.tsx";
-import { useCallback, useEffect, useState } from "react";
-import type { PullRequestSummary } from "../../electron/ipc-types.ts";
-import { Scroller } from "./Scroller.tsx";
+/**
+ * Reviewing pull requests: the list beside the one you are reading.
+ *
+ * Two panes rather than a page per pull request, because reviewing is a pass over several of them
+ * — you skim, open, decide, move on. Losing the list on every open turns three decisions into six
+ * navigations.
+ *
+ * Narrow, the two become one: the list until something is chosen, then the detail with a way back.
+ * A 300px list beside a 300px diff is worse than either alone.
+ */
+
+import { ArrowLeft, RefreshCw } from "lucide-react";
+import type { PullRequestDetail as Detail } from "../../electron/ipc-types.ts";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
+import { PullRequestDetail } from "./pr/PullRequestDetail.tsx";
+import { PullRequestList } from "./pr/PullRequestList.tsx";
+import { ReviewBar } from "./pr/ReviewBar.tsx";
+import { usePullRequests } from "./pr/usePullRequests.ts";
+
+/** Wide enough for a title and a repository name without either becoming an ellipsis. */
+const LIST_WIDTH = 300;
 
 export function PullRequestsView() {
-	const workspace = useApp((s) => s.workspace);
+	const { compact } = useLayout();
 	const send = useApp((s) => s.send);
 	const setView = useApp((s) => s.setView);
-	const { compact } = useLayout();
-	const [items, setItems] = useState<PullRequestSummary[]>([]);
-	const [error, setError] = useState<string | null>(null);
-	const [loading, setLoading] = useState(false);
+	const pr = usePullRequests();
 
-	const refresh = useCallback(async () => {
-		if (!workspace) return;
-		setLoading(true);
-		try {
-			const result = await window.lyra.git.pullRequests(workspace.path);
-			setItems(result.pullRequests);
-			setError(result.error ?? null);
-		} finally {
-			setLoading(false);
-		}
-	}, [workspace]);
+	const askAgent = (detail: Detail) => {
+		setView("chat");
+		void send([
+			{
+				type: "text",
+				text: `审查 ${detail.repo} 的 PR #${detail.number}「${detail.title}」（${detail.headRefName} → ${detail.baseRefName}）。用 gh pr diff ${detail.number} --repo ${detail.repo} 拿到改动，指出其中的缺陷和风险，按严重程度排序。不要切换分支。`,
+			},
+		]);
+	};
 
-	useEffect(() => {
-		void refresh();
-	}, [refresh]);
+	const submit = async (verdict: "approve" | "request-changes" | "comment", body: string): Promise<string | null> => {
+		if (!pr.selected) return "没有选中的 Pull Request";
+		const { repo, number } = pr.selected;
+		const result =
+			verdict === "comment"
+				? await window.lyra.git.commentOnPullRequest(repo, number, body)
+				: await window.lyra.git.reviewPullRequest(repo, number, verdict, body);
+		if (result.error) return result.error;
+		// What was just said is part of the pull request now; show it rather than claim it.
+		pr.refreshDetail();
+		return null;
+	};
+
+	const list = (
+		<PullRequestList
+			groups={pr.groups}
+			filter={pr.filter}
+			onFilter={pr.setFilter}
+			query={pr.query}
+			onQuery={pr.setQuery}
+			selected={pr.selected}
+			onSelect={(item) => pr.setSelected({ repo: item.repo, number: item.number })}
+			loading={pr.loading}
+			error={pr.error}
+		/>
+	);
+
+	/*
+	 * `min-w-0`, or a wide diff line pushes the whole column past the window.
+	 *
+	 * A flex child's default minimum width is its content, so one long line of code widens the
+	 * pane it sits in — and the header's buttons, anchored to the right of that pane, go off the
+	 * edge of the screen with it.
+	 */
+	const detail = (
+		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+			<PullRequestDetail
+				detail={pr.detail}
+				loading={pr.detailLoading}
+				error={pr.detailError}
+				onRefresh={pr.refreshDetail}
+				onAskAgent={askAgent}
+			/>
+			<ReviewBar onSubmit={submit} disabled={!pr.detail} />
+		</div>
+	);
+
+	if (compact) {
+		return (
+			<div className="flex min-h-0 flex-1 flex-col">
+				{pr.selected ? (
+					<>
+						<button
+							type="button"
+							onClick={() => pr.setSelected(null)}
+							className="ly-item flex h-9 shrink-0 items-center gap-1.5 px-3 text-[12.5px] text-ink-muted"
+						>
+							<ArrowLeft size={13.5} strokeWidth={1.9} />
+							全部 Pull Request
+						</button>
+						{detail}
+					</>
+				) : (
+					<>
+						<Header loading={pr.loading} onRefresh={pr.refresh} />
+						{list}
+					</>
+				)}
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<Scroller className="flex-1" contentClassName={`mx-auto w-full max-w-[880px] py-6 ${compact ? "px-4" : "px-8"}`}>
-				<header className="flex flex-wrap items-start justify-between gap-3 pb-6">
-					<div>
-						<h1 className="text-[22px] leading-tight font-semibold tracking-tight text-ink">拉取请求</h1>
-						<p className="mt-1.5 text-[12.5px] text-ink-muted">
-							{workspace ? `${workspace.name} · 通过 gh CLI 读取` : "先选择一个项目"}
-						</p>
-					</div>
-					<button
-						type="button"
-						data-ly-tip="刷新"
-						onClick={() => void refresh()}
-						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-					>
-						<RefreshCw size={14} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
-					</button>
-				</header>
-
-				{error && (
-					<div className="mb-4 rounded-[10px] border border-accent/35 bg-accent/8 px-3.5 py-2.5 text-[12.5px] text-accent">
-						{error}
-					</div>
-				)}
-
-				{!error && items.length === 0 && !loading && (
-					<p className="py-16 text-center text-[13px] text-ink-faint">没有开放中的拉取请求</p>
-				)}
-
-				<div className="space-y-2">
-					{items.map((pr) => (
-						<div key={pr.number} className="ly-scroll ly-enter rounded-[10px] border border-line bg-card/40 px-4 py-3">
-							<div className="flex items-center gap-2">
-								<GitPullRequest
-									size={14}
-									strokeWidth={1.9}
-									className={pr.isDraft ? "shrink-0 text-ink-faint" : "shrink-0 text-ok"}
-								/>
-								<ScrollText text={pr.title} className="min-w-0 flex-1 text-[13.5px] text-ink" />
-								<span className="shrink-0 font-mono text-[11.5px] text-ink-faint">#{pr.number}</span>
-								<button
-									type="button"
-									data-ly-tip="在浏览器中打开"
-									onClick={() => void window.lyra.system.openExternal(pr.url)}
-									className="shrink-0 text-ink-faint transition-colors hover:text-ink"
-								>
-									<ExternalLink size={13} strokeWidth={1.8} />
-								</button>
-							</div>
-
-							<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-faint">
-								<span>{pr.author}</span>
-								<span className="font-mono">{pr.headRefName}</span>
-								<span className="font-mono">
-									<span className="text-ok">+{pr.additions}</span> <span className="text-danger">-{pr.deletions}</span>
-								</span>
-								{pr.isDraft && <span className="rounded bg-card px-1.5 py-0.5">草稿</span>}
-								<div className="flex-1" />
-								<button
-									type="button"
-									onClick={() => {
-										setView("chat");
-										void send([
-											{
-												type: "text",
-												text: `审查 PR #${pr.number}「${pr.title}」（分支 ${pr.headRefName}）。用 gh pr diff ${pr.number} 拿到改动，指出其中的缺陷和风险，按严重程度排序。不要切换分支。`,
-											},
-										]);
-									}}
-									className="rounded-md px-2 py-0.5 text-[11.5px] text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-								>
-									让 Agent 审查
-								</button>
-							</div>
-						</div>
-					))}
+			<Header loading={pr.loading} onRefresh={pr.refresh} />
+			<div className="flex min-h-0 flex-1">
+				<div style={{ width: LIST_WIDTH }} className="flex min-h-0 shrink-0 flex-col border-r border-line-soft">
+					{list}
 				</div>
-			</Scroller>
+				{detail}
+			</div>
 		</div>
+	);
+}
+
+function Header({ loading, onRefresh }: { loading: boolean; onRefresh: () => void }) {
+	return (
+		<header className="flex h-11 shrink-0 items-center gap-2 px-4">
+			<h1 className="text-[14px] font-semibold tracking-tight text-ink">拉取请求</h1>
+			<span className="text-[11.5px] text-ink-faint">与你有关的，跨所有仓库</span>
+			<div className="flex-1" />
+			<button
+				type="button"
+				data-ly-tip="刷新"
+				aria-label="刷新"
+				onClick={onRefresh}
+				className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+			>
+				<RefreshCw size={13.5} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
+			</button>
+		</header>
 	);
 }

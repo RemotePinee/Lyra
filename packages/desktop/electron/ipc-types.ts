@@ -27,6 +27,7 @@ import type {
 
 import type {
 	AgentCapabilities,
+	PullRequestDetail,
 	FileContents,
 	FileEntry,
 	ProviderTestResult,
@@ -195,7 +196,22 @@ export interface LyraApi {
 		runNow(taskId: string): Promise<{ ok: boolean; error?: string }>;
 	};
 	git: {
-		pullRequests(cwd: string): Promise<{ pullRequests: PullRequestSummary[]; error?: string }>;
+		/**
+		 * Every pull request that concerns you, across every repository.
+		 *
+		 * Not scoped to the open folder: what is waiting on you on a Monday morning is spread
+		 * across everything you work in.
+		 */
+		myPullRequests(): Promise<{ pullRequests: PullRequestSummary[]; error?: string }>;
+		pullRequest(repo: string, number: number): Promise<{ detail?: PullRequestDetail; error?: string }>;
+		pullRequestDiff(repo: string, number: number): Promise<{ files: WorkspaceDiffFile[]; error?: string }>;
+		commentOnPullRequest(repo: string, number: number, body: string): Promise<{ error?: string }>;
+		reviewPullRequest(
+			repo: string,
+			number: number,
+			verdict: "approve" | "request-changes" | "comment",
+			body: string,
+		): Promise<{ error?: string }>;
 		/** Local and remote branches, for the composer's branch switcher. */
 		branches(cwd: string): Promise<BranchList>;
 		switchBranch(cwd: string, branch: string): Promise<{ ok: boolean; error?: string }>;
