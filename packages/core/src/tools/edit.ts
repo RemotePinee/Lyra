@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { errorResult } from "../agent/loop.ts";
+import { errorResult } from "../agent/tool-run.ts";
 import type { Tool, ToolResult } from "../types.ts";
 import { computeDiff, formatDiff } from "./diff.ts";
 import { displayPath, resolveWorkspacePath } from "./paths.ts";

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { errorResult } from "../agent/loop.ts";
+import { errorResult } from "../agent/tool-run.ts";
 import type { Tool, ToolContext, ToolResult } from "../types.ts";
 import { globToRegExp } from "./glob.ts";
 import { looksBinary, resolveWorkspacePath } from "./paths.ts";

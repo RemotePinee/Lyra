@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getSandbox } from "../sandbox/index.ts";
-import { errorResult } from "../agent/loop.ts";
+import { errorResult } from "../agent/tool-run.ts";
 import type { Tool, ToolContext, ToolResult } from "../types.ts";
 
 const DEFAULT_TIMEOUT_MS = 120_000;

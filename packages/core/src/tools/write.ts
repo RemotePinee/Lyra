@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { errorResult } from "../agent/loop.ts";
+import { errorResult } from "../agent/tool-run.ts";
 import type { Tool, ToolResult } from "../types.ts";
 import { computeDiff, formatDiff } from "./diff.ts";
 import { displayPath, exists, resolveWorkspacePath } from "./paths.ts";

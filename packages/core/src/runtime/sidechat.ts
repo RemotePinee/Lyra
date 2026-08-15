@@ -19,7 +19,8 @@
  */
 
 import type { AgentEvent, AgentEventSink } from "../agent/events.ts";
-import { runAgent, textResult } from "../agent/loop.ts";
+import { runAgent } from "../agent/loop.ts";
+import { textResult } from "../agent/tool-run.ts";
 import type { Settings } from "../config/settings.ts";
 import { resolveModel } from "../config/settings.ts";
 import type { Message, ThinkingLevel, Tool, UserContent } from "../types.ts";

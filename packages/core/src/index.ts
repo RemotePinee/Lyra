@@ -50,7 +50,8 @@ export { loadCapabilityPlugins, type LoadedCapabilityPlugins } from "./plugins/c
 export { API_FORMATS, getProvider, streamAssistant, useLlmRegistry } from "./ai/index.ts";
 export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";
-export { errorResult, runAgent, textResult, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
+export { runAgent, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
+export { errorResult, textResult } from "./agent/tool-run.ts";
 export { runTurn, useAgentLoop, type AgentLoop } from "./agent/runner.ts";
 export { runTool, useToolPipeline, type ToolCall, type ToolMiddleware } from "./agent/tool-pipeline.ts";
 export {
@@ -104,7 +105,8 @@ export { compactIfNeeded, compactWith, useCompaction } from "./runtime/compactio
 export type { ContextBreakdown, ContextSegment, ContextSegmentKey } from "./runtime/context.ts";
 export { estimateTokens } from "./tokens.ts";
 export { hooksFor, makeAfterToolCall, makeBeforeToolCall, runHook } from "./runtime/hooks.ts";
-export { AgentSession, type AgentSessionOptions, type SessionStatus } from "./runtime/session.ts";
+export type { SessionStatus } from "./runtime/reporting.ts";
+export { AgentSession, type AgentSessionOptions,  } from "./runtime/session.ts";
 export { SideChat, type SideChatOptions, type SideChatState } from "./runtime/sidechat.ts";
 export {
 	deepwiseHome,

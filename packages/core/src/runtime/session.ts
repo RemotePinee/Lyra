@@ -45,24 +45,15 @@ import { compactWith } from "./compaction.ts";
 import { buildContextBreakdown, type ContextBreakdown } from "./context.ts";
 import { TaskQueue } from "./task-queue.ts";
 import { prepareTurn, type TurnContext } from "./turn.ts";
+import { continueWhileWorkRemains } from "./continuation.ts";
+import { buildTurnConfig } from "./turn-config.ts";
+import { describeContext, describeSession, type SessionFacts, type SessionStatus } from "./reporting.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 
 export interface PendingApproval {
 	id: string;
 	request: ApprovalRequest;
 	resolve: (decision: ApprovalDecision) => void;
-}
-
-export interface SessionStatus {
-	meta: SessionMeta;
-	running: boolean;
-	skills: Skill[];
-	skillDiagnostics: SkillDiagnostic[];
-	plugins: Plugin[];
-	pluginDiagnostics: PluginDiagnostic[];
-	mcp: McpServerStatus[];
-	agents: AgentDefinition[];
-	toolNames: string[];
 }
 
 export interface AgentSessionOptions {
@@ -91,15 +82,6 @@ export interface AgentSessionOptions {
  * The log is meant to answer "what did the model actually see, and why did it do that" long after
  * the run — so anything that changes the model's input, or that happened out of view, is kept.
  */
-/**
- * How many times a turn may run out of rounds and be restarted.
- *
- * Loose on purpose: it is a backstop against a bug in the conditions above, not a judgement about
- * how much work is reasonable. Ten of them is two thousand rounds — far past anything a real task
- * needs, and long before it the repetition watch would have called a genuine loop.
- */
-const MAX_CONTINUATIONS = 10;
-
 const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["compacted", "context", "subagent", "subagent_done"]);
 
 export class AgentSession {
@@ -197,54 +179,37 @@ export class AgentSession {
 	}
 
 	async status(): Promise<SessionStatus> {
+		return describeSession(this.facts());
+	}
+
+	async contextBreakdown(): Promise<ContextBreakdown | null> {
+		return describeContext(this.facts());
+	}
+
+	/**
+	 * The session as something to be read, not driven.
+	 *
+	 * Built explicitly rather than by making the fields public: describing a session needs most of
+	 * its state, and the way to give that away without also giving away the ability to change it is
+	 * to hand over a copy of the references and nothing else.
+	 */
+	private facts(): SessionFacts {
 		return {
 			meta: this.meta,
 			running: this.running,
+			cwd: this.cwd,
+			messages: this.messages,
+			settings: this.settings,
+			tools: this.tools,
 			skills: this.skills,
 			skillDiagnostics: this.skillDiagnostics,
 			plugins: this.plugins,
 			pluginDiagnostics: this.pluginDiagnostics,
-			mcp: this.mcpStatuses,
+			mcpStatuses: this.mcpStatuses,
 			agents: this.agents,
-			toolNames: this.tools.map((t) => t.name),
+			mcp: this.mcp,
+			scratchDir: () => this.scratchDir(),
 		};
-	}
-
-	/**
-	 * Where this session's context window is going, by segment.
-	 *
-	 * Built here rather than in the UI because only the session holds the inputs: the assembled
-	 * prompt, the tool schemas as the provider will receive them, and which of those tools came
-	 * from an MCP server rather than from the kernel. Rebuilding the prompt to measure it is
-	 * cheap next to a request, and it is the only way for the figure to be the real one.
-	 */
-	async contextBreakdown(): Promise<ContextBreakdown | null> {
-		const resolved = resolveModel(this.settings, this.meta.modelId || this.settings.defaultModelId);
-		if (!resolved) return null;
-
-		const projectInstructions = await loadProjectInstructions(this.cwd);
-		const mcpNames = new Set(this.mcp.allTools().map((tool) => tool.name));
-
-		return buildContextBreakdown({
-			model: resolved.model,
-			messages: this.messages,
-			systemPrompt: await buildSystemPrompt({
-				cwd: this.cwd,
-				tools: this.tools,
-				skills: this.skills,
-				agents: this.agents,
-				projectInstructions,
-				platform: platform(),
-				modelName: resolved.model.name,
-				isGitRepo: await pathExists(join(this.cwd, ".git")),
-				today: new Date().toISOString().slice(0, 10),
-				scratchDir: this.scratchDir(),
-			}),
-			builtinTools: this.tools.filter((tool) => !mcpNames.has(tool.name)),
-			mcpTools: this.tools.filter((tool) => mcpNames.has(tool.name)),
-			skillCatalogue: formatSkillCatalogue(this.skills),
-			projectInstructions,
-		});
 	}
 
 	/**
@@ -361,90 +326,42 @@ export class AgentSession {
 			});
 			const systemPrompt = await this.recordContext(turn);
 
-			/*
-			 * Running out of rounds is not the same as being finished.
-			 *
-			 * A turn is capped so that one runaway cannot spin forever, and a big piece of work
-			 * legitimately exceeds that cap — the blog project reaches it around the point the
-			 * frontend starts. What used to happen then was that the run simply stopped with half
-			 * a plan and waited for someone to press "continue", which is precisely the human
-			 * intervention an unattended run is supposed to avoid.
-			 *
-			 * So it starts another turn instead, while the plan says there is work left. Bounded,
-			 * and safe to bound loosely, because the two ways a run can be genuinely stuck are
-			 * caught elsewhere: repetition ends the turn with `stalled`, and a model that has
-			 * stopped calling tools is nudged a few times and then left alone.
-			 */
-			const config: AgentRunConfig = {
+			const config = buildTurnConfig(
+				{
 					sessionId: this.meta.id,
 					cwd: this.cwd,
 					provider: resolved.provider,
 					model: resolved.model,
-					systemPrompt,
-					tools: turn.tools,
-					messages: turn.messages,
-					thinking: thinking ?? this.settings.thinking,
-					retryAttempts: this.settings.retryAttempts,
-					signal: this.controller.signal,
+					settings: this.settings,
 					state: this.state,
-					/*
-					 * Previews are written under the app's directory, keyed by this session.
-					 *
-					 * The workspace is the user's project; a page produced to demonstrate an idea
-					 * is not part of it and should never turn up in `git status`. Keyed by session
-					 * so it can be thrown away with the conversation that produced it.
-					 */
-					writePreview: (input) =>
-						writePreview(deepwiseHome(), { ...input, sessionId: this.meta?.id ?? "unsaved" }),
+					tools: this.tools,
+					skills: this.skills,
+					agents: this.agents,
+					signal: this.controller.signal,
+					streamFn: this.streamFn,
 					requestApproval: (request) => this.requestApproval(request),
-					spawnSubAgent: (input) =>
-						runSubAgent(
-							{
-								sessionId: this.meta.id,
-								cwd: this.cwd,
-								settings: this.settings,
-								tools: this.tools,
-								skills: this.skills,
-								agents: this.agents,
-								signal: this.controller?.signal,
-								streamFn: this.streamFn,
-								requestApproval: (request) => this.requestApproval(request),
-								emit: (event) => this.emit(event),
-							},
-							input,
-							resolved.provider,
-							resolved.model,
-							systemPrompt,
-						),
-					drainSteering: () => this.steering.splice(0, this.steering.length),
+					emit: (event) => this.emit(event),
+					summaryStream: (provider) => this.summaryStream(provider),
 					beforeToolCall: makeBeforeToolCall(this.settings.hooks, this.cwd, this.controller.signal),
 					afterToolCall: makeAfterToolCall(this.settings.hooks, this.cwd, this.controller.signal),
-					// The session's own stream override applies here too; summarising is a model call.
-					compact: (messages, model) =>
-						compactWith(messages, model, resolved.provider, this.summaryStream(resolved.provider)),
-					streamFn: this.streamFn,
-			};
+					drainSteering: () => this.steering.splice(0, this.steering.length),
+				},
+				turn,
+				systemPrompt,
+				thinking,
+			);
+;
 
 			let result = await runTurn(config, (event) => this.handleAgentEvent(event));
 
-			for (let extra = 0; extra < MAX_CONTINUATIONS; extra++) {
-				if (result.reason !== "max_turns") break;
-				if (this.controller?.signal.aborted) break;
-				const unfinished = (this.state.get(TODOS_KEY) as TodoItem[] | undefined)?.filter(
-					(todo) => todo.status !== "completed",
-				);
-				if (!unfinished || unfinished.length === 0) break;
+			result = await continueWhileWorkRemains(result, {
+				run: (messages) => runTurn({ ...config, messages, systemPrompt }, (event) => this.handleAgentEvent(event)),
+				messages: () => this.messages,
+				todos: () => (this.state.get(TODOS_KEY) as TodoItem[] | undefined) ?? [],
+				aborted: () => this.controller?.signal.aborted ?? false,
+				notify: (message) => this.emit({ type: "notice", level: "info", message }),
+			});
 
-				await this.emit({
-					type: "notice",
-					level: "info",
-					message: `本轮步数用尽，清单里还有 ${unfinished.length} 项，继续执行。`,
-				});
-				result = await runTurn(
-					{ ...config, messages: this.messages, systemPrompt },
-					(event) => this.handleAgentEvent(event),
-				);
-			}
 		} finally {
 			this.controller = null;
 			// Anything still waiting for approval would hang forever once the run is over.

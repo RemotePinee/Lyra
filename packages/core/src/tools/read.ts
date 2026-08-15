@@ -1,6 +1,6 @@
 import type { Stats } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { errorResult } from "../agent/loop.ts";
+import { errorResult } from "../agent/tool-run.ts";
 import type { Tool, ToolContext, ToolResult } from "../types.ts";
 import { displayPath, imageMimeType, looksBinary, resolveWorkspacePath } from "./paths.ts";
 
