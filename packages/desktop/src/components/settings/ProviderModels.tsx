@@ -1,0 +1,152 @@
+/**
+ * The models one provider offers, and whether the connection works.
+ *
+ * Separate from the provider's own fields because they answer different questions. The fields
+ * above are "how do I reach this thing"; this is "what can it do, and did it answer" — which is
+ * also the order you fill them in, and the only part you come back to later.
+ *
+ * The test outcome lives here rather than beside the URL for the same reason: what a successful
+ * test tells you is which models the endpoint reports, so it belongs next to the list you are
+ * about to compare it against.
+ */
+
+import { Link2, Pencil, Plus, Trash2 } from "lucide-react";
+import type { ModelConfig } from "@deepwise/core";
+import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
+import { formatWindow } from "../ModelMenu.tsx";
+import { Scroller } from "../Scroller.tsx";
+import { ScrollText } from "../ScrollText.tsx";
+import { Badge, GhostButton } from "./controls.tsx";
+
+export function ProviderModels({
+	models,
+	defaultModelId,
+	testResult,
+	testing,
+	onTest,
+	onEdit,
+	onRemove,
+	onSetDefault,
+}: {
+	models: ModelConfig[];
+	defaultModelId: string | null;
+	testResult: ProviderTestResult | null;
+	testing: boolean;
+	onTest: () => void;
+	/** `null` adds a new one. */
+	onEdit: (model: ModelConfig | null) => void;
+	onRemove: (modelId: string) => void;
+	onSetDefault: (modelId: string) => void;
+}) {
+	return (
+		<div className="pt-6">
+			<div className="mb-2 flex items-center justify-between">
+				<span className="text-[12.5px] text-ink-muted">模型列表</span>
+				<GhostButton onClick={onTest} disabled={testing}>
+					{testing ? "测试中…" : "测试连接"}
+				</GhostButton>
+			</div>
+
+			<div className="space-y-2">
+				{models.map((model) => (
+					<ModelRow
+						key={model.id}
+						model={model}
+						isDefault={defaultModelId === model.id}
+						onEdit={() => onEdit(model)}
+						onRemove={() => onRemove(model.id)}
+						onSetDefault={() => onSetDefault(model.id)}
+					/>
+				))}
+
+				<button
+					type="button"
+					onClick={() => onEdit(null)}
+					className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line px-3 text-[12.5px] text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+				>
+					<Plus size={14} strokeWidth={1.9} />
+					添加模型
+				</button>
+			</div>
+
+			{testResult && <TestOutcome result={testResult} />}
+		</div>
+	);
+}
+
+function ModelRow({
+	model,
+	isDefault,
+	onEdit,
+	onRemove,
+	onSetDefault,
+}: {
+	model: ModelConfig;
+	isDefault: boolean;
+	onEdit: () => void;
+	onRemove: () => void;
+	onSetDefault: () => void;
+}) {
+	return (
+		<div className="flex h-[46px] items-center gap-3 rounded-[10px] border border-line bg-input px-3.5">
+			<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-[13px] text-ink" />
+			{isDefault && <Badge tone="accent">默认</Badge>}
+			<span className="rounded bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-ink-faint">
+				{formatWindow(model.contextWindow)}
+			</span>
+			<button
+				type="button"
+				data-dw-tip="设为默认模型"
+				aria-label="设为默认模型"
+				onClick={onSetDefault}
+				className="text-ink-faint transition-colors hover:text-ink"
+			>
+				<Link2 size={14} strokeWidth={1.8} />
+			</button>
+			<button
+				type="button"
+				data-dw-tip="编辑"
+				aria-label="编辑模型"
+				onClick={onEdit}
+				className="text-ink-faint transition-colors hover:text-ink"
+			>
+				<Pencil size={14} strokeWidth={1.8} />
+			</button>
+			<button
+				type="button"
+				data-dw-tip="删除"
+				aria-label="删除模型"
+				onClick={onRemove}
+				className="text-ink-faint transition-colors hover:text-danger"
+			>
+				<Trash2 size={14} strokeWidth={1.8} />
+			</button>
+		</div>
+	);
+}
+
+/** What the endpoint said, kept as it was said — including the model list it reports. */
+function TestOutcome({ result }: { result: ProviderTestResult }) {
+	return (
+		<div
+			className={`mt-3 rounded-[10px] border px-3.5 py-2.5 text-[12.5px] ${
+				result.ok ? "border-ok/35 bg-ok/8 text-ok" : "border-danger/35 bg-danger/8 text-danger"
+			}`}
+		>
+			{result.message}
+			{result.latencyMs > 0 && <span className="opacity-70"> · {result.latencyMs} ms</span>}
+			{result.models && result.models.length > 0 && (
+				<details className="mt-1.5">
+					<summary className="cursor-pointer opacity-80">端点上报的模型（{result.models.length}）</summary>
+					<Scroller
+						className="mt-1 max-h-[160px]"
+						contentClassName="font-mono text-[11.5px] opacity-80"
+						fadeColor="var(--color-card)"
+					>
+						{result.models.join("\n")}
+					</Scroller>
+				</details>
+			)}
+		</div>
+	);
+}
