@@ -17,6 +17,8 @@ import { SettingsShell } from "./components/settings/SettingsShell.tsx";
 import { LayoutProvider, NavPane, SidePane, useLayout } from "./layout.tsx";
 import { useSide } from "./sideStore.ts";
 import { useApp } from "./store.ts";
+import { useShortcuts } from "./shortcuts.ts";
+import { RightPanelIcon } from "./components/RightPanelIcon.tsx";
 import { applyAppearance, watchSystemTheme } from "./theme.ts";
 
 /** What the conversation keeps for itself before the panel is allowed any more. */
@@ -234,84 +236,20 @@ function ChatShell() {
     if (compact && navOpen) closePanel();
   }, [compact, navOpen, closePanel]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey;
-      // ⌘B is the conventional shortcut, and it makes the transition easy to feel.
-      if (mod && !event.altKey && event.key.toLowerCase() === "b") {
-        event.preventDefault();
-        toggleNav();
-        return;
-      }
-      /*
-       * `code`, not `key`.
-       *
-       * Option is a dead-key modifier on macOS: ⌥S arrives as "ß", so matching on `key`
-       * would never fire. The physical key is what the shortcut is written as.
-       */
-      if (mod && event.altKey && event.code === "KeyS") {
-        event.preventDefault();
-        if (activeSessionId) openPanel(() => toggleTab("chat"));
-        return;
-      }
-      if (mod && event.shiftKey && event.code === "KeyR") {
-        event.preventDefault();
-        if (workspace) openPanel(() => toggleTab("review"));
-        return;
-      }
-      if (mod && !event.altKey && !event.shiftKey && event.code === "KeyP") {
-        event.preventDefault();
-        if (workspace) openPanel(() => toggleTab("files"));
-        return;
-      }
-      // ⌘L for the trajectory: the log of what actually happened, beside the conversation.
-      if (mod && !event.altKey && !event.shiftKey && event.code === "KeyL") {
-        event.preventDefault();
-        if (activeSessionId) openPanel(() => toggleTab("trajectory"));
-        return;
-      }
-      // ⌃` is what every terminal-bearing editor uses, and it is not a ⌘ shortcut.
-      if (event.ctrlKey && !event.metaKey && event.code === "Backquote") {
-        event.preventDefault();
-        if (workspace) openPanel(() => toggleTab("terminal"));
-        return;
-      }
-      /*
-       * Escape dismisses whatever is *covering* the conversation, and nothing else.
-       *
-       * A panel sitting beside the transcript is not covering anything, and closing
-       * something you are working alongside is not what Escape means — so at ordinary
-       * widths it does nothing. Full screen is covering it, and steps back one level
-       * rather than closing outright: you asked for more room, not to be rid of the panel.
-       * Popovers stop the event during capture, so an open menu still gets first refusal.
-       */
-      // Anything that already acted on Escape — the editor's find bar, a menu — calls
-      // `preventDefault`. Without this check the same keypress also stepped the panel out
-      // of full screen, so closing a find bar took the window apart with it.
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        if (compact) {
-          if (navOpen) dismissNav();
-          else if (panelOpen) closePanel();
-        } else if (panelOpen && expanded) {
-          toggleExpanded();
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [
+  useShortcuts({
     compact,
     navOpen,
     panelOpen,
     expanded,
+    activeSessionId,
+    workspace,
     toggleNav,
     dismissNav,
     closePanel,
-    toggleTab,
     toggleExpanded,
-    activeSessionId,
-    workspace,
-  ]);
+    openPanel,
+    toggleTab,
+  });
 
   return (
     <div className="dw-shell relative flex h-full overflow-hidden">
@@ -474,32 +412,5 @@ function ChatShell() {
         </div>
       )}
     </div>
-  );
-}
-
-function RightPanelIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
-      <line x1="14.5" y1="4" x2="14.5" y2="20" />
-      <rect
-        x="14.5"
-        y="4"
-        width="6.5"
-        height="16"
-        rx="2.5"
-        fill="currentColor"
-        stroke="none"
-        className="transition-opacity duration-200"
-        opacity={active ? 0.5 : 0}
-      />
-    </svg>
   );
 }

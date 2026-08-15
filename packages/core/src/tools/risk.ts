@@ -1,5 +1,6 @@
-import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { SAFE, risky, scratchRoots, underScratchRoot, wipesScratchRoot, type RiskVerdict } from "./risk-shared.ts";
+import { NEVER_UNATTENDED, PROTECTED_PATH, RISKY_SUBCOMMANDS } from "./risk-tables.ts";
+import { splitCommands } from "./shell-split.ts";
 /**
  * How dangerous an operation is, so that "帮我批准" can mean what it says.
  *
@@ -17,124 +18,8 @@ import { join } from "node:path";
  * into a shell, touching anything outside the project.
  */
 
-export interface RiskVerdict {
-	risky: boolean;
-	/** Shown to the user in the approval prompt, so it says what specifically is dangerous. */
-	reason?: string;
-}
 
-const SAFE: RiskVerdict = { risky: false };
-const risky = (reason: string): RiskVerdict => ({ risky: true, reason });
 
-/**
- * Splits a command line into the individual commands it runs.
- *
- * `&&`, `||`, `;`, `|` and newlines all start a new command; `$( )` and backticks nest one
- * inside another. Every piece is judged on its own, because a chain is exactly as dangerous as
- * its most dangerous link.
- */
-export function splitCommands(command: string): string[] {
-	const parts: string[] = [];
-	let current = "";
-	let quote: '"' | "'" | null = null;
-	let depth = 0;
-
-	for (let i = 0; i < command.length; i++) {
-		const char = command[i];
-		const next = command[i + 1];
-
-		if (quote) {
-			// Inside single quotes nothing is special; inside double quotes only `$(` still is.
-			if (char === quote) quote = null;
-			else if (quote === '"' && char === "$" && next === "(") {
-				current += char;
-				continue;
-			}
-			current += char;
-			continue;
-		}
-		if (char === '"' || char === "'") {
-			quote = char;
-			current += char;
-			continue;
-		}
-		if (char === "$" && next === "(") {
-			depth++;
-			i++;
-			parts.push(current);
-			current = "";
-			continue;
-		}
-		if (char === "`") {
-			parts.push(current);
-			current = "";
-			continue;
-		}
-		if (char === ")" && depth > 0) {
-			depth--;
-			parts.push(current);
-			current = "";
-			continue;
-		}
-		if (char === ";" || char === "\n" || (char === "&" && next === "&") || (char === "|" && next === "|")) {
-			if (char === "&" || char === "|") i++;
-			parts.push(current);
-			current = "";
-			continue;
-		}
-		if (char === "|" || char === "&") {
-			parts.push(current);
-			current = "";
-			continue;
-		}
-		current += char;
-	}
-	parts.push(current);
-	return parts.map((part) => part.trim()).filter(Boolean);
-}
-
-/** Programs that are dangerous whatever their arguments. */
-const NEVER_UNATTENDED = new Map<string, string>([
-	["sudo", "以管理员身份执行"],
-	["doas", "以管理员身份执行"],
-	["su", "切换用户"],
-	["shutdown", "关机或重启"],
-	["reboot", "关机或重启"],
-	["halt", "关机或重启"],
-	["mkfs", "格式化磁盘"],
-	["fdisk", "修改磁盘分区"],
-	["diskutil", "修改磁盘"],
-	["dd", "按块写设备，可能覆盖磁盘"],
-	["shred", "不可恢复地擦除文件"],
-	["chown", "更改文件归属"],
-	["launchctl", "改动系统服务"],
-	["systemctl", "改动系统服务"],
-	["crontab", "改动定时任务"],
-	["killall", "批量结束进程"],
-]);
-
-/** Subcommands that discard work or rewrite shared history. */
-const RISKY_SUBCOMMANDS = new Map<string, Map<string, string>>([
-	[
-		"git",
-		new Map([
-			["reset", "可能丢弃未提交的改动"],
-			["clean", "删除未跟踪的文件"],
-			["rebase", "重写提交历史"],
-			["filter-branch", "重写提交历史"],
-			["checkout", "可能覆盖未提交的改动"],
-			["restore", "可能丢弃未提交的改动"],
-		]),
-	],
-	["npm", new Map([["publish", "发布到公共仓库"]])],
-	["pnpm", new Map([["publish", "发布到公共仓库"]])],
-	["yarn", new Map([["publish", "发布到公共仓库"]])],
-	["docker", new Map([["system", "可能清理镜像与卷"]])],
-	["kubectl", new Map([["delete", "删除集群资源"]])],
-]);
-
-/** Paths that are never the project, so writing to them is out of scope by definition. */
-const PROTECTED_PATH = /(^|\s)(\/(bin|sbin|usr|etc|var|System|Library|Applications)\b|~\/\.(ssh|aws|gnupg|config\/gh)\b)/;
 
 function firstWord(command: string): string {
 	// Leading `VAR=value` assignments are not the program being run.
@@ -166,70 +51,8 @@ function bareGlob(target: string): boolean {
 	return prefix.length === 0 || prefix.includes("..");
 }
 
-/**
- * Somewhere a scratch file legitimately lives.
- *
- * The system temp directory counts alongside the project, because the agent is *told* to put
- * scratch there — a preview, a log, a throwaway script. Refusing to let it tidy up after itself
- * would mean asking a person about `rm -f /tmp/its-own-log-*.log`, which is not a decision anyone
- * can make better than the rule can.
- *
- * The root itself is never "inside" it: `/tmp/x` is housekeeping, `/tmp` is somebody else's files
- * too. Nor is anything outside these two trees — home, `/etc`, another project.
- */
-/**
- * A wildcard that empties a scratch directory wholesale.
- *
- * `/tmp/inkwell-*.log` is the agent's own files; `/tmp/*` is everyone's. The system temp directory
- * is shared with every other process on the machine, so "somewhere you may write" does not extend
- * to "somewhere you may empty" — the same distinction as `rm -rf dist` versus `rm -rf *`.
- *
- * The line is whether the wildcard segment says anything: a bare `*` names nothing in particular,
- * a pattern with literal characters names a family of files.
- */
-function wipesScratchRoot(target: string, cwd?: string): boolean {
-	const path = target.replace(/^['"]|['"]$/g, "");
-	const segments = path.split("/");
-	const last = segments[segments.length - 1];
-	if (!/^\*+$/.test(last)) return false;
-	const prefix = segments.slice(0, -1).join("/");
-	return scratchRoots(cwd).includes(prefix);
-}
 
-function underScratchRoot(target: string, cwd?: string): boolean {
-	const path = target.replace(/^['"]|['"]$/g, "");
-	if (!path.startsWith("/")) return false;
-	const roots = scratchRoots(cwd);
-	return roots.some((root) => path.startsWith(`${root}/`) && path !== root);
-}
 
-/**
- * The places work legitimately happens.
- *
- * The project, the system temp directory, and the app's own scratch and preview directories. The
- * last two matter for the same reason as the first: we create them, and we put their paths in the
- * system prompt telling the agent to use them. Asking a person whether the agent may write to the
- * directory we just told it to write to is not a safety question, it is a bug — and one that turns
- * an unattended run into a run that stops on the first scratch file.
- *
- * `~/.deepwise` as a whole is deliberately not here: settings and session logs live there too, and
- * those are worth a question.
- */
-function scratchRoots(cwd?: string): string[] {
-	const home = process.env.DEEPWISE_HOME || join(homedir(), ".deepwise");
-	/*
-	 * `/tmp` by name as well as by API.
-	 *
-	 * On macOS `tmpdir()` is the per-user `/var/folders/...` directory, while everything people
-	 * and models actually type is `/tmp` — a different path that is equally temporary. Listing
-	 * only the API answer meant the rule looked right in tests and still stopped the real command
-	 * that prompted it.
-	 */
-	const roots = [tmpdir(), "/tmp", "/private/tmp", join(home, "scratch"), join(home, "previews")];
-	if (cwd) roots.push(cwd);
-	// A root of `/` would make every path on the machine "scratch"; drop it rather than trust it.
-	return roots.map((root) => root.replace(/\/+$/, "")).filter((root) => root.length > 1);
-}
 
 function judgeSingle(command: string, contained = false, cwd?: string): RiskVerdict {
 	const head = firstWord(command);
@@ -343,53 +166,6 @@ export function assessCommand(command: string, cwd?: string): RiskVerdict {
 	return SAFE;
 }
 
-/**
- * Whether writing to this path needs a decision.
- *
- * Inside the project, writing is the work and is not worth interrupting. Outside it — a system
- * directory, someone's SSH keys — is a different act entirely, whoever asked for it.
- */
-export function assessWrite(path: string, cwd: string): RiskVerdict {
-	const normalised = path.replace(/\/+$/, "");
-	/*
-	 * Asked first, because on macOS the system temp directory lives under `/var` — which the
-	 * protected-path list quite rightly covers. A file inside a directory whose entire purpose is
-	 * scratch is not the case that list is about, and checking in the other order made every
-	 * temporary file look like an attempt on the system.
-	 */
-	if (underScratchRoot(normalised, cwd)) return SAFE;
-	if (PROTECTED_PATH.test(` ${normalised}`)) return risky("写入项目之外的敏感路径");
-	if (/(^|\/)\.(zshrc|bashrc|profile|zprofile)$/.test(normalised)) return risky("修改 shell 启动文件");
-	if (!normalised.startsWith(`${cwd.replace(/\/+$/, "")}/`) && normalised !== cwd.replace(/\/+$/, "")) {
-		return risky("写入当前项目之外的位置");
-	}
-	return SAFE;
-}
-
-/**
- * Whether reaching this address needs a decision.
- *
- * The machine's own ports are not the internet. An agent that has just started a dev server has
- * to open it to know whether it works, and asking about `http://localhost:4000/` interrupts the
- * one turn where the answer is obviously yes — while teaching the habit of clicking through, so
- * the prompt that does matter gets clicked through too.
- *
- * Anything that leaves the machine still asks: that is where data can go somewhere it cannot be
- * taken back from.
- */
-export function assessNetwork(target: string): RiskVerdict {
-	let host: string;
-	try {
-		host = new URL(target.trim()).hostname.toLowerCase();
-	} catch {
-		// Unparseable is not obviously safe, so it goes the careful way.
-		return risky("无法解析的地址");
-	}
-	if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return SAFE;
-	// `*.localhost` resolves to the loopback by specification, and dev servers do use it.
-	if (host.endsWith(".localhost")) return SAFE;
-	return risky("访问外部网络");
-}
 
 /**
  * Whether every directory the command changes into is within the workspace.
@@ -419,3 +195,7 @@ function staysInside(command: string, cwd: string): boolean {
 	}
 	return true;
 }
+
+export { splitCommands } from "./shell-split.ts";
+
+export { assessNetwork, assessWrite } from "./risk-paths.ts";
