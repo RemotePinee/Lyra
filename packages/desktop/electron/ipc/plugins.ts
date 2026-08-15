@@ -13,12 +13,10 @@ import { deepwiseHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uni
 import type { RegistryEntry } from "../ipc-types.ts";
 
 export interface PluginsIpcDeps {
-	pluginsDir(scope: "workspace" | "user", cwd: string): string;
-	writeExamplePlugin(dir: string): Promise<void>;
 	disabledPlugins(): string[];
 }
 
-export function registerPluginsIpc({ pluginsDir, writeExamplePlugin, disabledPlugins }: PluginsIpcDeps): void {
+export function registerPluginsIpc({ disabledPlugins }: PluginsIpcDeps): void {
 	ipcMain.handle("registry:fetch", async (_event, url: string) => {
 		try {
 			return { ok: true as const, registry: await fetchRegistry(url) };
@@ -87,4 +85,87 @@ export function registerPluginsIpc({ pluginsDir, writeExamplePlugin, disabledPlu
 		await shell.openPath(dir);
 		return dir;
 	});
+}
+
+function pluginsDir(scope: "workspace" | "user", cwd: string): string {
+	return scope === "workspace" ? join(cwd, ".deepwise", "plugins") : join(deepwiseHome(), "plugins");
+}
+
+/**
+ * Write a working example bundle.
+ *
+ * The format is only obvious once you have seen one, so this ships a manifest, a skill with a
+ * real script, and an MCP declaration pointing at Context7 — the three pieces a plugin can carry.
+ */
+async function writeExamplePlugin(dir: string): Promise<void> {
+	await mkdir(join(dir, ".deepwise-plugin"), { recursive: true });
+	await mkdir(join(dir, "skills", "changelog", "scripts"), { recursive: true });
+
+	await writeFile(
+		join(dir, ".deepwise-plugin", "plugin.json"),
+		`${JSON.stringify(
+			{
+				name: "hello-deepwise",
+				version: "0.1.0",
+				description: "示例插件：一个技能 + 配套脚本 + 一个 MCP 服务器。",
+				author: { name: "You" },
+				skills: "./skills/",
+				mcpServers: "./.mcp.json",
+				interface: {
+					displayName: "Hello DeepWise",
+					shortDescription: "示例插件，演示技能、脚本与 MCP 的打包方式",
+					category: "Developer Tools",
+					capabilities: ["Read", "Write"],
+					brandColor: "#339CFF",
+					defaultPrompt: ["用 changelog 技能整理最近的提交"],
+				},
+			},
+			null,
+			2,
+		)}\n`,
+		"utf8",
+	);
+
+	await writeFile(
+		join(dir, ".mcp.json"),
+		`${JSON.stringify(
+			{ mcpServers: { context7: { type: "stdio", command: "npx", args: ["-y", "@upstash/context7-mcp@latest"] } } },
+			null,
+			2,
+		)}\n`,
+		"utf8",
+	);
+
+	await writeFile(
+		join(dir, "skills", "changelog", "SKILL.md"),
+		[
+			"---",
+			"name: changelog",
+			"description: 整理 git 提交为分类变更日志。当用户要求写 changelog、发布说明、版本变更时使用。",
+			"---",
+			"",
+			"# 整理变更日志",
+			"",
+			"1. 运行本技能自带的脚本拿到结构化提交：",
+			"   `bash scripts/collect.sh 30`",
+			"2. 按 Added / Changed / Fixed 归类",
+			"3. 每条一句话，写清楚对用户的影响，不要写实现细节",
+			"",
+			"脚本路径相对于本技能目录，调用时请使用系统提示里给出的绝对路径。",
+			"",
+		].join("\n"),
+		"utf8",
+	);
+
+	await writeFile(
+		join(dir, "skills", "changelog", "scripts", "collect.sh"),
+		[
+			"#!/usr/bin/env bash",
+			"# Print the last N commits as `hash\\tsubject`, newest first.",
+			"set -euo pipefail",
+			'git log --oneline --no-merges -n "${1:-20}" --pretty=format:"%h%x09%s"',
+			"",
+		].join("\n"),
+		{ encoding: "utf8", mode: 0o755 },
+	);
 }
