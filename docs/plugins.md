@@ -36,10 +36,17 @@ DeepWise 的能力由插件组合而成。内核（`packages/core/src/kernel`）
 | --- | --- | --- |
 | `LLM` | `llm` | 应用会说哪些模型 API（Responses、Anthropic Messages） |
 | `TOOLS` | `tools` | agent 能做什么。同名后注册者胜出，替换内置工具靠的就是这一条 |
-| `APPROVAL` | `approval` | 哪些动作可以无人值守地执行 |
-| `SANDBOX` | `sandbox` | 命令在哪里跑。默认是本机，容器与远程是同一个接口 |
-| `COMPACTION` | `compaction` | 上下文装不下时怎么办 |
 | `SKILLS` | `skills` | 代码提供的技能（磁盘上的技能不走这里） |
+| `SESSION` | `session` | 每一轮的上下文在发出前由谁改。中间件，先注册的在最外层 |
+| `SANDBOX` | `sandbox` | 命令在哪里跑。默认是本机，容器与远程是同一个接口 |
+| `STORAGE` | `storage` | 会话存在哪。默认是 `~/.deepwise` 下的仅追加 JSONL |
+| `LOOP` | `loop` | 一轮怎么跑。默认是「问、执行、再问」 |
+| `SCHEDULER` | `scheduler` | 队列里下一个跑什么。默认先进先出 |
+| `APPROVAL` | `approval` | 哪些动作可以无人值守地执行 |
+| `COMPACTION` | `compaction` | 上下文装不下时怎么办 |
+
+UI 不在内核里——面板属于渲染进程——但形状一样：`src/panels/registry.ts` 是一份可注册、
+可按 kind 覆盖的清单，内置面板只是「先注册的那一组」。
 
 宿主在启动时把服务绑到运行时上：
 
@@ -81,13 +88,14 @@ export const sandboxedBash: Plugin = {
 };
 ```
 
-## 还没有插件化的部分
+## 边界
 
-诚实地列出来，比含糊地宣称"一切皆插件"有用：
+九项能力都能换掉，但要说清楚换的是什么：
 
-- **存储**：`SessionStore` 目前由宿主直接构造。接口早已足够干净，缺的是把它抽成类型。
-- **调度**：任务队列在 `AgentSession` 内部。要成为缝，得先定义"下一个跑什么"这件事的接口。
-- **UI**：桌面端面板是编译进去的。真正的 UI 插件需要一个扩展宿主，那是另一个量级的工程。
+- 插件是**进程内的 JavaScript**，由宿主组装清单。目前没有从磁盘发现并加载第三方插件包的机制——
+  `.deepwise/plugins` 加载的是技能与 MCP 配置，不是能力插件。
+- UI 面板注册表在渲染进程里，能加面板、能按 kind 覆盖，但面板本身仍要编译进包。
+  真正的"第三方 UI 插件"需要一个扩展宿主，那是另一个量级的工程。
 
 ## 会话日志
 

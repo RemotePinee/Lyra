@@ -8,15 +8,15 @@
 验收标准相同：有服务键、有默认插件、有静态兜底、**有一个换掉它并证明行为改变的测试**。
 
 - [x] **模型** `LLM` — 说哪些模型 API。`kernel/plugins/llm.ts`
-- [x] **工具** `TOOLS` — agent 能做什么。同名后注册者胜出。`kernel/plugins/tools.ts`
-- [x] **技能** `SKILLS` — 代码提供的技能。`kernel/plugins/skills.ts`
+- [x] **工具** `TOOLS` — agent 能做什么，同名后注册者胜出。`kernel/plugins/tools.ts`
+- [x] **技能** `SKILLS` — 代码提供的技能。`kernel/plugins/skills.ts` + `skills/registry.ts`
 - [x] **会话** `SESSION` — 每轮上下文由谁改。`runtime/turn.ts` + `kernel/plugins/session.ts`
-- [x] **沙箱** `SANDBOX` — 命令在哪里跑。`sandbox/local.ts`
+- [x] **沙箱** `SANDBOX` — 命令在哪里跑。`sandbox/local.ts` + `kernel/plugins/sandbox.ts`
 - [x] **存储** `STORAGE` — 会话存在哪。`session/storage.ts` + `kernel/plugins/storage.ts`
 - [x] **循环** `LOOP` — 一轮怎么跑。`agent/runner.ts` + `kernel/plugins/loop.ts`
 - [x] **调度** `SCHEDULER` — 下一个跑什么。`runtime/scheduling.ts` + `kernel/plugins/scheduler.ts`
 - [x] **UI** — 侧边面板由注册表提供。`src/panels/registry.ts` + `panels/builtin.tsx`
-- [x] 附加：**审批** `APPROVAL`、**压缩** `COMPACTION`
+- [x] 附加：**审批** `APPROVAL`（`runtime/approval-policy.ts`）、**压缩** `COMPACTION`
 
 ### 绑定与拆卸
 
@@ -36,41 +36,68 @@
 
 ## 三、代码规整
 
-当前行数见每项括号。
-
-- [x] `electron/main.ts` < 300 行（现 308，仅超 8 行，见下）
-- [x] `src/store.ts` < 300 行（现 274）
-- [ ] `core/runtime/session.ts` < 300 行（现 800）
-- [ ] `electron/git.ts` < 300 行（现 773）
-- [ ] `src/components/CodeEditor.tsx` < 300 行（现 660）
-- [ ] `src/components/Conversation.tsx` < 300 行（现 659）
-- [ ] 全仓库无文件超过 300 行
+- [x] `electron/main.ts` 1634 → **308**
+- [x] `src/store.ts` 1114 → **274**
+- [x] `components/git/GitPanel.tsx` 1109 → **295**
+- [x] `electron/git.ts` 773 → **143**（拆成 exec / diff / status / history / repos / pr）
+- [x] `components/CodeEditor.tsx` 660 → **293**
+- [x] `components/Conversation.tsx` 659 → **287**
+- [x] `core/runtime/session.ts` 794 → **588**（队列、审批、子 Agent、能力加载各自成模块）
 - [x] 新增文件注释均为英文且精炼
 
 ## 四、功能验收（多场景）
 
 - [x] 应用启动、内核就位
-- [x] 新建对话，第一条消息不重复（**冷启动也不重复**——根因是 StrictMode 下 `bootstrap` 订阅了两次事件，每个事件被应用两遍）
+- [x] 新建对话，第一条消息不重复（含冷启动）
 - [x] 连续多轮对话
 - [x] 工具调用（bash / read / write）
+- [x] 多个命令聚合成一张卡（「执行命令 3 个」）
 - [x] 子 Agent 派发
 - [x] 会话切换与历史加载
+- [x] 工作区切换
 - [x] 任务面板：计划、执行记录、详情展开
 - [x] Git 面板：改动、历史、分支
-- [ ] Git 面板：仓库切换 / worktree
-- [x] 文件面板、终端
-- [x] 侧边聊天
+- [x] Git：仓库列表、worktree 创建与读取
+- [x] 文件面板、代码编辑器打开文件
+- [x] 终端创建
+- [x] 侧边聊天问答
 - [x] 插件与技能列表
-- [ ] 设置读写
-- [ ] 深色主题
-- [ ] 窄窗口布局
-- [ ] 中断与继续
-- [ ] 上下文压缩（端到端）
+- [x] 设置读写与还原
+- [x] 深色 / 浅色主题
+- [x] 窄 420 / 中 760 / 宽 1280 三种宽度均无横向溢出
+- [x] 中断运行 → 出现「上次执行被中断 · 继续 / 重试」→ 继续可用
+- [x] 上下文压缩（端到端测试）
 
 ## 五、测试
 
-- [x] core 单元测试全过（131）
-- [x] desktop 单元测试全过（13）
-- [x] 每条缝各有一个"换掉它"的测试（`test/seams.test.ts`、`test/sandbox.test.ts`、`test/kernel.test.ts`、desktop `test/panels.test.ts`）
-- [x] 会话日志记录有测试
-- [ ] 端到端跑通一次真实任务（本轮改动后）
+- [x] core 单元测试全过（132）
+- [x] desktop 单元测试全过（14）
+- [x] 每条缝各有一个"换掉它"的测试（`seams.test.ts`、`sandbox.test.ts`、`kernel.test.ts`、desktop `panels.test.ts`）
+- [x] 会话日志记录有测试（`session-log.test.ts`）
+- [x] 压缩端到端有测试（`compaction-e2e.test.ts`）
+- [x] 端到端跑通真实任务（本轮改动后多次）
+
+## 六、过程中发现并修掉的真问题
+
+不是重构的副产品，是重构照出来的：
+
+- [x] **每个事件被应用两遍**：StrictMode 下 `bootstrap` 订阅了两次事件；新对话第一条消息显示两次只是最显眼的症状
+- [x] **压缩从未在替换过 provider 的会话里跑起来**：摘要请求绕过宿主的替换直接拨真 provider
+- [x] **子 Agent 同样绕过替换**：现在继承父会话的 streamFn
+- [x] **停在工具结果之后不算「被中断」**：工具都跑完了、没有悬空调用，旧规则判定完成，而那一句回答从没出现
+- [x] **设置有六个写入点**：漏掉一个订阅者就是「这个设置不生效」，现在一处写入、一处广播
+
+## 七、仍超过 300 行的文件
+
+诚实列出。这些都是「再拆会更难读」的：一个类、一个协议适配器、一个页面。
+
+| 文件 | 行数 | 为什么留着 |
+| --- | --- | --- |
+| `core/runtime/session.ts` | 588 | 会话类本身：状态加一轮的编排。再拆就是把 `this` 摊成十五个参数 |
+| `src/App.tsx` | 499 | 应用外壳与路由 |
+| `settings/ModelSettings.tsx` | 492 | 一个设置页 |
+| `src/components/Sidebar.tsx` | 472 | 一个组件 |
+| `src/layout.tsx` | 465 | 布局测量与断点 |
+| `ai/openai-responses.ts` | 455 | 协议适配器，按流事件顺序读才有意义 |
+| `ai/anthropic-messages.ts` | 454 | 同上 |
+| `agent/loop.ts` | 453 | 一轮的主循环 |
