@@ -1,27 +1,21 @@
-import type { SessionMeta } from "@deepwise/core";
-import {
-	Archive,
-	AtSign,
-	Bell,
-	Clock,
-	Folder,
-	GitPullRequest,
-	Search,
-	Settings as SettingsIcon,
-	SquarePen,
-} from "lucide-react";
+/**
+ * The navigation pane: what you can go to, and what you have been in.
+ *
+ * Only the pane itself lives here. Which sessions belong in the list and how they group under
+ * projects is in `sidebar/grouping`, a project's own block is `sidebar/ProjectGroup`, and one
+ * conversation is `sidebar/SessionRow` — each of which has hover and overlap rules worth stating
+ * once rather than reading past on the way to the layout.
+ */
+
+import { AtSign, Bell, Clock, GitPullRequest, Search, Settings as SettingsIcon, SquarePen } from "lucide-react";
 import { useMemo, useState } from "react";
-import { ScrollText } from "./ScrollText.tsx";
-import { SessionStatus } from "./SessionStatus.tsx";
-import { usePopover } from "./Popover.tsx";
-import { ProjectMenu } from "./modals/ProjectMenu.tsx";
 import { useLayout } from "../layout.tsx";
+import { useApp } from "../store.ts";
+import { ScrollText } from "./ScrollText.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
-import { visibleActivity } from "@deepwise/core/activity";
-import { useApp } from "../store.ts";
-
-const COLLAPSED_SESSION_COUNT = 5;
+import { activeProviderLabel, groupSessions, listableSessions } from "./sidebar/grouping.ts";
+import { ProjectGroup } from "./sidebar/ProjectGroup.tsx";
 
 export function Sidebar() {
 	const settings = useApp((s) => s.settings);
@@ -43,24 +37,21 @@ export function Sidebar() {
 	const [searching, setSearching] = useState(false);
 	const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-	/*
-	 * Two exclusions.
-	 *
-	 * Archived sessions live in settings — that is the whole point of archiving them. Empty
-	 * ones are not conversations yet: they have no title and nothing to return to, so a row
-	 * for one is a row that cannot be usefully clicked. The active session is exempt, because
-	 * the conversation you are in the middle of starting must stay visible and selected while
-	 * its first message is still in flight.
-	 */
 	const groups = useMemo(
-		() =>
-			groupSessions(
-				sessions.filter((s) => !s.archived && (s.messageCount > 0 || s.id === activeSessionId)),
-				settings?.projects ?? [],
-				query,
-			),
+		() => groupSessions(listableSessions(sessions, activeSessionId), settings?.projects ?? [], query),
 		[sessions, settings, query, activeSessionId],
 	);
+
+	const groupProps = (path: string) => ({
+		expanded: expanded[path] === true,
+		onToggleExpand: () => setExpanded((prev) => ({ ...prev, [path]: !prev[path] })),
+		activeSessionId,
+		onOpenSession: (meta: Parameters<typeof openSession>[0]) => {
+			void openSession(meta);
+			dismissNav();
+		},
+		onArchiveSession: (meta: Parameters<typeof openSession>[0]) => void setSessionArchived(meta, true),
+	});
 
 	return (
 		// No right border: the sidebar's own tint is what sets it apart from the column beside
@@ -157,14 +148,7 @@ export function Sidebar() {
 						key={group.path}
 						group={group}
 						active={workspace?.path === group.path}
-						activeSessionId={activeSessionId}
-						expanded={expanded[group.path] === true}
-						onToggleExpand={() => setExpanded((prev) => ({ ...prev, [group.path]: !prev[group.path] }))}
-						onOpenSession={(meta) => {
-							void openSession(meta);
-							dismissNav();
-						}}
-						onArchiveSession={(meta) => void setSessionArchived(meta, true)}
+						{...groupProps(group.path)}
 					/>
 				))}
 
@@ -174,14 +158,7 @@ export function Sidebar() {
 						key={group.path}
 						group={group}
 						active={workspace?.path === group.path}
-						activeSessionId={activeSessionId}
-						expanded={expanded[group.path] === true}
-						onToggleExpand={() => setExpanded((prev) => ({ ...prev, [group.path]: !prev[group.path] }))}
-						onOpenSession={(meta) => {
-							void openSession(meta);
-							dismissNav();
-						}}
-						onArchiveSession={(meta) => void setSessionArchived(meta, true)}
+						{...groupProps(group.path)}
 					/>
 				))}
 
@@ -244,231 +221,4 @@ function NavItem({ icon, label, onClick }: { icon: React.ReactNode; label: strin
 			{label}
 		</button>
 	);
-}
-
-interface Group {
-	path: string;
-	name: string;
-	sessions: SessionMeta[];
-}
-
-function ProjectGroup({
-	group,
-	active,
-	activeSessionId,
-	expanded,
-	onToggleExpand,
-	onOpenSession,
-	onArchiveSession,
-}: {
-	group: Group;
-	active: boolean;
-	activeSessionId: string | null;
-	expanded: boolean;
-	onToggleExpand: () => void;
-	onOpenSession: (meta: SessionMeta) => void;
-	onArchiveSession: (meta: SessionMeta) => void;
-}) {
-	// Subscribed here rather than threaded through: it changes for reasons this group's other
-	// props know nothing about — a turn ending in a conversation nobody has open.
-	const activity = useApp((s) => s.activity);
-	const openWorkspace = useApp((s) => s.openWorkspace);
-	const { compact, dismissNav } = useLayout();
-	const menu = usePopover();
-	const visible = expanded ? group.sessions : group.sessions.slice(0, COLLAPSED_SESSION_COUNT);
-	const hidden = group.sessions.length - visible.length;
-
-	return (
-		/*
-		 * The rows are spaced rather than stacked flush. Their hover and selected states are
-		 * filled rounded rectangles, and with no gap two adjacent ones merge into a single
-		 * block — you can no longer tell where one session ends and the next begins.
-		 */
-		<div className={`mb-2 flex flex-col ${compact ? "gap-[5px]" : "gap-[4px]"}`}>
-			{/* Same hover-owner arrangement as the session rows: the fill belongs to the row so
-			    reaching for the menu button does not drop it. */}
-			<div
-				/*
-				 * The open project is not filled, unlike the open session.
-				 *
-				 * Both used to take the same fill, so an open project sitting directly above its
-				 * own open session put two identical blocks four pixels apart — one continuous
-				 * grey slab with no hierarchy left in it. A project is a heading for the sessions
-				 * under it, not one of the things you pick between; it says it is open by the
-				 * weight of its name and the colour of its icon, and keeps the fill for hover,
-				 * where it means "you are about to press this".
-				 */
-				className="dw-scroll group/project relative rounded-lg transition-colors duration-150 hover:bg-card-hover active:bg-elevated"
-				onContextMenu={(event) => {
-					event.preventDefault();
-					// At the cursor: right-click acts on the row as a whole, so there is no one
-					// control for the menu to hang off.
-					menu.openAtPoint(event);
-				}}
-			>
-				<button
-					type="button"
-					onClick={() => {
-						void openWorkspace(group.path);
-						dismissNav();
-					}}
-					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-[13px] transition-colors duration-150 ${
-						compact ? "h-[40px]" : "h-[31px]"
-					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
-				>
-					<Folder
-						size={15}
-						strokeWidth={1.8}
-						className={`shrink-0 ${active ? "text-accent" : "text-ink-muted"}`}
-					/>
-					<ScrollText text={group.name} className="dw-fade-tail min-w-0 flex-1" />
-				</button>
-
-				<span
-					className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/project:opacity-100 focus-within:opacity-100"
-				>
-					<button
-						type="button"
-						data-dw-tip="项目操作"
-						aria-label={`「${group.name}」的项目操作`}
-						aria-haspopup="menu"
-						onClick={menu.toggle}
-						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
-					>
-						<SquarePen size={12.5} strokeWidth={1.8} />
-					</button>
-				</span>
-			</div>
-
-			{menu.open && (
-				<ProjectMenu anchor={menu.anchor} path={group.path} name={group.name} onClose={menu.close} />
-			)}
-
-			{visible.map((session) => (
-				/*
-				 * The row, not the button inside it, owns the hover state.
-				 *
-				 * The delete affordance is a sibling laid over the button's right-hand end, so a
-				 * pointer sitting there is outside the button — hanging `hover:` on the button
-				 * meant the fill and the text colour dropped out the moment you reached for the
-				 * icon, while the icon itself (keyed off the row) stayed. Moving both to the row
-				 * makes the whole strip one hover target.
-				 */
-				<div
-					key={session.id}
-					className={`dw-scroll group/session relative rounded-lg transition-colors duration-150 active:bg-elevated ${
-						activeSessionId === session.id ? "bg-card-hover" : "hover:bg-card-hover"
-					}`}
-				>
-					{/*
-					 * The title stops short of the archive button, always.
-					 *
-					 * It used to run the full width and the icon appeared on top of it, so a long
-					 * name and the icon overlapped into something neither of them could be read
-					 * through. A gradient behind the icon was the previous answer, but the sidebar
-					 * is translucent — there is no colour to fade to that reliably covers text.
-					 * Reserving the space costs a few characters and cannot go wrong; the full
-					 * title is a hover away in the scroller either way.
-					 */}
-					<button
-						type="button"
-						onClick={() => onOpenSession(session)}
-						className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-3.5 text-left text-[12.5px] transition-colors duration-150 ${
-							compact ? "h-[34px]" : "h-[27px]"
-						} ${activeSessionId === session.id ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
-					>
-						{/* In the indent the titles already had, so nothing moved to make room for it. */}
-						<SessionStatus activity={visibleActivity(activity[session.id] ?? null, activeSessionId === session.id)} />
-						<ScrollText text={session.title} className="dw-fade-tail min-w-0 flex-1" />
-					</button>
-					{/* The strip never takes pointer events; only the button does. Anything wider
-					 * would shadow the row button and cost it its hover. */}
-					<span
-						className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/session:opacity-100 focus-within:opacity-100"
-					>
-						<button
-							type="button"
-							data-dw-tip="归档会话"
-							aria-label={`归档会话「${session.title}」`}
-							onClick={() => onArchiveSession(session)}
-							className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
-						>
-							<Archive size={12.5} strokeWidth={1.8} />
-						</button>
-					</span>
-				</div>
-			))}
-
-			{group.sessions.length > COLLAPSED_SESSION_COUNT && (
-				<button
-					type="button"
-					onClick={onToggleExpand}
-					className={`flex w-full items-center pl-9 text-left text-[12.5px] text-ink-faint transition-colors hover:text-ink-muted ${
-						compact ? "h-[32px]" : "h-[26px]"
-					}`}
-				>
-					{expanded ? "收起" : `展开显示${hidden > 0 ? ` (${hidden})` : ""}`}
-				</button>
-			)}
-		</div>
-	);
-}
-
-function Arrow({ direction }: { direction: "left" | "right" }) {
-	return (
-		<svg
-			width="15"
-			height="15"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.9"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			style={direction === "right" ? { transform: "scaleX(-1)" } : undefined}
-		>
-			<path d="M15 18l-6-6 6-6" />
-		</svg>
-	);
-}
-
-function groupSessions(
-	sessions: SessionMeta[],
-	projects: { path: string; name: string; pinned: boolean; lastOpenedAt: number }[],
-	query: string,
-): { pinned: Group[]; recent: Group[] } {
-	const needle = query.trim().toLowerCase();
-	const filtered = needle ? sessions.filter((s) => s.title.toLowerCase().includes(needle)) : sessions;
-
-	const byPath = new Map<string, Group>();
-	for (const project of projects) {
-		byPath.set(project.path, { path: project.path, name: project.name, sessions: [] });
-	}
-	for (const session of filtered) {
-		let group = byPath.get(session.cwd);
-		if (!group) {
-			group = { path: session.cwd, name: session.projectName, sessions: [] };
-			byPath.set(session.cwd, group);
-		}
-		group.sessions.push(session);
-	}
-
-	const pinnedPaths = new Set(projects.filter((p) => p.pinned).map((p) => p.path));
-	const order = new Map(projects.map((p, i) => [p.path, i]));
-	const all = [...byPath.values()]
-		// A project with no sessions is only worth a row when the user pinned it.
-		.filter((g) => g.sessions.length > 0 || pinnedPaths.has(g.path))
-		.sort((a, b) => (order.get(a.path) ?? 999) - (order.get(b.path) ?? 999));
-
-	return {
-		pinned: all.filter((g) => pinnedPaths.has(g.path)),
-		recent: all.filter((g) => !pinnedPaths.has(g.path)),
-	};
-}
-
-function activeProviderLabel(providers: { name: string; enabled: boolean; models: unknown[] }[]): string {
-	const enabled = providers.filter((p) => p.enabled);
-	if (enabled.length === 0) return "未配置模型供应商";
-	const models = enabled.reduce((sum, p) => sum + p.models.length, 0);
-	return `${enabled.map((p) => p.name).join(" · ")} · ${models} 个模型`;
 }
