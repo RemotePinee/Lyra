@@ -5,6 +5,19 @@
 name: Setup
 description: Node, pnpm and a warm store
 
+inputs:
+  cache:
+    description: |
+      Restore the pnpm store. Turn it off for a job that has to launch Electron.
+
+      The store cache is keyed on the lockfile, and the jobs that never launch anything can
+      populate it without Electron's binary in it. A later job then "installs" successfully —
+      lockfile unchanged, nothing to do — finds no binary, and fails minutes later with
+      "Error: Electron uninstall" and no window: a failure with nothing to do with the change
+      being tested. A cold install costs about a minute, which is the cheaper side of that trade.
+    required: false
+    default: "true"
+
 runs:
   using: composite
   steps:
@@ -13,32 +26,11 @@ runs:
     - uses: actions/setup-node@v6
       with:
         node-version-file: .nvmrc
-        cache: pnpm
+        cache: ${{ inputs.cache == 'true' && 'pnpm' || '' }}
 
     - name: Install
       shell: bash
       # Frozen, so a pull request cannot quietly change what is installed without changing the
-      # lockfile. Scripts are allowed to run: node-pty has to build for the tests to import it.
-      #
-      # Electron's binary is downloaded even in jobs that only lint or typecheck, and that is
-      # deliberate. Skipping it there was an optimisation that broke the e2e job: every job shares
-      # one pnpm store cache keyed on the lockfile, so whichever job ran first decided whether the
-      # binary was in it — and the ones that skipped the download usually won the race, leaving
-      # `electron-vite preview` with "Error: Electron uninstall" and no window.
+      # lockfile. Scripts are allowed to run: node-pty has to build for the tests to import it,
+      # and Electron's binary arrives the same way.
       run: pnpm install --frozen-lockfile
-
-    - name: Ensure Electron's binary is really there
-      shell: bash
-      # `pnpm install` is a no-op when the store cache already satisfies the lockfile — including
-      # when what got cached was a store whose Electron postinstall never ran. The lockfile has
-      # not changed, so nothing re-runs, and the failure surfaces minutes later as
-      # "Error: Electron uninstall" with no window. Asking the package for its path is the
-      # cheapest way to find out, and rebuilding is a no-op when it is already installed.
-      # `path.txt` is written by Electron's postinstall and read by everything that launches it,
-      # so its absence is exactly the condition that produces "Error: Electron uninstall".
-      run: |
-        if ! compgen -G "node_modules/.pnpm/electron@*/node_modules/electron/path.txt" > /dev/null; then
-          echo "Electron's binary is missing from the store; rebuilding."
-          pnpm rebuild electron
-        fi
-        compgen -G "node_modules/.pnpm/electron@*/node_modules/electron/path.txt" > /dev/null
