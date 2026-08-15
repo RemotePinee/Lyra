@@ -581,6 +581,45 @@
   }
 }
 
+/*
+ * Token colours for the detail panes.
+ *
+ * The same palette the editor uses, expressed as classes so a small scanner can reach it without
+ * loading a grammar. `light-dark()` keeps one definition for both themes, as everywhere else.
+ */
+.dw-tok-command {
+  color: light-dark(#2b62c6, #79b8ff);
+}
+
+.dw-tok-flag {
+  color: light-dark(#b07d0d, #e3c07b);
+}
+
+.dw-tok-string {
+  color: light-dark(#2f7d4f, #7fc98a);
+}
+
+.dw-tok-number {
+  color: light-dark(#a3562a, #dd9160);
+}
+
+.dw-tok-operator {
+  color: light-dark(#6a6d70, #9a9d9f);
+}
+
+.dw-tok-variable {
+  color: light-dark(#8a45a5, #c39ac9);
+}
+
+.dw-tok-key {
+  color: light-dark(#2b62c6, #79b8ff);
+}
+
+.dw-tok-comment {
+  color: light-dark(#8a8d90, #7e8184);
+  font-style: italic;
+}
+
 .dw-breathe {
   animation: dw-breathe 1.6s ease-in-out infinite;
 }

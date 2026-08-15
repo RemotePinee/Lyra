@@ -1,17 +1,48 @@
 /**
  * One entry in the trajectory, closed and open.
  *
- * Closed it is a source, a time and a line. Open it is the whole thing — the system prompt in full,
- * a tool's arguments and what came back, the prompt a sub-agent was sent off with. That is the
- * point of keeping the log: being able to read what the model actually saw, not a paraphrase.
+ * Closed it is a kind, a line and a sequence number. Open it is the whole thing — the system prompt
+ * in full, a tool's arguments and what came back, the prompt a sub-agent was sent off with. That is
+ * the point of keeping the log: being able to read what the model actually saw, not a paraphrase.
+ *
+ * Code is set as code and prose is not. A command or a JSON argument reads better in a terminal
+ * face; a question someone typed does not, and setting it that way made the panel look like a dump
+ * rather than a record.
  *
  * "从这里分叉" sits in the open state rather than on hover, because forking is a deliberate act and
  * a button that appears under the pointer invites the accidental kind.
  */
 
 import { GitBranch } from "lucide-react";
+import { useState } from "react";
 import { SOURCE_LABEL, matchRanges, type Entry as TrajectoryEntry } from "@deepwise/core/trajectory-view";
+import { CodeText } from "../detail/CodeText.tsx";
+import { DetailCard } from "../detail/DetailCard.tsx";
+import { Section } from "../detail/Section.tsx";
 import { Text } from "../Text.tsx";
+
+/**
+ * How each kind of entry is set.
+ *
+ * A tool call is a name and a JSON argument object; a result is whatever the tool printed. Both
+ * read as code. A system prompt, a reply and a question are prose — setting them in a terminal
+ * face made the panel look like a dump of machine noise rather than a record of a conversation.
+ */
+const CODE_KIND: Record<string, "shell" | "json" | "text"> = {
+	"tool-call": "json",
+	"tool-result": "text",
+	context: "text",
+	system: "text",
+};
+
+/**
+ * How much of a long entry opens by default.
+ *
+ * A system prompt is eight thousand characters; opened whole in a 274px column it is six thousand
+ * pixels of scrolling between one row and the next, which makes the list unusable for the thing it
+ * is for — moving through a run. It is still readable in full, on request.
+ */
+const PREVIEW_CHARS = 1200;
 
 export function EntryRow({
 	entry,
@@ -26,48 +57,50 @@ export function EntryRow({
 	onToggle: () => void;
 	onFork: () => void;
 }) {
+	const [whole, setWhole] = useState(false);
+	const long = entry.detail.length > PREVIEW_CHARS;
+	const shown = long && !whole ? entry.detail.slice(0, PREVIEW_CHARS) : entry.detail;
+
 	return (
-		<div>
-			<button
-				type="button"
-				onClick={onToggle}
-				className={`dw-scroll flex w-full items-start gap-2 rounded-md px-1.5 py-[5px] text-left hover:bg-card/60 ${
-					open ? "bg-card/60" : ""
-				}`}
-			>
-				<span className="mt-[2px] shrink-0 rounded px-1 py-[1px] text-[10px] text-ink-faint tabular-nums">
-					{SOURCE_LABEL[entry.source]}
-				</span>
-				<span className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">
-					<Highlighted text={entry.summary} query={query} />
-				</span>
-				<Text size="caption" tone="faint" numeric className="mt-[2px] shrink-0">
+		<DetailCard
+			open={open}
+			onToggle={onToggle}
+			label={SOURCE_LABEL[entry.source]}
+			summary={<Highlighted text={entry.summary} query={query} />}
+			trailing={
+				<Text size="caption" tone="faint" numeric className="shrink-0">
 					#{entry.seq}
 				</Text>
-			</button>
+			}
+		>
+			<Section title={SOURCE_LABEL[entry.source]} mono={Boolean(CODE_KIND[entry.source])}>
+				<CodeText text={shown} kind={CODE_KIND[entry.source] ?? "text"} query={query} />
+				{long && !whole && (
+					<button
+						type="button"
+						onClick={() => setWhole(true)}
+						className="dw-item mt-1.5 block rounded px-1 py-[2px] font-sans text-[11px] text-ink-faint"
+					>
+						…显示全部 {entry.detail.length} 字
+					</button>
+				)}
+			</Section>
 
-			{open && (
-				<div className="dw-enter mb-1 ml-[21px] rounded-md border border-line-soft bg-card/40 px-2.5 py-2">
-					<pre className="max-h-[min(360px,44vh)] overflow-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-muted">
-						<Highlighted text={entry.detail} query={query} />
-					</pre>
-					<div className="mt-2 flex items-center justify-between border-t border-line-soft pt-2">
-						<Text size="caption" tone="faint" numeric>
-							{new Date(entry.ts).toLocaleString("zh-CN")}
-						</Text>
-						<button
-							type="button"
-							onClick={onFork}
-							className="dw-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11px] text-ink-muted"
-							title="用这一刻之前的历史开一个新会话，原会话不受影响"
-						>
-							<GitBranch size={11} strokeWidth={1.8} />
-							从这里分叉
-						</button>
-					</div>
-				</div>
-			)}
-		</div>
+			<div className="flex items-center justify-between px-3 py-2">
+				<Text size="caption" tone="faint" numeric>
+					{new Date(entry.ts).toLocaleString("zh-CN")}
+				</Text>
+				<button
+					type="button"
+					onClick={onFork}
+					className="dw-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11px] text-ink-muted"
+					title="用这一刻之前的历史开一个新会话，原会话不受影响"
+				>
+					<GitBranch size={11} strokeWidth={1.8} />
+					从这里分叉
+				</button>
+			</div>
+		</DetailCard>
 	);
 }
 

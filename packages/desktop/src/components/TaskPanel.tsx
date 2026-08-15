@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { Mark, lastTurnFailed } from "./task/Mark.tsx";
+import { DetailCard } from "./detail/DetailCard.tsx";
 import { RunDetail } from "./task/RunDetail.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { ScrollText } from "./ScrollText.tsx";
@@ -54,7 +55,7 @@ export function TaskPanel() {
 	}
 
 	return (
-		<Scroller className="flex-1" contentClassName="px-2 pb-3" fade={false}>
+		<Scroller className="flex-1 pt-2" contentClassName="px-2 pb-3" fade={false}>
 			{todos.length > 0 && (
 				<>
 					<Header label="计划" hint={`${done}/${todos.length}`} />
@@ -75,31 +76,28 @@ export function TaskPanel() {
 			{runs.length > 0 && (
 				<>
 					<Header label="执行记录" hint={String(runs.length)} />
-					{runs.map((run) => {
-						const open = openId === run.toolCallId;
-						return (
-							<div key={run.toolCallId}>
-								<button
-									type="button"
-									onClick={() => setOpenId(open ? null : run.toolCallId)}
-									className={`dw-scroll flex w-full items-center gap-2 rounded-md px-1.5 py-[5px] text-left hover:bg-card/60 ${
-										open ? "bg-card/60" : ""
-									}`}
-								>
+					{runs.map((run) => (
+						<DetailCard
+							key={run.toolCallId}
+							open={openId === run.toolCallId}
+							onToggle={() => setOpenId(openId === run.toolCallId ? null : run.toolCallId)}
+							summary={<ScrollText text={run.summary} className="dw-fade-tail min-w-0 flex-1 text-[12px]" />}
+							trailing={
+								<>
 									<span
 										className={`h-[6px] w-[6px] shrink-0 rounded-full ${
 											run.status === "running" ? "dw-pulse bg-info" : run.status === "error" ? "bg-danger" : "bg-ok/70"
 										}`}
 									/>
-									<ScrollText text={run.summary} className="dw-fade-tail min-w-0 flex-1 text-[12px] text-ink-muted" />
 									<Text size="caption" tone="faint" numeric className="shrink-0">
 										{run.finishedAt ? formatSpan(run.finishedAt - run.startedAt) : "进行中"}
 									</Text>
-								</button>
-								{open && <RunDetail run={run} />}
-							</div>
-						);
-					})}
+								</>
+							}
+						>
+							<RunDetail run={run} />
+						</DetailCard>
+					))}
 				</>
 			)}
 		</Scroller>

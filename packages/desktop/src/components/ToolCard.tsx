@@ -17,6 +17,8 @@ import {
 	Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CodeText } from "./detail/CodeText.tsx";
+import { Section } from "./detail/Section.tsx";
 import { DiffView } from "./DiffView.tsx";
 
 const ICONS: Record<string, typeof FileText> = {
@@ -122,18 +124,14 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 							 * JSON below, because for every other tool that is the honest shape.
 							 */}
 							{typeof args.command === "string" && (
-								<Section title="命令">
-									<pre className="overflow-x-auto font-mono text-[11.5px] leading-relaxed text-ink">
-										<span className="mr-2 select-none text-ink-faint">$</span>
-										{args.command}
-									</pre>
+								<Section title="命令" mono tone="ink">
+									<span className="mr-2 select-none text-ink-faint">$</span>
+									<CodeText text={args.command} kind="shell" />
 								</Section>
 							)}
 							{Object.keys(rest).length > 0 && (
-								<Section title="参数">
-									<pre className="overflow-x-auto font-mono text-[11.5px] leading-relaxed text-ink-muted">
-										{JSON.stringify(rest, null, 2)}
-									</pre>
+								<Section title="参数" mono>
+									<CodeText text={JSON.stringify(rest, null, 2)} kind="json" />
 								</Section>
 							)}
 							{/*
@@ -144,20 +142,18 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 							 * output. Saying so is the difference between waiting and wondering.
 							 */}
 							{!result && running && (
-								<Section title="输出（进行中）">
-									<span className="font-mono text-[11.5px] text-ink-faint">等待输出…</span>
+								<Section title="输出（进行中）" mono>
+									<span className="text-ink-faint">等待输出…</span>
 								</Section>
 							)}
 							{result && (
-								<Section title={status === "error" ? "错误" : running ? "输出（进行中）" : "结果"}>
+								<Section
+									title={status === "error" ? "错误" : running ? "输出（进行中）" : "结果"}
+									mono
+									tone={status === "error" ? "danger" : "muted"}
+								>
 									<Scroller className="max-h-[420px]" fadeColor="var(--color-shell)">
-										<pre
-											className={`font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap ${
-												status === "error" ? "text-danger/90" : "text-ink-muted"
-											}`}
-										>
-											{resultText(result)}
-										</pre>
+										{resultText(result)}
 									</Scroller>
 								</Section>
 							)}
@@ -169,14 +165,6 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 	);
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-	return (
-		<div className="border-b border-line-soft px-3 py-2.5 last:border-b-0">
-			<div className="mb-1.5 text-[10.5px] tracking-wide text-ink-faint uppercase">{title}</div>
-			{children}
-		</div>
-	);
-}
 
 function resultText(result: ToolResult): string {
 	return result.content

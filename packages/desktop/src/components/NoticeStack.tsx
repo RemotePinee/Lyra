@@ -54,8 +54,21 @@ export function NoticeStack() {
 						leaving.includes(notice.id) ? "dw-leave" : "dw-enter"
 					} ${TONE[notice.level]}`}
 				>
-					<span className="min-w-0 flex-1 break-words">{notice.message}</span>
-					<button type="button" onClick={() => dismiss(notice.id)} className="shrink-0 opacity-60 hover:opacity-100">
+					<span className="min-w-0 flex-1 leading-[18px] break-words">{notice.message}</span>
+					{/*
+					 * Centred on the first line, not on the message.
+					 *
+					 * `items-start` puts the row's children at the top, and a 12px glyph at the top of an
+					 * 18px line sits visibly above the text it belongs to. Giving the button the line's
+					 * own height centres it there — and keeps it on the first line when the message wraps,
+					 * which is where a dismiss control belongs.
+					 */}
+					<button
+						type="button"
+						onClick={() => dismiss(notice.id)}
+						className="flex h-[18px] shrink-0 items-center opacity-60 transition-opacity hover:opacity-100"
+						title="关闭"
+					>
 						<X size={12} strokeWidth={2} />
 					</button>
 				</div>
