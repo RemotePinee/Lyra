@@ -45,7 +45,7 @@ export function MessageActions({
 			</Text>
 			<button
 				type="button"
-				title="复制"
+				data-dw-tip="复制"
 				aria-label="复制这条消息"
 				onClick={() => {
 					void navigator.clipboard.writeText(text).then(() => setCopied(true));

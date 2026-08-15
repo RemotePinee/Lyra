@@ -217,7 +217,7 @@ export function SettingsShell() {
 					 */}
 					<button
 						type="button"
-						title={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
+						data-dw-tip={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
 						aria-label={navOpen ? "隐藏设置导航" : "显示设置导航"}
 						aria-pressed={compact && navOpen}
 						onClick={toggleNav}
@@ -243,7 +243,7 @@ export function SettingsShell() {
 					</button>
 					<button
 						type="button"
-						title="返回工作区"
+						data-dw-tip="返回工作区"
 						aria-label="返回工作区"
 						onClick={() => setView("chat")}
 						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-150 hover:bg-card-hover hover:text-ink"

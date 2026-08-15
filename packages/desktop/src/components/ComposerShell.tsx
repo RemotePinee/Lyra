@@ -146,7 +146,7 @@ export function ComposerSend({
     return (
       <button
         type="button"
-        title="停止"
+        data-dw-tip="停止"
         aria-label="停止"
         onClick={onStop}
         className="dw-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-150 hover:opacity-85"
@@ -160,7 +160,7 @@ export function ComposerSend({
   return (
     <button
       type="button"
-      title="发送"
+      data-dw-tip="发送"
       aria-label="发送"
       disabled={disabled}
       onClick={onSend}

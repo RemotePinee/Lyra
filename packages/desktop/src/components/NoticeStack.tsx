@@ -67,7 +67,8 @@ export function NoticeStack() {
 						type="button"
 						onClick={() => dismiss(notice.id)}
 						className="flex h-[18px] shrink-0 items-center opacity-60 transition-opacity hover:opacity-100"
-						title="关闭"
+						data-dw-tip="关闭"
+						aria-label="关闭"
 					>
 						<X size={12} strokeWidth={2} />
 					</button>

@@ -6,24 +6,36 @@
  * an inset borrowed from a different component's geometry — which is why it read as stuck on rather
  * than opened.
  *
- * Here the row and its detail live inside one border, and the body is separated by a rule rather
- * than by a gap. It is the same shape the transcript's tool cards use, so a panel looks like the
- * conversation beside it rather than like a different application.
+ * Here the row and its detail are one shape: the row carries the top corners and the side borders,
+ * the body continues them and carries the bottom ones. One border, drawn in two halves, so there is
+ * no outer box whose radius has to be kept 1px apart from an inner one to stop the corners squaring
+ * off — a sum that was wrong the moment either number changed.
  *
  * When it is open the row pins to the top of the panel while its own body scrolls past, so a long
- * detail never leaves you reading output with no idea which step produced it. That is also why the
- * card cannot clip its contents: `overflow: hidden` on an ancestor makes it the scroll container
- * for anything sticky inside, which would pin the row to the card — a box that is exactly as tall
- * as the row, so nothing would appear to happen at all. The corners are rounded on the row instead.
+ * detail never leaves you reading output with no idea which step produced it.
  *
- * Two details the eye catches immediately when they are wrong. The row sits *inside* the card's
- * 1px border, so its radius has to be the card's minus that border — a matching 10px squares the
- * corners visibly and lets the border show through them. And a pinned row has to be opaque, so it
- * takes the card's own colour rather than a floating-surface one: anything else and the row changes
- * shade the moment it sticks.
+ * The pinning is why the row sits in a wrapper it does not obviously need.
+ *
+ * A rounded corner is only visible when something of a different colour shows through it, and once
+ * the row is pinned the thing behind its top corners is its own body — the same fill, so the corners
+ * read as square and the side borders appear to run straight off the top edge. The wrapper is the
+ * fix: it pins instead of the row, it is opaque in the panel's own colour, and it is square. The row
+ * keeps its radius and draws inside it, so the corners show the panel through them whether the card
+ * is sitting in the list or pinned halfway up its own contents.
+ *
+ * It cannot clip, either: `overflow: hidden` on an ancestor makes it the scroll container for
+ * anything sticky inside, which would pin the row to a box exactly as tall as the row.
+ *
+ * And the open card is lifted above its siblings. The enter animation moves the card, which gives
+ * every card a stacking context of its own for as long as the transform is retained — and a sticky
+ * row inside one of those can never paint above the card that comes after it, however high its own
+ * z-index. That is what made a pinned row appear to have the next row's text printed through it.
  */
 
 import { ChevronRight } from "lucide-react";
+
+/** Kept equal on the row's top corners and the body's bottom ones. */
+const RADIUS = "9px";
 
 export function DetailCard({
 	open,
@@ -43,30 +55,36 @@ export function DetailCard({
 	children: React.ReactNode;
 }) {
 	return (
-		<div
-			className={`dw-enter mb-1 rounded-[10px] border transition-colors duration-200 ${
-				open ? "border-line-soft bg-card" : "border-transparent"
-			}`}
-		>
-			<button
-				type="button"
-				onClick={onToggle}
-				className={`dw-scroll flex w-full items-center gap-2 rounded-[9px] px-2 py-[6px] text-left transition-colors duration-150 hover:bg-card-hover/50 ${
-					open ? "sticky top-0 z-10 rounded-b-none bg-card" : ""
-				}`}
-			>
-				{label && <span className="shrink-0 text-[10.5px] text-ink-faint">{label}</span>}
-				<span className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">{summary}</span>
-				{trailing}
-				<ChevronRight
-					size={12}
-					strokeWidth={2}
-					className="shrink-0 text-ink-faint transition-transform duration-200"
-					style={open ? { transform: "rotate(90deg)" } : undefined}
-				/>
-			</button>
+		<div className={`dw-enter mb-1 ${open ? "relative z-20" : ""}`}>
+			<div className={open ? "dw-detail-pin sticky top-0 z-10" : ""}>
+				<button
+					type="button"
+					onClick={onToggle}
+					style={{ borderRadius: open ? `${RADIUS} ${RADIUS} 0 0` : RADIUS }}
+					className={`dw-scroll flex w-full items-center gap-2 border px-2 py-[6px] text-left transition-colors duration-150 hover:bg-card-hover/50 ${
+						open ? "border-line-soft bg-card" : "border-transparent"
+					}`}
+				>
+					{label && <span className="shrink-0 text-[10.5px] text-ink-faint">{label}</span>}
+					<span className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">{summary}</span>
+					{trailing}
+					<ChevronRight
+						size={12}
+						strokeWidth={2}
+						className="shrink-0 text-ink-faint transition-transform duration-200"
+						style={open ? { transform: "rotate(90deg)" } : undefined}
+					/>
+				</button>
+			</div>
 
-			{open && <div className="border-t border-line-soft">{children}</div>}
+			{open && (
+				<div
+					className="border border-t-0 border-line-soft bg-card"
+					style={{ borderRadius: `0 0 ${RADIUS} ${RADIUS}` }}
+				>
+					{children}
+				</div>
+			)}
 		</div>
 	);
 }

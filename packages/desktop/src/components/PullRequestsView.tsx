@@ -43,7 +43,7 @@ export function PullRequestsView() {
 					</div>
 					<button
 						type="button"
-						title="刷新"
+						data-dw-tip="刷新"
 						onClick={() => void refresh()}
 						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 					>
@@ -74,7 +74,7 @@ export function PullRequestsView() {
 								<span className="shrink-0 font-mono text-[11.5px] text-ink-faint">#{pr.number}</span>
 								<button
 									type="button"
-									title="在浏览器中打开"
+									data-dw-tip="在浏览器中打开"
 									onClick={() => void window.deepwise.system.openExternal(pr.url)}
 									className="shrink-0 text-ink-faint transition-colors hover:text-ink"
 								>

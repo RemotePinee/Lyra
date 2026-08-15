@@ -183,7 +183,7 @@ function Row({
 				first ? "" : "border-t border-line-soft"
 			}`}
 		>
-			<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left" title="打开并取消归档">
+			<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left" data-dw-tip="打开并取消归档">
 				<ScrollText text={session.title} className="text-[13px] text-ink" />
 				<span className="mt-0.5 block text-[11.5px] text-ink-faint">
 					{formatDate(session.updatedAt)} · {session.messageCount} 条消息
@@ -211,7 +211,7 @@ function Row({
 				<div className="flex shrink-0 items-center gap-1">
 					<button
 						type="button"
-						title="删除"
+						data-dw-tip="删除"
 						aria-label={`删除「${session.title}」`}
 						onClick={() => setConfirming(true)}
 						className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-danger/10 hover:text-danger"

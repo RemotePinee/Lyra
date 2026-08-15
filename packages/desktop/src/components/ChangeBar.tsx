@@ -54,7 +54,7 @@ export function ChangeBar() {
     <>
       <button
         type="button"
-        title={`${stat.files} 个文件有未提交的改动 · 点击查看`}
+        data-dw-tip={`${stat.files} 个文件有未提交的改动 · 点击查看`}
         onClick={() => openTab("review")}
         className="dw-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors duration-150 hover:bg-card-hover"
       >

@@ -83,7 +83,7 @@ export function ContextMeter({
 		<>
 			<button
 				type="button"
-				title={`上下文占用 ${percent}%`}
+				data-dw-tip={`上下文占用 ${percent}%`}
 				aria-label={`上下文占用 ${percent}%`}
 				aria-haspopup="dialog"
 				aria-expanded={open}

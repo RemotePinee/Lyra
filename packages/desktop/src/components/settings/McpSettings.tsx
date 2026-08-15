@@ -145,7 +145,7 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 									<Toggle checked={server.enabled} onChange={(enabled) => update(server.id, { enabled })} />
 									<button
 										type="button"
-										title="删除"
+										data-dw-tip="删除"
 										onClick={() => remove(server.id)}
 										className="text-ink-faint transition-colors hover:text-danger"
 									>

@@ -103,7 +103,7 @@ export function SyncSettings() {
 								<span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{sync.token}</span>
 								<button
 									type="button"
-									title="复制"
+									data-dw-tip="复制"
 									onClick={() => {
 										void navigator.clipboard.writeText(sync.token ?? "");
 										setCopied(true);

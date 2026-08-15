@@ -161,7 +161,7 @@ export function UserMessage({
       >
         <button
           type="button"
-          title={running ? "回合进行中，无法编辑" : "编辑并重新发送"}
+          data-dw-tip={running ? "回合进行中，无法编辑" : "编辑并重新发送"}
           aria-label="编辑并重新发送"
           disabled={running}
           onClick={() => {

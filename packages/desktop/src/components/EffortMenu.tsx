@@ -58,7 +58,7 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					<div className="flex-1" />
 					<button
 						type="button"
-						title="各档位说明"
+						data-dw-tip="各档位说明"
 						onClick={() => setShowHelp((v) => !v)}
 						className={`transition-colors ${showHelp ? "text-ink" : "text-ink-faint hover:text-ink"}`}
 					>

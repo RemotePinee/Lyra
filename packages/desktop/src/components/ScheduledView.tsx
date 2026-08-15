@@ -116,7 +116,7 @@ function TaskCard({
 				/>
 				<button
 					type="button"
-					title="立即运行一次"
+					data-dw-tip="立即运行一次"
 					disabled={running}
 					onClick={async () => {
 						setRunning(true);
@@ -133,7 +133,7 @@ function TaskCard({
 				<Toggle checked={task.enabled} onChange={(enabled) => onChange({ enabled })} />
 				<button
 					type="button"
-					title="删除"
+					data-dw-tip="删除"
 					onClick={onRemove}
 					className="text-ink-faint transition-colors hover:text-danger"
 				>

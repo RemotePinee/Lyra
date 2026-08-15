@@ -136,7 +136,7 @@ function PanelChooser({
 					key={def.kind}
 					type="button"
 					disabled={Boolean(def.unavailable)}
-					title={def.unavailable}
+					data-dw-tip={def.unavailable}
 					onClick={() => onPick(def.kind)}
 					className="dw-item flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px]"
 				>
@@ -282,7 +282,7 @@ export function SidePanel() {
 								<button
 									type="button"
 									onClick={() => openTab(kind)}
-									title={def.label}
+									data-dw-tip={def.label}
 									style={{ borderRadius: TAB_RADIUS }}
 									className={`flex h-full min-w-0 items-center gap-1.5 pl-2 text-[12px] ${
 										active ? "pr-1 text-ink" : "pr-2 text-ink-muted"
@@ -299,7 +299,7 @@ export function SidePanel() {
 								{active && (
 									<button
 										type="button"
-										title={`关闭${def.label}`}
+										data-dw-tip={`关闭${def.label}`}
 										aria-label={`关闭${def.label}`}
 										onClick={() => closeTab(kind)}
 										className="mr-1 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded text-ink-faint transition-colors duration-150 hover:bg-elevated hover:text-ink"
@@ -328,7 +328,7 @@ export function SidePanel() {
 					{tabs.length > 0 && (
 						<button
 							type="button"
-							title="新建"
+							data-dw-tip="新建"
 							aria-label="新建面板内容"
 							aria-haspopup="menu"
 							aria-expanded={adder.open}

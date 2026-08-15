@@ -132,7 +132,7 @@ export function SecretInput({
 			/>
 			<button
 				type="button"
-				title={visible ? "隐藏" : "显示"}
+				data-dw-tip={visible ? "隐藏" : "显示"}
 				onClick={() => setVisible((v) => !v)}
 				className="absolute top-1/2 right-2.5 -translate-y-1/2 text-ink-faint transition-colors hover:text-ink"
 			>
@@ -327,7 +327,7 @@ export function GhostButton({
 			type="button"
 			disabled={disabled}
 			onClick={onClick}
-			title={title}
+			data-dw-tip={title}
 			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] transition-colors duration-150 disabled:opacity-45 disabled: ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"

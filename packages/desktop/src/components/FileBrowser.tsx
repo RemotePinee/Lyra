@@ -204,7 +204,7 @@ export function FileBrowser() {
 							<button
 								key={entry.path}
 								type="button"
-								title={entry.path}
+								data-dw-tip={entry.path}
 								onClick={() => (entry.isDirectory ? toggleDirectory(entry.path) : void openFile(entry))}
 								className={`dw-scroll flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-[12px] transition-colors ${
 									// Marked at every width now that the tree stays visible beside what it opened.
@@ -239,7 +239,7 @@ export function FileBrowser() {
 								{drafts[entry.path] !== undefined && (
 									// The dot is the only trace an unsaved file leaves in the tree.
 									<span
-										title="有未保存的修改"
+										data-dw-tip="有未保存的修改"
 										className="h-[5px] w-[5px] shrink-0 rounded-full bg-info"
 									/>
 								)}

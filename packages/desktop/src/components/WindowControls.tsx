@@ -44,7 +44,7 @@ export function ToolbarButton({
 	return (
 		<button
 			type="button"
-			title={label}
+			data-dw-tip={label}
 			aria-label={label}
 			aria-pressed={active}
 			onClick={onClick}

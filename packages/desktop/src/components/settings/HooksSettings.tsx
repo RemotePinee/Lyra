@@ -195,7 +195,7 @@ function HookCard({
         />
         <button
           type="button"
-          title="删除"
+          data-dw-tip="删除"
           onClick={onRemove}
           className="text-ink-faint transition-colors hover:text-danger"
         >

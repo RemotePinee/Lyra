@@ -94,7 +94,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 									{failed && <span className="shrink-0 text-danger">{failed.message}</span>}
 									<button
 										type="button"
-										title="移除这个市场"
+										data-dw-tip="移除这个市场"
 										onClick={() => removeRegistry(url)}
 										className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
 									>

@@ -81,7 +81,7 @@ export function AppearanceSettings() {
 							<button
 								key={preset.id}
 								type="button"
-								title={preset.label}
+								data-dw-tip={preset.label}
 								onClick={() => patch(preset.patch)}
 								className="h-6 w-6 rounded-full border border-line transition-transform duration-150 hover:scale-110"
 								style={{ background: preset.patch.accent }}

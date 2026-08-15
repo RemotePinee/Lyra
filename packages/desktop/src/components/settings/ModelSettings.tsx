@@ -153,7 +153,7 @@ export function ModelSettings() {
         </div>
         <button
           type="button"
-          title="测试当前供应商连接"
+          data-dw-tip="测试当前供应商连接"
           onClick={() => void runTest()}
           className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
         >
@@ -331,7 +331,7 @@ function ProviderEditor({
             </h2>
             <button
               type="button"
-              title="重命名"
+              data-dw-tip="重命名"
               onClick={() => setRenaming(true)}
               className="text-ink-faint transition-colors hover:text-ink"
             >
@@ -350,7 +350,7 @@ function ProviderEditor({
         <div className="flex-1" />
         <button
           type="button"
-          title="删除供应商"
+          data-dw-tip="删除供应商"
           onClick={onRemove}
           className="text-ink-faint transition-colors hover:text-danger"
         >
@@ -423,7 +423,7 @@ function ProviderEditor({
               </span>
               <button
                 type="button"
-                title="设为默认模型"
+                data-dw-tip="设为默认模型"
                 onClick={() => onSetDefault(model.id)}
                 className="text-ink-faint transition-colors hover:text-ink"
               >
@@ -431,7 +431,7 @@ function ProviderEditor({
               </button>
               <button
                 type="button"
-                title="编辑"
+                data-dw-tip="编辑"
                 onClick={() => onEditModel(model)}
                 className="text-ink-faint transition-colors hover:text-ink"
               >
@@ -439,7 +439,7 @@ function ProviderEditor({
               </button>
               <button
                 type="button"
-                title="删除"
+                data-dw-tip="删除"
                 onClick={() => onRemoveModel(model.id)}
                 className="text-ink-faint transition-colors hover:text-danger"
               >

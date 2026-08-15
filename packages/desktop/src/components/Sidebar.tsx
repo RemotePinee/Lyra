@@ -78,7 +78,8 @@ export function Sidebar() {
 				<div className="flex items-center gap-0.5">
 					<button
 						type="button"
-						title="搜索会话"
+						data-dw-tip="搜索会话"
+						aria-label="搜索会话"
 						onClick={() => setSearching((v) => !v)}
 						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 					>
@@ -86,7 +87,8 @@ export function Sidebar() {
 					</button>
 					<button
 						type="button"
-						title="通知"
+						data-dw-tip="通知"
+						aria-label="通知"
 						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 					>
 						<Bell size={15} strokeWidth={1.9} />
@@ -327,7 +329,7 @@ function ProjectGroup({
 				>
 					<button
 						type="button"
-						title="项目操作"
+						data-dw-tip="项目操作"
 						aria-label={`「${group.name}」的项目操作`}
 						aria-haspopup="menu"
 						onClick={menu.toggle}
@@ -386,7 +388,7 @@ function ProjectGroup({
 					>
 						<button
 							type="button"
-							title="归档会话"
+							data-dw-tip="归档会话"
 							aria-label={`归档会话「${session.title}」`}
 							onClick={() => onArchiveSession(session)}
 							className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"

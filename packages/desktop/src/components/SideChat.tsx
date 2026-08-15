@@ -321,7 +321,7 @@ function TaskStrip() {
                   {task.status === "queued" && (
                     <button
                       type="button"
-                      title="撤回这个任务"
+                      data-dw-tip="撤回这个任务"
                       onClick={() => void cancelTask(task.id)}
                       className="shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
                     >
@@ -396,7 +396,7 @@ function Composer({
         placeholder={disabled ? "还没有可以聊的会话" : "问点关于这个会话的事"}
         left={
           <span
-            title={modelName ? `跟随主会话：${modelName}` : undefined}
+            data-dw-tip={modelName ? `跟随主会话：${modelName}` : undefined}
             className="h-7 min-w-0 truncate px-2 text-[12.5px] leading-7 text-ink-faint"
           >
             {modelName ?? "未配置模型"}
@@ -407,7 +407,7 @@ function Composer({
             {onReset && !running && (
               <button
                 type="button"
-                title="新的侧边聊天"
+                data-dw-tip="新的侧边聊天"
                 aria-label="新的侧边聊天"
                 onClick={onReset}
                 className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"

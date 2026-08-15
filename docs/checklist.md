@@ -70,8 +70,8 @@
 
 ## 五、测试
 
-- [x] core 单元测试全过（132）
-- [x] desktop 单元测试全过（14）
+- [x] core 单元测试全过（159）
+- [x] desktop 单元测试全过（23）
 - [x] 每条缝各有一个"换掉它"的测试（`seams.test.ts`、`sandbox.test.ts`、`kernel.test.ts`、desktop `panels.test.ts`）
 - [x] 会话日志记录有测试（`session-log.test.ts`）
 - [x] 压缩端到端有测试（`compaction-e2e.test.ts`）
@@ -86,18 +86,40 @@
 - [x] **子 Agent 同样绕过替换**：现在继承父会话的 streamFn
 - [x] **停在工具结果之后不算「被中断」**：工具都跑完了、没有悬空调用，旧规则判定完成，而那一句回答从没出现
 - [x] **设置有六个写入点**：漏掉一个订阅者就是「这个设置不生效」，现在一处写入、一处广播
+- [x] **系统里还留着浏览器自己的 tooltip**：55 处 `title=`，与我们自己的气泡样式、延迟、位置都不同，在 macOS 上像是另一个程序弹出来的。全部换成 `data-dw-tip`，并留下一个测试盯着（`native-title.test.ts`）——它们本来就是一次加一个漏回来的
+- [x] **吸顶的行顶角是方的**：圆角只有在背后透出别的颜色时才看得见，而一行钉住之后，它顶角背后是它自己的正文，同一个填充色。现在钉住的是一层不透明的面板色底衬，行在底衬里画自己的圆角
+- [x] **长 tooltip 拉满一整行**：`max-width` 和 `white-space: nowrap` 同时写着，后者让前者失效
 
 ## 七、仍超过 300 行的文件
 
 诚实列出。这些都是「再拆会更难读」的：一个类、一个协议适配器、一个页面。
 
+25 个，全部列出。前七个是「再拆会更难读」的；后面十八个只是略过线，各自仍是一件事。
+
 | 文件 | 行数 | 为什么留着 |
 | --- | --- | --- |
-| `core/runtime/session.ts` | 588 | 会话类本身：状态加一轮的编排。再拆就是把 `this` 摊成十五个参数 |
-| `src/App.tsx` | 499 | 应用外壳与路由 |
+| `core/runtime/session.ts` | 559 | 会话类本身：状态加一轮的编排。再拆就是把 `this` 摊成十五个参数 |
 | `settings/ModelSettings.tsx` | 492 | 一个设置页 |
-| `src/components/Sidebar.tsx` | 472 | 一个组件 |
-| `src/layout.tsx` | 465 | 布局测量与断点 |
-| `ai/openai-responses.ts` | 455 | 协议适配器，按流事件顺序读才有意义 |
-| `ai/anthropic-messages.ts` | 454 | 同上 |
-| `agent/loop.ts` | 453 | 一轮的主循环 |
+| `src/components/Sidebar.tsx` | 474 | 一个组件 |
+| `src/components/SideChat.tsx` | 441 | 一个面板 |
+| `mobile/src/store.ts` | 427 | 移动端状态，与桌面端一一对应 |
+| `src/components/SidePanel.tsx` | 419 | 面板外壳：标签页、拖拽、尺寸 |
+| `src/App.tsx` | 416 | 应用外壳与路由 |
+| `components/Popover.tsx` | 382 | 一个浮层的定位与翻转 |
+| `ai/openai-responses.ts` | 381 | 协议适配器，按流事件顺序读才有意义 |
+| `settings/controls.tsx` | 366 | 设置页共用的控件集 |
+| `ai/anthropic-messages.ts` | 361 | 同 responses |
+| `src/sideStore.ts` | 357 | 侧边聊天的状态 |
+| `core/src/types.ts` | 357 | 类型声明，没有逻辑 |
+| `core/session/store.ts` | 357 | 仅追加日志的读写 |
+| `agent/loop.ts` | 344 | 一轮的主循环 |
+| `electron/ipc-types.ts` | 335 | 通道声明，没有逻辑 |
+| `settings/AppearanceSettings.tsx` | 332 | 一个设置页 |
+| `electron/main.ts` | 330 | 主进程装配 |
+| `mobile/app/session/[id].tsx` | 326 | 一个页面 |
+| `components/Composer.tsx` | 322 | 输入区 |
+| `core/runtime/sidechat.ts` | 319 | 侧边聊天的运行时 |
+| `src/store/apply-event.ts` | 318 | 事件到状态的一张分派表 |
+| `core/test/tasks.test.ts` | 317 | 测试 |
+| `components/editor/theme.ts` | 311 | 编辑器样式表 |
+| `components/PreviewCard.tsx` | 305 | 一种卡片 |

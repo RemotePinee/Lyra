@@ -336,7 +336,7 @@ export function MenuItem({
 			type="button"
 			role="menuitem"
 			disabled={disabled}
-			title={title}
+			data-dw-tip={title}
 			data-selected={selected ? "true" : undefined}
 			data-danger={danger ? "true" : undefined}
 			onClick={onClick}

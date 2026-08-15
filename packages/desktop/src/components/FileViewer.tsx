@@ -151,7 +151,7 @@ export function FileViewer({
 
 					{readOnly && <span className="shrink-0 text-[11px] text-ink-faint">文件过大，只读</span>}
 					{error && (
-						<span title={error} className="min-w-0 truncate text-[11px] text-danger">
+						<span data-dw-tip={error} className="min-w-0 truncate text-[11px] text-danger">
 							{error}
 						</span>
 					)}
@@ -160,7 +160,7 @@ export function FileViewer({
 							type="button"
 							onClick={() => void save()}
 							disabled={saving}
-							title="保存 ⌘S"
+							data-dw-tip="保存 ⌘S"
 							className="dw-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
 						>
 							<Save size={11.5} strokeWidth={1.9} />

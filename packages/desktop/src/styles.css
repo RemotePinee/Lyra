@@ -620,6 +620,20 @@
   font-style: italic;
 }
 
+/*
+ * What a pinned detail row is drawn on.
+ *
+ * A rounded corner only shows when something else shows through it, and a pinned row's corners have
+ * the row's own body behind them — the same fill. Square, in other words. This is the opaque, square
+ * backing that pins in the row's place, so its corners have the panel behind them wherever it stops.
+ *
+ * The variable is there for a panel that is not the usual colour: set `--dw-behind` on the scroll
+ * container and the backing follows it, rather than every such panel needing its own card.
+ */
+.dw-detail-pin {
+  background: var(--dw-behind, var(--color-shell));
+}
+
 .dw-breathe {
   animation: dw-breathe 1.6s ease-in-out infinite;
 }
@@ -1119,7 +1133,12 @@
   border-radius: 6px;
   font-size: 11.5px;
   line-height: 1.45;
-  white-space: nowrap;
+  /*
+   * Wrapping, not `nowrap`, or the max-width above means nothing: a sentence-length tip — "开一个新
+   * 会话，原会话不受影响" — ran the full width of the window as one line. Short labels are still one
+   * line, because the bubble is positioned rather than laid out in a column that can squeeze it.
+   */
+  text-wrap: pretty;
   background: color-mix(in srgb, var(--color-ink) 92%, transparent);
   color: var(--color-shell);
   box-shadow: 0 4px 14px -4px rgb(0 0 0 / 0.3);
