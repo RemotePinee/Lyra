@@ -83,51 +83,57 @@ export function FileDiffList({
              * own wrapper, so the next one pushes the last one out on the way past rather
              * than stacking up. The opaque fill is what makes that work: a transparent
              * sticky row has the diff scrolling through it.
+             *
+             * The fill is on `dw-pin`, which is square, rather than on the rounded row
+             * inside it: a radius over a scrolling diff shows the row tints through its
+             * corners, which is a red notch travelling up the header as you scroll.
              */}
-            <div className="sticky top-0 z-10 flex items-center gap-1 rounded-md bg-shell pr-1 transition-colors hover:bg-card-hover">
-              <button
-                type="button"
-                data-dw-tip={file.path}
-                onClick={() => toggle(file.path)}
-                aria-expanded={expanded}
-                className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-1 text-left"
-              >
-                <ChevronRight
-                  size={11}
-                  strokeWidth={2.2}
-                  className="shrink-0 text-ink-faint transition-transform duration-150"
-                  style={expanded ? { transform: "rotate(90deg)" } : undefined}
-                />
-                <look.Icon
-                  size={12.5}
-                  strokeWidth={1.75}
-                  className="shrink-0"
-                  style={{ color: iconColour(look) }}
-                />
-                {/*
-                 * The directory is what tells two `index.ts` apart, so it stays —
-                 * truncated from the left, where the shared prefix is.
-                 */}
-                <span
-                  className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-muted"
-                  dir="rtl"
+            <div className="dw-pin sticky top-0 z-10">
+              <div className="flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-card-hover">
+                <button
+                  type="button"
+                  data-dw-tip={file.path}
+                  onClick={() => toggle(file.path)}
+                  aria-expanded={expanded}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-1 text-left"
                 >
-                  <span dir="ltr">{file.path}</span>
-                </span>
-                <Text size="caption" mono numeric className="shrink-0">
-                  {file.added > 0 && (
-                    <span className="text-ok">+{file.added}</span>
-                  )}
-                  {file.added > 0 && file.removed > 0 && " "}
-                  {file.removed > 0 && (
-                    <span className="text-danger">−{file.removed}</span>
-                  )}
-                  {file.added === 0 && file.removed === 0 && (
-                    <span className="text-ink-faint">—</span>
-                  )}
-                </Text>
-              </button>
-              {actions?.(file)}
+                  <ChevronRight
+                    size={11}
+                    strokeWidth={2.2}
+                    className="shrink-0 text-ink-faint transition-transform duration-150"
+                    style={expanded ? { transform: "rotate(90deg)" } : undefined}
+                  />
+                  <look.Icon
+                    size={12.5}
+                    strokeWidth={1.75}
+                    className="shrink-0"
+                    style={{ color: iconColour(look) }}
+                  />
+                  {/*
+                   * The directory is what tells two `index.ts` apart, so it stays —
+                   * truncated from the left, where the shared prefix is.
+                   */}
+                  <span
+                    className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-muted"
+                    dir="rtl"
+                  >
+                    <span dir="ltr">{file.path}</span>
+                  </span>
+                  <Text size="caption" mono numeric className="shrink-0">
+                    {file.added > 0 && (
+                      <span className="text-ok">+{file.added}</span>
+                    )}
+                    {file.added > 0 && file.removed > 0 && " "}
+                    {file.removed > 0 && (
+                      <span className="text-danger">−{file.removed}</span>
+                    )}
+                    {file.added === 0 && file.removed === 0 && (
+                      <span className="text-ink-faint">—</span>
+                    )}
+                  </Text>
+                </button>
+                {actions?.(file)}
+              </div>
             </div>
 
             {/*

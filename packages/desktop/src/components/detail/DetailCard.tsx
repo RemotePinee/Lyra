@@ -56,7 +56,7 @@ export function DetailCard({
 }) {
 	return (
 		<div className={`dw-enter mb-1 ${open ? "relative z-20" : ""}`}>
-			<div className={open ? "dw-detail-pin sticky top-0 z-10" : ""}>
+			<div className={open ? "dw-pin sticky top-0 z-10" : ""}>
 				<button
 					type="button"
 					onClick={onToggle}

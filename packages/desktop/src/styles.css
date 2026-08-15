@@ -621,16 +621,19 @@
 }
 
 /*
- * What a pinned detail row is drawn on.
+ * What a pinned row is drawn on.
  *
  * A rounded corner only shows when something else shows through it, and a pinned row's corners have
- * the row's own body behind them — the same fill. Square, in other words. This is the opaque, square
- * backing that pins in the row's place, so its corners have the panel behind them wherever it stops.
+ * whatever it is pinned over behind them — its own body, a diff's coloured rows. Square, in other
+ * words, or worse: a red row tint poking out of the corner. This is the opaque, square backing that
+ * pins in the row's place, so the corners have the panel behind them wherever the row stops.
+ *
+ * Put it on the element that sticks, and let the row inside it keep the radius.
  *
  * The variable is there for a panel that is not the usual colour: set `--dw-behind` on the scroll
- * container and the backing follows it, rather than every such panel needing its own card.
+ * container and the backing follows it, rather than every such panel needing its own rule.
  */
-.dw-detail-pin {
+.dw-pin {
   background: var(--dw-behind, var(--color-shell));
 }
 
