@@ -110,7 +110,13 @@ export interface Settings {
 	appearance: AppearanceSettings;
 	hooks: HookConfig[];
 	scheduledTasks: ScheduledTask[];
-	/** Plugin ids the user switched off; everything found on disk is on by default. */
+	/**
+	 * Plugin ids that are switched off; everything found on disk is on by default.
+	 *
+	 * `*` is a sentinel meaning "none of them", for a session that has to be reproducible and
+	 * therefore cannot inherit whatever happens to be installed. It is not an id, and the settings
+	 * page clears it when a plugin is switched back on.
+	 */
 	disabledPlugins: string[];
 	/**
 	 * Plugin registry index URLs the user has added, browsed from the plugins page.

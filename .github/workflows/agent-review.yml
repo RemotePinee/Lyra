@@ -1,0 +1,46 @@
+# The repository reviews its own pull requests, using the agent it is.
+#
+# Not a third-party review bot: this runs `packages/agent-cli`, which builds the same
+# `AgentSession` the desktop app builds. If the review is bad, that is a fact about this codebase
+# worth knowing — which is most of the reason to do it this way.
+#
+# The agent gets read-only tools and a read-only token. It comments; it never approves, never
+# requests changes, never pushes.
+name: Agent review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # A fork's pull request runs with `pull_request_target`, which has access to secrets. The
+    # checkout below is deliberately of *our* base ref, never the contributor's branch: the agent
+    # reads the diff through the API instead, so no untrusted code is executed here.
+    runs-on: ubuntu-latest
+    # Dependabot has no business being reviewed by a model, and its pull requests do not carry
+    # the secrets this needs anyway.
+    if: github.actor != 'dependabot[bot]' && !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - uses: ./.github/actions/setup
+
+      - name: Review
+        run: node --experimental-strip-types packages/agent-cli/src/main.ts review "${{ github.event.pull_request.number }}"
+        env:
+          DEEPWISE_BASE_URL: ${{ secrets.DEEPWISE_BASE_URL }}
+          DEEPWISE_API_KEY: ${{ secrets.DEEPWISE_API_KEY }}
+          DEEPWISE_MODEL: ${{ vars.DEEPWISE_MODEL || 'deepseek-v4-flash' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

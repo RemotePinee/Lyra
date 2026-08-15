@@ -12,7 +12,8 @@
     "test": "node --test --experimental-strip-types test/*.test.ts",
     "postinstall": "node scripts/rebuild-pty.mjs",
     "rebuild:pty": "node scripts/rebuild-pty.mjs",
-    "package": "electron-vite build && electron-builder"
+    "package": "electron-vite build && electron-builder",
+    "test:e2e": "node --test --experimental-strip-types e2e/*.test.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

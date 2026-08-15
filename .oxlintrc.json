@@ -97,7 +97,8 @@
     {
       "files": [
         "packages/desktop/electron/**",
-        "packages/core/src/**"
+        "packages/core/src/**",
+        "packages/agent-cli/**"
       ],
       "rules": {
         "no-console": "off"

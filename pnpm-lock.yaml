@@ -24,6 +24,12 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/agent-cli:
+    dependencies:
+      '@deepwise/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/core:
     dependencies:
       '@modelcontextprotocol/sdk':

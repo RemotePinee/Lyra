@@ -106,7 +106,15 @@ export async function loadPlugins(
 			}
 			seen.add(id);
 
-			const enabled = !disabled.includes(id);
+			/*
+			 * `*` turns everything off.
+			 *
+			 * A session that must be reproducible — one running in CI, or one being used to
+			 * reproduce a report — cannot have its capabilities decided by whatever happens to be
+			 * installed on the machine. Naming every plugin to disable it is not an option there,
+			 * because the point is precisely not knowing what is installed.
+			 */
+			const enabled = !disabled.includes("*") && !disabled.includes(id);
 			const skillsDir = resolveInside(pluginDir, manifest.skills ?? "./skills/");
 			const loadedSkills = skillsDir ? await loadSkills([{ dir: skillsDir, source }]) : { skills: [], diagnostics: [] };
 			for (const diagnostic of loadedSkills.diagnostics) {

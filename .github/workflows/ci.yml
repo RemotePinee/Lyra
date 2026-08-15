@@ -50,6 +50,18 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm test
 
+  e2e:
+    # macOS only: the runner there has a display, and this starts a real window. Linux would need
+    # xvfb, which is one more moving part for a check that is already covered on one platform.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          electron: "true"
+      - run: pnpm build
+      - run: pnpm test:e2e
+
   dead-code:
     # Reported, not enforced. Knip is right often enough to be worth reading and wrong often
     # enough that failing a pull request on it would teach people to ignore it.
@@ -78,11 +90,11 @@ jobs:
   # The single required check. Everything above must pass; `dead-code` is deliberately not here.
   all-green:
     if: always()
-    needs: [lint, typecheck, test, build]
+    needs: [lint, typecheck, test, build, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Verdict
         run: |
           echo "lint=${{ needs.lint.result }} typecheck=${{ needs.typecheck.result }}"
-          echo "test=${{ needs.test.result }} build=${{ needs.build.result }}"
+          echo "test=${{ needs.test.result }} build=${{ needs.build.result }} e2e=${{ needs.e2e.result }}"
           [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

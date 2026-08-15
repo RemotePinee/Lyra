@@ -100,3 +100,32 @@ test("a bundle with no capability.js is simply a bundle, not an error", async ()
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("a run can decline every plugin without naming any of them", async () => {
+	const root = await mkdtemp(join(tmpdir(), "dw-cap-"));
+	try {
+		await bundle(root, "one", "export default { name: 'one', apply() {} };");
+		await bundle(root, "two", "export default { name: 'two', apply() {} };");
+
+		const all = await loadPlugins([{ dir: root, source: "user" }]);
+		assert.equal(all.plugins.filter((p) => p.enabled).length, 2, "both are there to begin with");
+
+		/*
+		 * The case this exists for: a session that has to be reproducible — running in CI, or
+		 * reproducing a report — cannot have its capabilities decided by what happens to be
+		 * installed. Naming each plugin is not an option, because not knowing is the point.
+		 */
+		const none = await loadPlugins([{ dir: root, source: "user" }], ["*"]);
+		assert.equal(none.plugins.filter((p) => p.enabled).length, 0);
+		assert.equal(none.plugins.length, 2, "still discovered and still reportable, just not active");
+
+		const one = await loadPlugins([{ dir: root, source: "user" }], ["one"]);
+		assert.deepEqual(
+			one.plugins.filter((p) => p.enabled).map((p) => p.id),
+			["two"],
+			"naming one still disables only that one",
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

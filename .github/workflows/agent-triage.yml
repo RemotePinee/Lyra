@@ -1,0 +1,39 @@
+# A new issue gets read before anyone has time to read it.
+#
+# Two outcomes only: an area label, and a note saying what the report is missing. The agent does
+# not decide whether something is a real defect and does not close anything — those are judgements
+# about the code, made by someone who can then go and fix it.
+name: Agent triage
+
+on:
+  issues:
+    types: [opened, reopened]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to triage
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: agent-triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+
+      - name: Triage
+        run: node --experimental-strip-types packages/agent-cli/src/main.ts triage "${{ github.event.issue.number || inputs.issue }}"
+        env:
+          DEEPWISE_BASE_URL: ${{ secrets.DEEPWISE_BASE_URL }}
+          DEEPWISE_API_KEY: ${{ secrets.DEEPWISE_API_KEY }}
+          DEEPWISE_MODEL: ${{ vars.DEEPWISE_MODEL || 'deepseek-v4-flash' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

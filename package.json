@@ -22,7 +22,8 @@
     "test": "pnpm -r --no-bail test",
     "test:unit": "pnpm -r --no-bail test",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "test:e2e": "pnpm --filter @deepwise/desktop test:e2e"
   },
   "devDependencies": {
     "@types/node": "24.12.4",

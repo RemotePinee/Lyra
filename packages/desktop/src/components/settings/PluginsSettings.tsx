@@ -32,8 +32,22 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	);
 	const diagnostics = scan?.pluginDiagnostics ?? [];
 
+	/*
+	 * `*` in `disabledPlugins` means "none of them", whoever wrote it there.
+	 *
+	 * Switching one back on has to clear that as well, or the toggle is a control that reports a
+	 * change and produces none: the id is removed, the wildcard stays, and every plugin is still
+	 * off after a reload. Turning the wildcard off means naming what it stood for — everything
+	 * currently on disk except the one being switched on.
+	 */
+	const allOff = settings.disabledPlugins.includes("*");
+
 	const toggle = (plugin: Plugin, enabled: boolean) => {
 		const disabled = new Set(settings.disabledPlugins);
+		if (allOff && enabled) {
+			disabled.delete("*");
+			for (const other of scan?.plugins ?? []) if (other.id !== plugin.id) disabled.add(other.id);
+		}
 		if (enabled) disabled.delete(plugin.id);
 		else disabled.add(plugin.id);
 		void saveSettings({ ...settings, disabledPlugins: [...disabled] });
@@ -105,6 +119,16 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 				</Card>
 			) : (
 				<div className="space-y-3">
+					{/*
+					 * Said out loud, because otherwise the page is a list of plugins that are all off
+					 * for no visible reason — indistinguishable from having switched each one off.
+					 */}
+					{allOff && (
+						<p className="rounded-[10px] border border-line-soft px-3 py-2 text-[12px] leading-relaxed text-ink-muted">
+							设置里写着 <code className="font-mono">disabledPlugins: ["*"]</code>，所以下面所有插件都不生效。
+							把任意一个拨回「开」会解除这条总开关，其余插件保持当前状态。
+						</p>
+					)}
 					{plugins.map((plugin) => (
 						<PluginCard key={plugin.id} plugin={plugin} onToggle={(enabled) => toggle(plugin, enabled)} />
 					))}
