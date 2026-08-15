@@ -15,15 +15,22 @@ import {
 	deepwiseHome,
 	previewsHome,
 	pruneSessionArtifacts,
+	useAgentLoop,
 	useCompaction,
 	useLlmRegistry,
 	useSandbox,
+	useScheduler,
 	useSkillRegistry,
 	useToolRegistry,
+	useTurnPipeline,
 	COMPACTION,
 	LLM,
+	LOOP,
 	SANDBOX,
+	SCHEDULER,
+	SESSION,
 	SKILLS,
+	STORAGE,
 	TOOLS,
 	removeSessionArtifacts,
 	indexStats,
@@ -36,13 +43,17 @@ import {
 	SideChat,
 	type AgentEvent,
 	type ApprovalDecision,
+	type AgentLoop,
 	type CompactionStrategy,
 	type Context as CapabilityContext,
 	type ContextBreakdown,
 	type LlmRegistry,
 	type Sandbox,
 	type Settings,
+	type SessionStorage,
 	type SkillRegistry,
+	type TaskScheduler,
+	type TurnPipeline,
 	type ToolRegistry,
 	type UserContent,
 } from "@deepwise/core";
@@ -104,7 +115,13 @@ function insideAProject(target: string): boolean {
 	);
 }
 
-const store = new SessionStore();
+/*
+ * Resolved from the kernel once it is up.
+ *
+ * Declared here because everything in this file reaches for it, and assigned at boot so that a
+ * plugin providing a different store is actually the one used.
+ */
+let store: SessionStorage = new SessionStore();
 /** Live sessions keyed by session id. A session stays warm so MCP servers are not respawned per turn. */
 const sessions = new Map<string, AgentSession>();
 /** The capability context: what the app can do, assembled from plugins at boot. */
@@ -474,8 +491,12 @@ app.whenReady().then(async () => {
 	useLlmRegistry(kernel.require<LlmRegistry>(LLM));
 	useToolRegistry(kernel.require<ToolRegistry>(TOOLS));
 	useSandbox(kernel.require<Sandbox>(SANDBOX));
+	store = kernel.require<SessionStorage>(STORAGE);
 	useCompaction(kernel.require<CompactionStrategy>(COMPACTION));
 	useSkillRegistry(kernel.require<SkillRegistry>(SKILLS));
+	useScheduler(kernel.require<TaskScheduler>(SCHEDULER));
+	useAgentLoop(kernel.require<AgentLoop>(LOOP));
+	useTurnPipeline(kernel.require<TurnPipeline>(SESSION).all());
 
 	settings = await loadSettings();
 	// Before the window exists, so its very first frame gets the right material.
@@ -578,6 +599,9 @@ app.on("before-quit", async () => {
 	useSandbox(null);
 	useCompaction(null);
 	useSkillRegistry(null);
+	useScheduler(null);
+	useAgentLoop(null);
+	useTurnPipeline(null);
 	await kernel?.dispose();
 	kernel = null;
 });

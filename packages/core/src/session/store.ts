@@ -15,6 +15,7 @@ import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AgentEvent } from "../agent/events.ts";
 import type { Message, Usage } from "../types.ts";
+import type { SessionStorage } from "./storage.ts";
 import { addUsage, emptyUsage } from "../types.ts";
 
 export interface SessionMeta {
@@ -68,7 +69,7 @@ export function projectIdFor(cwd: string): string {
 	return createHash("sha256").update(cwd).digest("hex").slice(0, 16);
 }
 
-export class SessionStore {
+export class SessionStore implements SessionStorage {
 	readonly root: string;
 	/**
 	 * Serializes appends per session and holds the authoritative meta.

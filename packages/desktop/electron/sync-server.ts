@@ -14,13 +14,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { networkInterfaces } from "node:os";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { AgentEvent, AgentSession, SessionStore, Settings, UserContent } from "@deepwise/core";
+import type { AgentEvent, AgentSession, SessionStorage, Settings, UserContent } from "@deepwise/core";
 import type { SyncStatus } from "./ipc-types.ts";
 
 export interface SyncServerDeps {
 	getSettings(): Settings;
 	saveSettings(settings: Settings): Promise<void>;
-	store: SessionStore;
+	store: SessionStorage;
 	resolveSession(projectId: string, sessionId: string): Promise<AgentSession | null>;
 	createSession(cwd: string, modelId: string): Promise<AgentSession>;
 }

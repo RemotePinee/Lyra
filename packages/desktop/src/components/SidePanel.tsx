@@ -20,6 +20,8 @@ import { TerminalPane } from "./TerminalPane.tsx";
 import { WindowControls } from "./WindowControls.tsx";
 import { useLayout } from "../layout.tsx";
 import { useSide, type PanelKind } from "../sideStore.ts";
+import { allPanels, type PanelDefinition } from "../panels/registry.ts";
+import "../panels/builtin.tsx";
 import { useApp } from "../store.ts";
 
 /**
@@ -95,60 +97,22 @@ function maskFor({ start, end }: { start: boolean; end: boolean }): string | und
 	return `linear-gradient(to right, ${from}, ${to})`;
 }
 
-export interface PanelDefinition {
-	kind: PanelKind;
-	label: string;
-	icon: typeof GitCompare;
-	shortcut: string;
-	/** Why it cannot be opened right now, if it cannot. */
-	unavailable?: string;
-}
-
-export function usePanelDefinitions(): PanelDefinition[] {
+export function usePanelDefinitions(): ResolvedPanel[] {
 	const workspace = useApp((s) => s.workspace);
 	const activeSessionId = useApp((s) => s.activeSessionId);
-	return [
-		{
-			kind: "files",
-			label: "文件",
-			icon: Folder,
-			shortcut: "⌘P",
-			unavailable: workspace ? undefined : "先打开一个项目",
-		},
-		{
-			kind: "chat",
-			label: "侧边聊天",
-			icon: MessageCirclePlus,
-			shortcut: "⌥⌘S",
-			unavailable: activeSessionId ? undefined : "先开始一个对话",
-		},
-		{
-			kind: "terminal",
-			label: "终端",
-			icon: SquareTerminal,
-			shortcut: "⌃`",
-			unavailable: workspace ? undefined : "先打开一个项目",
-		},
-		{
-			kind: "tasks",
-			label: "任务",
-			icon: ListTodo,
-			shortcut: "⌘J",
-		},
-		{
-			kind: "browser",
-			label: "浏览器",
-			icon: Globe,
-			shortcut: "⌘T",
-		},
-		{
-			kind: "review",
-			label: "Git",
-			icon: GitCompare,
-			shortcut: "⌘⇧R",
-			unavailable: workspace ? undefined : "先打开一个项目",
-		},
-	];
+	const state = { workspace: Boolean(workspace), session: Boolean(activeSessionId) };
+	return allPanels().map((panel) => ({ ...panel, unavailable: panel.unavailable?.(state) }));
+}
+
+/** A panel with its availability already decided, which is all the view needs. */
+export type ResolvedPanel = Omit<PanelDefinition, "unavailable"> & { unavailable?: string };
+
+/** What a tab shows. A kind with no registered panel renders nothing rather than crashing. */
+function renderPanel(kind: PanelKind) {
+	const panel = allPanels().find((p) => p.kind === kind);
+	if (!panel) return null;
+	const Body = panel.render;
+	return <Body />;
 }
 
 /**
@@ -162,7 +126,7 @@ function PanelChooser({
 	definitions,
 	onPick,
 }: {
-	definitions: PanelDefinition[];
+	definitions: ResolvedPanel[];
 	onPick: (kind: PanelKind) => void;
 }) {
 	return (
@@ -400,19 +364,7 @@ export function SidePanel() {
 					{tabs.length === 0 && <PanelChooser definitions={definitions} onPick={openTab} />}
 					{tabs.map((kind) => (
 						<div key={kind} className={`flex min-h-0 flex-1 flex-col ${kind === activeTab ? "" : "hidden"}`}>
-							{kind === "files" ? (
-								<FileBrowser />
-							) : kind === "chat" ? (
-								<SideChat />
-							) : kind === "terminal" ? (
-								<TerminalPane />
-							) : kind === "tasks" ? (
-								<TaskPanel />
-							) : kind === "browser" ? (
-								<BrowserPanel />
-							) : (
-								<GitPanel />
-							)}
+							{renderPanel(kind)}
 						</div>
 					))}
 				</div>

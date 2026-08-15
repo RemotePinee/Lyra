@@ -5,7 +5,10 @@ export {
 	DEFAULT_PLUGINS,
 	EVENTS,
 	LLM,
+	LOOP,
 	SANDBOX,
+	SCHEDULER,
+	SESSION,
 	SKILLS,
 	STORAGE,
 	TOOLS,
@@ -18,14 +21,20 @@ export {
 	type Sandbox,
 	type SandboxProcess,
 	type SkillRegistry,
+	type TaskScheduler,
+	type TurnPipeline,
 	type ToolRegistry,
 } from "./kernel/index.ts";
 export { getSandbox, useSandbox, LocalSandbox } from "./sandbox/index.ts";
+export type { SessionStorage } from "./session/storage.ts";
+export { nextTask, useScheduler } from "./runtime/scheduling.ts";
+export { prepareTurn, useTurnPipeline, type TurnContext, type TurnMiddleware } from "./runtime/turn.ts";
 export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
 export { API_FORMATS, getProvider, streamAssistant, useLlmRegistry } from "./ai/index.ts";
 export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";
 export { errorResult, runAgent, textResult, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
+export { runTurn, useAgentLoop, type AgentLoop } from "./agent/runner.ts";
 export {
 	availableModels,
 	DEFAULT_APPEARANCE,

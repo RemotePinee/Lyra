@@ -10,7 +10,8 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { platform } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentEventSink, QueuedTask } from "../agent/events.ts";
-import { runAgent, type AgentRunConfig } from "../agent/loop.ts";
+import type { AgentRunConfig } from "../agent/loop.ts";
+import { runTurn } from "../agent/runner.ts";
 import type { PermissionMode, Settings } from "../config/settings.ts";
 import { resolveModel } from "../config/settings.ts";
 import { McpManager, type McpServerStatus } from "../mcp/client.ts";
@@ -19,7 +20,8 @@ import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts"
 import { formatSkillCatalogue, loadSkills, parseFrontmatter, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
 import { registeredSkills } from "../skills/registry.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
-import { deepwiseHome, SessionStore, type SessionMeta } from "../session/store.ts";
+import { deepwiseHome, type SessionMeta } from "../session/store.ts";
+import type { SessionStorage } from "../session/storage.ts";
 import { writePreview } from "./previews.ts";
 import { assessCommand, assessNetwork, assessWrite } from "../tools/risk.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
@@ -36,6 +38,8 @@ import type {
 } from "../types.ts";
 import { compactWith } from "./compaction.ts";
 import { buildContextBreakdown, type ContextBreakdown } from "./context.ts";
+import { nextTask } from "./scheduling.ts";
+import { prepareTurn, type TurnContext } from "./turn.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 
 export interface PendingApproval {
@@ -59,7 +63,7 @@ export interface SessionStatus {
 export interface AgentSessionOptions {
 	cwd: string;
 	settings: Settings;
-	store: SessionStore;
+	store: SessionStorage;
 	meta?: SessionMeta;
 	emit: AgentEventSink;
 	/**
@@ -85,7 +89,7 @@ export interface AgentSessionOptions {
 const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["compacted", "context", "subagent", "subagent_done"]);
 
 export class AgentSession {
-	readonly store: SessionStore;
+	readonly store: SessionStorage;
 	private settings: Settings;
 	private emitExternal: AgentEventSink;
 	private mcp = new McpManager();
@@ -332,28 +336,40 @@ export class AgentSession {
 
 		this.controller = new AbortController();
 		try {
-			const systemPrompt = await this.recordContext(await buildSystemPrompt({
+			/*
+			 * Assemble, let plugins amend, then write down what came out.
+			 *
+			 * The recording happens last on purpose: what belongs in the log is what the model was
+			 * actually sent, not what this file would have sent if nothing had intervened.
+			 */
+			const turn = await prepareTurn({
 				cwd: this.cwd,
 				tools: this.tools,
-				skills: this.skills,
-				agents: this.agents,
-				projectInstructions: await loadProjectInstructions(this.cwd),
-				platform: platform(),
-				modelName: resolved.model.name,
-				isGitRepo: await pathExists(join(this.cwd, ".git")),
-				today: new Date().toISOString().slice(0, 10),
-				scratchDir: this.scratchDir(),
-			}));
+				messages: this.messages,
+				systemPrompt: await buildSystemPrompt({
+					cwd: this.cwd,
+					tools: this.tools,
+					skills: this.skills,
+					agents: this.agents,
+					projectInstructions: await loadProjectInstructions(this.cwd),
+					platform: platform(),
+					modelName: resolved.model.name,
+					isGitRepo: await pathExists(join(this.cwd, ".git")),
+					today: new Date().toISOString().slice(0, 10),
+					scratchDir: this.scratchDir(),
+				}),
+			});
+			const systemPrompt = await this.recordContext(turn);
 
-			const result = await runAgent(
+			const result = await runTurn(
 				{
 					sessionId: this.meta.id,
 					cwd: this.cwd,
 					provider: resolved.provider,
 					model: resolved.model,
 					systemPrompt,
-					tools: this.tools,
-					messages: this.messages,
+					tools: turn.tools,
+					messages: turn.messages,
 					thinking: thinking ?? this.settings.thinking,
 					retryAttempts: this.settings.retryAttempts,
 					signal: this.controller.signal,
@@ -459,7 +475,7 @@ export class AgentSession {
 		this.draining = true;
 		try {
 			while (true) {
-				const next = this.tasks.find((t) => t.status === "queued");
+				const next = nextTask(this.tasks);
 				if (!next) return;
 
 				next.status = "running";
@@ -514,8 +530,9 @@ export class AgentSession {
 	 * Returns the prompt so it can wrap the call that produced it — the point is that there is no
 	 * way to build a prompt and forget to record it.
 	 */
-	private async recordContext(systemPrompt: string): Promise<string> {
-		const tools = this.tools.map((tool) => tool.name).sort();
+	private async recordContext(turn: TurnContext): Promise<string> {
+		const systemPrompt = turn.systemPrompt;
+		const tools = turn.tools.map((tool) => tool.name).sort();
 		const skills = this.skills.map((skill) => skill.name).sort();
 		const fingerprint = `${systemPrompt}\u0000${tools.join(",")}\u0000${skills.join(",")}`;
 		if (fingerprint === this.lastContext) return systemPrompt;
@@ -629,7 +646,7 @@ export class AgentSession {
 			tools: allowed.map((tool) => tool.name),
 		});
 
-		const result = await runAgent(
+		const result = await runTurn(
 			{
 				sessionId: id,
 				cwd: this.cwd,

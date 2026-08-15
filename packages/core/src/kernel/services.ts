@@ -1,3 +1,5 @@
+import type { QueuedTask } from "../agent/events.ts";
+import type { TurnMiddleware } from "../runtime/turn.ts";
 import type { Skill } from "../skills/loader.ts";
 import type { Message, ModelConfig, Provider, ProviderConfig, Tool } from "../types.ts";
 
@@ -94,6 +96,37 @@ export interface Sandbox {
 	run(command: string, options: { cwd: string; env?: Record<string, string> }): SandboxProcess;
 }
 
+/**
+ * `ctx.loop` — how a turn is actually driven.
+ *
+ * The shape is `AgentLoop`, defined next to the loop that implements it.
+ */
+export const LOOP = "loop";
+
+/** `ctx.session` — who gets to amend a turn before it is sent. */
+export const SESSION = "session";
+
+export interface TurnPipeline {
+	/** Add a step. Returns the disposer that removes it. */
+	use(step: TurnMiddleware): () => void;
+	all(): TurnMiddleware[];
+}
+
+/** `ctx.scheduler` — which piece of queued work runs next. */
+export const SCHEDULER = "scheduler";
+
+/**
+ * Choose the next task to run.
+ *
+ * A seam because "the oldest one" is only obviously right when everything in the queue is the same
+ * kind of thing. A queue mixing a user's question with an overnight batch wants the question first;
+ * one feeding a build farm may want the cheapest first. Returning `undefined` means nothing is
+ * ready — which is also how a scheduler holds work back until some condition is met.
+ */
+export interface TaskScheduler {
+	next(queued: QueuedTask[]): QueuedTask | undefined;
+}
+
 /** `ctx.compaction` — how history is kept inside the model's window. */
 export const COMPACTION = "compaction";
 
@@ -108,7 +141,12 @@ export interface CompactionStrategy {
 	compact(messages: Message[], model: ModelConfig, provider: ProviderConfig): Promise<Message[] | null>;
 }
 
-/** `ctx.storage` — where things that outlive a session are kept. */
+/**
+ * `ctx.storage` — where things that outlive a session are kept.
+ *
+ * The shape is `SessionStorage`, defined next to the store that first had it. Kept there rather
+ * than here because it is a working interface with a working implementation, not a promise.
+ */
 export const STORAGE = "storage";
 
 /**

@@ -175,6 +175,9 @@ export interface AppState {
   applyEvent(sessionId: string, event: AgentEvent): void;
 }
 
+/** Set by the first `bootstrap`, never cleared: there is one renderer per window. */
+let booted = false;
+
 export const useApp = create<AppState>((set, get) => ({
   ready: false,
   view: "chat",
@@ -203,6 +206,18 @@ export const useApp = create<AppState>((set, get) => ({
   sync: null,
 
   async bootstrap() {
+    /*
+     * Once per process, however many times it is called.
+     *
+     * The effect that calls this runs twice under StrictMode, and the second run subscribed a
+     * second listener to the same event channel — so every message was applied twice and the
+     * first one in a conversation appeared twice on screen. Guarding the whole function rather
+     * than just the subscription keeps the session list and workspace lookups from being done
+     * twice as well.
+     */
+    if (booted) return;
+    booted = true;
+
     const [settings, sessions] = await Promise.all([
       window.deepwise.settings.get(),
       window.deepwise.sessions.list(),
