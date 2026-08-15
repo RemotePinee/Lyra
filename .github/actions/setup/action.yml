@@ -18,6 +18,11 @@ inputs:
     required: false
     default: "true"
 
+  electron:
+    description: Make sure Electron's binary is installed. Needed to launch or package the app.
+    required: false
+    default: "false"
+
 runs:
   using: composite
   steps:
@@ -31,6 +36,21 @@ runs:
     - name: Install
       shell: bash
       # Frozen, so a pull request cannot quietly change what is installed without changing the
-      # lockfile. Scripts are allowed to run: node-pty has to build for the tests to import it,
-      # and Electron's binary arrives the same way.
+      # lockfile. Scripts are allowed to run: node-pty has to build for the tests to import it.
       run: pnpm install --frozen-lockfile
+
+    - name: Electron's binary
+      if: inputs.electron == 'true'
+      shell: bash
+      # Run its installer by hand, because pnpm does not.
+      #
+      # The install log on a runner shows node-pty's postinstall and nothing else: Electron's own
+      # never fires, so `path.txt` — the file every launcher reads — is never written, and
+      # `electron-vite preview` dies with "Error: Electron uninstall" ninety seconds before the
+      # first assertion. `install.js` is exactly what the postinstall would have run, and it exits
+      # immediately when the binary is already there.
+      run: |
+        for dir in node_modules/.pnpm/electron@*/node_modules/electron; do
+          [ -f "$dir/path.txt" ] || (cd "$dir" && node install.js)
+        done
+        compgen -G "node_modules/.pnpm/electron@*/node_modules/electron/path.txt" > /dev/null

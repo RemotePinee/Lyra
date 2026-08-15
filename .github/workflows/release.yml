@@ -42,6 +42,7 @@ jobs:
         with:
           # Packaging needs Electron's binary, so it must not depend on which job warmed the store.
           cache: "false"
+          electron: "true"
 
       - name: Verify before building
         run: pnpm lint && pnpm typecheck && pnpm test
