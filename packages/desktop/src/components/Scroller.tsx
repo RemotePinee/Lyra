@@ -29,7 +29,14 @@ export function Scroller({
 	children: React.ReactNode;
 	className?: string;
 	contentClassName?: string;
-	fade?: boolean;
+	/**
+	 * The soft edge that says "there is more this way".
+	 *
+	 * `"top"` keeps it only where content slides under a header. Below a composer it is noise: the
+	 * gradient fades to the same colour the composer sits on, and the seam between them reads as a
+	 * faint rule nobody drew.
+	 */
+	fade?: boolean | "top";
 	divider?: boolean;
 	/** The surface behind the content, so the edge gradients dissolve into it rather than
 	 *  into the default shell colour. */
@@ -109,8 +116,8 @@ export function Scroller({
 		};
 	}, [active, metrics.thumbHeight, viewport]);
 
-	const showTopFade = fade && metrics.overflow && !metrics.atTop;
-	const showBottomFade = fade && metrics.overflow && !metrics.atBottom;
+	const showTopFade = fade !== false && metrics.overflow && !metrics.atTop;
+	const showBottomFade = fade === true && metrics.overflow && !metrics.atBottom;
 
 	return (
 		<div

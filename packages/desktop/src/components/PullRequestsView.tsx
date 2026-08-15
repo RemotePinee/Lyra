@@ -108,19 +108,25 @@ export function PullRequestsView() {
 	}
 
 	/*
-	 * No banner across the top, and that is what makes the divider whole.
+	 * The columns start at the window's top edge, not below the toolbar.
 	 *
-	 * A full-width header would sit above both columns, so the rule between them could only start
-	 * below it — a line that stops short of the top, which reads as a seam rather than a boundary.
-	 * The two columns run the full height instead, each with its own head: the filters on one
-	 * side, the tabs on the other.
+	 * The shell reserves 44px above every view for the window controls, which meant this rule
+	 * began 44px lower than the sidebar's — two vertical lines on one screen, one of them starting
+	 * in mid-air. Cancelling the reservation and re-applying it *inside* each column puts both
+	 * lines on the same origin while leaving the toolbar's space untouched.
+	 *
+	 * No banner across the top either, for the same reason: anything spanning both columns would
+	 * push the rule back down.
 	 */
 	return (
-		<div className="flex min-h-0 flex-1">
-			<div style={{ width: LIST_WIDTH }} className="flex min-h-0 shrink-0 flex-col border-r border-line-soft">
+		<div className="-mt-11 flex min-h-0 flex-1">
+			<div
+				style={{ width: LIST_WIDTH }}
+				className="flex min-h-0 shrink-0 flex-col border-r border-line-soft pt-11"
+			>
 				{list}
 			</div>
-			{detail}
+			<div className="flex min-h-0 min-w-0 flex-1 flex-col pt-11">{detail}</div>
 		</div>
 	);
 }

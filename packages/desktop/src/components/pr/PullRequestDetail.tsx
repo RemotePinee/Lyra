@@ -77,7 +77,7 @@ export function PullRequestDetail({
 			{tab === "code" ? (
 				<PullRequestCode repo={detail.repo} number={detail.number} />
 			) : (
-				<Scroller className="flex-1" contentClassName="px-5 pt-1 pb-6" fadeColor="var(--color-shell)">
+				<Scroller className="flex-1" contentClassName="px-5 pt-1 pb-6" fade="top" fadeColor="var(--color-shell)">
 					<h1 className="text-[19px] leading-snug font-semibold tracking-tight text-ink">{detail.title}</h1>
 					<p className="pt-1.5 pb-4 text-[12px] text-ink-faint">
 						{detail.author} · {relativeTime(detail.createdAt)} · {detail.repo} #{detail.number}

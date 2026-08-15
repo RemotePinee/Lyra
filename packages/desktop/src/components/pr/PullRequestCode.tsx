@@ -44,7 +44,7 @@ export function PullRequestCode({ repo, number }: { repo: string; number: number
 			<p className="shrink-0 px-4 pb-1.5 text-[11.5px] text-ink-faint">
 				{files.length} 个文件 · <span className="text-ok">+{added}</span> <span className="text-danger">−{removed}</span>
 			</p>
-			<Scroller className="flex-1" contentClassName="px-2 pb-4" fadeColor="var(--color-shell)">
+			<Scroller className="flex-1" contentClassName="px-2 pb-4" fade="top" fadeColor="var(--color-shell)">
 				<FileDiffList files={files} emptyLabel="没有文件改动" />
 			</Scroller>
 		</div>
