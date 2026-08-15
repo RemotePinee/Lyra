@@ -26,3 +26,19 @@ runs:
       # binary was in it — and the ones that skipped the download usually won the race, leaving
       # `electron-vite preview` with "Error: Electron uninstall" and no window.
       run: pnpm install --frozen-lockfile
+
+    - name: Ensure Electron's binary is really there
+      shell: bash
+      # `pnpm install` is a no-op when the store cache already satisfies the lockfile — including
+      # when what got cached was a store whose Electron postinstall never ran. The lockfile has
+      # not changed, so nothing re-runs, and the failure surfaces minutes later as
+      # "Error: Electron uninstall" with no window. Asking the package for its path is the
+      # cheapest way to find out, and rebuilding is a no-op when it is already installed.
+      # `path.txt` is written by Electron's postinstall and read by everything that launches it,
+      # so its absence is exactly the condition that produces "Error: Electron uninstall".
+      run: |
+        if ! compgen -G "node_modules/.pnpm/electron@*/node_modules/electron/path.txt" > /dev/null; then
+          echo "Electron's binary is missing from the store; rebuilding."
+          pnpm rebuild electron
+        fi
+        compgen -G "node_modules/.pnpm/electron@*/node_modules/electron/path.txt" > /dev/null
