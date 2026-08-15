@@ -18,6 +18,31 @@ export type AgentEvent =
 	| { type: "agent_end"; reason: "done" | "aborted" | "error" | "max_turns"; error?: string }
 	| { type: "notice"; level: "info" | "warn" | "error"; message: string }
 	/**
+	 * What the model was given at the start of a turn.
+	 *
+	 * The transcript records what the model said; this records what it was told — the system
+	 * prompt, the tools it could reach, the skills it knew about. Without it a session cannot be
+	 * read back honestly: the same messages produce different behaviour under a different prompt
+	 * or a different tool set, and nothing in the log would say which one was in force.
+	 *
+	 * Written when it changes rather than every turn, because it rarely changes and a log that
+	 * repeats itself is one nobody reads.
+	 */
+	| { type: "context"; systemPrompt: string; tools: string[]; skills: string[] }
+	/**
+	 * A sub-agent was dispatched, and what came back.
+	 *
+	 * The parent's transcript shows the `task` call and the paragraph it returned — which is the
+	 * point of delegation, and also the problem: the work itself happened somewhere the log could
+	 * not see. Recording the dispatch (which definition, which tools, what it was asked) and the
+	 * steps it took makes a delegated turn as readable afterwards as one done in the open.
+	 *
+	 * Steps are summaries, not transcripts. A sub-agent exists so its forty file reads stay out of
+	 * the parent context; copying them into the parent log would give that back with interest.
+	 */
+	| { type: "subagent"; id: string; agent: string; description: string; prompt: string; tools: string[] }
+	| { type: "subagent_done"; id: string; steps: string[]; answer: string }
+	/**
 	 * History was summarised to fit the window.
 	 *
 	 * Its own event rather than a notice, because it is a fact about the conversation that

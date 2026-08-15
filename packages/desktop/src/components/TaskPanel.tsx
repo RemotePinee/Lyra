@@ -1,6 +1,8 @@
 import { Check, ListTodo } from "lucide-react";
+import { useState } from "react";
 
 import { PanelEmpty } from "./PanelEmpty.tsx";
+import { RunDetail } from "./task/RunDetail.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { ScrollText } from "./ScrollText.tsx";
 import { Text } from "./Text.tsx";
@@ -21,6 +23,13 @@ export function TaskPanel() {
 	const todos = useApp((s) => s.todos);
 	const toolRuns = useApp((s) => s.toolRuns);
 	const running = useApp((s) => s.running);
+	/*
+	 * One row open at a time.
+	 *
+	 * Several open at once turns the column into a wall of output you have to scroll past to reach
+	 * the next step — the list stops being a list. Opening one closes the last.
+	 */
+	const [openId, setOpenId] = useState<string | null>(null);
 
 	// Newest first: what just happened is what you came to look at.
 	const runs = Object.values(toolRuns).sort((a, b) => b.startedAt - a.startedAt);
@@ -65,19 +74,31 @@ export function TaskPanel() {
 			{runs.length > 0 && (
 				<>
 					<Header label="执行记录" hint={String(runs.length)} />
-					{runs.map((run) => (
-						<div key={run.toolCallId} className="dw-scroll flex items-center gap-2 rounded-md px-1.5 py-[5px]">
-							<span
-								className={`h-[6px] w-[6px] shrink-0 rounded-full ${
-									run.status === "running" ? "dw-pulse bg-info" : run.status === "error" ? "bg-danger" : "bg-ok/70"
-								}`}
-							/>
-							<ScrollText text={run.summary} className="dw-fade-tail min-w-0 flex-1 text-[12px] text-ink-muted" />
-							<Text size="caption" tone="faint" numeric className="shrink-0">
-								{run.finishedAt ? formatSpan(run.finishedAt - run.startedAt) : "进行中"}
-							</Text>
-						</div>
-					))}
+					{runs.map((run) => {
+						const open = openId === run.toolCallId;
+						return (
+							<div key={run.toolCallId}>
+								<button
+									type="button"
+									onClick={() => setOpenId(open ? null : run.toolCallId)}
+									className={`dw-scroll flex w-full items-center gap-2 rounded-md px-1.5 py-[5px] text-left hover:bg-card/60 ${
+										open ? "bg-card/60" : ""
+									}`}
+								>
+									<span
+										className={`h-[6px] w-[6px] shrink-0 rounded-full ${
+											run.status === "running" ? "dw-pulse bg-info" : run.status === "error" ? "bg-danger" : "bg-ok/70"
+										}`}
+									/>
+									<ScrollText text={run.summary} className="dw-fade-tail min-w-0 flex-1 text-[12px] text-ink-muted" />
+									<Text size="caption" tone="faint" numeric className="shrink-0">
+										{run.finishedAt ? formatSpan(run.finishedAt - run.startedAt) : "进行中"}
+									</Text>
+								</button>
+								{open && <RunDetail run={run} />}
+							</div>
+						);
+					})}
 				</>
 			)}
 		</Scroller>

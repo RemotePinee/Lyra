@@ -75,6 +75,14 @@ export interface AgentSessionOptions {
 	streamFn?: AgentRunConfig["streamFn"];
 }
 
+/**
+ * Events that outlive the window they were shown in.
+ *
+ * The log is meant to answer "what did the model actually see, and why did it do that" long after
+ * the run — so anything that changes the model's input, or that happened out of view, is kept.
+ */
+const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["compacted", "context", "subagent", "subagent_done"]);
+
 export class AgentSession {
 	readonly store: SessionStore;
 	private settings: Settings;
@@ -83,6 +91,8 @@ export class AgentSession {
 
 	meta!: SessionMeta;
 	messages: Message[] = [];
+	/** What the last recorded context looked like, so an unchanged one is not written twice. */
+	private lastContext: string | null = null;
 	cwd: string;
 
 	private tools: Tool[] = [];
@@ -316,7 +326,7 @@ export class AgentSession {
 
 		this.controller = new AbortController();
 		try {
-			const systemPrompt = await buildSystemPrompt({
+			const systemPrompt = await this.recordContext(await buildSystemPrompt({
 				cwd: this.cwd,
 				tools: this.tools,
 				skills: this.skills,
@@ -327,7 +337,7 @@ export class AgentSession {
 				isGitRepo: await pathExists(join(this.cwd, ".git")),
 				today: new Date().toISOString().slice(0, 10),
 				scratchDir: this.scratchDir(),
-			});
+			}));
 
 			const result = await runAgent(
 				{
@@ -492,16 +502,31 @@ export class AgentSession {
 		this.meta = await this.store.append(this.meta, { type: "message", message });
 	}
 
+	/**
+	 * Write down what the model is about to be given, the first time it looks like this.
+	 *
+	 * Returns the prompt so it can wrap the call that produced it — the point is that there is no
+	 * way to build a prompt and forget to record it.
+	 */
+	private async recordContext(systemPrompt: string): Promise<string> {
+		const tools = this.tools.map((tool) => tool.name).sort();
+		const skills = this.skills.map((skill) => skill.name).sort();
+		const fingerprint = `${systemPrompt}\u0000${tools.join(",")}\u0000${skills.join(",")}`;
+		if (fingerprint === this.lastContext) return systemPrompt;
+		this.lastContext = fingerprint;
+		await this.emit({ type: "context", systemPrompt, tools, skills });
+		return systemPrompt;
+	}
+
 	private async emit(event: AgentEvent): Promise<void> {
 		/*
-		 * Compaction is written down; nothing else is.
-		 *
-		 * Events are otherwise live-only — the window renders them and they are gone. That is
-		 * right for progress chatter and wrong for this one: after it, the history the model
-		 * sees is a summary, and a transcript that does not say so is a transcript that cannot
-		 * explain itself. It is also the only way to know afterwards that it ever happened.
+		 * Most events are live-only — the window renders them and they are gone, which is right
+		 * for progress chatter. The few listed above are not chatter: they are the difference
+		 * between a transcript you can read back and one you have to guess at. What the model was
+		 * told, what was summarised away, what a sub-agent was sent off to do — none of it can be
+		 * recovered from the messages alone, so it is written down as it happens.
 		 */
-		if (event.type === "compacted" && this.meta) {
+		if (PERSISTED_EVENTS.has(event.type) && this.meta) {
 			this.meta = await this.store.append(this.meta, { type: "event", event });
 		}
 		await this.emitExternal(event);
@@ -587,9 +612,20 @@ export class AgentSession {
 
 		// The sub-agent gets its own message list and its own state map, so its file reads and
 		// todo list cannot leak into the parent's.
+		const id = `${this.meta.id}:sub:${randomUUID().slice(0, 8)}`;
+		const steps: string[] = [];
+		await this.emit({
+			type: "subagent",
+			id,
+			agent: definition.name,
+			description: input.description,
+			prompt: input.prompt,
+			tools: allowed.map((tool) => tool.name),
+		});
+
 		const result = await runAgent(
 			{
-				sessionId: `${this.meta.id}:sub:${randomUUID().slice(0, 8)}`,
+				sessionId: id,
 				cwd: this.cwd,
 				provider,
 				model,
@@ -604,11 +640,15 @@ export class AgentSession {
 					[AGENTS_KEY, this.agents],
 				]),
 				requestApproval: (request) => this.requestApproval(request),
+				// Inherited, so a host that replaced the provider call replaced it for the whole
+				// tree — a sub-agent quietly dialling out would defeat the point of overriding it.
+				streamFn: this.streamFn,
 				maxTurns: 60,
 			},
 			(event) => {
-				// Surface sub-agent progress without persisting it into the parent transcript.
+				// Surfaced as a notice for the live view, kept as a step for the log.
 				if (event.type === "tool_start") {
+					steps.push(event.summary);
 					void this.emit({
 						type: "notice",
 						level: "info",
@@ -619,12 +659,17 @@ export class AgentSession {
 		);
 
 		const last = [...result.messages].reverse().find((m) => m.role === "assistant");
-		if (!last || last.role !== "assistant") return "";
-		return last.content
-			.filter((c) => c.type === "text")
-			.map((c) => c.text)
-			.join("\n")
-			.trim();
+		const answer =
+			last?.role === "assistant"
+				? last.content
+						.filter((c) => c.type === "text")
+						.map((c) => c.text)
+						.join("\n")
+						.trim()
+				: "";
+
+		await this.emit({ type: "subagent_done", id, steps, answer });
+		return answer;
 	}
 
 	// -------------------------------------------------------------------------

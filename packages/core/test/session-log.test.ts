@@ -1,0 +1,169 @@
+/**
+ * What the session log keeps.
+ *
+ * The transcript is only half the record: the same messages behave differently under a different
+ * system prompt or tool set, and a delegated turn happens entirely out of view. These tests hold
+ * the line that both are written down, and that the first one is not rewritten every turn.
+ */
+
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { DEFAULT_SETTINGS, type Settings } from "../src/config/settings.ts";
+import { AgentSession } from "../src/runtime/session.ts";
+import { SessionStore, type SessionRecord } from "../src/session/store.ts";
+import type { AssistantMessage, ModelConfig, ProviderConfig } from "../src/types.ts";
+import { emptyUsage } from "../src/types.ts";
+
+const MODEL: ModelConfig = {
+	id: "fake/model",
+	providerId: "fake",
+	modelId: "model",
+	name: "Fake",
+	contextWindow: 100_000,
+	maxOutputTokens: 4096,
+	supportsThinking: false,
+	supportsImages: false,
+	supportsTools: true,
+};
+
+const PROVIDER: ProviderConfig = {
+	id: "fake",
+	name: "Fake",
+	baseUrl: "http://localhost",
+	api: "openai-responses",
+	apiKey: "x",
+	enabled: true,
+	models: [MODEL],
+};
+
+const SETTINGS: Settings = {
+	...DEFAULT_SETTINGS,
+	providers: [PROVIDER],
+	defaultModelId: MODEL.id,
+	mcpServers: [],
+	permissionMode: "full",
+};
+
+function reply(text: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "openai-responses",
+		provider: "fake",
+		model: "model",
+		usage: emptyUsage(),
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+}
+
+async function harness(script?: (turn: number) => AssistantMessage) {
+	const root = await mkdtemp(join(tmpdir(), "dw-log-"));
+	let turn = 0;
+	const store = new SessionStore(join(root, "sessions"));
+	const session = new AgentSession({
+		cwd: root,
+		settings: SETTINGS,
+		store,
+		emit: () => {},
+		streamFn: async () => script?.(turn++) ?? reply("ok"),
+	});
+	await session.initialize();
+
+	return {
+		session,
+		root,
+		/** Everything on disk, so the assertions are about the file rather than about memory. */
+		async records(): Promise<SessionRecord[]> {
+			const out: SessionRecord[] = [];
+			for await (const record of store.read(session.meta.projectId, session.meta.id)) out.push(record);
+			return out;
+		},
+		cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 }),
+	};
+}
+
+test("the context the model was given is written down, once", async () => {
+	const h = await harness();
+	try {
+		await h.session.prompt([{ type: "text", text: "hello" }]);
+		await h.session.prompt([{ type: "text", text: "again" }]);
+
+		const contexts = (await h.records()).filter((r) => r.type === "event" && r.event.type === "context");
+		assert.equal(contexts.length, 1, "an unchanged context is not rewritten every turn");
+
+		const first = contexts[0];
+		assert.equal(first.type, "event");
+		if (first.type !== "event" || first.event.type !== "context") throw new Error("wrong record");
+		assert.match(first.event.systemPrompt, /DeepWise/, "the prompt itself is kept, not a hash of it");
+		assert.ok(first.event.tools.includes("bash"), "and which tools it could reach");
+		assert.deepEqual([...first.event.tools].sort(), first.event.tools, "recorded in a stable order");
+	} finally {
+		await h.cleanup();
+	}
+});
+
+test("a changed context is written again", async () => {
+	const h = await harness();
+	try {
+		await h.session.prompt([{ type: "text", text: "hello" }]);
+
+		// A skill appearing mid-session is exactly the kind of change the log must not miss: the
+		// same messages, a different set of things the model could have done about them.
+		const dir = join(h.root, ".deepwise", "skills", "greet");
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, "SKILL.md"), "---\nname: greet\ndescription: Say hello\n---\n\nSay hello.\n");
+		await h.session.initialize();
+
+		await h.session.prompt([{ type: "text", text: "again" }]);
+
+		const contexts = (await h.records()).filter((r) => r.type === "event" && r.event.type === "context");
+		assert.equal(contexts.length, 2, "the second turn ran under a different context");
+		const second = contexts[1];
+		if (second.type !== "event" || second.event.type !== "context") throw new Error("wrong record");
+		assert.deepEqual(second.event.skills, ["greet"]);
+	} finally {
+		await h.cleanup();
+	}
+});
+
+test("a delegated turn is written down: what it was sent, what it did, what it said", async () => {
+	const h = await harness((turn) => {
+		// Turn 0 is the parent delegating; turn 1 is the sub-agent answering; turn 2 the parent
+		// closing out. Only the first needs to be a tool call for the rest to follow.
+		if (turn > 0) return reply(turn === 1 ? "the cache is cold on every build" : "done");
+		return {
+			...reply(""),
+			content: [
+				{
+					type: "toolCall",
+					id: "call_1",
+					name: "task",
+					arguments: { description: "why builds are slow", prompt: "Find out why the build is slow.", subagent_type: "explore" },
+				},
+			],
+			stopReason: "toolUse",
+		};
+	});
+
+	try {
+		await h.session.prompt([{ type: "text", text: "why is the build slow" }]);
+		const records = await h.records();
+
+		const start = records.find((r) => r.type === "event" && r.event.type === "subagent");
+		if (start?.type !== "event" || start.event.type !== "subagent") throw new Error("no dispatch record");
+		assert.equal(start.event.agent, "explore");
+		assert.equal(start.event.prompt, "Find out why the build is slow.");
+		assert.ok(!start.event.tools.includes("write"), "and the narrower tool set it was given");
+
+		const end = records.find((r) => r.type === "event" && r.event.type === "subagent_done");
+		if (end?.type !== "event" || end.event.type !== "subagent_done") throw new Error("no result record");
+		assert.equal(end.event.id, start.event.id, "the two halves are joinable");
+		assert.equal(end.event.answer, "the cache is cold on every build");
+	} finally {
+		await h.cleanup();
+	}
+});
