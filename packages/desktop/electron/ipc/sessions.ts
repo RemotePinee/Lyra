@@ -9,6 +9,8 @@
 
 import {
 	deepwiseHome,
+	forkSession,
+	readTrajectory,
 	removeSessionArtifacts,
 	type AgentSession,
 	type ApprovalDecision,
@@ -82,6 +84,20 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	 * you did was click a row to read what it says. Reading the log takes a few milliseconds;
 	 * the agent is started later, by `ensureSession`, when there is actually something to run.
 	 */
+	/*
+	 * The trajectory, and forking from a point in it.
+	 *
+	 * Both read the same file the turn was written to — there is no second record of what happened
+	 * and no chance of the two disagreeing.
+	 */
+	ipcMain.handle("sessions:trajectory", async (_event, projectId: string, sessionId: string) =>
+		readTrajectory(store as never, projectId, sessionId),
+	);
+
+	ipcMain.handle("sessions:fork", async (_event, projectId: string, sessionId: string, seq: number) =>
+		forkSession(store as never, projectId, sessionId, seq),
+	);
+
 	ipcMain.handle("sessions:transcript", async (_event, projectId: string, sessionId: string) => {
 		// A live session is the authority — it holds messages from the turn in flight and
 		// knows whether it is running.

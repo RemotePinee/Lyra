@@ -1,5 +1,6 @@
 /** The contract between the renderer and the main process. Imported by both sides. */
 
+import type { TrajectoryEntry } from "@deepwise/core";
 import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
 
 export type { GitCommit, GitStatus, GitStatusFile, RepoRef } from "./git.ts";
@@ -123,6 +124,10 @@ export interface DeepWiseApi {
 		open(projectId: string, sessionId: string): Promise<SessionSnapshot | null>;
 		/** Read the stored transcript without starting anything. For looking at things. */
 		transcript(projectId: string, sessionId: string): Promise<SessionSnapshot | null>;
+		/** The same log, read as a trajectory: one entry per thing that happened, by source. */
+		trajectory(projectId: string, sessionId: string): Promise<TrajectoryEntry[]>;
+		/** Copy history up to `seq` into a new session, leaving this one untouched. */
+		fork(projectId: string, sessionId: string, seq: number): Promise<{ meta: SessionMeta; messages: number } | null>;
 		remove(projectId: string, sessionId: string): Promise<void>;
 		/** Move a session in or out of the archive. Returns the whole list, already updated. */
 		setArchived(projectId: string, sessionId: string, archived: boolean): Promise<SessionMeta[]>;

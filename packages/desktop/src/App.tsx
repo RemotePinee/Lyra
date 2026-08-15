@@ -264,6 +264,12 @@ function ChatShell() {
         if (workspace) openPanel(() => toggleTab("files"));
         return;
       }
+      // ⌘L for the trajectory: the log of what actually happened, beside the conversation.
+      if (mod && !event.altKey && !event.shiftKey && event.code === "KeyL") {
+        event.preventDefault();
+        if (activeSessionId) openPanel(() => toggleTab("trajectory"));
+        return;
+      }
       // ⌃` is what every terminal-bearing editor uses, and it is not a ⌘ shortcut.
       if (event.ctrlKey && !event.metaKey && event.code === "Backquote") {
         event.preventDefault();

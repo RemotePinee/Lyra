@@ -72,6 +72,8 @@ const api: DeepWiseApi = {
 		create: (cwd, modelId) => ipcRenderer.invoke("sessions:create", cwd, modelId),
 		open: (projectId, sessionId) => ipcRenderer.invoke("sessions:open", projectId, sessionId),
 		transcript: (projectId, sessionId) => ipcRenderer.invoke("sessions:transcript", projectId, sessionId),
+		trajectory: (projectId, sessionId) => ipcRenderer.invoke("sessions:trajectory", projectId, sessionId),
+		fork: (projectId, sessionId, seq) => ipcRenderer.invoke("sessions:fork", projectId, sessionId, seq),
 		remove: (projectId, sessionId) => ipcRenderer.invoke("sessions:remove", projectId, sessionId),
 		setArchived: (projectId, sessionId, archived) =>
 			ipcRenderer.invoke("sessions:setArchived", projectId, sessionId, archived),

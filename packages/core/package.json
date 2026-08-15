@@ -10,7 +10,8 @@
     ".": "./src/index.ts",
     "./node": "./src/node.ts",
     "./tokens": "./src/tokens.ts",
-    "./activity": "./src/activity.ts"
+    "./activity": "./src/activity.ts",
+    "./trajectory-view": "./src/trajectory-view.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
