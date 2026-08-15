@@ -113,6 +113,24 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
 
     case "message_end": {
       const messages = [...get().messages];
+
+      /*
+       * The composer's copy is still standing in for this one.
+       *
+       * `message_start` normally swaps it out, but on a brand-new conversation that event
+       * arrives before `sessions.create` has returned — so the store does not yet know which
+       * session it belongs to and drops it. Without this, the stored copy is appended next to
+       * the copy the composer painted and the message appears twice, every first message.
+       */
+      const pending = get().pendingUserMessage;
+      if (event.message.role === "user" && pending && messages.includes(pending)) {
+        set({
+          messages: messages.map((m) => (m === pending ? event.message : m)),
+          pendingUserMessage: null,
+        });
+        break;
+      }
+
       const index = findMessageSlot(messages, event.message);
       if (index >= 0) messages[index] = event.message;
       else messages.push(event.message);
