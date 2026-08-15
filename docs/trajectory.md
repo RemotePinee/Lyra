@@ -52,33 +52,31 @@
 
 ## 五、低耦合高聚合 / 文件行数
 
-- [x] `core/runtime/session.ts` 642 → **559**（turn-config / continuation / reporting 各自独立）
+- [x] `core/runtime/session.ts` 642 → **300**（日志、能力、组装一轮、可读事实各自独立）
 - [x] `core/agent/loop.ts` 528 → **344**（工具执行独立成 tool-run）
-- [x] `desktop/src/App.tsx` 499 → **416**（快捷键、面板图标独立）
-- [ ] `settings/ModelSettings.tsx` 492 — 未拆
-- [ ] `components/Sidebar.tsx` 472 — 未拆
+- [x] `desktop/src/App.tsx` 499 → **189**（布局算法与窗口顶边独立）
+- [x] `settings/ModelSettings.tsx` 492 → **161**（供应商编辑器、模型列表、操作各自独立）
+- [x] `components/Sidebar.tsx` 474 → **224**（项目分组、会话行、分组规则各自独立）
+- [x] `components/SideChat.tsx` 441 → **96**（消息、派发任务、输入区各自独立）
+- [x] `components/SidePanel.tsx` 419 → **132**（几何、标签条、首屏选择各自独立）
 - [x] `desktop/src/layout.tsx` 465 → **293**
 - [x] `ai/openai-responses.ts` 455 → **381**（请求侧独立）
 - [x] `ai/anthropic-messages.ts` 454 → **361**（请求侧独立）
-- [ ] `components/SideChat.tsx` 441 — 未拆
-- [ ] 全仓库无文件超过 300 行 —— **没做到**，见下
 - [x] 新增文件均为英文注释
+- [ ] 全仓库无文件超过 300 行 —— 13 个仍超，见 `checklist.md` 第七节
 
 ### 关于 300 行这条
 
-拆掉的都是"拆开之后更好读"的：一个文件里塞了两件事，分开各自成立。剩下 7 个超标的
-不是这种情况——`session.ts` 是一个状态密集的类，`ModelSettings`/`Sidebar`/`SideChat` 是
-一个组件一件事。把它们对半切开只会让两半互相伸手，那正是"低耦合高聚合"要避免的。
+判据是"拆开之后是不是更好读"，不是行数本身。
 
-| 文件 | 行数 | 为什么留着 |
-| --- | --- | --- |
-| `core/runtime/session.ts` | 559 | 会话类本身；再拆就是把状态和用它的方法分到两个文件 |
-| `settings/ModelSettings.tsx` | 492 | 一个设置页 |
-| `components/Sidebar.tsx` | 472 | 一个组件 |
-| `components/SideChat.tsx` | 441 | 一个组件 |
-| `mobile/src/store.ts` | 427 | 移动端状态 |
-| `components/SidePanel.tsx` | 419 | 一个组件 |
-| `desktop/src/App.tsx` | 416 | 应用外壳 |
+拆掉的都有真实的边界：一个会话"做过什么"（仅追加日志）和"能做什么"（工具与技能）
+是两件事；一个供应商编辑器和"编辑它会带来什么后果"（删掉一个供应商会让默认模型悬空）
+是两件事；一个会定位的浮层和常放在它上面的菜单是两件事。这些边界原本都藏在一个文件
+中间，靠读者自己看出来。
+
+剩下的 13 个不是这种情况。协议适配器是一个按流事件顺序推进的状态机，把 switch 拆散
+就读不出顺序；移动端的 store 与桌面端一一对应，分开只会让两边不再对得上；主进程装配
+拆开就是把"启动顺序"拆开。它们各自仍然是一件事。
 
 ## 六、验收
 

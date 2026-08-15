@@ -92,34 +92,39 @@
 
 ## 七、仍超过 300 行的文件
 
-诚实列出。这些都是「再拆会更难读」的：一个类、一个协议适配器、一个页面。
-
-25 个，全部列出。前七个是「再拆会更难读」的；后面十八个只是略过线，各自仍是一件事。
+从 25 个降到 13 个。拆掉的都有真实的边界——一个会话"做过什么"和"能做什么"是两件事，
+一个供应商编辑器和"编辑它会带来什么后果"是两件事，一个浮层和常放在它上面的菜单是两件事。
+剩下的这些不是：拆开只会让两半互相伸手。
 
 | 文件 | 行数 | 为什么留着 |
 | --- | --- | --- |
-| `core/runtime/session.ts` | 559 | 会话类本身：状态加一轮的编排。再拆就是把 `this` 摊成十五个参数 |
-| `settings/ModelSettings.tsx` | 492 | 一个设置页 |
-| `src/components/Sidebar.tsx` | 474 | 一个组件 |
-| `src/components/SideChat.tsx` | 441 | 一个面板 |
-| `mobile/src/store.ts` | 427 | 移动端状态，与桌面端一一对应 |
-| `src/components/SidePanel.tsx` | 419 | 面板外壳：标签页、拖拽、尺寸 |
-| `src/App.tsx` | 416 | 应用外壳与路由 |
-| `components/Popover.tsx` | 382 | 一个浮层的定位与翻转 |
-| `ai/openai-responses.ts` | 381 | 协议适配器，按流事件顺序读才有意义 |
-| `settings/controls.tsx` | 366 | 设置页共用的控件集 |
-| `ai/anthropic-messages.ts` | 361 | 同 responses |
-| `src/sideStore.ts` | 357 | 侧边聊天的状态 |
-| `core/src/types.ts` | 357 | 类型声明，没有逻辑 |
-| `core/session/store.ts` | 357 | 仅追加日志的读写 |
+| `mobile/src/store.ts` | 427 | 移动端状态，与桌面端一一对应；分开会让两边不再对得上 |
+| `ai/openai-responses.ts` | 381 | 协议适配器：一个按流事件顺序推进的状态机，拆散就读不出顺序 |
+| `ai/anthropic-messages.ts` | 361 | 同上 |
+| `src/sideStore.ts` | 357 | 面板状态和侧边聊天状态确实是两件事，但它们联动（会话一换就要重挂），分成两个 store 得先把联动搬到第三处 |
+| `core/session/store.ts` | 357 | 一个类实现一个存储接口，十五个短方法 |
 | `agent/loop.ts` | 344 | 一轮的主循环 |
-| `electron/ipc-types.ts` | 335 | 通道声明，没有逻辑 |
-| `settings/AppearanceSettings.tsx` | 332 | 一个设置页 |
-| `electron/main.ts` | 330 | 主进程装配 |
+| `electron/main.ts` | 330 | 主进程装配：把它拆开就是把"启动顺序"拆开 |
 | `mobile/app/session/[id].tsx` | 326 | 一个页面 |
 | `components/Composer.tsx` | 322 | 输入区 |
 | `core/runtime/sidechat.ts` | 319 | 侧边聊天的运行时 |
-| `src/store/apply-event.ts` | 318 | 事件到状态的一张分派表 |
 | `core/test/tasks.test.ts` | 317 | 测试 |
-| `components/editor/theme.ts` | 311 | 编辑器样式表 |
+| `components/editor/theme.ts` | 311 | 一张样式表 |
 | `components/PreviewCard.tsx` | 305 | 一种卡片 |
+
+本轮拆掉的（原行数 → 现在）：
+
+| 原文件 | 拆成 |
+| --- | --- |
+| `runtime/session.ts` 559 | session 300 / session-turn 184 / session-log 124 / session-capabilities 65 / session-facts 50 |
+| `settings/ModelSettings.tsx` 492 | 161 / ProviderEditor 160 / ProviderModels 152 / useProviders 138 |
+| `components/Sidebar.tsx` 474 | 224 / ProjectGroup 118 / grouping 77 / SessionRow 73 |
+| `components/SideChat.tsx` 441 | 96 / TaskStrip 139 / MessageRow 97 / SideComposer 96 |
+| `components/SidePanel.tsx` 419 | 132 / TabStrip 213 / geometry 61 / PanelChooser 43 / definitions 30 |
+| `src/App.tsx` 416 | 189 / WindowToolbar 126 / usePanelLayout 95 / BootScreen 38 |
+| `components/Popover.tsx` 382 | 300 / Menu 101 |
+| `settings/controls.tsx` 366 | 143 / inputs 165 / layout 86 |
+| `core/src/types.ts` 357 | 门 11 / message 150 / tool 114 / provider 113 |
+| `electron/ipc-types.ts` 335 | 251 / ipc-shapes 134 |
+| `settings/AppearanceSettings.tsx` 332 | 234 / appearance-controls 111 |
+| `store/apply-event.ts` 318 | 269 / apply-tool 75 |
