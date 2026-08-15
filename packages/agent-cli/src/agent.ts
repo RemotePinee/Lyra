@@ -103,7 +103,7 @@ function collect(event: AgentEvent, answers: string[], verbose: boolean): void {
  * Everything is required rather than defaulted: a workflow that silently ran against the wrong
  * endpoint would produce a review nobody could account for.
  */
-export function settingsFromEnv(): Settings {
+function settingsFromEnv(): Settings {
 	const baseUrl = need("DEEPWISE_BASE_URL");
 	const apiKey = need("DEEPWISE_API_KEY");
 	const modelId = process.env.DEEPWISE_MODEL ?? "deepseek-v4-flash";

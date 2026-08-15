@@ -24,7 +24,7 @@ import { isNudge, LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs
  * `pending` is still arriving; `toolUse` is a handover to a tool with more to come after it.
  * Everything else — a plain stop, a length cap, an error, an abort — is an ending.
  */
-export function settled(stopReason: AssistantMessage["stopReason"]): boolean {
+function settled(stopReason: AssistantMessage["stopReason"]): boolean {
   return stopReason !== "pending" && stopReason !== "toolUse";
 }
 
@@ -82,7 +82,7 @@ export const MessageRow = memo(function MessageRow({
   return <AssistantRow message={message} index={index} continued={continued} />;
 });
 
-export function AssistantRow({
+function AssistantRow({
   message,
   index,
   continued,
