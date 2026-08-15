@@ -18,6 +18,9 @@ export interface PendingApproval {
 	resolve: (decision: ApprovalDecision) => void;
 }
 
+/** How long a question waits for a person before it is treated as refused. */
+const UNATTENDED_TIMEOUT_MS = 5 * 60_000;
+
 export interface ApprovalGateOptions {
 	mode(): PermissionMode;
 	cwd(): string;
@@ -25,6 +28,8 @@ export interface ApprovalGateOptions {
 	ask(pending: PendingApproval): Promise<void>;
 	/** Remember an "always" answer beyond this process. */
 	remember(subject: string): void;
+	/** Overridable so a test does not have to wait five minutes to see the timeout work. */
+	unattendedTimeoutMs?: number;
 }
 
 export class ApprovalGate {
@@ -73,10 +78,23 @@ export class ApprovalGate {
 
 		const id = randomUUID();
 		return new Promise<ApprovalDecision>((resolve) => {
+			/*
+			 * Nobody there is an answer too — and the answer is no.
+			 *
+			 * A question with no one to read it used to stop a run indefinitely: the agent waited,
+			 * the window showed a spinner, and an overnight task was still on its first prompt in
+			 * the morning. Expiring into a rejection is the only safe direction — it grants
+			 * nothing that was not granted — and it lets the agent find another way, which is
+			 * usually what it does with a refusal.
+			 *
+			 * Long enough that someone who stepped away for a coffee still gets to decide.
+			 */
+			let timer: ReturnType<typeof setTimeout> | undefined;
 			const entry: PendingApproval = {
 				id,
 				request,
 				resolve: (decision) => {
+					if (timer) clearTimeout(timer);
 					this.pending.delete(id);
 					if (decision === "always") {
 						this.allowList.add(request.subject);
@@ -86,6 +104,7 @@ export class ApprovalGate {
 					resolve(decision === "always" ? "once" : decision);
 				},
 			};
+			timer = setTimeout(() => entry.resolve("reject"), this.options.unattendedTimeoutMs ?? UNATTENDED_TIMEOUT_MS);
 			this.pending.set(id, entry);
 			void this.options.ask(entry);
 		});
