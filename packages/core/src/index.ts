@@ -46,6 +46,7 @@ export {
 export { nextTask, useScheduler } from "./runtime/scheduling.ts";
 export { prepareTurn, useTurnPipeline, type TurnContext, type TurnMiddleware } from "./runtime/turn.ts";
 export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
+export { loadCapabilityPlugins, type LoadedCapabilityPlugins } from "./plugins/capability.ts";
 export { API_FORMATS, getProvider, streamAssistant, useLlmRegistry } from "./ai/index.ts";
 export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";

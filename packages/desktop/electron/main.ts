@@ -10,6 +10,9 @@ import {
 	AgentSession,
 	createContext,
 	deepwiseHome,
+	loadCapabilityPlugins,
+	loadPlugins,
+	DEFAULT_PLUGINS,
 	pruneSessionArtifacts,
 	useAgentLoop,
 	useApprovalPolicy,
@@ -186,7 +189,22 @@ app.whenReady().then(async () => {
 	 * downstream imports a concrete implementation, so replacing one (a sandboxed shell, another
 	 * model API, a stricter policy) is a change to this list rather than to the code that uses it.
 	 */
-	kernel = await createContext();
+	/*
+	 * The kernel is built from the default set plus whatever the user has installed.
+	 *
+	 * Discovering plugins before the window exists is deliberate: a plugin that replaces the model
+	 * registry or the sandbox has to be in place before the first session is built, not bolted on
+	 * afterwards. A bundle that fails to load is recorded and skipped — someone else's broken
+	 * plugin must not be why the app will not start.
+	 */
+	settings = await loadAppSettings();
+	const bundles = await loadPlugins(
+		[{ dir: join(deepwiseHome(), "plugins"), source: "user" as const }],
+		settings.disabledPlugins,
+	);
+	const extra = await loadCapabilityPlugins(bundles.plugins);
+	for (const diagnostic of extra.diagnostics) console.warn(`[plugin] ${diagnostic.path}: ${diagnostic.message}`);
+	kernel = await createContext([...DEFAULT_PLUGINS, ...extra.plugins]);
 	useLlmRegistry(kernel.require<LlmRegistry>(LLM));
 	useToolRegistry(kernel.require<ToolRegistry>(TOOLS));
 	useSandbox(kernel.require<Sandbox>(SANDBOX));
@@ -198,7 +216,6 @@ app.whenReady().then(async () => {
 	useAgentLoop(kernel.require<AgentLoop>(LOOP));
 	useTurnPipeline(kernel.require<TurnPipeline>(SESSION).all());
 
-	settings = await loadAppSettings();
 	/*
 	 * What a settings change has to reach.
 	 *
