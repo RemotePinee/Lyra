@@ -95,15 +95,27 @@ export class EventBus {
 	 * Built back to front so the first registered listener is the outermost: it sees the request
 	 * first and the answer last, which is what "wrapping" has to mean for a chain to compose.
 	 */
-	async waterfall<R>(event: string, args: unknown[], base: () => Promise<R>): Promise<R> {
+	/**
+	 * Around-middleware, with the value flowing forwards as well as back.
+	 *
+	 * A listener calls `next()` to pass what it was given, or `next(changed)` to pass something
+	 * else — which is the difference between an around-hook and middleware. Without it a listener
+	 * could only rewrite the result on the way out, and "amend what the model is about to be sent"
+	 * would be impossible to express.
+	 *
+	 * Built by recursion rather than by folding a chain of thunks, because each step has to be able
+	 * to hand different arguments to the one below it.
+	 */
+	async waterfall<R>(event: string, args: unknown[], base: (...args: unknown[]) => Promise<R>): Promise<R> {
 		const chain = this.snapshot(event);
-		let next = base;
-		for (let i = chain.length - 1; i >= 0; i--) {
-			const listener = chain[i].listener as (...a: unknown[]) => Promise<R>;
-			const downstream = next;
-			next = () => listener(...args, downstream);
-		}
-		return next();
+		const step = (index: number, current: unknown[]): Promise<R> => {
+			if (index >= chain.length) return base(...current);
+			const listener = chain[index].listener as (...a: unknown[]) => Promise<R>;
+			return listener(...current, (...override: unknown[]) =>
+				step(index + 1, override.length > 0 ? override : current),
+			);
+		};
+		return step(0, args);
 	}
 
 	/** Listeners can register or dispose during dispatch; iterate a copy so that is safe. */

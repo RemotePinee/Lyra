@@ -140,7 +140,7 @@ export class Context {
 		return this.bus.serial<R>(event, ...args);
 	}
 
-	waterfall<R>(event: string, args: unknown[], base: () => Promise<R>): Promise<R> {
+	waterfall<R>(event: string, args: unknown[], base: (...args: unknown[]) => Promise<R>): Promise<R> {
 		return this.bus.waterfall<R>(event, args, base);
 	}
 

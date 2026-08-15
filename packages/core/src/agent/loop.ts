@@ -6,6 +6,7 @@
  * can redirect a running agent without cancelling it.
  */
 
+import { runTool } from "./tool-pipeline.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { readTodos } from "../tools/todo.ts";
 import type {
@@ -391,7 +392,7 @@ async function executeOne(
 
 	let result: ToolResult;
 	try {
-		result = await tool.execute(call.arguments, ctx);
+		result = await runTool({ tool, args: call.arguments, ctx });
 	} catch (error) {
 		if (config.signal?.aborted) return errorResult("Tool execution was cancelled.");
 		return errorResult(error instanceof Error ? error.message : String(error));

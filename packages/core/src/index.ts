@@ -36,6 +36,7 @@ export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";
 export { errorResult, runAgent, textResult, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
 export { runTurn, useAgentLoop, type AgentLoop } from "./agent/runner.ts";
+export { runTool, useToolPipeline, type ToolCall, type ToolMiddleware } from "./agent/tool-pipeline.ts";
 export {
 	availableModels,
 	DEFAULT_APPEARANCE,

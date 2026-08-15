@@ -11,9 +11,10 @@ import { taskTool } from "../../tools/task.ts";
 import { todoTool } from "../../tools/todo.ts";
 import { webFetchTool } from "../../tools/web.ts";
 import { writeTool } from "../../tools/write.ts";
-import type { Tool } from "../../types.ts";
+import { useToolPipeline } from "../../agent/tool-pipeline.ts";
+import type { Tool, ToolResult } from "../../types.ts";
 import type { Context, Plugin } from "../context.ts";
-import { TOOLS, type ToolRegistry } from "../services.ts";
+import { EVENTS, TOOLS, type ToolRegistry } from "../services.ts";
 
 class Registry implements ToolRegistry {
 	private readonly sets: Tool[][] = [];
@@ -60,6 +61,15 @@ export const toolsPlugin: Plugin = {
 	apply(ctx: Context) {
 		const registry = new Registry();
 		const withdraw = ctx.provide<ToolRegistry>(TOOLS, registry);
+
+		/*
+		 * Every tool call goes through the bus.
+		 *
+		 * Nothing listens by default, so the waterfall reaches its base — the tool itself — with one
+		 * extra promise. What it buys is that wrapping a call is a listener rather than a patch:
+		 * timing, refusing, caching, running it on another machine.
+		 */
+		useToolPipeline((call, next) => ctx.waterfall<ToolResult>(EVENTS.toolCall, [call], next));
 		const groups = [
 			registry.register(FILE_TOOLS),
 			registry.register(SHELL_TOOLS),
@@ -68,6 +78,7 @@ export const toolsPlugin: Plugin = {
 		];
 
 		return () => {
+			useToolPipeline(null);
 			for (const remove of groups) remove();
 			withdraw();
 		};
