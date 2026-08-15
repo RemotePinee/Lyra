@@ -170,15 +170,29 @@ test("a recursive delete aimed at anything larger still asks", () => {
 		"rm -rf .",
 		"rm -rf ..",
 		"rm -rf /",
-		"rm -rf /tmp/build",
 		"rm -rf ~/Library/Caches",
 		"rm -rf *",
-		"rm -rf src/*",
 		"rm -rf ../sibling",
-		"cd /tmp && rm -rf build",
 	]) {
 		assert.equal(assessCommand(risky, cwd).risky, true, risky);
 	}
+	/*
+	 * These two moved, because the old answers contradicted rules decided since.
+	 *
+	 * `rm -rf src/*` destroys exactly what `rm -rf src` destroys, and that has been allowed inside
+	 * the workspace all along — asking about one and not the other taught nothing except that the
+	 * prompt is arbitrary. `/tmp/build` is inside the system scratch directory, which is now a
+	 * place work happens rather than somewhere it escaped to.
+	 */
+	assert.equal(assessCommand("rm -rf src/*", cwd).risky, false);
+	assert.equal(assessCommand("cd /tmp && rm -rf build", cwd).risky, false);
+	// Written the other way round, it is the same act and gets the same answer.
+	assert.equal(assessCommand("rm -rf /tmp/build", cwd).risky, false);
+
+	// But emptying a shared scratch directory wholesale is not the agent's own housekeeping.
+	assert.equal(assessCommand("rm -rf /tmp/*", cwd).risky, true);
+	assert.equal(assessCommand("rm -f /tmp/*", cwd).risky, true);
+
 	// With no workspace to judge against, nothing is known to be contained.
 	assert.equal(assessCommand("rm -rf dist").risky, true);
 });
@@ -187,7 +201,9 @@ test("tidying its own scratch files is not a decision worth interrupting", () =>
 	const cwd = "/Users/me/project";
 	const tmp = tmpdir();
 
-	// The case that stopped a real run: clear its own logs, then start the server.
+	// The case that stopped a real run, written the way it was actually written — `/tmp` by name,
+	// which on macOS is a different path from `tmpdir()` and was the reason the first fix missed.
+	assert.equal(assessCommand(`cd ${cwd} && rm -f /tmp/inkwell-*.log && node server/index.js`, cwd).risky, false);
 	assert.equal(
 		assessCommand(`cd ${cwd} && rm -f ${tmp}/inkwell-*.log && node server/index.js`, cwd).risky,
 		false,
@@ -221,4 +237,20 @@ test("the scratch directory we handed the agent is not a place to ask about", ()
 
 	// A sibling directory whose name merely starts the same way is not inside the project.
 	assert.equal(assessWrite("/Users/me/project-backup/x.js", cwd).risky, true);
+});
+
+test("emptying a named directory inside the project is housekeeping, not a warning", () => {
+	const cwd = "/Users/me/project";
+
+	// The case that stopped a run: clear uploads, then re-seed.
+	assert.equal(assessCommand("cd /Users/me/project && npm run seed && rm -rf server/data/uploads/*", cwd).risky, false);
+	assert.equal(assessCommand("rm -rf dist/*", cwd).risky, false);
+	assert.equal(assessCommand("rm -rf build/cache/*.tmp", cwd).risky, false);
+
+	// A wildcard with nothing in front of it is still the whole directory.
+	assert.equal(assessCommand("rm -rf *", cwd).risky, true);
+	assert.equal(assessCommand("rm -rf ./*", cwd).risky, true);
+	assert.equal(assessCommand("rm -rf ../*", cwd).risky, true);
+	assert.equal(assessCommand("rm -rf ../sibling/*", cwd).risky, true);
+	assert.equal(assessCommand("cd /etc && rm -rf conf.d/*", cwd).risky, true, "and only inside the project");
 });

@@ -146,6 +146,27 @@ function firstWord(command: string): string {
  * Judge one command — no chaining, no substitution; `assessCommand` splits those first.
  */
 /**
+ * A wildcard with nothing in front of it.
+ *
+ * `rm -rf *` is the working directory and everything in it — the command people mean when they
+ * warn you about `rm -rf`. `rm -rf server/data/uploads/*` is a named directory being emptied,
+ * which is what re-seeding a database or clearing an upload folder looks like, and is no more
+ * dangerous than deleting that directory. Treating the two as the same thing meant ordinary
+ * housekeeping stopped an unattended run.
+ *
+ * The test is whether anything survives removing the wildcard segments: `*` and `./*` leave
+ * nothing; `a/b/*` leaves `a/b`.
+ */
+function bareGlob(target: string): boolean {
+	if (!/[*?]/.test(target)) return false;
+	const prefix = target
+		.split("/")
+		.filter((segment) => !/[*?]/.test(segment))
+		.filter((segment) => segment !== "" && segment !== ".");
+	return prefix.length === 0 || prefix.includes("..");
+}
+
+/**
  * Somewhere a scratch file legitimately lives.
  *
  * The system temp directory counts alongside the project, because the agent is *told* to put
@@ -156,6 +177,25 @@ function firstWord(command: string): string {
  * The root itself is never "inside" it: `/tmp/x` is housekeeping, `/tmp` is somebody else's files
  * too. Nor is anything outside these two trees — home, `/etc`, another project.
  */
+/**
+ * A wildcard that empties a scratch directory wholesale.
+ *
+ * `/tmp/inkwell-*.log` is the agent's own files; `/tmp/*` is everyone's. The system temp directory
+ * is shared with every other process on the machine, so "somewhere you may write" does not extend
+ * to "somewhere you may empty" — the same distinction as `rm -rf dist` versus `rm -rf *`.
+ *
+ * The line is whether the wildcard segment says anything: a bare `*` names nothing in particular,
+ * a pattern with literal characters names a family of files.
+ */
+function wipesScratchRoot(target: string, cwd?: string): boolean {
+	const path = target.replace(/^['"]|['"]$/g, "");
+	const segments = path.split("/");
+	const last = segments[segments.length - 1];
+	if (!/^\*+$/.test(last)) return false;
+	const prefix = segments.slice(0, -1).join("/");
+	return scratchRoots(cwd).includes(prefix);
+}
+
 function underScratchRoot(target: string, cwd?: string): boolean {
 	const path = target.replace(/^['"]|['"]$/g, "");
 	if (!path.startsWith("/")) return false;
@@ -177,7 +217,15 @@ function underScratchRoot(target: string, cwd?: string): boolean {
  */
 function scratchRoots(cwd?: string): string[] {
 	const home = process.env.DEEPWISE_HOME || join(homedir(), ".deepwise");
-	const roots = [tmpdir(), join(home, "scratch"), join(home, "previews")];
+	/*
+	 * `/tmp` by name as well as by API.
+	 *
+	 * On macOS `tmpdir()` is the per-user `/var/folders/...` directory, while everything people
+	 * and models actually type is `/tmp` — a different path that is equally temporary. Listing
+	 * only the API answer meant the rule looked right in tests and still stopped the real command
+	 * that prompted it.
+	 */
+	const roots = [tmpdir(), "/tmp", "/private/tmp", join(home, "scratch"), join(home, "previews")];
 	if (cwd) roots.push(cwd);
 	// A root of `/` would make every path on the machine "scratch"; drop it rather than trust it.
 	return roots.map((root) => root.replace(/\/+$/, "")).filter((root) => root.length > 1);
@@ -209,7 +257,8 @@ function judgeSingle(command: string, contained = false, cwd?: string): RiskVerd
 					t.startsWith("~") ||
 					t === "." ||
 					t === ".." ||
-					t.includes("*") ||
+					bareGlob(t) ||
+					wipesScratchRoot(t, cwd) ||
 					(t.startsWith("/") && !underScratchRoot(t, cwd)),
 			);
 			const climbs = targets.some((t) => t.split("/").includes(".."));
@@ -225,7 +274,9 @@ function judgeSingle(command: string, contained = false, cwd?: string): RiskVerd
 		 */
 		if (/\s-[a-zA-Z]*f/.test(command) && /[*?]/.test(command)) {
 			const targets = command.split(/\s+/).slice(1).filter((word) => !word.startsWith("-"));
-			const outside = targets.some((t) => t.startsWith("~") || (t.startsWith("/") && !underScratchRoot(t, cwd)));
+			const outside = targets.some(
+				(t) => t.startsWith("~") || wipesScratchRoot(t, cwd) || (t.startsWith("/") && !underScratchRoot(t, cwd)),
+			);
 			if (outside || !contained) return risky("强制删除通配匹配的文件");
 		}
 		if (/(^|\s)\/(\s|$)|\s~\/?(\s|$)/.test(command)) return risky("删除根目录或主目录");
@@ -355,8 +406,12 @@ function staysInside(command: string, cwd: string): boolean {
 		if (target.startsWith("~") || target === "-" || /[$`]/.test(target)) return false;
 		if (target.startsWith("/")) {
 			if (target === root || target.startsWith(`${root}/`)) continue;
-			// A scratch directory is somewhere work legitimately happens, not somewhere it escaped to.
-			if (underScratchRoot(target, cwd)) continue;
+			/*
+			 * A scratch directory is somewhere work legitimately happens, not somewhere it escaped
+			 * to — and here the root itself counts. `cd /tmp` is working there; `rm -rf /tmp` is
+			 * something else entirely, and that is judged separately.
+			 */
+			if (underScratchRoot(target, cwd) || scratchRoots(cwd).includes(target.replace(/\/+$/, ""))) continue;
 			return false;
 		}
 		// A relative `cd` can still climb out with `..`.
