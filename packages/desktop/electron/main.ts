@@ -25,32 +25,25 @@ import {
 	SANDBOX,
 	SKILLS,
 	TOOLS,
-	type Context as CapabilityContext,
-	type CompactionStrategy,
-	type LlmRegistry,
-	type Sandbox,
-	type SkillRegistry,
-	type ToolRegistry,
 	removeSessionArtifacts,
 	indexStats,
 	loadIndex,
-	fetchRegistry,
-	installEntry,
-	loadPlugins,
 	loadSettings,
-	loadSkills,
-	resolveModel,
 	saveIndex,
 	saveSettings,
 	searchIndex,
 	SessionStore,
-	uninstallEntry,
 	SideChat,
 	type AgentEvent,
 	type ApprovalDecision,
+	type CompactionStrategy,
+	type Context as CapabilityContext,
 	type ContextBreakdown,
-	type RegistryEntry,
+	type LlmRegistry,
+	type Sandbox,
 	type Settings,
+	type SkillRegistry,
+	type ToolRegistry,
 	type UserContent,
 } from "@deepwise/core";
 import type {
@@ -65,30 +58,15 @@ import type {
 import { createBrowserTools } from "./browser-tools.ts";
 import {
 	collectWorkspaceDiff,
-	commitAll,
-	commitDiff,
-	commitStaged,
-	createBranch,
-	createWorktree,
-	deleteBranch,
-	diffRefs,
-	discardPaths,
 	gitBranch,
-	gitLog,
-	gitStatus,
 	isGitRepo,
-	listBranches,
-	listPullRequests,
-	listRepos,
-	initRepo,
-	listWorktrees,
-	pullBranch,
-	pushBranch,
-	stagePaths,
-	switchBranch,
-	unstagePaths,
-	workspaceStat,
 } from "./git.ts";
+import { appIcon } from "./app-icon.ts";
+import { registerFilesIpc } from "./ipc/files.ts";
+import { registerGitIpc } from "./ipc/git.ts";
+import { registerPluginsIpc } from "./ipc/plugins.ts";
+import { registerSystemIpc } from "./ipc/system.ts";
+import { registerTerminalIpc } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
 import { SyncServer } from "./sync-server.ts";
 
@@ -190,59 +168,6 @@ function resolvedBackground(): string {
  * It also settles the native menus, dialogs and scrollbars, which have the same problem for
  * the same reason.
  */
-/** Icons change about as often as applications are installed; one lookup per name is plenty. */
-const appIconCache = new Map<string, string | null>();
-/** The icon file a bundle declares, which is not always named after the app. */
-async function iconFileFor(bundle: string): Promise<string | null> {
-	const { stdout } = await execFileAsync("defaults", ["read", `${bundle}/Contents/Info`, "CFBundleIconFile"]).catch(
-		() => ({ stdout: "" }),
-	);
-	const name = stdout.trim();
-	if (!name) return null;
-	const file = name.endsWith(".icns") ? name : `${name}.icns`;
-	const path = `${bundle}/Contents/Resources/${file}`;
-	return (await stat(path).then(() => true).catch(() => false)) ? path : null;
-}
-
-async function renderAppIcon(appName: string): Promise<string | null> {
-	const bundle = await findApp(appName);
-	if (!bundle) return null;
-	const icns = await iconFileFor(bundle);
-	if (!icns) return null;
-
-	// A temporary file, because `sips` writes to a path and not to a pipe.
-	const out = join(tmpdir(), `dw-icon-${Buffer.from(appName).toString("hex")}.png`);
-	await execFileAsync("sips", ["-s", "format", "png", "--resampleWidth", "128", icns, "--out", out]);
-	const png = await readFile(out).catch(() => null);
-	await rm(out, { force: true }).catch(() => {});
-	return png ? `data:image/png;base64,${png.toString("base64")}` : null;
-}
-
-/**
- * Where an application lives, by display name.
- *
- * The four directories macOS actually keeps applications in — third-party ones, the bundled
- * ones Apple moved out of /Applications in Catalina, the utilities folder, and the services
- * directory where Finder lives. Spotlight is the fallback for anything installed elsewhere,
- * matched on file name because display names are localised and ours are not.
- */
-const APP_DIRS = [
-	"/Applications",
-	"/System/Applications",
-	"/System/Applications/Utilities",
-	"/System/Library/CoreServices",
-];
-
-async function findApp(name: string): Promise<string | null> {
-	for (const dir of APP_DIRS) {
-		const candidate = `${dir}/${name}.app`;
-		if (await stat(candidate).then(() => true).catch(() => false)) return candidate;
-	}
-	const { stdout } = await execFileAsync("mdfind", ["-name", `${name}.app`]).catch(() => ({ stdout: "" }));
-	const hit = stdout.split("\n").find((line) => line.trim().endsWith(`${name}.app`));
-	return hit ? hit.trim() : null;
-}
-
 /** Enough of a MIME table for a self-contained page; anything else is served as bytes. */
 /**
  * Let a preview say how tall it wants to be.
@@ -1119,98 +1044,9 @@ function registerIpc(): void {
 		return session ? session.cancelTask(taskId) : false;
 	});
 
-	// -------------------------------------------------------------------------
-	// Files
-	// -------------------------------------------------------------------------
+	registerFilesIpc({ insideAProject });
 
-	ipcMain.handle("files:list", async (_event, dir: string): Promise<FileEntry[]> => {
-		if (!insideAProject(dir)) return [];
-		const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-		const out = await Promise.all(
-			entries.map(async (entry) => {
-				const path = join(dir, entry.name);
-				const info = entry.isDirectory() ? null : await stat(path).catch(() => null);
-				return { name: entry.name, path, isDirectory: entry.isDirectory(), size: info?.size ?? 0 };
-			}),
-		);
-		// Directories first, then case-insensitive by name — the order a file list is read in.
-		return out.sort((a, b) =>
-			a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : a.isDirectory ? -1 : 1,
-		);
-	});
-
-	/** Enough for any source file; past this it is generated output nobody reads in a panel. */
-	const FILE_READ_CAP = 512 * 1024;
-
-	ipcMain.handle("files:read", async (_event, path: string): Promise<FileContents | null> => {
-		if (!insideAProject(path)) return null;
-		const info = await stat(path).catch(() => null);
-		if (!info?.isFile()) return null;
-
-		const buffer = await readFile(path).catch(() => null);
-		if (!buffer) return null;
-
-		// A NUL byte in the first block is the classic, and reliable enough, binary tell.
-		const head = buffer.subarray(0, 8000);
-		if (head.includes(0)) return { text: "", truncated: false, bytes: info.size, binary: true, modifiedAt: info.mtimeMs };
-
-		const clipped = buffer.subarray(0, FILE_READ_CAP);
-		return {
-			text: clipped.toString("utf8"),
-			truncated: buffer.byteLength > FILE_READ_CAP,
-			bytes: info.size,
-			modifiedAt: info.mtimeMs,
-		};
-	});
-
-	ipcMain.handle("files:write", async (_event, path: string, text: string) => {
-		if (!insideAProject(path)) return { ok: false, error: "该路径不在已打开的项目内" };
-		try {
-			await writeFile(path, text, "utf8");
-			return { ok: true };
-		} catch (error) {
-			return { ok: false, error: error instanceof Error ? error.message : String(error) };
-		}
-	});
-
-	// -------------------------------------------------------------------------
-	// Terminal
-	// -------------------------------------------------------------------------
-
-	ipcMain.handle("terminal:create", async (_event, cwd: string, cols: number, rows: number) => {
-		const id = randomUUID();
-		const shell = process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash");
-		const child = spawnPty(shell, [], {
-			name: "xterm-256color",
-			cols: Math.max(2, cols),
-			rows: Math.max(2, rows),
-			cwd: insideAProject(cwd) ? cwd : process.env.HOME || process.cwd(),
-			// TERM is what makes a shell emit colour and use cursor addressing at all.
-			env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
-		});
-
-		child.onData((data) => mainWindow?.webContents.send("terminal:data", { id, data }));
-		child.onExit(({ exitCode }) => {
-			terminals.delete(id);
-			mainWindow?.webContents.send("terminal:exit", { id, code: exitCode });
-		});
-		terminals.set(id, child);
-		return id;
-	});
-
-	ipcMain.on("terminal:write", (_event, id: string, data: string) => terminals.get(id)?.write(data));
-
-	ipcMain.on("terminal:resize", (_event, id: string, cols: number, rows: number) => {
-		// A zero dimension is fatal to the pty; the renderer can briefly report one mid-layout.
-		try {
-			terminals.get(id)?.resize(Math.max(2, cols), Math.max(2, rows));
-		} catch {}
-	});
-
-	ipcMain.on("terminal:kill", (_event, id: string) => {
-		terminals.get(id)?.kill();
-		terminals.delete(id);
-	});
+	registerTerminalIpc({ terminals, spawnPty, insideAProject, window: () => mainWindow });
 
 	ipcMain.handle("providers:test", async (_event, providerId: string): Promise<ProviderTestResult> => {
 		const provider = settings.providers.find((p) => p.id === providerId);
@@ -1240,119 +1076,9 @@ function registerIpc(): void {
 
 	// Scanning does not need a live session: the settings pages are usually opened before
 	// any conversation exists, and an empty plugin list there reads as "nothing installed".
-	ipcMain.handle("registry:fetch", async (_event, url: string) => {
-		try {
-			return { ok: true as const, registry: await fetchRegistry(url) };
-		} catch (cause) {
-			return { ok: false as const, message: cause instanceof Error ? cause.message : String(cause) };
-		}
-	});
+	registerPluginsIpc({ pluginsDir, writeExamplePlugin, disabledPlugins: () => settings.disabledPlugins });
 
-	/*
-	 * Cloning is a write to disk from a URL the user typed, so it says what it did.
-	 *
-	 * The entry itself is inert until the plugin loader picks it up on the next session, and its
-	 * MCP servers still arrive switched off — installing is not the same as trusting.
-	 */
-	ipcMain.handle("registry:install", async (_event, entry: RegistryEntry) => {
-		try {
-			return { ok: true as const, dir: await installEntry(entry) };
-		} catch (cause) {
-			return { ok: false as const, message: cause instanceof Error ? cause.message : String(cause) };
-		}
-	});
-
-	ipcMain.handle("registry:uninstall", async (_event, id: string) => {
-		await uninstallEntry(id);
-	});
-
-	ipcMain.handle("plugins:list", async (_event, cwd: string) => {
-		const [plugins, skills] = await Promise.all([
-			loadPlugins(
-				[
-					...(cwd ? [{ dir: join(cwd, ".deepwise", "plugins"), source: "workspace" as const }] : []),
-					{ dir: join(deepwiseHome(), "plugins"), source: "user" as const },
-				],
-				settings.disabledPlugins,
-			),
-			loadSkills([
-				...(cwd ? [{ dir: join(cwd, ".deepwise", "skills"), source: "workspace" as const }] : []),
-				{ dir: join(deepwiseHome(), "skills"), source: "user" as const },
-			]),
-		]);
-		const looseNames = new Set(skills.skills.map((s) => s.name));
-		return {
-			plugins: plugins.plugins,
-			pluginDiagnostics: plugins.diagnostics,
-			skills: [
-				...skills.skills,
-				...plugins.plugins.filter((p) => p.enabled).flatMap((p) => p.skills).filter((s) => !looseNames.has(s.name)),
-			],
-			skillDiagnostics: skills.diagnostics,
-		};
-	});
-
-	ipcMain.handle("plugins:revealDir", async (_event, scope: "workspace" | "user", cwd: string) => {
-		const dir = pluginsDir(scope, cwd);
-		await mkdir(dir, { recursive: true });
-		await shell.openPath(dir);
-		return dir;
-	});
-
-	ipcMain.handle("plugins:installExample", async (_event, scope: "workspace" | "user", cwd: string) => {
-		const dir = join(pluginsDir(scope, cwd), "hello-deepwise");
-		await writeExamplePlugin(dir);
-		await shell.openPath(dir);
-		return dir;
-	});
-
-	ipcMain.handle("system:openPath", async (_event, path: string) => void shell.openPath(path));
-	ipcMain.handle("system:openExternal", async (_event, url: string) => {
-		// Only ever hand http(s) to the OS handler; a file:// or custom scheme here would be an escape hatch.
-		const parsed = new URL(url);
-		if (parsed.protocol === "http:" || parsed.protocol === "https:") await shell.openExternal(url);
-	});
-	ipcMain.handle("system:openIn", async (_event, appName: string, path: string) => {
-		if (process.platform === "darwin") await execFileAsync("open", ["-a", appName, path]).catch(() => shell.openPath(path));
-		else await shell.openPath(path);
-	});
-	ipcMain.handle("system:revealSkillsDir", async (_event, scope: "workspace" | "user", cwd: string) => {
-		const dir = scope === "workspace" ? join(cwd, ".deepwise", "skills") : join(deepwiseHome(), "skills");
-		await mkdir(dir, { recursive: true });
-		await shell.openPath(dir);
-		return dir;
-	});
-	ipcMain.handle("system:platform", async () => process.platform);
-
-	/*
-	 * The real icon, from the copy of the app that is actually installed.
-	 *
-	 * Better than shipping our own drawings of other people's logos: it is the icon the user
-	 * already recognises from their own Dock, it is whatever version they have, and an app that
-	 * is not installed simply returns nothing — which is also the answer to "should this be in
-	 * the list at all". Resolved through `mdfind` so it works wherever the app was put.
-	 */
-	/*
-	 * The application's own icon, rendered from its bundle.
-	 *
-	 * Not `app.getFileIcon`: it reaches into AppKit and takes the whole process down with a
-	 * SIGTRAP at anything above the smallest size, serialised or not. `sips` is the tool macOS
-	 * ships for exactly this, runs out of process, and gives a real 128px rendering rather than
-	 * the 32px one the API tops out at usefully.
-	 *
-	 * Better than shipping our own drawings of other people's logos: it is the icon already in
-	 * the user's Dock, at whatever version they have. An app that is not installed has none,
-	 * and its row stays a plain label.
-	 */
-	ipcMain.handle("system:appIcon", async (_event, appName: string): Promise<string | null> => {
-		if (process.platform !== "darwin") return null;
-		const cached = appIconCache.get(appName);
-		if (cached !== undefined) return cached;
-
-		const rendered = await renderAppIcon(appName).catch(() => null);
-		appIconCache.set(appName, rendered);
-		return rendered;
-	});
+	registerSystemIpc();
 
 	ipcMain.handle("index:stats", async (_event, cwd: string) => indexStats(cwd));
 
@@ -1388,82 +1114,7 @@ function registerIpc(): void {
 		return { ok: true };
 	});
 
-	ipcMain.handle("git:pullRequests", async (_event, cwd: string) => listPullRequests(cwd));
-
-	ipcMain.handle("git:branches", async (_event, cwd: string) => listBranches(cwd));
-
-	ipcMain.handle("git:switchBranch", async (_event, cwd: string, branch: string) => switchBranch(cwd, branch));
-
-	ipcMain.handle("git:createWorktree", async (_event, cwd: string, branch: string) => createWorktree(cwd, branch));
-
-	ipcMain.handle("git:stat", async (_event, cwd: string) => workspaceStat(cwd));
-
-	ipcMain.handle("git:commit", async (_event, cwd: string, message: string) => {
-		// Same boundary as reading and writing files. Committing is the most consequential thing
-		// the renderer can ask for — it stages everything under a directory — so it is the last
-		// place to leave unchecked.
-		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return commitAll(cwd, message);
-	});
-
-	ipcMain.handle("git:repos", async (_event, root: string) => listRepos(root));
-
-	ipcMain.handle("git:worktrees", async (_event, cwd: string) => listWorktrees(cwd));
-	ipcMain.handle("git:init", async (_event, cwd: string) => initRepo(cwd));
-
-	ipcMain.handle("git:status", async (_event, cwd: string) => gitStatus(cwd));
-
-	ipcMain.handle("git:log", async (_event, cwd: string, limit?: number, ref?: string) => gitLog(cwd, limit, ref));
-
-	ipcMain.handle("git:commitDiff", async (_event, cwd: string, sha: string) => commitDiff(cwd, sha));
-
-	ipcMain.handle("git:diffRefs", async (_event, cwd: string, base: string, head: string | null) =>
-		diffRefs(cwd, base, head),
-	);
-
-	/*
-	 * The writing half, behind the same boundary as committing.
-	 *
-	 * Staging, discarding and branch surgery all reach outside the renderer's sandbox and are
-	 * hard or impossible to undo — `discard` in particular deletes untracked files outright.
-	 */
-	for (const [channel, action] of [
-		["git:stage", stagePaths],
-		["git:unstage", unstagePaths],
-		["git:discard", discardPaths],
-	] as const) {
-		ipcMain.handle(channel, async (_event, cwd: string, paths: string[]) => {
-			if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-			return action(cwd, paths);
-		});
-	}
-
-	ipcMain.handle("git:commitStaged", async (_event, cwd: string, message: string) => {
-		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return commitStaged(cwd, message);
-	});
-
-	ipcMain.handle("git:createBranch", async (_event, cwd: string, name: string, from?: string) => {
-		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return createBranch(cwd, name, from);
-	});
-
-	ipcMain.handle("git:deleteBranch", async (_event, cwd: string, name: string, force?: boolean) => {
-		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return deleteBranch(cwd, name, force);
-	});
-
-	ipcMain.handle("git:push", async (_event, cwd: string) => {
-		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return pushBranch(cwd);
-	});
-
-	ipcMain.handle("git:pull", async (_event, cwd: string) => {
-		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return pullBranch(cwd);
-	});
-
-	ipcMain.handle("diff:workspace", async (_event, cwd: string) => collectWorkspaceDiff(cwd));
+	registerGitIpc({ insideAProject });
 }
 
 function pluginsDir(scope: "workspace" | "user", cwd: string): string {
