@@ -1,4 +1,5 @@
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 /**
  * How dangerous an operation is, so that "帮我批准" can mean what it says.
  *
@@ -158,9 +159,28 @@ function firstWord(command: string): string {
 function underScratchRoot(target: string, cwd?: string): boolean {
 	const path = target.replace(/^['"]|['"]$/g, "");
 	if (!path.startsWith("/")) return false;
-	const roots = [tmpdir().replace(/\/+$/, "")];
-	if (cwd) roots.push(cwd.replace(/\/+$/, ""));
+	const roots = scratchRoots(cwd);
 	return roots.some((root) => path.startsWith(`${root}/`) && path !== root);
+}
+
+/**
+ * The places work legitimately happens.
+ *
+ * The project, the system temp directory, and the app's own scratch and preview directories. The
+ * last two matter for the same reason as the first: we create them, and we put their paths in the
+ * system prompt telling the agent to use them. Asking a person whether the agent may write to the
+ * directory we just told it to write to is not a safety question, it is a bug — and one that turns
+ * an unattended run into a run that stops on the first scratch file.
+ *
+ * `~/.deepwise` as a whole is deliberately not here: settings and session logs live there too, and
+ * those are worth a question.
+ */
+function scratchRoots(cwd?: string): string[] {
+	const home = process.env.DEEPWISE_HOME || join(homedir(), ".deepwise");
+	const roots = [tmpdir(), join(home, "scratch"), join(home, "previews")];
+	if (cwd) roots.push(cwd);
+	// A root of `/` would make every path on the machine "scratch"; drop it rather than trust it.
+	return roots.map((root) => root.replace(/\/+$/, "")).filter((root) => root.length > 1);
 }
 
 function judgeSingle(command: string, contained = false, cwd?: string): RiskVerdict {
@@ -280,9 +300,18 @@ export function assessCommand(command: string, cwd?: string): RiskVerdict {
  */
 export function assessWrite(path: string, cwd: string): RiskVerdict {
 	const normalised = path.replace(/\/+$/, "");
+	/*
+	 * Asked first, because on macOS the system temp directory lives under `/var` — which the
+	 * protected-path list quite rightly covers. A file inside a directory whose entire purpose is
+	 * scratch is not the case that list is about, and checking in the other order made every
+	 * temporary file look like an attempt on the system.
+	 */
+	if (underScratchRoot(normalised, cwd)) return SAFE;
 	if (PROTECTED_PATH.test(` ${normalised}`)) return risky("写入项目之外的敏感路径");
 	if (/(^|\/)\.(zshrc|bashrc|profile|zprofile)$/.test(normalised)) return risky("修改 shell 启动文件");
-	if (!normalised.startsWith(cwd.replace(/\/+$/, ""))) return risky("写入当前项目之外的位置");
+	if (!normalised.startsWith(`${cwd.replace(/\/+$/, "")}/`) && normalised !== cwd.replace(/\/+$/, "")) {
+		return risky("写入当前项目之外的位置");
+	}
 	return SAFE;
 }
 

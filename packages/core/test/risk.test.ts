@@ -1,4 +1,5 @@
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -200,4 +201,24 @@ test("tidying its own scratch files is not a decision worth interrupting", () =>
 	assert.equal(assessCommand("rm -rf ~/Documents", cwd).risky, true);
 	assert.equal(assessCommand("cd /etc && rm -f *", cwd).risky, true);
 	assert.equal(assessCommand("rm -rf /", cwd).risky, true);
+});
+
+test("the scratch directory we handed the agent is not a place to ask about", () => {
+	const cwd = "/Users/me/project";
+	const home = process.env.DEEPWISE_HOME || join(homedir(), ".deepwise");
+
+	// The exact case that stopped a run: a test file in the session's own scratch directory.
+	assert.equal(assessWrite(join(home, "scratch", "abc-123", "like-test.mjs"), cwd).risky, false);
+	assert.equal(assessWrite(join(home, "previews", "s1", "p1", "index.html"), cwd).risky, false);
+	assert.equal(assessWrite(join(tmpdir(), "probe.mjs"), cwd).risky, false);
+	assert.equal(assessWrite(join(cwd, "src", "index.js"), cwd).risky, false);
+
+	// Still worth a question: the app's own settings and logs, and anywhere else entirely.
+	assert.equal(assessWrite(join(home, "settings.json"), cwd).risky, true);
+	assert.equal(assessWrite(join(home, "sessions", "x.jsonl"), cwd).risky, true);
+	assert.equal(assessWrite("/Users/me/other-project/x.js", cwd).risky, true);
+	assert.equal(assessWrite(join(homedir(), ".zshrc"), cwd).risky, true);
+
+	// A sibling directory whose name merely starts the same way is not inside the project.
+	assert.equal(assessWrite("/Users/me/project-backup/x.js", cwd).risky, true);
 });
