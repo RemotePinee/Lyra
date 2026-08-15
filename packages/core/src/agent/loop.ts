@@ -7,6 +7,7 @@
  */
 
 import { runTool } from "./tool-pipeline.ts";
+import { RepetitionWatch } from "./repetition.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { readTodos } from "../tools/todo.ts";
 import type {
@@ -78,7 +79,7 @@ export interface AgentRunConfig {
 
 export interface AgentRunResult {
 	messages: Message[];
-	reason: "done" | "aborted" | "error" | "max_turns";
+	reason: "done" | "aborted" | "error" | "max_turns" | "stalled";
 	error?: string;
 }
 
@@ -99,6 +100,8 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 	const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
 	/** Consecutive turns that talked about the plan without touching it. */
 	let nudges = 0;
+	/** Watches for a turn that has stopped learning anything; see `repetition.ts`. */
+	const repetition = new RepetitionWatch();
 
 	await emit({ type: "agent_start", sessionId: config.sessionId });
 
@@ -213,6 +216,39 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 		}
 
 		await emit({ type: "turn_end", message: assistant, toolResults });
+
+		/*
+		 * Same call, same arguments, same answer — again.
+		 *
+		 * Told once, most models change approach. Told and ignored, the turn ends: an agent
+		 * repeating a probe that has already answered the same way six times is not going to
+		 * discover anything on the seventh, and the hours it would spend doing so belong to
+		 * whoever is waiting for it.
+		 */
+		repetition.observe(toolCalls, toolResults);
+		if (repetition.exhausted()) {
+			return finish("stalled");
+		}
+		const repeated = repetition.shouldWarn(toolCalls, toolResults);
+		if (repeated) {
+			const notice: Message = {
+				role: "user",
+				content: [
+					{
+						type: "text",
+						text:
+							`（自动提示）你已经用同样的参数调用 \`${repeated}\` 多次，每次得到的结果都一样。` +
+							`再问一次不会有新信息。换一个思路：换个工具、换个假设，或者直接说明当前卡在哪里、需要什么。`,
+					},
+				],
+				timestamp: Date.now(),
+				synthetic: true,
+			};
+			messages.push(notice);
+			produced.push(notice);
+			await emit({ type: "message_start", message: notice });
+			await emit({ type: "message_end", message: notice });
+		}
 	}
 
 	async function finish(reason: AgentRunResult["reason"], error?: string): Promise<AgentRunResult> {

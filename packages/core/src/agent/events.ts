@@ -15,7 +15,8 @@ export type AgentEvent =
 	| { type: "tool_end"; toolCallId: string; toolName: string; result: ToolResult; isError: boolean }
 	| { type: "approval_request"; requestId: string; toolCallId: string; kind: string; title: string; detail: string }
 	| { type: "turn_end"; message: AssistantMessage; toolResults: ToolResultMessage[] }
-	| { type: "agent_end"; reason: "done" | "aborted" | "error" | "max_turns"; error?: string }
+	/** `stalled`: the turn kept making the same call for the same answer and was stopped. */
+	| { type: "agent_end"; reason: "done" | "aborted" | "error" | "max_turns" | "stalled"; error?: string }
 	| { type: "notice"; level: "info" | "warn" | "error"; message: string }
 	/**
 	 * What the model was given at the start of a turn.

@@ -441,6 +441,20 @@ export class AgentSession {
 	}
 
 	private async handleAgentEvent(event: AgentEvent): Promise<void> {
+		/*
+		 * A turn stopped for going in circles has to say so.
+		 *
+		 * Ending silently is indistinguishable from finishing, and the difference matters: one
+		 * means the work is done, the other means it is stuck and waiting for a person to say
+		 * something it has not thought of.
+		 */
+		if (event.type === "agent_end" && event.reason === "stalled") {
+			await this.emit({
+				type: "notice",
+				level: "warn",
+				message: "同一个调用反复得到相同结果，已停下。告诉它换个方向，或直接说明你想怎么处理。",
+			});
+		}
 		// `message_end` is the commit point: partial assistant messages are never persisted.
 		if (event.type === "message_end") await this.commitMessage(event.message);
 		await this.emit(event);
