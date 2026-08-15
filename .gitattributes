@@ -1,0 +1,22 @@
+# Line endings are decided here, not by whichever machine happens to commit.
+* text=auto eol=lf
+
+# Generated: kept in the repo, but not worth reading in a diff or counting as your code.
+pnpm-lock.yaml linguist-generated=true -diff
+*.lock linguist-generated=true -diff
+
+# Binary, so git never tries to merge or diff them as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.node binary
+*.zip binary
+*.dmg binary
+
+# Shipped, but not what the language statistics should be about.
+packages/desktop/resources/** linguist-vendored=true

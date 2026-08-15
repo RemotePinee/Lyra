@@ -155,16 +155,6 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	yml: async () => [(await import("@codemirror/lang-yaml")).yaml(), yamlScalars],
 };
 
-async function languageFor(path: string): Promise<Extension | null> {
-	const name = path.toLowerCase().split("/").pop() ?? "";
-	// Files that are configuration by name rather than by extension.
-	if (name === "dockerfile" || name === "makefile") return null;
-	const dot = name.lastIndexOf(".");
-	if (dot <= 0) return null;
-	const load = GRAMMARS[name.slice(dot + 1)];
-	return load ? load().catch(() => null) : null;
-}
-
 /**
  * What a fenced block's info string means, in the names people actually write.
  *

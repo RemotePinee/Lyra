@@ -63,7 +63,7 @@ function diffLines(a: string[], b: string[]): DiffLine[] {
 	const midA = a.slice(prefix, n - suffix);
 	const midB = b.slice(prefix, m - suffix);
 
-	const table: number[][] = Array.from({ length: midA.length + 1 }, () => new Array(midB.length + 1).fill(0));
+	const table: number[][] = Array.from({ length: midA.length + 1 }, () => Array.from<number>({ length: midB.length + 1 }).fill(0));
 	for (let i = midA.length - 1; i >= 0; i--) {
 		for (let j = midB.length - 1; j >= 0; j--) {
 			table[i][j] = midA[i] === midB[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);

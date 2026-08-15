@@ -17,8 +17,6 @@ import type {
 	ContextBreakdown,
 	Registry,
 	RegistryEntry,
-	ContextSegmentKey,
-	McpServerStatus,
 	Plugin,
 	QueuedTask,
 	SessionMeta,

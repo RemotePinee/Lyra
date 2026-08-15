@@ -13,9 +13,6 @@
  * mechanical, and neither is worth reading while trying to understand the editor itself.
  */
 
-import { EditorView } from "@codemirror/view";
-import type { Extension } from "@codemirror/state";
-import { ATOM } from "../highlight.ts";
 
 /**
  * The find/replace panel's wording.

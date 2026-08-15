@@ -6,9 +6,8 @@
  * `from "./git.ts"` and does not have to know which file a function moved to.
  */
 
-import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { git, run } from "./git-exec.ts";
+import { git } from "./git-exec.ts";
 
 export { git, run } from "./git-exec.ts";
 export { collectWorkspaceDiff } from "./git-diff.ts";

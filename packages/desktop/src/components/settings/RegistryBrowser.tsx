@@ -1,5 +1,5 @@
 import { Check, Download, Loader2, Plus, Store, Trash2, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Registry, RegistryEntry } from "../../../electron/ipc-types.ts";
 import { Overlay } from "../modals/Overlay.tsx";
@@ -29,21 +29,28 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 	const [installing, setInstalling] = useState<string | null>(null);
 	const [installed, setInstalled] = useState<Set<string>>(new Set());
 
-	const urls = settings?.pluginRegistries ?? [];
+	/*
+	 * The identity of the configured list changes on every render; its contents rarely do. Keying
+	 * on the joined string and rebuilding the array from it is what stops the effect re-fetching
+	 * every registry on an unrelated state change — and it leaves the dependency honest, because
+	 * the value the effect reads is the value it depends on.
+	 */
+	const urlsKey = (settings?.pluginRegistries ?? []).join("|");
+	const urls = useMemo(() => (urlsKey ? urlsKey.split("|") : []), [urlsKey]);
 
 	useEffect(() => {
 		let cancelled = false;
 		setLoading(true);
 		void Promise.all(urls.map((url) => window.deepwise.plugins.fetchRegistry(url))).then((results) => {
 			if (cancelled) return;
-			setRegistries(results.flatMap((r, i) => (r.ok ? [r.registry] : [])));
+			setRegistries(results.flatMap((r, _i) => (r.ok ? [r.registry] : [])));
 			setErrors(results.flatMap((r, i) => (r.ok ? [] : [{ url: urls[i], message: r.message }])));
 			setLoading(false);
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [urls.join("|")]);
+	}, [urls]);
 
 	const addRegistry = () => {
 		const url = adding.trim();

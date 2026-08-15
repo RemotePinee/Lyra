@@ -9,9 +9,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { deepwiseHome, type Settings } from "@deepwise/core";
-import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electron";
+import { BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electron";
 
 /**
  * How this module reaches the rest of the app.

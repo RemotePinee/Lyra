@@ -1,0 +1,88 @@
+# Everything that has to be true before a change lands.
+#
+# The jobs are split so a failure names itself: "lint" and "typecheck" and "test" fail for
+# different reasons and are fixed by different people at different times. `all-green` is the one
+# check branch protection points at, so adding a job here does not mean editing a setting there.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A pull request that gets a new push does not need the old run finished. A push to main does:
+# each commit on the default branch is a candidate for release and deserves its own verdict.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Electron's own binary is not needed to typecheck, lint or unit-test; skipping the download
+  # takes a couple of minutes off every job that does not build the app.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  test:
+    # Both, because the agent shells out and touches the filesystem: path handling, scratch
+    # directories and the risk classifier all behave differently on macOS.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: pnpm test
+
+  dead-code:
+    # Reported, not enforced. Knip is right often enough to be worth reading and wrong often
+    # enough that failing a pull request on it would teach people to ignore it.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: pnpm knip
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          # The renderer bundle needs the real Electron package present.
+          electron: "true"
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-build
+          path: packages/desktop/out
+          retention-days: 7
+
+  # The single required check. Everything above must pass; `dead-code` is deliberately not here.
+  all-green:
+    if: always()
+    needs: [lint, typecheck, test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verdict
+        run: |
+          echo "lint=${{ needs.lint.result }} typecheck=${{ needs.typecheck.result }}"
+          echo "test=${{ needs.test.result }} build=${{ needs.build.result }}"
+          [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

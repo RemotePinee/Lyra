@@ -176,7 +176,7 @@ function splitRow(line: string): string[] {
 		.map((cell) => cell.trim());
 }
 
-function renderBlock(block: Block, key: number): ReactNode {
+function renderBlock(block: Block, _key: number): ReactNode {
 	switch (block.kind) {
 		case "heading": {
 			const Tag = `h${Math.min(block.level, 4)}` as "h1" | "h2" | "h3" | "h4";

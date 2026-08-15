@@ -8,7 +8,7 @@
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 export interface Skill {

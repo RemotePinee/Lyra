@@ -2,7 +2,7 @@ import type { Plugin } from "@deepwise/core";
 import { Cable, FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
-import { Badge, Card, EmptyHint, GhostButton, SectionTitle, Toggle } from "./controls.tsx";
+import { Badge, Card, GhostButton, SectionTitle, Toggle } from "./controls.tsx";
 import { PluginIcon } from "./PluginIcon.tsx";
 
 const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用户" };

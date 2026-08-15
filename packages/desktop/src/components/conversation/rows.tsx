@@ -8,16 +8,15 @@
  */
 
 import { memo } from "react";
-import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
+import type { AssistantMessage, Message } from "@deepwise/core";
 import { Markdown } from "../Markdown.tsx";
 import { MessageActions } from "../MessageActions.tsx";
-import { PreviewCard, type PreviewInfo } from "../PreviewCard.tsx";
 import { ThinkingBlock } from "../ThinkingBlock.tsx";
 import { UserMessage } from "../UserMessage.tsx";
 import { useApp } from "../../store.ts";
 import { RotateCcw } from "lucide-react";
 import { Text } from "../Text.tsx";
-import { isLive, isNudge, LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
+import { isNudge, LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
 
 /**
  * Whether this message is where the reply stopped, rather than a pause inside it.

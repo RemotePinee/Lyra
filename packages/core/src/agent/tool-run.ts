@@ -7,7 +7,6 @@
  * whatever a tool is doing about it.
  */
 
-import { randomUUID } from "node:crypto";
 import type { AgentEventSink } from "./events.ts";
 import type { AgentEvent } from "./events.ts";
 import type { AgentRunConfig } from "./loop.ts";

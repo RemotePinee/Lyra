@@ -5,12 +5,11 @@
  * and what it will not. Everything here reports or moves files between those two lists.
  */
 
-import { readFile, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
-import { computeDiff } from "@deepwise/core";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
 import { git, run, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
-import { capHunks, classify, readWorking, showHead } from "./git-diff.ts";
+import { classify } from "./git-diff.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
 
 /**

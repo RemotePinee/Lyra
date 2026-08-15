@@ -5,7 +5,7 @@
  * neutral message shape; everything below it is a provider's own idea of a request.
  */
 
-import type { AssistantMessage, Message, Usage } from "./message.ts";
+import type { AssistantMessage, Message } from "./message.ts";
 import type { ToolSpec } from "./tool.ts";
 
 // ---------------------------------------------------------------------------

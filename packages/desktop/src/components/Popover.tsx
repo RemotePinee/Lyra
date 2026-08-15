@@ -7,7 +7,6 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ScrollText } from "./ScrollText.tsx";
 
 /**
  * A point to hang a menu from, for right-click — where the thing being acted on is a whole

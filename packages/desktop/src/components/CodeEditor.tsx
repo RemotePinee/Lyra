@@ -19,7 +19,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 
-import { ATOM, GRAMMARS, highlightStyle } from "./highlight.ts";
+import { GRAMMARS, highlightStyle } from "./highlight.ts";
 import { editorTheme } from "./editor/theme.ts";
 import { CHEVRON_DOWN, CHEVRON_RIGHT, OPTION_ICONS, SEARCH_ICONS, SEARCH_PHRASES, SEARCH_TIPS } from "./editor/chrome.ts";
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";

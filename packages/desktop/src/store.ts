@@ -7,8 +7,7 @@ import type {
   UserContent,
 } from "@deepwise/core";
 import { type SessionActivity } from "@deepwise/core/activity";
-import { applyAgentEvent, findMessageSlot } from "./store/apply-event.ts";
-import { prune, rebuildToolRuns, todosFrom, wasCutShort, without, type Cache } from "./store/derive.ts";
+import { applyAgentEvent } from "./store/apply-event.ts";
 import { sessionSlice } from "./store/session-slice.ts";
 import { turnSlice } from "./store/turn-slice.ts";
 import { workspaceSlice } from "./store/workspace-slice.ts";
@@ -20,8 +19,6 @@ import type {
   WorkspaceInfo,
 } from "../electron/ipc-types.ts";
 import { useSide } from "./sideStore.ts";
-import { summarizeToolCall } from "./toolSummary.ts";
-import { settleTail } from "./transcript.ts";
 
 export type View = "chat" | "settings" | "pull-requests" | "scheduled";
 

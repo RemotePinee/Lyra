@@ -1,0 +1,28 @@
+# Git hooks, so that lint and typecheck are not optional.
+#
+# The split is deliberate: pre-commit only touches what you staged and has to stay fast enough that
+# you never start reaching for `--no-verify`; pre-push runs the whole thing, because that is the
+# last moment a mistake is still cheap to fix.
+#
+# Installed by `pnpm install` (the root `prepare` script). To skip one deliberately:
+#   LEFTHOOK=0 git commit …
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint
+      glob: "*.{ts,tsx,mts,cts,mjs,js,jsx}"
+      run: ./node_modules/.bin/oxlint --fix {staged_files}
+      stage_fixed: true
+
+    - name: whitespace
+      # Trailing whitespace and conflict markers, straight from git.
+      run: git diff --cached --check
+
+pre-push:
+  jobs:
+    - name: typecheck
+      run: pnpm typecheck
+
+    - name: test
+      run: pnpm test

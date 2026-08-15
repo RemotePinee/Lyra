@@ -1,5 +1,3 @@
-import type { ModelConfig, ProviderConfig } from "@deepwise/core";
-import { ScrollText } from "./ScrollText.tsx";
 import { Check, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { MenuBody, MenuItem, MenuLabel, MenuSeparator, Popover, type Anchor } from "./Popover.tsx";

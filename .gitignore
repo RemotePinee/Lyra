@@ -11,3 +11,8 @@ build/
 release/
 packages/desktop/out/
 packages/core/dist/
+
+# Working notes, checklists and internal design docs.
+# Deliberately not published: they are written for us and for the agent working in this repo,
+# not for anyone reading the project from outside.
+docs/

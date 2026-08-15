@@ -1,13 +1,8 @@
-import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join, sep } from "node:path";
-import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
 import { spawn as spawnPty, type IPty } from "node-pty";
-import { app, BrowserWindow, ipcMain, protocol } from "electron";
+import { app, BrowserWindow, protocol } from "electron";
 import {
-	AgentSession,
 	createContext,
 	deepwiseHome,
 	loadCapabilityPlugins,
@@ -33,7 +28,6 @@ import {
 	SKILLS,
 	STORAGE,
 	TOOLS,
-	saveSettings,
 	SessionStore,
 	SideChat,
 	type AgentLoop,
@@ -49,32 +43,12 @@ import {
 	type TurnPipeline,
 	type ToolRegistry,
 } from "@deepwise/core";
-import type {
-	AgentCapabilities,
-	FileContents,
-	FileEntry,
-	ProviderTestResult,
-	SessionSnapshot,
-	SyncStatus,
-	WorkspaceInfo,
-} from "./ipc-types.ts";
-import { createBrowserTools } from "./browser-tools.ts";
 import {
-	collectWorkspaceDiff,
-	gitBranch,
-	isGitRepo,
-} from "./git.ts";
-import { appIcon } from "./app-icon.ts";
-import {
-	broadcast,
 	broadcastSideChat,
 	browsers,
 	configureHub,
 	getOrCreateSession,
-	MAX_LIVE_SESSIONS,
 	sessions,
-	snapshot,
-	touchSession,
 } from "./session-hub.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
 import { applySettings, loadAppSettings, onSettingsChanged } from "./app-settings.ts";
@@ -89,20 +63,16 @@ import {
 	applyNativeAppearance,
 	createWindow,
 	getWindow,
-	resolvedBackground,
 	registerWindowIpc,
 	useSettingsSource,
-	writeWindowState,
 } from "./window.ts";
 import { MEDIA_SCHEME, PREVIEW_SCHEME, registerPreviewProtocols } from "./preview-protocol.ts";
 import { registerGitIpc } from "./ipc/git.ts";
 import { registerSideChatIpc } from "./ipc/side-chat.ts";
-import { registerPluginsIpc } from "./ipc/plugins.ts";
 import { registerTerminalIpc } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
-import { SyncServer } from "./sync-server.ts";
 
-const execFileAsync = promisify(execFile);
+
 
 /** Private scheme the renderer uses to preview images and video from the open project. */
 
@@ -166,7 +136,7 @@ let settings: Settings;
  * exactly what must stay transparent, and an opaque one painted over the material is the
  * material gone. Whichever message arrived last used to win.
  */
-let vibrant = process.platform === "darwin";
+
 let scheduler: Scheduler | null = null;
 
 // ---------------------------------------------------------------------------

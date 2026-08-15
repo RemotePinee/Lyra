@@ -5,7 +5,6 @@
  * (here) — and re-exported so a page imports one thing rather than three.
  */
 
-import { Text } from "../Text.tsx";
 
 export * from "./inputs.tsx";
 export * from "./layout.tsx";

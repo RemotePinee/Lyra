@@ -5,19 +5,17 @@
  * including extended thinking and its signature round-trip.
  */
 
-import { toAnthropicMessages, toAnthropicTools, type AnthropicMessage } from "./anthropic-messages-request.ts";
+import { toAnthropicMessages, toAnthropicTools } from "./anthropic-messages-request.ts";
 import type {
 	AssistantContent,
 	AssistantMessage,
 	LlmContext,
-	Message,
 	ModelConfig,
 	Provider,
 	ProviderConfig,
 	RequestOptions,
 	StreamEvent,
 	ThinkingLevel,
-	ToolSpec,
 	Usage,
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
@@ -83,9 +81,7 @@ async function* streamAnthropic(
 						budget_tokens: Math.min(THINKING_BUDGET[options.thinking as Exclude<ThinkingLevel, "off">], maxTokens - 1),
 					},
 				}
-			: {
-					...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-				}),
+			: (options.temperature !== undefined ? { temperature: options.temperature } : {})),
 		...model.samplingParams,
 		...options.samplingParams,
 	};

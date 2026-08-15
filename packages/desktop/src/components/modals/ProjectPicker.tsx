@@ -2,7 +2,6 @@ import { Check, Folder, Plus, Search, X } from "lucide-react";
 import { useState } from "react";
 import { MenuBody, MenuItem, Popover, type Anchor } from "../Popover.tsx";
 import { Scroller } from "../Scroller.tsx";
-import { ScrollText } from "../ScrollText.tsx";
 import { useLayout } from "../../layout.tsx";
 import { useApp } from "../../store.ts";
 

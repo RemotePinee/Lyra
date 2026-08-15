@@ -58,7 +58,7 @@ export function broadcastSideChat(sessionId: string, event: AgentEvent): void {
 	deps.window()?.webContents.send("sidechat:event", { sessionId, event });
 }
 
-export async function getOrCreateSession(cwd: string, modelId: string): Promise<AgentSession> {
+export async function getOrCreateSession(cwd: string, _modelId: string): Promise<AgentSession> {
 	const browser = createBrowserTools();
 	// `emit` closes over `session`, which is only ever invoked after `initialize()` has
 	// assigned `meta`, so the self-reference is safe — but it needs an explicit type.
@@ -146,7 +146,8 @@ export async function activateSession(projectId: string, sessionId: string): Pro
 
 /** Retire the least recently used sessions, never one mid-turn and never the current one. */
 async function evictStaleSessions(keep: string): Promise<void> {
-	for (const [id, session] of [...sessions]) {
+	// Snapshotted with `entries()`, not spread: this loop deletes from the map as it goes.
+	for (const [id, session] of Array.from(sessions.entries())) {
 		if (sessions.size <= MAX_LIVE_SESSIONS) break;
 		// An open side chat is a conversation in progress, same as a running turn — evicting
 		// its session would silently throw that conversation away.

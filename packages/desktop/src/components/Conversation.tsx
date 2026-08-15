@@ -1,33 +1,19 @@
-import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
-import { RotateCcw } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { Composer } from "./Composer.tsx";
-import { Markdown } from "./Markdown.tsx";
-import { MessageActions } from "./MessageActions.tsx";
-import { PreviewCard, type PreviewInfo } from "./PreviewCard.tsx";
-import { ThinkingBlock } from "./ThinkingBlock.tsx";
 import { ResumeRow } from "./ResumeRow.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
-import { ToolCard } from "./ToolCard.tsx";
 import {
-	isLive,
 	isNudge,
-	LiveToolCard,
 	runs,
-	segments,
 	ToolRun as ToolRunGroup,
 	WINDOW_STEP,
-	type Run,
 } from "./conversation/runs.tsx";
-import { lastIsSettledOrEmpty, MessageRow, messageKey } from "./conversation/rows.tsx";
-import { ToolGroup, describeRun } from "./ToolGroup.tsx";
-import { Text } from "./Text.tsx";
-import { UserMessage } from "./UserMessage.tsx";
+import { MessageRow, messageKey } from "./conversation/rows.tsx";
 import { useLayout } from "../layout.tsx";
-import { useApp, type ToolRun } from "../store.ts";
+import { useApp } from "../store.ts";
 
 export function Conversation() {
   const messages = useApp((s) => s.messages);

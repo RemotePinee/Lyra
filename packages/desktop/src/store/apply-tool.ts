@@ -8,7 +8,6 @@
  */
 
 import type { AgentEvent, TodoItem } from "@deepwise/core";
-import { coalesce } from "./coalesce.ts";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;

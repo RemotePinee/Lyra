@@ -67,8 +67,9 @@ export function GitPanel() {
    * claimed by a repository as a worktree is therefore removed from the top level and shown
    * beneath the repository it belongs to.
    */
+  const workspacePath = workspace?.path ?? null;
   useEffect(() => {
-    if (!workspace) {
+    if (!workspacePath) {
       setRepos([]);
       setTrees({});
       setScanning(false);
@@ -77,7 +78,7 @@ export function GitPanel() {
     let cancelled = false;
     setScanning(true);
     void (async () => {
-      const found = await window.deepwise.git.repos(workspace.path);
+      const found = await window.deepwise.git.repos(workspacePath);
       const lists = await Promise.all(
         found.map(async (repo) => [repo.path, await window.deepwise.git.worktrees(repo.path)] as const),
       );
@@ -95,7 +96,7 @@ export function GitPanel() {
       setRepos(roots);
       setTrees(Object.fromEntries(roots.map((repo) => [repo.path, linked.get(repo.path) ?? []])));
       setSelected((current) => {
-        const reachable = [...roots.map((r) => r.path), ...[...claimed]];
+        const reachable = [...roots.map((r) => r.path), ...claimed];
         return current && reachable.includes(current) ? current : (roots[0]?.path ?? null);
       });
       setScanning(false);
@@ -103,7 +104,7 @@ export function GitPanel() {
     return () => {
       cancelled = true;
     };
-  }, [workspace?.path, rescan]);
+  }, [workspacePath, rescan]);
 
   /*
    * Only a real repository, never the workspace root as a stand-in.

@@ -1,8 +1,6 @@
 import type { AppearanceSettings as Appearance } from "@deepwise/core";
-import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
-import { contrastingInk, parseHex } from "../../theme.ts";
-import { Card, GhostButton, InlineSelect, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
+import { Card, GhostButton, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
 
 /**
  * Mirrors `DEFAULT_APPEARANCE` in @deepwise/core.

@@ -80,11 +80,11 @@ test("a segment that costs nothing is left out rather than shown as zero", () =>
 		projectInstructions: [],
 		messages: [],
 	});
-	const keys = result.segments.map((s) => s.key);
+	const keys = new Set(result.segments.map((s) => s.key));
 
-	assert.ok(!keys.includes("mcpTools"), "no MCP servers configured is not a row worth a line");
-	assert.ok(!keys.includes("skills"));
-	assert.ok(!keys.includes("memory"));
+	assert.ok(!keys.has("mcpTools"), "no MCP servers configured is not a row worth a line");
+	assert.ok(!keys.has("skills"));
+	assert.ok(!keys.has("memory"));
 });
 
 test("segments are ordered by size, because the first row is the one worth acting on", () => {

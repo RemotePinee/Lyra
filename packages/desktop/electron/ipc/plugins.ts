@@ -7,7 +7,7 @@
  */
 
 import { ipcMain, shell } from "electron";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deepwiseHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uninstallEntry } from "@deepwise/core";
 import type { RegistryEntry } from "../ipc-types.ts";

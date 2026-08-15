@@ -105,7 +105,7 @@ export async function installEntry(entry: RegistryEntry): Promise<string> {
 	} catch (cause) {
 		// A half-written directory would be picked up by the loader as a broken plugin.
 		await rm(target, { recursive: true, force: true });
-		throw new Error(`克隆失败：${cause instanceof Error ? cause.message : String(cause)}`);
+		throw new Error(`克隆失败：${cause instanceof Error ? cause.message : String(cause)}`, { cause });
 	}
 	return target;
 }

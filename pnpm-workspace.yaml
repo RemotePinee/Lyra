@@ -11,3 +11,5 @@ allowBuilds:
   # Builds the pseudo-terminal addon the terminal panel runs on. Compiled against Node here,
   # then rebuilt against Electron's ABI by the desktop package's postinstall.
   node-pty: true
+  # Installs the git hook binary; the hooks are what keep lint and typecheck from being optional.
+  lefthook: true

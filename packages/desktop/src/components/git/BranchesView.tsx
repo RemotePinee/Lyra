@@ -1,12 +1,11 @@
 /**
  * Branches, and the diff between any two of them.
  */
-import { Check, GitBranch, GitBranchPlus, GitCompare, FolderGit2, Trash2 } from "lucide-react";
+import { Check, GitBranchPlus, FolderGit2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { GitStatus, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 import type { BranchList, RepoRef } from "../../../electron/git.ts";
-import { IconButton } from "../IconButton.tsx";
 
 import { Scroller } from "../Scroller.tsx";
 

@@ -8,7 +8,6 @@
 
 import { useEffect, useState } from "react";
 import { contrastingInk, parseHex } from "../../theme.ts";
-import { Row } from "./layout.tsx";
 
 export function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
 	const [draft, setDraft] = useState(value);
@@ -79,7 +78,9 @@ export function ThemePreview({ variant, accent }: { variant: "system" | "light" 
 	const light = { shell: "#f5f5f5", card: "#ffffff", bar: "#e2e2e2", line: "#d6d6d6" };
 	const dark = { shell: "#2b2b2b", card: "#1d1d1d", bar: "#3a3a3a", line: "#454545" };
 
-	const Half = ({ c, clip }: { c: typeof light; clip?: string }) => (
+	// A function that returns markup, not a component: it is called, never mounted, so React
+	// never remounts its subtree — which is what defining a component inside render would cost.
+	const half = (c: typeof light, clip?: string) => (
 		<g clipPath={clip}>
 			<rect x="0" y="0" width="120" height="80" fill={c.shell} />
 			<rect x="0" y="0" width="40" height="80" fill={c.bar} />
@@ -98,12 +99,12 @@ export function ThemePreview({ variant, accent }: { variant: "system" | "light" 
 					<rect x="0" y="0" width="60" height="80" />
 				</clipPath>
 			</defs>
-			{variant === "light" && <Half c={light} />}
-			{variant === "dark" && <Half c={dark} />}
+			{variant === "light" && half(light)}
+			{variant === "dark" && half(dark)}
 			{variant === "system" && (
 				<>
-					<Half c={dark} />
-					<Half c={light} clip={`url(#dw-half-${variant})`} />
+					{half(dark)}
+					{half(light, `url(#dw-half-${variant})`)}
 				</>
 			)}
 		</svg>

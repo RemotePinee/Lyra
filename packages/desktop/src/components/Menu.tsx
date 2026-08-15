@@ -7,7 +7,6 @@
  * by accident.
  */
 
-import { Scroller } from "./Scroller.tsx";
 import { ScrollText } from "./ScrollText.tsx";
 
 /**

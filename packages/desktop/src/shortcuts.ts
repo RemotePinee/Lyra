@@ -9,7 +9,7 @@
  * without knowing how the shell stores its state.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { PanelKind } from "./sideStore.ts";
 
 export interface ShortcutDeps {
@@ -28,6 +28,16 @@ export interface ShortcutDeps {
 }
 
 export function useShortcuts(deps: ShortcutDeps): void {
+	/*
+	 * `openPanel` is read through a ref rather than listed as a dependency.
+	 *
+	 * The shell rebuilds it on every render, so depending on it would tear down and re-attach the
+	 * key listener that often. The ref is updated each render, so the handler always calls the
+	 * current one — the behaviour a dependency would have given, without the churn.
+	 */
+	const openPanel = useRef(deps.openPanel);
+	openPanel.current = deps.openPanel;
+
 	const {
 		compact,
 		navOpen,
@@ -39,7 +49,6 @@ export function useShortcuts(deps: ShortcutDeps): void {
 		dismissNav,
 		closePanel,
 		toggleExpanded,
-		openPanel,
 		toggleTab,
 	} = deps;
 
@@ -60,29 +69,29 @@ useEffect(() => {
      */
     if (mod && event.altKey && event.code === "KeyS") {
       event.preventDefault();
-      if (activeSessionId) openPanel(() => toggleTab("chat"));
+      if (activeSessionId) openPanel.current(() => toggleTab("chat"));
       return;
     }
     if (mod && event.shiftKey && event.code === "KeyR") {
       event.preventDefault();
-      if (workspace) openPanel(() => toggleTab("review"));
+      if (workspace) openPanel.current(() => toggleTab("review"));
       return;
     }
     if (mod && !event.altKey && !event.shiftKey && event.code === "KeyP") {
       event.preventDefault();
-      if (workspace) openPanel(() => toggleTab("files"));
+      if (workspace) openPanel.current(() => toggleTab("files"));
       return;
     }
     // ⌘L for the trajectory: the log of what actually happened, beside the conversation.
     if (mod && !event.altKey && !event.shiftKey && event.code === "KeyL") {
       event.preventDefault();
-      if (activeSessionId) openPanel(() => toggleTab("trajectory"));
+      if (activeSessionId) openPanel.current(() => toggleTab("trajectory"));
       return;
     }
     // ⌃` is what every terminal-bearing editor uses, and it is not a ⌘ shortcut.
     if (event.ctrlKey && !event.metaKey && event.code === "Backquote") {
       event.preventDefault();
-      if (workspace) openPanel(() => toggleTab("terminal"));
+      if (workspace) openPanel.current(() => toggleTab("terminal"));
       return;
     }
     /*

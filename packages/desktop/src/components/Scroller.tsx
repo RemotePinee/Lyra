@@ -187,10 +187,9 @@ export function Scroller({
 						el.scrollTop = Math.min(1, Math.max(0, ratio)) * (el.scrollHeight - el.clientHeight);
 					}}
 				>
+					{/* Hidden from assistive technology: the viewport underneath is what scrolls. */}
 					<div
-						role="scrollbar"
-						aria-orientation="vertical"
-						aria-controls={undefined}
+						aria-hidden
 						tabIndex={-1}
 						onMouseDown={(event) => {
 							event.preventDefault();

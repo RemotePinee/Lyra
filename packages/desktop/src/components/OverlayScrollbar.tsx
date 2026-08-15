@@ -124,9 +124,15 @@ export function OverlayScrollbar({
 				else el.scrollLeft = next;
 			}}
 		>
+			{/*
+			 * Hidden from assistive technology on purpose.
+			 *
+			 * The thing that actually scrolls is the viewport underneath, and that is what a screen
+			 * reader should be driving. Declaring `role="scrollbar"` here without a value announces
+			 * a control that reports nothing — worse than not being there at all.
+			 */}
 			<div
-				role="scrollbar"
-				aria-orientation={orientation}
+				aria-hidden
 				tabIndex={-1}
 				onMouseDown={(event) => {
 					event.preventDefault();

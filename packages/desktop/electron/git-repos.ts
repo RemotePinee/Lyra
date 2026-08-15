@@ -7,7 +7,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
-import { git, run } from "./git-exec.ts";
+import { git } from "./git-exec.ts";
 import { createWorktree, gitBranch, isGitRepo } from "./git.ts";
 
 /** Runs a git command for its effect, turning failure into readable text rather than a throw. */

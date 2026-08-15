@@ -20,15 +20,13 @@ import {
 	type UserContent,
 } from "@deepwise/core";
 import { ipcMain } from "electron";
-import type { AgentCapabilities, SessionSnapshot } from "../ipc-types.ts";
+import type { AgentCapabilities } from "../ipc-types.ts";
 import {
 	activateSession,
 	broadcast,
 	disposeSession,
-	browsers,
 	getOrCreateSession,
 	sessions,
-	sideChats,
 	snapshot,
 	touchSession,
 } from "../session-hub.ts";

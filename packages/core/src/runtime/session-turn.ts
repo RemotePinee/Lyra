@@ -167,6 +167,9 @@ function summaryStream(
 	if (!override) return undefined;
 	return (_provider, _model, context) => {
 		const call = override;
+		// A generator that only returns: compaction asks for a stream, the override answers with a
+		// whole message. The generator shape is the adaptor; there is nothing to yield along the way.
+		// oxlint-disable-next-line require-yield
 		async function* once(): AsyncGenerator<StreamEvent, AssistantMessage> {
 			return call({ ...context }, { provider, model } as AgentRunConfig);
 		}

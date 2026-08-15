@@ -12,14 +12,12 @@ import { toResponsesInput, toResponsesTools } from "./openai-responses-request.t
 import type {
 	AssistantMessage,
 	LlmContext,
-	Message,
 	ModelConfig,
 	Provider,
 	ProviderConfig,
 	RequestOptions,
 	StreamEvent,
 	ThinkingLevel,
-	ToolSpec,
 	Usage,
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";

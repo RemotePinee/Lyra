@@ -6,7 +6,7 @@
  * anyone reviews line by line, and holding it in memory helps nobody.
  */
 
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { computeDiff, type DiffHunk } from "@deepwise/core";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";

@@ -170,9 +170,9 @@ function HorizontalThumb({ viewport }: { viewport: React.RefObject<HTMLDivElemen
 				el.scrollLeft = Math.min(1, Math.max(0, ratio)) * (el.scrollWidth - el.clientWidth);
 			}}
 		>
+			{/* Hidden from assistive technology: the diff viewport underneath is what scrolls. */}
 			<div
-				role="scrollbar"
-				aria-orientation="horizontal"
+				aria-hidden
 				tabIndex={-1}
 				onMouseDown={(event) => {
 					event.preventDefault();

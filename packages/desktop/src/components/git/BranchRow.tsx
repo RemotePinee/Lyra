@@ -2,11 +2,9 @@
  * One branch, with what it is ahead and behind by.
  */
 
-import { Check, GitBranch, GitCompare, Trash2 } from "lucide-react";
+import { GitBranch, GitCompare, Trash2 } from "lucide-react";
 import { IconButton } from "../IconButton.tsx";
-import { ScrollText } from "../ScrollText.tsx";
 import { Text } from "../Text.tsx";
-import { relativeTime } from "./relative-time.ts";
 
 export function BranchRow({
   name,

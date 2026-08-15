@@ -6,7 +6,7 @@
  * one context object rather than through imports, which is what lets a host substitute any of it.
  */
 
-import type { Message, UserContent } from "./message.ts";
+import type { UserContent } from "./message.ts";
 
 // ---------------------------------------------------------------------------
 // Tools

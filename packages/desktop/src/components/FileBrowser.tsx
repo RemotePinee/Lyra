@@ -158,6 +158,7 @@ export function FileBrowser() {
 		);
 	}
 
+	// oxlint-disable-next-line unicorn/prefer-array-find -- `pop` takes the last segment, not the first
 	const activeName = selected ? (selected.split("/").filter(Boolean).pop() ?? selected) : null;
 
 	return (

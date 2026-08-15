@@ -1,5 +1,5 @@
 import type { TodoItem } from "@deepwise/core";
-import { Check, ChevronDown, ListTodo, Pause, Play, RotateCw } from "lucide-react";
+import { ChevronDown, ListTodo, Pause, Play, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Scroller } from "./Scroller.tsx";
@@ -131,6 +131,8 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				 * button, so the click is taken here and does not also expand the list.
 				 */}
 				{active && (
+					// oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a <button> cannot be
+					// nested inside the disclosure <button> this sits in; HTML forbids it.
 					<span
 						role="button"
 						tabIndex={0}

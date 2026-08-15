@@ -92,7 +92,7 @@ test("an error that is not worth retrying is not retried", async () => {
 				async function* () {
 					attempts++;
 					throw new Error("400 Bad Request");
-					// biome-ignore lint/correctness/noUnreachable: the yield types the generator
+					// oxlint-disable-next-line no-unreachable -- the yield is what types the generator
 					yield "never";
 				},
 				{ reset: () => {}, sleep: noSleep },
@@ -109,6 +109,7 @@ test("an aborted stream stops rather than starting over", async () => {
 	await assert.rejects(
 		collect(
 			retryStream(
+				// oxlint-disable-next-line require-yield -- it throws before it can yield; that is the case
 				async function* () {
 					attempts++;
 					controller.abort();

@@ -6,8 +6,6 @@
  * few pieces of state, and they are together because forgetting one of them is the bug.
  */
 
-import type { ProjectEntry, SessionMeta } from "@deepwise/core";
-import { prune, rebuildToolRuns, todosFrom, wasCutShort, without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;

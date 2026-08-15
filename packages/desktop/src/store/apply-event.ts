@@ -7,7 +7,7 @@
  * the event belongs to the conversation on screen.
  */
 
-import type { AgentEvent, Message, TodoItem } from "@deepwise/core";
+import type { AgentEvent, Message } from "@deepwise/core";
 import { nextActivity } from "@deepwise/core/activity";
 import { coalesce, flushCoalesced } from "./coalesce.ts";
 import { applyToolEvent } from "./apply-tool.ts";

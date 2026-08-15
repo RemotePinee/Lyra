@@ -23,8 +23,8 @@ import { splitCommands } from "./shell-split.ts";
 
 function firstWord(command: string): string {
 	// Leading `VAR=value` assignments are not the program being run.
-	const words = command.split(/\s+/).filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word));
-	return (words[0] ?? "").replace(/^.*\//, "");
+	const program = command.split(/\s+/).find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word));
+	return (program ?? "").replace(/^.*\//, "");
 }
 
 /**

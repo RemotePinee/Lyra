@@ -1,0 +1,42 @@
+# Weekly, grouped, and small enough to actually read.
+#
+# Ungrouped Dependabot on a workspace this size opens a dozen pull requests a week, which is how
+# a team learns to close them unread. Grouping by kind means one PR per area, and the CI verdict
+# on it is a real answer rather than a formality.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Moves together or not at all: a mismatched React/react-dom pair does not run.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      electron:
+        patterns: ["electron", "electron-*", "@electron/*"]
+      codemirror:
+        patterns: ["@codemirror/*", "@lezer/*"]
+      expo:
+        patterns: ["expo", "expo-*", "react-native", "react-native-*"]
+      tooling:
+        patterns: ["typescript", "oxlint", "knip", "lefthook", "vite", "@vitejs/*", "tailwindcss"]
+      types:
+        patterns: ["@types/*"]
+    ignore:
+      # Electron majors bring Chromium and Node majors with them; that is a deliberate migration,
+      # not a dependency bump.
+      - dependency-name: electron
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

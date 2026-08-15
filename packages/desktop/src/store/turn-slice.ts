@@ -7,7 +7,7 @@
  */
 
 import type { ApprovalDecision, Message, UserContent } from "@deepwise/core";
-import { prune, rebuildToolRuns, todosFrom, wasCutShort, without } from "./derive.ts";
+import { without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;

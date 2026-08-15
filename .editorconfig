@@ -1,0 +1,24 @@
+# The one place the whitespace rules are stated, so an editor gets them right before any tool runs.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = tab
+indent_size = 4
+max_line_length = 120
+
+# YAML has no tab support at all: the spec forbids tabs for indentation.
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Two trailing spaces are a hard line break in Markdown; trimming them changes the text.
+trim_trailing_whitespace = false
+
+[*.{json,jsonc}]
+indent_style = space
+indent_size = 2

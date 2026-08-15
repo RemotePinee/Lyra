@@ -6,8 +6,7 @@
  * core's own types — the boundary does not get to have its own idea of what a session is.
  */
 
-import type { TrajectoryEntry } from "@deepwise/core";
-import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
+import type { BranchList } from "./git.ts";
 
 export type { GitCommit, GitStatus, GitStatusFile, RepoRef } from "./git.ts";
 
@@ -20,8 +19,6 @@ export interface RefDiff {
 
 export type { BranchList };
 import type {
-	AgentEvent,
-	ApprovalDecision,
 	ContextBreakdown,
 	Registry,
 	RegistryEntry,
@@ -30,9 +27,7 @@ import type {
 	Plugin,
 	QueuedTask,
 	SessionMeta,
-	Settings,
 	Skill,
-	UserContent,
 } from "@deepwise/core";
 
 export type { ContextBreakdown, ContextSegmentKey, QueuedTask, Registry, RegistryEntry };

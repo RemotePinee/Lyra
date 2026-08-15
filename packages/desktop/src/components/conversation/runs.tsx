@@ -6,7 +6,7 @@
  * All of that is decided here, on plain data, so the rendering has nothing left to decide.
  */
 
-import { memo, useEffect, useState } from "react";
+import { memo } from "react";
 import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
 import { PreviewCard, type PreviewInfo } from "../PreviewCard.tsx";
 import { ToolCard } from "../ToolCard.tsx";
@@ -198,7 +198,7 @@ const ToolRunGroup = function ToolRun({ calls }: { calls: { block: Extract<Assis
     const live = calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason));
     return live.length === 1 ? (s.toolRuns[live[0].block.id]?.summary ?? "") : "";
   });
-  const summary = useApp((s) =>
+  const summary = useApp((_s) =>
     describeRun(calls.map(({ block }) => ({ toolName: block.name, subject: subjectOf(block) }))),
   );
   // Totals across the run, so a fold does not hide how much changed.

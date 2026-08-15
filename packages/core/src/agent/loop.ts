@@ -6,9 +6,8 @@
  * can redirect a running agent without cancelling it.
  */
 
-import { runTool } from "./tool-pipeline.ts";
 import { RepetitionWatch } from "./repetition.ts";
-import { errorResult, failTruncatedCalls, runTools } from "./tool-run.ts";
+import { failTruncatedCalls, runTools } from "./tool-run.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { readTodos } from "../tools/todo.ts";
 import type {
@@ -24,10 +23,8 @@ import type {
 	Tool,
 	ToolContext,
 	ToolResult,
-	ToolResultMessage,
-	UserContent,
 } from "../types.ts";
-import type { AgentEvent, AgentEventSink } from "./events.ts";
+import type { AgentEventSink } from "./events.ts";
 
 export interface AgentRunConfig {
 	sessionId: string;
@@ -336,9 +333,3 @@ async function streamTurn(
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Tool execution
-// ---------------------------------------------------------------------------
-
-type ToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
