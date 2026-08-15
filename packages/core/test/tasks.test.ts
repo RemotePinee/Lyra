@@ -259,3 +259,59 @@ test("changing the model is refused once there is history to replay", async () =
 		await h.cleanup();
 	}
 });
+
+test("running out of rounds with work left starts another turn rather than stopping", async () => {
+	const root = await mkdtemp(join(tmpdir(), "dw-cont-"));
+	const store = new SessionStore(join(root, "sessions"));
+	const notices: string[] = [];
+	let calls = 0;
+
+	const session = new AgentSession({
+		cwd: root,
+		settings: SETTINGS,
+		store,
+		emit: (event) => {
+			if (event.type === "notice") notices.push(event.message);
+		},
+		/*
+		 * Always asks for a tool, and asks for something different each time.
+		 *
+		 * Varying it matters: identical calls returning identical answers are what the repetition
+		 * watch is for, and a test that repeated itself would be stopped by that instead — which
+		 * is the right behaviour but a different one from the one under test here.
+		 */
+		streamFn: async () => {
+			calls += 1;
+			return {
+				...reply(""),
+				content: [
+					{
+						type: "toolCall",
+						id: `c${calls}`,
+						name: "todo_write",
+						arguments: { todos: [{ ...PLAN[0], activeForm: `做第 ${calls} 件事` }, PLAN[1]] },
+					},
+				],
+				stopReason: "toolUse",
+			};
+		},
+	});
+	await session.initialize();
+
+	try {
+		await session.prompt([{ type: "text", text: "做一件很长的事" }]);
+		assert.ok(
+			notices.some((m) => m.includes("步数用尽")),
+			"it said why it was carrying on",
+		);
+		assert.ok(calls > 200, `more than one turn's worth of rounds ran (was ${calls})`);
+	} finally {
+		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+	}
+});
+
+/** A plan that is never finished, so "work remains" stays true. */
+const PLAN = [
+	{ content: "第一步", status: "in_progress", activeForm: "做第一步" },
+	{ content: "第二步", status: "pending", activeForm: "做第二步" },
+];

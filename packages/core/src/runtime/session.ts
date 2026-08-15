@@ -28,6 +28,7 @@ import { runSubAgent } from "./sub-agent.ts";
 import { loadCapabilities } from "./session-setup.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
+import { TODOS_KEY, type TodoItem } from "../tools/todo.ts";
 import type {
 	AssistantMessage,
 	StreamEvent,
@@ -90,6 +91,15 @@ export interface AgentSessionOptions {
  * The log is meant to answer "what did the model actually see, and why did it do that" long after
  * the run — so anything that changes the model's input, or that happened out of view, is kept.
  */
+/**
+ * How many times a turn may run out of rounds and be restarted.
+ *
+ * Loose on purpose: it is a backstop against a bug in the conditions above, not a judgement about
+ * how much work is reasonable. Ten of them is two thousand rounds — far past anything a real task
+ * needs, and long before it the repetition watch would have called a genuine loop.
+ */
+const MAX_CONTINUATIONS = 10;
+
 const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["compacted", "context", "subagent", "subagent_done"]);
 
 export class AgentSession {
@@ -351,8 +361,21 @@ export class AgentSession {
 			});
 			const systemPrompt = await this.recordContext(turn);
 
-			const result = await runTurn(
-				{
+			/*
+			 * Running out of rounds is not the same as being finished.
+			 *
+			 * A turn is capped so that one runaway cannot spin forever, and a big piece of work
+			 * legitimately exceeds that cap — the blog project reaches it around the point the
+			 * frontend starts. What used to happen then was that the run simply stopped with half
+			 * a plan and waited for someone to press "continue", which is precisely the human
+			 * intervention an unattended run is supposed to avoid.
+			 *
+			 * So it starts another turn instead, while the plan says there is work left. Bounded,
+			 * and safe to bound loosely, because the two ways a run can be genuinely stuck are
+			 * caught elsewhere: repetition ends the turn with `stalled`, and a model that has
+			 * stopped calling tools is nudged a few times and then left alone.
+			 */
+			const config: AgentRunConfig = {
 					sessionId: this.meta.id,
 					cwd: this.cwd,
 					provider: resolved.provider,
@@ -400,11 +423,28 @@ export class AgentSession {
 					compact: (messages, model) =>
 						compactWith(messages, model, resolved.provider, this.summaryStream(resolved.provider)),
 					streamFn: this.streamFn,
-				},
-				(event) => this.handleAgentEvent(event),
-			);
+			};
 
-			void result;
+			let result = await runTurn(config, (event) => this.handleAgentEvent(event));
+
+			for (let extra = 0; extra < MAX_CONTINUATIONS; extra++) {
+				if (result.reason !== "max_turns") break;
+				if (this.controller?.signal.aborted) break;
+				const unfinished = (this.state.get(TODOS_KEY) as TodoItem[] | undefined)?.filter(
+					(todo) => todo.status !== "completed",
+				);
+				if (!unfinished || unfinished.length === 0) break;
+
+				await this.emit({
+					type: "notice",
+					level: "info",
+					message: `本轮步数用尽，清单里还有 ${unfinished.length} 项，继续执行。`,
+				});
+				result = await runTurn(
+					{ ...config, messages: this.messages, systemPrompt },
+					(event) => this.handleAgentEvent(event),
+				);
+			}
 		} finally {
 			this.controller = null;
 			// Anything still waiting for approval would hang forever once the run is over.
