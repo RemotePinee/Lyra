@@ -1,0 +1,185 @@
+/**
+ * One message, rendered.
+ *
+ * A user's turn is a bubble; the agent's is a column of blocks — thinking, text, previews — with
+ * its timestamp and actions appearing only once the reply has actually ended. A runtime message
+ * (the nudge that continues a stalled turn) renders as nothing at all: it was never something a
+ * person said, and showing it where a person's messages go is a lie about who is talking.
+ */
+
+import type { AssistantContent, AssistantMessage, Message } from "@deepwise/core";
+import { Markdown } from "../Markdown.tsx";
+import { MessageActions } from "../MessageActions.tsx";
+import { PreviewCard, type PreviewInfo } from "../PreviewCard.tsx";
+import { ThinkingBlock } from "../ThinkingBlock.tsx";
+import { UserMessage } from "../UserMessage.tsx";
+import { useApp } from "../../store.ts";
+import { RotateCcw } from "lucide-react";
+import { Text } from "../Text.tsx";
+import { isLive, isNudge, LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
+
+/**
+ * Whether this message is where the reply stopped, rather than a pause inside it.
+ *
+ * `pending` is still arriving; `toolUse` is a handover to a tool with more to come after it.
+ * Everything else — a plain stop, a length cap, an error, an abort — is an ending.
+ */
+export function settled(stopReason: AssistantMessage["stopReason"]): boolean {
+  return stopReason !== "pending" && stopReason !== "toolUse";
+}
+
+/** True while we are waiting on the model rather than rendering its live output. */
+export function lastIsSettledOrEmpty(messages: Message[]): boolean {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant") return true;
+  return !last.content.some(
+    (c) => (c.type === "text" && c.text) || c.type === "toolCall",
+  );
+}
+
+export function messageKey(message: Message, index: number): string {
+  if (message.role === "toolResult") return `tr-${message.toolCallId}`;
+  return `${message.role}-${message.timestamp}-${index}`;
+}
+
+export function MessageRow({
+  message,
+  index,
+  continued,
+}: {
+  message: Message;
+  index: number;
+  /** The runtime told it to keep going, so this is a pause rather than a finish. */
+  continued?: boolean;
+}) {
+  if (message.role === "user") {
+    /*
+     * The runtime talking to the model, not the user talking.
+     *
+     * Recognised by what it says, not only by its flag. The flag was added later, so every nudge
+     * already written to a log lacks it — and those are exactly the ones sitting in people's
+     * transcripts wearing their own bubble, timestamp and edit button, looking like something
+     * they typed and never did. Reading the text catches both.
+     *
+     * Most runtime messages say nothing a reader needs and stay hidden; a nudge is why another
+     * turn started, so it gets a line of its own — a note about the conversation rather than a
+     * message in it.
+     */
+    /*
+     * Invisible, including the fact that it happened.
+     *
+     * A line saying "自动继续" was there to explain why another turn began — but the work either
+     * side of it is one continuous stretch, and a rule drawn through the middle of it interrupts
+     * something that never stopped. The plan already shows what remains, and the transcript reads
+     * better without a note about the machinery that kept it going.
+     */
+    if (message.synthetic || isNudge(message)) return null;
+    return <UserMessage message={message} index={index} />;
+  }
+
+  // Tool results are rendered inside their tool card, not as standalone rows.
+  if (message.role === "toolResult") return null;
+
+  return <AssistantRow message={message} index={index} continued={continued} />;
+}
+
+export function AssistantRow({
+  message,
+  index,
+  continued,
+}: {
+  message: AssistantMessage;
+  index: number;
+  continued?: boolean;
+}) {
+  const running = useApp((s) => s.running);
+  const retryFrom = useApp((s) => s.retryFrom);
+
+  const text = message.content
+    .filter((block) => block.type === "text")
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("\n\n");
+
+  // `group/msg` is what reveals the row below, and it names the whole reply as the target.
+  return (
+    <div className="group/msg dw-enter mb-2.5">
+      {/*
+       * Grouped before rendering, not after.
+       *
+       * A run of finished tool calls collapses into one line; anything else — text, thinking, a
+       * preview, or a call still going — stays exactly where it is. Whether a card can be folded
+       * away is a fact about the call, so it has to be decided here rather than by looking at
+       * rendered output that no longer knows what it came from.
+       */}
+      {segments(message.content).map((segment, position) => {
+        if (segment.kind === "block") {
+          const { block, index } = segment;
+          if (block.type === "thinking") {
+            // Open while the turn is still producing it; folded away once it has finished.
+            return (
+              <ThinkingBlock
+                key={index}
+                text={block.thinking}
+                redacted={block.redacted === true}
+                live={message.stopReason === "pending"}
+              />
+            );
+          }
+          if (block.type === "text") {
+            return block.text ? (
+              <div key={index} className="mb-2.5">
+                <Markdown text={block.text} />
+              </div>
+            ) : null;
+          }
+          return <LiveToolCard key={block.id} block={block} stopReason={message.stopReason} />;
+        }
+
+        const calls = segment.blocks.map((block) => ({ block, stopReason: message.stopReason }));
+        return <ToolRunGroup key={`group-${position}`} calls={calls} />;
+      })}
+
+      {message.stopReason === "error" && message.errorMessage && (
+        /*
+         * Stated, not staged.
+         *
+         * The first version of this put a bordered button under the message, which made a
+         * dropped socket look like the most important thing on the screen. A failure is worth
+         * one line — what went wrong, and the word that undoes it — set at the same weight as
+         * the timestamp under every other reply.
+         */
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <Text
+            size="caption"
+            tone="danger"
+            className="break-words whitespace-pre-wrap"
+          >
+            {message.errorMessage}
+          </Text>
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => void retryFrom(index)}
+            className="flex items-center gap-1 rounded text-[11px] text-ink-faint transition-colors duration-150 hover:text-ink disabled:opacity-40"
+          >
+            <RotateCcw size={10.5} strokeWidth={1.9} />
+            重试
+          </button>
+        </div>
+      )}
+
+      {/*
+       * Only where the reply actually ends.
+       *
+       * One answer is often several assistant messages: the model says what it is about to do,
+       * calls a tool, reads the result, says the next thing. Those middle messages end with
+       * `toolUse` — they are the sentence before the work, not the end of the answer — and each
+       * one was getting its own timestamp and copy button, so a single reply came back stamped
+       * four times. The row belongs to the message that finished the turn.
+       */}
+      {settled(message.stopReason) && !continued && text.trim() && (
+        <MessageActions timestamp={message.timestamp} text={text} />
+      )}
+    </div>
+  );
+}
