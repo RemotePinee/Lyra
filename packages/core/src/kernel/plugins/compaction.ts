@@ -1,3 +1,4 @@
+import { streamAssistant } from "../../ai/index.ts";
 import { compactIfNeeded } from "../../runtime/compaction.ts";
 import type { Message, ModelConfig, ProviderConfig } from "../../types.ts";
 import type { Context, Plugin } from "../context.ts";
@@ -12,8 +13,13 @@ import { COMPACTION, type CompactionStrategy } from "../services.ts";
  * a different one.
  */
 class SummaryCompaction implements CompactionStrategy {
-	compact(messages: Message[], model: ModelConfig, provider: ProviderConfig): Promise<Message[] | null> {
-		return compactIfNeeded(messages, model, provider);
+	compact(
+		messages: Message[],
+		model: ModelConfig,
+		provider: ProviderConfig,
+		streamFn?: typeof streamAssistant,
+	): Promise<Message[] | null> {
+		return compactIfNeeded(messages, model, provider, streamFn ?? streamAssistant);
 	}
 }
 

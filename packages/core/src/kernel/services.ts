@@ -1,3 +1,4 @@
+import type { streamAssistant } from "../ai/index.ts";
 import type { QueuedTask } from "../agent/events.ts";
 import type { TurnMiddleware } from "../runtime/turn.ts";
 import type { Skill } from "../skills/loader.ts";
@@ -138,7 +139,19 @@ export const COMPACTION = "compaction";
  * work. Returning `null` means "nothing needed", so a strategy also decides when to act.
  */
 export interface CompactionStrategy {
-	compact(messages: Message[], model: ModelConfig, provider: ProviderConfig): Promise<Message[] | null>;
+	/**
+	 * `streamFn` is the same seam the loop uses to reach the model.
+	 *
+	 * Passed through rather than reached for, because summarising is itself a model call: a host
+	 * that replaced how requests are made must have replaced this one too, or a session with a
+	 * stubbed provider quietly dials out when it runs out of room.
+	 */
+	compact(
+		messages: Message[],
+		model: ModelConfig,
+		provider: ProviderConfig,
+		streamFn?: typeof streamAssistant,
+	): Promise<Message[] | null>;
 }
 
 /**

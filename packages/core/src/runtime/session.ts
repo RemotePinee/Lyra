@@ -11,6 +11,7 @@ import { platform } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentEventSink, QueuedTask } from "../agent/events.ts";
 import type { AgentRunConfig } from "../agent/loop.ts";
+import type { streamAssistant } from "../ai/index.ts";
 import { runTurn } from "../agent/runner.ts";
 import type { PermissionMode, Settings } from "../config/settings.ts";
 import { resolveModel } from "../config/settings.ts";
@@ -28,6 +29,8 @@ import { loadCapabilities } from "./session-setup.ts";
 import { builtinTools, invalidateIndex } from "../tools/index.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
 import type {
+	AssistantMessage,
+	StreamEvent,
 	ApprovalDecision,
 	ApprovalRequest,
 	Message,
@@ -393,7 +396,9 @@ export class AgentSession {
 					drainSteering: () => this.steering.splice(0, this.steering.length),
 					beforeToolCall: makeBeforeToolCall(this.settings.hooks, this.cwd, this.controller.signal),
 					afterToolCall: makeAfterToolCall(this.settings.hooks, this.cwd, this.controller.signal),
-					compact: (messages, model) => compactWith(messages, model, resolved.provider),
+					// The session's own stream override applies here too; summarising is a model call.
+					compact: (messages, model) =>
+						compactWith(messages, model, resolved.provider, this.summaryStream(resolved.provider)),
 					streamFn: this.streamFn,
 				},
 				(event) => this.handleAgentEvent(event),
@@ -455,6 +460,26 @@ export class AgentSession {
 	 * Returns the prompt so it can wrap the call that produced it — the point is that there is no
 	 * way to build a prompt and forget to record it.
 	 */
+	/**
+	 * The provider call compaction should make, in the shape it expects.
+	 *
+	 * The session's override answers a whole turn; compaction wants a stream. Adapting rather than
+	 * reaching for the real provider is the point: a host that replaced how requests are made — a
+	 * test, a recorded session, a gateway — must have replaced this one too. Undefined when nothing
+	 * was overridden, which leaves the real provider in place.
+	 */
+	private summaryStream(provider: ProviderConfig): typeof streamAssistant | undefined {
+		const override = this.streamFn;
+		if (!override) return undefined;
+		return (_provider, model, context) => {
+			const call = override;
+			async function* once(): AsyncGenerator<StreamEvent, AssistantMessage> {
+				return call({ ...context }, { provider, model } as AgentRunConfig);
+			}
+			return once();
+		};
+	}
+
 	private async recordContext(turn: TurnContext): Promise<string> {
 		const systemPrompt = turn.systemPrompt;
 		const tools = turn.tools.map((tool) => tool.name).sort();

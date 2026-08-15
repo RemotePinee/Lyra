@@ -63,9 +63,10 @@ export function compactWith(
 	messages: Message[],
 	model: ModelConfig,
 	provider: ProviderConfig,
+	streamFn?: typeof streamAssistant,
 ): Promise<Message[] | null> {
-	if (strategy) return strategy.compact(messages, model, provider);
-	return compactIfNeeded(messages, model, provider);
+	if (strategy) return strategy.compact(messages, model, provider, streamFn);
+	return compactIfNeeded(messages, model, provider, streamFn ?? streamAssistant);
 }
 
 export async function compactIfNeeded(
