@@ -9,7 +9,7 @@
  * A 300px list beside a 300px diff is worse than either alone.
  */
 
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { PullRequestDetail as Detail } from "../../electron/ipc-types.ts";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
@@ -61,6 +61,7 @@ export function PullRequestsView() {
 			onSelect={(item) => pr.setSelected({ repo: item.repo, number: item.number })}
 			loading={pr.loading}
 			error={pr.error}
+			onRefresh={pr.refresh}
 		/>
 	);
 
@@ -100,43 +101,26 @@ export function PullRequestsView() {
 						{detail}
 					</>
 				) : (
-					<>
-						<Header loading={pr.loading} onRefresh={pr.refresh} />
-						{list}
-					</>
+					list
 				)}
 			</div>
 		);
 	}
 
+	/*
+	 * No banner across the top, and that is what makes the divider whole.
+	 *
+	 * A full-width header would sit above both columns, so the rule between them could only start
+	 * below it — a line that stops short of the top, which reads as a seam rather than a boundary.
+	 * The two columns run the full height instead, each with its own head: the filters on one
+	 * side, the tabs on the other.
+	 */
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			<Header loading={pr.loading} onRefresh={pr.refresh} />
-			<div className="flex min-h-0 flex-1">
-				<div style={{ width: LIST_WIDTH }} className="flex min-h-0 shrink-0 flex-col border-r border-line-soft">
-					{list}
-				</div>
-				{detail}
+		<div className="flex min-h-0 flex-1">
+			<div style={{ width: LIST_WIDTH }} className="flex min-h-0 shrink-0 flex-col border-r border-line-soft">
+				{list}
 			</div>
+			{detail}
 		</div>
-	);
-}
-
-function Header({ loading, onRefresh }: { loading: boolean; onRefresh: () => void }) {
-	return (
-		<header className="flex h-11 shrink-0 items-center gap-2 px-4">
-			<h1 className="text-[14px] font-semibold tracking-tight text-ink">拉取请求</h1>
-			<span className="text-[11.5px] text-ink-faint">与你有关的，跨所有仓库</span>
-			<div className="flex-1" />
-			<button
-				type="button"
-				data-ly-tip="刷新"
-				aria-label="刷新"
-				onClick={onRefresh}
-				className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
-			>
-				<RefreshCw size={13.5} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
-			</button>
-		</header>
 	);
 }

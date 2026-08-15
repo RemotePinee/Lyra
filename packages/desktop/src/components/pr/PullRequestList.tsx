@@ -6,7 +6,7 @@
  * attention, and the filter above is the same three answers stated as a choice.
  */
 
-import { GitPullRequest, Search } from "lucide-react";
+import { GitPullRequest, RefreshCw, Search } from "lucide-react";
 import type { PullRequestSummary } from "../../../electron/ipc-types.ts";
 import { relativeTime } from "../git/relative-time.ts";
 import { ScrollText } from "../ScrollText.tsx";
@@ -30,6 +30,7 @@ export function PullRequestList({
 	onSelect,
 	loading,
 	error,
+	onRefresh,
 }: {
 	groups: Group[];
 	filter: Filter;
@@ -40,6 +41,7 @@ export function PullRequestList({
 	onSelect: (pr: PullRequestSummary) => void;
 	loading: boolean;
 	error: string | null;
+	onRefresh: () => void;
 }) {
 	const empty = groups.length === 0;
 
@@ -59,6 +61,17 @@ export function PullRequestList({
 							{option.label}
 						</button>
 					))}
+
+					<div className="flex-1" />
+					<button
+						type="button"
+						data-ly-tip="刷新"
+						aria-label="刷新"
+						onClick={onRefresh}
+						className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+					>
+						<RefreshCw size={13} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
+					</button>
 				</div>
 
 				<label className="flex h-[32px] items-center gap-2 rounded-[9px] border border-line px-2.5 focus-within:border-ink-faint">
