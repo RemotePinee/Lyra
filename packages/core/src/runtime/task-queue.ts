@@ -10,6 +10,7 @@
  * scheduler decide the order without touching any of it.
  */
 
+import { randomUUID } from "node:crypto";
 import type { QueuedTask } from "../agent/events.ts";
 import { nextTask } from "./scheduling.ts";
 
@@ -124,4 +125,28 @@ export class TaskQueue {
 			this.draining = false;
 		}
 	}
+}
+
+/**
+ * The queue a session uses, with the two mechanical answers already filled in.
+ *
+ * Ids and clocks are the queue's business, not the session's — and a caller that had to supply
+ * them could supply a clock that goes backwards. What the session does have to say is what running
+ * a task means, whether it is busy, and where to send the list when it changes.
+ */
+export function sessionTaskQueue(deps: {
+	run(task: QueuedTask): Promise<void>;
+	busy(): boolean;
+	/** Given a copy, never the live list: an event holding a reference would report the queue as it
+	    looked when someone got round to reading it, not when it was sent. */
+	changed(tasks: QueuedTask[]): Promise<void>;
+}): TaskQueue {
+	const queue: TaskQueue = new TaskQueue({
+		run: deps.run,
+		busy: deps.busy,
+		changed: () => deps.changed(queue.list().map((task) => ({ ...task }))),
+		newId: () => randomUUID().slice(0, 8),
+		now: () => Date.now(),
+	});
+	return queue;
 }

@@ -116,3 +116,44 @@ export class ApprovalGate {
 		this.pending.clear();
 	}
 }
+
+/**
+ * The gate a session uses, wired to it.
+ *
+ * The wiring is here rather than in the session's constructor because it is about approvals, not
+ * about sessions: what a request looks like on the way out, and that "always" is remembered by the
+ * settings rather than by this process. A caller supplies the two things only it can know — the
+ * current mode and directory — and where to send the question.
+ */
+export function sessionApprovalGate(deps: {
+	mode(): PermissionMode;
+	cwd(): string;
+	emit(event: {
+		type: "approval_request";
+		requestId: string;
+		toolCallId: string;
+		kind: ApprovalRequest["kind"];
+		title: string;
+		detail: ApprovalRequest["detail"];
+	}): Promise<void>;
+	alwaysAllow: Iterable<string>;
+}): ApprovalGate {
+	return new ApprovalGate(
+		{
+			mode: deps.mode,
+			cwd: deps.cwd,
+			ask: (pending) =>
+				deps.emit({
+					type: "approval_request",
+					requestId: pending.id,
+					toolCallId: pending.id,
+					kind: pending.request.kind,
+					title: pending.request.title,
+					detail: pending.request.detail,
+				}),
+			// Persisting an "always" answer is the host's job; the settings are not ours to write.
+			remember: () => {},
+		},
+		deps.alwaysAllow,
+	);
+}

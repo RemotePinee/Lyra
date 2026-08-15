@@ -1,60 +1,30 @@
 /**
  * The runtime that turns settings + a workspace into a running agent.
  *
- * Everything user-facing goes through here: the desktop main process, the sync server and
- * the CLI all drive the same `AgentSession`, so the phone and the desktop cannot drift.
+ * Everything user-facing goes through here: the desktop main process, the sync server and the CLI
+ * all drive the same `AgentSession`, so the phone and the desktop cannot drift.
+ *
+ * What is left in this file is the driving: take a prompt, run a turn, stop, queue, approve. What
+ * the session *has done* is `SessionLog` — the transcript and the append-only log kept as one
+ * thing — and what it *can do* is `SessionCapabilities`. Both are held rather than inherited, so
+ * the boundary is visible at every call site.
  */
 
-import { randomUUID } from "node:crypto";
-import { access } from "node:fs/promises";
-import { platform } from "node:os";
-import { join } from "node:path";
 import type { AgentEvent, AgentEventSink, QueuedTask } from "../agent/events.ts";
 import type { AgentRunConfig } from "../agent/loop.ts";
-import type { streamAssistant } from "../ai/index.ts";
-import { runTurn } from "../agent/runner.ts";
-import type { PermissionMode, Settings } from "../config/settings.ts";
+import type { Settings } from "../config/settings.ts";
 import { resolveModel } from "../config/settings.ts";
-import { McpManager, type McpServerStatus } from "../mcp/client.ts";
-import type { Plugin, PluginDiagnostic } from "../plugins/loader.ts";
-import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
-import { formatSkillCatalogue, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
-import { SKILLS_KEY } from "../skills/tool.ts";
-import { deepwiseHome, type SessionMeta } from "../session/store.ts";
+import type { SessionMeta } from "../session/store.ts";
 import type { SessionStorage } from "../session/storage.ts";
-import { writePreview } from "./previews.ts";
-import { ApprovalGate } from "./approvals.ts";
-import { runSubAgent } from "./sub-agent.ts";
-import { loadCapabilities } from "./session-setup.ts";
-import { builtinTools, invalidateIndex } from "../tools/index.ts";
-import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
-import { TODOS_KEY, type TodoItem } from "../tools/todo.ts";
-import type {
-	AssistantMessage,
-	StreamEvent,
-	ApprovalDecision,
-	ApprovalRequest,
-	Message,
-	ModelConfig,
-	ProviderConfig,
-	ThinkingLevel,
-	Tool,
-	UserContent,
-} from "../types.ts";
-import { compactWith } from "./compaction.ts";
-import { buildContextBreakdown, type ContextBreakdown } from "./context.ts";
-import { TaskQueue } from "./task-queue.ts";
-import { prepareTurn, type TurnContext } from "./turn.ts";
-import { continueWhileWorkRemains } from "./continuation.ts";
-import { buildTurnConfig } from "./turn-config.ts";
+import type { ApprovalDecision, ApprovalRequest, Message, ThinkingLevel, Tool, UserContent } from "../types.ts";
+import { ApprovalGate, sessionApprovalGate } from "./approvals.ts";
+import type { ContextBreakdown } from "./context.ts";
 import { describeContext, describeSession, type SessionFacts, type SessionStatus } from "./reporting.ts";
-import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
-
-export interface PendingApproval {
-	id: string;
-	request: ApprovalRequest;
-	resolve: (decision: ApprovalDecision) => void;
-}
+import { SessionCapabilities } from "./session-capabilities.ts";
+import { scratchDir, sessionFacts } from "./session-facts.ts";
+import { SessionLog } from "./session-log.ts";
+import { driveTurn } from "./session-turn.ts";
+import { sessionTaskQueue, type TaskQueue } from "./task-queue.ts";
 
 export interface AgentSessionOptions {
 	cwd: string;
@@ -76,84 +46,50 @@ export interface AgentSessionOptions {
 	streamFn?: AgentRunConfig["streamFn"];
 }
 
-/**
- * Events that outlive the window they were shown in.
- *
- * The log is meant to answer "what did the model actually see, and why did it do that" long after
- * the run — so anything that changes the model's input, or that happened out of view, is kept.
- */
-const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["compacted", "context", "subagent", "subagent_done"]);
-
 export class AgentSession {
 	readonly store: SessionStorage;
-	private settings: Settings;
-	private emitExternal: AgentEventSink;
-	private mcp = new McpManager();
-
-	meta!: SessionMeta;
-	messages: Message[] = [];
-	/** What the last recorded context looked like, so an unchanged one is not written twice. */
-	private lastContext: string | null = null;
+	readonly log: SessionLog;
+	readonly can: SessionCapabilities;
 	cwd: string;
 
-	private tools: Tool[] = [];
-	private skills: Skill[] = [];
-	private skillDiagnostics: SkillDiagnostic[] = [];
-	private mcpStatuses: McpServerStatus[] = [];
-	private plugins: Plugin[] = [];
-	private pluginDiagnostics: PluginDiagnostic[] = [];
-	private agents: AgentDefinition[] = [...BUILTIN_AGENTS];
-	private state = new Map<string, unknown>();
-
-	private extraTools: Tool[] = [];
+	private settings: Settings;
 	private streamFn?: AgentRunConfig["streamFn"];
 	private controller: AbortController | null = null;
 	private steering: Message[] = [];
-	/**
-	 * Messages already appended to the session log, tracked by identity.
-	 *
-	 * A prompt sent while the agent is idle is committed here; a steering message is queued
-	 * instead and only reaches the transcript when the loop injects it. Both paths end at
-	 * `message_end`, so committing there and de-duplicating by identity keeps steering
-	 * messages in the log — and in the right position, after the turn they interrupted.
-	 */
-	private committed = new WeakSet<Message>();
 	private readonly approvals: ApprovalGate;
-	private readonly tasks: TaskQueue = new TaskQueue({
+	private readonly tasks: TaskQueue = sessionTaskQueue({
 		run: (task) => this.prompt([{ type: "text", text: task.text }], { origin: task.origin }),
 		busy: () => this.running,
-		// Copied, not the live list: an event holding a reference would report whatever the
-		// queue looked like when someone got round to reading it, not when it was sent.
-		changed: (): Promise<void> => this.emit({ type: "tasks", tasks: this.tasks.list().map((task) => ({ ...task })) }),
-		newId: () => randomUUID().slice(0, 8),
-		now: () => Date.now(),
+		changed: (tasks) => this.emit({ type: "tasks", tasks }),
 	});
 
 	constructor(options: AgentSessionOptions) {
 		this.cwd = options.cwd;
 		this.settings = options.settings;
 		this.store = options.store;
-		this.emitExternal = options.emit;
-		this.extraTools = options.extraTools ?? [];
 		this.streamFn = options.streamFn;
-		if (options.meta) this.meta = options.meta;
-		this.approvals = new ApprovalGate(
-			{
-				mode: () => this.settings.permissionMode,
-				cwd: () => this.cwd,
-				ask: (pending) =>
-					this.emit({
-						type: "approval_request",
-						requestId: pending.id,
-						toolCallId: pending.id,
-						kind: pending.request.kind,
-						title: pending.request.title,
-						detail: pending.request.detail,
-					}),
-				remember: () => {},
-			},
-			options.settings.alwaysAllow,
-		);
+		this.log = new SessionLog(options.store, options.emit, options.meta);
+		this.can = new SessionCapabilities(options.extraTools ?? []);
+		this.approvals = sessionApprovalGate({
+			mode: () => this.settings.permissionMode,
+			cwd: () => this.cwd,
+			emit: (event) => this.emit(event),
+			alwaysAllow: options.settings.alwaysAllow,
+		});
+	}
+
+	/** The history, as callers have always read it. */
+	get meta(): SessionMeta {
+		return this.log.meta;
+	}
+
+	get messages(): Message[] {
+		return this.log.messages;
+	}
+
+	/** Adopt a transcript read back from disk. */
+	restore(messages: Message[]): void {
+		this.log.restore(messages);
 	}
 
 	get running(): boolean {
@@ -162,20 +98,10 @@ export class AgentSession {
 
 	/** Load skills, agents and MCP tools. Safe to call again after settings change. */
 	async initialize(): Promise<void> {
-		if (!this.meta) {
-			this.meta = await this.store.create(this.cwd, this.settings.defaultModelId ?? "");
+		if (!this.log.meta) {
+			this.log.meta = await this.store.create(this.cwd, this.settings.defaultModelId ?? "");
 		}
-
-		const loaded = await loadCapabilities(this.cwd, this.settings, this.mcp, this.extraTools);
-		this.plugins = loaded.plugins;
-		this.pluginDiagnostics = loaded.pluginDiagnostics;
-		this.skills = loaded.skills;
-		this.skillDiagnostics = loaded.skillDiagnostics;
-		this.agents = loaded.agents;
-		this.mcpStatuses = loaded.mcpStatuses;
-		this.tools = loaded.tools;
-		this.state.set(SKILLS_KEY, this.skills);
-		this.state.set(AGENTS_KEY, this.agents);
+		await this.can.load(this.cwd, this.settings);
 	}
 
 	async status(): Promise<SessionStatus> {
@@ -186,45 +112,14 @@ export class AgentSession {
 		return describeContext(this.facts());
 	}
 
-	/**
-	 * The session as something to be read, not driven.
-	 *
-	 * Built explicitly rather than by making the fields public: describing a session needs most of
-	 * its state, and the way to give that away without also giving away the ability to change it is
-	 * to hand over a copy of the references and nothing else.
-	 */
 	private facts(): SessionFacts {
-		return {
-			meta: this.meta,
-			running: this.running,
-			cwd: this.cwd,
-			messages: this.messages,
-			settings: this.settings,
-			tools: this.tools,
-			skills: this.skills,
-			skillDiagnostics: this.skillDiagnostics,
-			plugins: this.plugins,
-			pluginDiagnostics: this.pluginDiagnostics,
-			mcpStatuses: this.mcpStatuses,
-			agents: this.agents,
-			mcp: this.mcp,
-			scratchDir: () => this.scratchDir(),
-		};
-	}
-
-	/**
-	 * Where the model can put files that are not part of the project.
-	 *
-	 * Named for the conversation so two of them cannot tread on each other, and sitting beside
-	 * the previews, which are removed on the same occasions and for the same reason.
-	 */
-	private scratchDir(): string {
-		return join(deepwiseHome(), "scratch", this.meta?.id ?? "unsaved");
+		const { log, can, cwd, settings, running } = this;
+		return sessionFacts({ log, can, cwd, settings, running });
 	}
 
 	/** Drop the cached symbol index so the next `symbol` lookup re-reads it from disk. */
 	invalidateSymbolIndex(): void {
-		invalidateIndex(this.state);
+		this.can.invalidateSymbolIndex();
 	}
 
 	updateSettings(settings: Settings): void {
@@ -246,9 +141,10 @@ export class AgentSession {
 	 * scheduler drive this same object.
 	 */
 	async setModel(modelId: string): Promise<boolean> {
-		if (this.messages.length > 0) return false;
-		this.meta = { ...this.meta, modelId };
-		this.meta = await this.store.append(this.meta, { type: "meta", meta: this.meta });
+		if (this.log.messages.length > 0) return false;
+		const meta = { ...this.log.meta, modelId };
+		this.log.meta = meta;
+		await this.log.append({ type: "meta", meta });
 		return true;
 	}
 
@@ -260,10 +156,7 @@ export class AgentSession {
 	 * Send a prompt. If the agent is already running, the message is queued as steering and
 	 * picked up between turns instead of starting a second concurrent run.
 	 */
-	async prompt(
-		content: UserContent[],
-		options: { thinking?: ThinkingLevel; origin?: "side-chat" } = {},
-	): Promise<void> {
+	async prompt(content: UserContent[], options: { thinking?: ThinkingLevel; origin?: "side-chat" } = {}): Promise<void> {
 		const message: Message = {
 			role: "user",
 			content,
@@ -276,11 +169,11 @@ export class AgentSession {
 			return;
 		}
 
-		await this.commitMessage(message);
+		await this.log.commit(message);
 		await this.emit({ type: "message_start", message });
 		await this.emit({ type: "message_end", message });
 
-		if (this.messages.filter((m) => m.role === "user").length === 1) {
+		if (this.log.messages.filter((m) => m.role === "user").length === 1) {
 			await this.setTitleFromPrompt(content);
 		}
 
@@ -288,7 +181,7 @@ export class AgentSession {
 	}
 
 	private async run(thinking?: ThinkingLevel): Promise<void> {
-		const resolved = resolveModel(this.settings, this.meta.modelId || this.settings.defaultModelId);
+		const resolved = resolveModel(this.settings, this.log.meta.modelId || this.settings.defaultModelId);
 		if (!resolved) {
 			await this.emit({
 				type: "notice",
@@ -301,67 +194,21 @@ export class AgentSession {
 
 		this.controller = new AbortController();
 		try {
-			/*
-			 * Assemble, let plugins amend, then write down what came out.
-			 *
-			 * The recording happens last on purpose: what belongs in the log is what the model was
-			 * actually sent, not what this file would have sent if nothing had intervened.
-			 */
-			const turn = await prepareTurn({
+			await driveTurn({
 				cwd: this.cwd,
-				tools: this.tools,
-				messages: this.messages,
-				systemPrompt: await buildSystemPrompt({
-					cwd: this.cwd,
-					tools: this.tools,
-					skills: this.skills,
-					agents: this.agents,
-					projectInstructions: await loadProjectInstructions(this.cwd),
-					platform: platform(),
-					modelName: resolved.model.name,
-					isGitRepo: await pathExists(join(this.cwd, ".git")),
-					today: new Date().toISOString().slice(0, 10),
-					scratchDir: this.scratchDir(),
-				}),
-			});
-			const systemPrompt = await this.recordContext(turn);
-
-			const config = buildTurnConfig(
-				{
-					sessionId: this.meta.id,
-					cwd: this.cwd,
-					provider: resolved.provider,
-					model: resolved.model,
-					settings: this.settings,
-					state: this.state,
-					tools: this.tools,
-					skills: this.skills,
-					agents: this.agents,
-					signal: this.controller.signal,
-					streamFn: this.streamFn,
-					requestApproval: (request) => this.requestApproval(request),
-					emit: (event) => this.emit(event),
-					summaryStream: (provider) => this.summaryStream(provider),
-					beforeToolCall: makeBeforeToolCall(this.settings.hooks, this.cwd, this.controller.signal),
-					afterToolCall: makeAfterToolCall(this.settings.hooks, this.cwd, this.controller.signal),
-					drainSteering: () => this.steering.splice(0, this.steering.length),
-				},
-				turn,
-				systemPrompt,
+				settings: this.settings,
+				log: this.log,
+				can: this.can,
+				provider: resolved.provider,
+				model: resolved.model,
+				signal: this.controller.signal,
 				thinking,
-			);
-;
-
-			let result = await runTurn(config, (event) => this.handleAgentEvent(event));
-
-			result = await continueWhileWorkRemains(result, {
-				run: (messages) => runTurn({ ...config, messages, systemPrompt }, (event) => this.handleAgentEvent(event)),
-				messages: () => this.messages,
-				todos: () => (this.state.get(TODOS_KEY) as TodoItem[] | undefined) ?? [],
-				aborted: () => this.controller?.signal.aborted ?? false,
-				notify: (message) => this.emit({ type: "notice", level: "info", message }),
+				streamFn: this.streamFn,
+				scratchDir: scratchDir(this.log.meta.id),
+				requestApproval: (request) => this.requestApproval(request),
+				emit: (event) => this.emit(event),
+				drainSteering: () => this.steering.splice(0, this.steering.length),
 			});
-
 		} finally {
 			this.controller = null;
 			// Anything still waiting for approval would hang forever once the run is over.
@@ -397,88 +244,9 @@ export class AgentSession {
 		return this.tasks.cancel(taskId);
 	}
 
-	private async handleAgentEvent(event: AgentEvent): Promise<void> {
-		/*
-		 * A turn stopped for going in circles has to say so.
-		 *
-		 * Ending silently is indistinguishable from finishing, and the difference matters: one
-		 * means the work is done, the other means it is stuck and waiting for a person to say
-		 * something it has not thought of.
-		 */
-		if (event.type === "agent_end" && event.reason === "stalled") {
-			await this.emit({
-				type: "notice",
-				level: "warn",
-				message: "同一个调用反复得到相同结果，已停下。告诉它换个方向，或直接说明你想怎么处理。",
-			});
-		}
-		// `message_end` is the commit point: partial assistant messages are never persisted.
-		if (event.type === "message_end") await this.commitMessage(event.message);
-		await this.emit(event);
+	private emit(event: AgentEvent): Promise<void> {
+		return this.log.emit(event);
 	}
-
-	/** Append a message to the transcript and the log exactly once. */
-	private async commitMessage(message: Message): Promise<void> {
-		if (this.committed.has(message)) return;
-		this.committed.add(message);
-		this.messages.push(message);
-		this.meta = await this.store.append(this.meta, { type: "message", message });
-	}
-
-	/**
-	 * Write down what the model is about to be given, the first time it looks like this.
-	 *
-	 * Returns the prompt so it can wrap the call that produced it — the point is that there is no
-	 * way to build a prompt and forget to record it.
-	 */
-	/**
-	 * The provider call compaction should make, in the shape it expects.
-	 *
-	 * The session's override answers a whole turn; compaction wants a stream. Adapting rather than
-	 * reaching for the real provider is the point: a host that replaced how requests are made — a
-	 * test, a recorded session, a gateway — must have replaced this one too. Undefined when nothing
-	 * was overridden, which leaves the real provider in place.
-	 */
-	private summaryStream(provider: ProviderConfig): typeof streamAssistant | undefined {
-		const override = this.streamFn;
-		if (!override) return undefined;
-		return (_provider, model, context) => {
-			const call = override;
-			async function* once(): AsyncGenerator<StreamEvent, AssistantMessage> {
-				return call({ ...context }, { provider, model } as AgentRunConfig);
-			}
-			return once();
-		};
-	}
-
-	private async recordContext(turn: TurnContext): Promise<string> {
-		const systemPrompt = turn.systemPrompt;
-		const tools = turn.tools.map((tool) => tool.name).sort();
-		const skills = this.skills.map((skill) => skill.name).sort();
-		const fingerprint = `${systemPrompt}\u0000${tools.join(",")}\u0000${skills.join(",")}`;
-		if (fingerprint === this.lastContext) return systemPrompt;
-		this.lastContext = fingerprint;
-		await this.emit({ type: "context", systemPrompt, tools, skills });
-		return systemPrompt;
-	}
-
-	private async emit(event: AgentEvent): Promise<void> {
-		/*
-		 * Most events are live-only — the window renders them and they are gone, which is right
-		 * for progress chatter. The few listed above are not chatter: they are the difference
-		 * between a transcript you can read back and one you have to guess at. What the model was
-		 * told, what was summarised away, what a sub-agent was sent off to do — none of it can be
-		 * recovered from the messages alone, so it is written down as it happens.
-		 */
-		if (PERSISTED_EVENTS.has(event.type) && this.meta) {
-			this.meta = await this.store.append(this.meta, { type: "event", event });
-		}
-		await this.emitExternal(event);
-	}
-
-	// -------------------------------------------------------------------------
-	// Approvals
-	// -------------------------------------------------------------------------
 
 	// -------------------------------------------------------------------------
 	// Approvals
@@ -504,56 +272,29 @@ export class AgentSession {
 	 * Replace a message and run again from there.
 	 *
 	 * Editing what you asked invalidates the answer and everything built on it, so the tail is
-	 * discarded rather than left dangling above a contradictory reply. The truncation goes to
-	 * the log first: if the run fails, the history is still the shortened, consistent one
-	 * rather than a mix of old and new.
+	 * discarded rather than left dangling above a contradictory reply.
 	 */
-	async editAndResend(messageIndex: number, content: UserContent[], options: { thinking?: ThinkingLevel } = {}): Promise<void> {
+	async editAndResend(
+		messageIndex: number,
+		content: UserContent[],
+		options: { thinking?: ThinkingLevel } = {},
+	): Promise<void> {
 		if (this.running) return;
+		if (!(await this.log.truncateFrom(messageIndex))) return;
 
-		const truncated = await this.store.truncateFrom(this.meta.projectId, this.meta.id, messageIndex);
-		if (!truncated) return;
-
-		this.meta = truncated.meta;
-		this.messages = truncated.messages;
-		await this.emit({ type: "rewound", messageCount: this.messages.length });
-
+		await this.emit({ type: "rewound", messageCount: this.log.messages.length });
 		await this.prompt(content, options);
 	}
 
 	private async setTitleFromPrompt(content: UserContent[]): Promise<void> {
 		const text = content.find((c) => c.type === "text")?.text ?? "";
 		const title = text.replace(/\s+/g, " ").trim().slice(0, 60) || "New session";
-		this.meta = await this.store.append(this.meta, { type: "title", title });
+		await this.log.append({ type: "title", title });
 		await this.emit({ type: "title", title });
 	}
 
 	async dispose(): Promise<void> {
 		this.abort();
-		await this.mcp.closeAll();
-	}
-}
-
-/**
- * Keep every task still to come, and a short tail of what already ran.
- *
- * The finished ones are only there so a card does not vanish the instant it completes. An
- * afternoon of dispatching would otherwise grow an unbounded list nobody reads.
- */
-const TASK_HISTORY = 20;
-
-function trimTaskHistory(tasks: QueuedTask[]): QueuedTask[] {
-	const settled = tasks.filter((t) => t.status !== "queued" && t.status !== "running");
-	if (settled.length <= TASK_HISTORY) return tasks;
-	const drop = new Set(settled.slice(0, settled.length - TASK_HISTORY).map((t) => t.id));
-	return tasks.filter((t) => !drop.has(t.id));
-}
-
-async function pathExists(path: string): Promise<boolean> {
-	try {
-		await access(path);
-		return true;
-	} catch {
-		return false;
+		await this.can.dispose();
 	}
 }

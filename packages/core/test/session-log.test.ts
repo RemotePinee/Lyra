@@ -167,3 +167,32 @@ test("a delegated turn is written down: what it was sent, what it did, what it s
 		await h.cleanup();
 	}
 });
+
+test("a history read back from disk is adopted, not appended again", async () => {
+	const h = await harness();
+	try {
+		await h.session.prompt([{ type: "text", text: "hello" }]);
+		const before = (await h.records()).filter((r) => r.type === "message").length;
+		const history = [...h.session.messages];
+
+		/*
+		 * What the hosts do on every reconnect: build a session around the stored meta, then hand
+		 * it the transcript that was read off disk. These messages are already in the log — that
+		 * is where they came from — so adopting them must not write a second copy of each.
+		 */
+		h.session.restore(history);
+
+		assert.deepEqual(h.session.messages, history, "the transcript is what was handed over");
+		assert.equal(
+			(await h.records()).filter((r) => r.type === "message").length,
+			before,
+			"and nothing was written again",
+		);
+
+		// The next real message still lands, so adopting a history does not wedge the log shut.
+		await h.session.prompt([{ type: "text", text: "again" }]);
+		assert.equal((await h.records()).filter((r) => r.type === "message").length, before + 2);
+	} finally {
+		await h.cleanup();
+	}
+});

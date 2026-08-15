@@ -49,7 +49,7 @@ export async function startSync(): Promise<SyncStatus> {
 					meta: loaded.meta,
 					emit: (event) => broadcast(sessionId, event),
 				});
-				session.messages = loaded.messages;
+				session.restore(loaded.messages);
 				await session.initialize();
 				sessions.set(sessionId, session);
 				return session;
