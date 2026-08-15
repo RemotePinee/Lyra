@@ -28,6 +28,21 @@ export {
 export { getSandbox, useSandbox, LocalSandbox } from "./sandbox/index.ts";
 export { approvalPolicy, useApprovalPolicy } from "./runtime/approval-policy.ts";
 export type { SessionStorage } from "./session/storage.ts";
+export {
+	countBySource,
+	filterTrajectory,
+	forkSession,
+	matchRanges,
+	messagesUpTo,
+	readTrajectory,
+	replaySession,
+	SOURCE_LABEL,
+	SOURCE_ORDER,
+	type Entry as TrajectoryEntry,
+	type ForkResult,
+	type Source as TrajectorySourceKind,
+	type TrajectoryFilter,
+} from "./trajectory/index.ts";
 export { nextTask, useScheduler } from "./runtime/scheduling.ts";
 export { prepareTurn, useTurnPipeline, type TurnContext, type TurnMiddleware } from "./runtime/turn.ts";
 export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
