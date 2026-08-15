@@ -73,18 +73,30 @@ export function EntryRow({
 				</Text>
 			}
 		>
-			<Section title={SOURCE_LABEL[entry.source]} mono={Boolean(CODE_KIND[entry.source])}>
-				<CodeText text={shown} kind={CODE_KIND[entry.source] ?? "text"} query={query} />
-				{long && !whole && (
-					<button
-						type="button"
-						onClick={() => setWhole(true)}
-						className="dw-item mt-1.5 block rounded px-1 py-[2px] font-sans text-[11px] text-ink-faint"
-					>
-						…显示全部 {entry.detail.length} 字
-					</button>
-				)}
-			</Section>
+			{entry.command && (
+				<Section title="命令" mono tone="ink">
+					<span className="mr-2 select-none text-ink-faint">$</span>
+					<CodeText text={entry.command} kind="shell" query={query} />
+				</Section>
+			)}
+
+			{shown && (
+				<Section
+					title={entry.command ? "参数" : SOURCE_LABEL[entry.source]}
+					mono={Boolean(CODE_KIND[entry.source])}
+				>
+					<CodeText text={shown} kind={CODE_KIND[entry.source] ?? "text"} query={query} />
+					{long && !whole && (
+						<button
+							type="button"
+							onClick={() => setWhole(true)}
+							className="dw-item mt-1.5 block rounded px-1 py-[2px] font-sans text-[11px] text-ink-faint"
+						>
+							…显示全部 {entry.detail.length} 字
+						</button>
+					)}
+				</Section>
+			)}
 
 			<div className="flex items-center justify-between px-3 py-2">
 				<Text size="caption" tone="faint" numeric>
@@ -94,7 +106,7 @@ export function EntryRow({
 					type="button"
 					onClick={onFork}
 					className="dw-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11px] text-ink-muted"
-					title="用这一刻之前的历史开一个新会话，原会话不受影响"
+					data-dw-tip="用这一刻之前的历史开一个新会话，原会话不受影响"
 				>
 					<GitBranch size={11} strokeWidth={1.8} />
 					从这里分叉

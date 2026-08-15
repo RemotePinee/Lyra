@@ -37,6 +37,14 @@ export interface Entry {
 	detail: string;
 	/** Ties a tool result back to its call, and a sub-agent's answer to its dispatch. */
 	correlationId?: string;
+	/**
+	 * The shell command this entry is about, when it is about one.
+	 *
+	 * Carried separately from `detail` because a command is the thing you look for first when a
+	 * step did something unexpected, and finding it inside a JSON string — escaped, on one line,
+	 * among other arguments — is reading around the syntax rather than reading the command.
+	 */
+	command?: string;
 }
 
 /** Shown as filter chips, in the order a turn actually happens. */

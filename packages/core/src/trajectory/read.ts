@@ -80,14 +80,17 @@ function fromMessage(seq: number, ts: number, message: Message): Entry[] {
 			out.push({ seq, ts, source: "assistant", summary: firstLine(part.text), detail: part.text });
 		}
 		if (part.type === "toolCall") {
-			const args = JSON.stringify(part.arguments, null, 2);
+			const command = typeof part.arguments.command === "string" ? part.arguments.command : undefined;
+			const rest = { ...part.arguments };
+			delete rest.command;
 			out.push({
 				seq,
 				ts,
 				source: "tool-call",
-				summary: `${part.name} ${firstLine(compact(part.arguments))}`.trim(),
-				detail: `${part.name}\n\n${args}`,
+				summary: `${part.name} ${firstLine(command ?? compact(part.arguments))}`.trim(),
+				detail: Object.keys(rest).length > 0 ? JSON.stringify(rest, null, 2) : "",
 				correlationId: part.id,
+				command,
 			});
 		}
 	}

@@ -84,6 +84,19 @@ test("a reply's reasoning, its words and its tool call are three separate entrie
 	}
 });
 
+test("a command is carried out of the argument object, so it can be read as a command", async () => {
+	const h = await seeded();
+	try {
+		const entries = await readTrajectory(h.store, h.meta.projectId, h.meta.id);
+		const call = entries.find((entry) => entry.source === "tool-call");
+		assert.equal(call?.command, "npm run build");
+		assert.equal(call?.summary, "bash npm run build", "and it is what the row says, not a JSON blob");
+		assert.equal(call?.detail, "", "with nothing left over when the command was the only argument");
+	} finally {
+		await h.cleanup();
+	}
+});
+
 test("a tool result can be traced back to the call it answers", async () => {
 	const h = await seeded();
 	try {
