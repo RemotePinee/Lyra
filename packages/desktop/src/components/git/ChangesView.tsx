@@ -1,0 +1,203 @@
+/**
+ * The index, as a column you read downwards.
+ */
+import { Check, Minus, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import type { GitStatus, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
+
+import { IconButton } from "../IconButton.tsx";
+import { PanelEmpty } from "../PanelEmpty.tsx";
+
+import { Scroller } from "../Scroller.tsx";
+
+import { Text } from "../Text.tsx";
+
+import { FileDiffList } from "./FileDiffList.tsx";
+
+import { GroupHeader } from "./GroupHeader.tsx";
+import type { Act } from "./types.ts";
+
+/**
+ * Staged above unstaged, with the commit box under both.
+ *
+ * The split is the whole reason to have an index in front of you: the top group is what the
+ * next commit will contain, the bottom is what it will not. Reading down the column is reading
+ * the commit you are about to make.
+ */
+export function ChangesView({
+  status,
+  cwd,
+  busy,
+  act,
+}: {
+  status: GitStatus | null;
+  cwd: string;
+  busy: boolean;
+  act: Act;
+}) {
+  const [message, setMessage] = useState("");
+  const [staged, setStaged] = useState<WorkspaceDiffFile[]>([]);
+  const [unstaged, setUnstaged] = useState<WorkspaceDiffFile[]>([]);
+
+  /*
+   * Two diffs, matching the two groups.
+   *
+   * The staged side is the index against HEAD and the unstaged side the working tree against
+   * the index — the same split git itself makes. Fetched here rather than in the parent so a
+   * staging click re-reads only what it changed.
+   */
+  useEffect(() => {
+    let live = true;
+    void Promise.all([
+      window.deepwise.git.diffRefs(cwd, "HEAD", null),
+      window.deepwise.diff.workspaceDiff(cwd),
+    ]).then(([indexDiff, treeDiff]) => {
+      if (!live) return;
+      const stagedPaths = new Set(
+        status?.staged.map((file) => file.path) ?? [],
+      );
+      const unstagedPaths = new Set(
+        status?.unstaged.map((file) => file.path) ?? [],
+      );
+      setStaged(indexDiff.files.filter((file) => stagedPaths.has(file.path)));
+      setUnstaged(
+        treeDiff.files.filter((file) => unstagedPaths.has(file.path)),
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [cwd, status]);
+
+  const stagedPaths = status?.staged.map((file) => file.path) ?? [];
+  const unstagedPaths = status?.unstaged.map((file) => file.path) ?? [];
+  const nothing = stagedPaths.length === 0 && unstagedPaths.length === 0;
+
+  async function commit() {
+    const ok = await act(() => window.deepwise.git.commitStaged(cwd, message));
+    if (ok) setMessage("");
+  }
+
+  if (nothing) {
+    return (
+      <PanelEmpty icon={Check} title="工作区干净">
+        没有未提交的改动。
+      </PanelEmpty>
+    );
+  }
+
+  return (
+    <>
+      <Scroller className="flex-1" contentClassName="px-1.5 pb-2" fade={false}>
+        {stagedPaths.length > 0 && (
+          <GroupHeader
+            label="已暂存"
+            count={stagedPaths.length}
+            action="取消全部"
+            disabled={busy}
+            onAction={() =>
+              void act(() => window.deepwise.git.unstage(cwd, stagedPaths))
+            }
+          />
+        )}
+        {stagedPaths.length > 0 && (
+          <FileDiffList
+            files={staged}
+            actions={(file) => (
+              <IconButton
+                icon={<Minus size={12} strokeWidth={1.9} />}
+                label="取消暂存"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void act(() => window.deepwise.git.unstage(cwd, [file.path]))
+                }
+              />
+            )}
+          />
+        )}
+
+        {unstagedPaths.length > 0 && (
+          <GroupHeader
+            label="未暂存"
+            count={unstagedPaths.length}
+            action="全部暂存"
+            disabled={busy}
+            onAction={() =>
+              void act(() => window.deepwise.git.stage(cwd, unstagedPaths))
+            }
+          />
+        )}
+        {unstagedPaths.length > 0 && (
+          <FileDiffList
+            files={unstaged}
+            actions={(file) => (
+              <>
+                <IconButton
+                  icon={<RotateCcw size={12} strokeWidth={1.9} />}
+                  label="放弃改动"
+                  size="sm"
+                  tone="danger"
+                  disabled={busy}
+                  onClick={() => {
+                    // Deleting an untracked file is not something to do on one click.
+                    if (
+                      window.confirm(
+                        `放弃 ${file.path} 的改动？此操作不可撤销。`,
+                      )
+                    ) {
+                      void act(() =>
+                        window.deepwise.git.discard(cwd, [file.path]),
+                      );
+                    }
+                  }}
+                />
+                <IconButton
+                  icon={<Plus size={12} strokeWidth={1.9} />}
+                  label="暂存"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(() => window.deepwise.git.stage(cwd, [file.path]))
+                  }
+                />
+              </>
+            )}
+          />
+        )}
+      </Scroller>
+
+      {/* The commit box, always in view: it is what the list above is building towards. */}
+      <div className="shrink-0 border-t border-line-soft p-1.5">
+        <textarea
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter")
+              void commit();
+          }}
+          rows={2}
+          placeholder="提交信息"
+          className="block w-full resize-none rounded-lg border border-line bg-input px-2.5 py-2 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-ink-faint"
+        />
+        <div className="flex items-center justify-between gap-2 pt-1.5">
+          <Text size="caption" tone="faint">
+            {stagedPaths.length > 0
+              ? `将提交 ${stagedPaths.length} 个文件`
+              : "先暂存要提交的文件"}
+          </Text>
+          <button
+            type="button"
+            disabled={busy || stagedPaths.length === 0 || !message.trim()}
+            onClick={() => void commit()}
+            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-[12px] font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
+          >
+            <Check size={12} strokeWidth={2.2} />
+            提交
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
