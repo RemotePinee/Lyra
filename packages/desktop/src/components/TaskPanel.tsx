@@ -1,7 +1,8 @@
-import { Check, ListTodo } from "lucide-react";
+import { ListTodo } from "lucide-react";
 import { useState } from "react";
 
 import { PanelEmpty } from "./PanelEmpty.tsx";
+import { Mark, lastTurnFailed } from "./task/Mark.tsx";
 import { RunDetail } from "./task/RunDetail.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { ScrollText } from "./ScrollText.tsx";
@@ -23,6 +24,15 @@ export function TaskPanel() {
 	const todos = useApp((s) => s.todos);
 	const toolRuns = useApp((s) => s.toolRuns);
 	const running = useApp((s) => s.running);
+	const messages = useApp((s) => s.messages);
+	/*
+	 * The same three answers the floating card gives, from the same evidence.
+	 *
+	 * A step that is `in_progress` while nothing is running has either paused or failed, and the
+	 * plan itself cannot tell you which — `todo_write` knows only pending, in progress and done.
+	 * How the last turn ended is what distinguishes them.
+	 */
+	const failed = !running && lastTurnFailed(messages);
 	/*
 	 * One row open at a time.
 	 *
@@ -50,16 +60,7 @@ export function TaskPanel() {
 					<Header label="计划" hint={`${done}/${todos.length}`} />
 					{todos.map((todo, index) => (
 						<div key={`${index}-${todo.content}`} className="dw-scroll flex items-center gap-2 rounded-md px-1.5 py-[5px]">
-							<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center">
-								{todo.status === "completed" ? (
-									<Check size={11} strokeWidth={2.4} className="text-ok" />
-								) : todo.status === "in_progress" ? (
-									// Paused whenever no turn is running: motion belongs to the turn, not the plan.
-									<span className={`block h-[7px] w-[7px] rounded-full ${running ? "bg-accent" : "bg-ink-faint"}`} />
-								) : (
-									<span className="block h-[9px] w-[9px] rounded-full border border-dashed border-line" />
-								)}
-							</span>
+							<Mark status={todo.status} paused={!running && !failed} failed={failed} />
 							<ScrollText
 								text={todo.content}
 								className={`dw-fade-tail min-w-0 flex-1 text-[12px] ${

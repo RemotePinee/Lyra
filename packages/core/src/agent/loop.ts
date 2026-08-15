@@ -347,6 +347,20 @@ async function runTools(
 	return Promise.all(toolCalls.map(execute));
 }
 
+/**
+ * Resolves when the signal fires, and never otherwise.
+ *
+ * Never-resolving is the point: in a race with real work it is inert until the moment it matters,
+ * and the listener is removed as soon as it does so a long turn does not accumulate one per call.
+ */
+function cancelled(signal: AbortSignal | undefined): Promise<ToolResult> {
+	if (!signal) return new Promise<ToolResult>(() => {});
+	if (signal.aborted) return Promise.resolve(errorResult("Tool execution was cancelled."));
+	return new Promise<ToolResult>((resolve) => {
+		signal.addEventListener("abort", () => resolve(errorResult("Tool execution was cancelled.")), { once: true });
+	});
+}
+
 async function executeOne(
 	tool: Tool | undefined,
 	call: ToolCall,
@@ -392,7 +406,19 @@ async function executeOne(
 
 	let result: ToolResult;
 	try {
-		result = await runTool({ tool, args: call.arguments, ctx });
+		/*
+		 * Stop must not depend on the tool agreeing to stop.
+		 *
+		 * A tool is given the signal and is expected to honour it, but "expected to" is not a
+		 * guarantee: an `executeJavaScript` against a wedged page, a socket with no timeout, a
+		 * child process ignoring SIGKILL. Any one of them used to hold the turn open forever —
+		 * the loop was awaiting a promise that would never settle, so pressing stop did nothing
+		 * and the run could not even reach its own turn limit.
+		 *
+		 * Racing the signal here makes the button mean what it says. Whatever the tool is doing
+		 * carries on in the background and its result is discarded; the turn is over.
+		 */
+		result = await Promise.race([runTool({ tool, args: call.arguments, ctx }), cancelled(config.signal)]);
 	} catch (error) {
 		if (config.signal?.aborted) return errorResult("Tool execution was cancelled.");
 		return errorResult(error instanceof Error ? error.message : String(error));

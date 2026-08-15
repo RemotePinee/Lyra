@@ -13,6 +13,8 @@
 import { BrowserWindow } from "electron";
 import type { Tool, ToolResult } from "@deepwise/core";
 
+/** A page that has not answered in this long is not going to. */
+const EVAL_TIMEOUT_MS = 15_000;
 const PAGE_TIMEOUT_MS = 30_000;
 const MAX_TEXT = 40_000;
 
@@ -46,9 +48,22 @@ class HeadlessBrowser {
 		await new Promise((resolve) => setTimeout(resolve, 700));
 	}
 
+	/**
+	 * Run an expression in the page, or give up.
+	 *
+	 * `executeJavaScript` resolves when the page answers, and a page is under no obligation to: a
+	 * render that threw, a script in an infinite loop, a renderer that died mid-call. Without a
+	 * bound the promise simply never settles, and the agent's turn waits behind it forever — which
+	 * is what a two-hour run with no output turned out to be.
+	 */
 	async evaluate<T>(expression: string): Promise<T> {
 		const win = this.ensure();
-		return win.webContents.executeJavaScript(expression, true) as Promise<T>;
+		return Promise.race([
+			win.webContents.executeJavaScript(expression, true) as Promise<T>,
+			new Promise<T>((_, reject) =>
+				setTimeout(() => reject(new Error(`页面没有在 ${EVAL_TIMEOUT_MS}ms 内回应，可能正在报错或卡住`)), EVAL_TIMEOUT_MS),
+			),
+		]);
 	}
 
 	async screenshot(): Promise<string> {
