@@ -164,3 +164,20 @@ test("using a tool resets the allowance, so a later pause is still recovered", a
 	assert.ok(nudgeCount(result.messages) > MAX_NUDGES, "a tool call must restore the allowance");
 	assert.equal(result.reason, "done");
 });
+
+test("an empty reply is nudged even before there is a plan", async () => {
+	/*
+	 * The case that killed a real run four messages in: the model spent its turn thinking, emitted
+	 * no text and called nothing, and an empty workspace was read as a finished job.
+	 */
+	const empty: AssistantMessage = { ...base(), content: [] };
+	const { result, turns } = await run([empty, narrates("开始建项目骨架")], []);
+
+	assert.equal(nudgeCount(result.messages), 1, "the silence was not taken for an answer");
+	assert.equal(turns, 2, "and it was asked again");
+});
+
+test("an ordinary reply with no plan is still left alone", async () => {
+	const { result } = await run([narrates("好的，已经完成了")], []);
+	assert.equal(nudgeCount(result.messages), 0, "saying something is answering");
+});

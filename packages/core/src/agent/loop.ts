@@ -172,15 +172,27 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 			 * tool, so a model that has genuinely stopped is nudged a few times and then left
 			 * alone rather than talked at forever.
 			 */
+			/*
+			 * An empty reply is not an answer.
+			 *
+			 * A turn that produced no tool call *and* no words has said nothing — it happens when a
+			 * model spends its turn thinking and emits nothing after it. Read literally that is the
+			 * end of the run, and a whole task once ended this way four messages in with an empty
+			 * workspace and no explanation. There is no plan to consult in that case, because
+			 * nothing has happened yet; the emptiness is the evidence.
+			 */
+			const saidNothing = assistant.content.every((part) => part.type !== "text" || !part.text.trim());
 			const unfinished = readTodos(state).filter((todo) => todo.status !== "completed");
-			if (unfinished.length > 0 && nudges < MAX_NUDGES) {
+			if ((unfinished.length > 0 || saidNothing) && nudges < MAX_NUDGES) {
 				nudges += 1;
 				const nudge: Message = {
 					role: "user",
 					content: [
 						{
 							type: "text",
-							text: `（自动继续）清单里还有 ${unfinished.length} 项没有完成。直接执行下一项，不要只描述计划。`,
+							text: saidNothing
+								? "（自动继续）上一条回复是空的。请直接开始执行：说明你要做什么，并调用工具去做。"
+								: `（自动继续）清单里还有 ${unfinished.length} 项没有完成。直接执行下一项，不要只描述计划。`,
 						},
 					],
 					timestamp: Date.now(),
