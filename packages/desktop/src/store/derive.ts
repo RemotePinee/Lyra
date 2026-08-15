@@ -49,6 +49,15 @@ export function without(cache: Cache, id: string): Cache {
  * running them. Either way the work stopped somewhere it did not choose to.
  */
 export function wasCutShort(messages: Message[]): boolean {
+	/*
+	 * A finished turn always ends with the agent saying something.
+	 *
+	 * Stopping between a tool's result and the reply to it leaves the result as the last message:
+	 * the tools all ran, nothing is unanswered, and the old rules below therefore called it
+	 * complete — while the one thing the turn was for, the answer, never arrived.
+	 */
+	if (messages[messages.length - 1]?.role === "toolResult") return true;
+
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
 		if (message.role !== "assistant") continue;

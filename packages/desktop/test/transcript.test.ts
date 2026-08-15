@@ -5,7 +5,7 @@ import type { AssistantMessage, Message } from "@deepwise/core";
 
 import { emptyUsage } from "@deepwise/core";
 
-import { rebuildToolRuns } from "../src/store/derive.ts";
+import { rebuildToolRuns, wasCutShort } from "../src/store/derive.ts";
 import { settleTail } from "../src/transcript.ts";
 
 function reply(stopReason: AssistantMessage["stopReason"], text = "你好！"): AssistantMessage {
@@ -104,4 +104,25 @@ test("a call that did get its result is unaffected", () => {
 		{ role: "toolResult", toolCallId: "call-1", content: [{ type: "text", text: "ok" }], timestamp: 3 },
 	];
 	assert.equal(rebuildToolRuns(messages)["call-1"].status, "done");
+});
+
+test("a turn stopped between a tool result and the reply counts as cut short", () => {
+	const messages = [
+		{ role: "user", content: [{ type: "text", text: "跑一下" }], timestamp: 1 },
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: "c1", name: "bash", arguments: {} }],
+			stopReason: "toolUse",
+			timestamp: 2,
+		},
+		{ role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "done" }], timestamp: 3 },
+	] as unknown as Message[];
+
+	assert.equal(wasCutShort(messages), true, "the answer never arrived");
+
+	const complete = [
+		...messages,
+		{ role: "assistant", content: [{ type: "text", text: "好了" }], stopReason: "stop", timestamp: 4 },
+	] as unknown as Message[];
+	assert.equal(wasCutShort(complete), false);
 });
