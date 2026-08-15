@@ -11,9 +11,17 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, screen
 import {
 	AgentSession,
 	buildIndex,
+	createContext,
 	deepwiseHome,
 	previewsHome,
 	pruneSessionArtifacts,
+	useLlmRegistry,
+	useToolRegistry,
+	LLM,
+	TOOLS,
+	type Context as CapabilityContext,
+	type LlmRegistry,
+	type ToolRegistry,
 	removeSessionArtifacts,
 	indexStats,
 	loadIndex,
@@ -111,6 +119,8 @@ function insideAProject(target: string): boolean {
 const store = new SessionStore();
 /** Live sessions keyed by session id. A session stays warm so MCP servers are not respawned per turn. */
 const sessions = new Map<string, AgentSession>();
+/** The capability context: what the app can do, assembled from plugins at boot. */
+let kernel: CapabilityContext | null = null;
 /** Per-session browser instances, disposed alongside the session that owns them. */
 const browsers = new Map<string, () => void>();
 /**
@@ -516,6 +526,19 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(async () => {
 	await mkdir(deepwiseHome(), { recursive: true });
+
+	/*
+	 * Capabilities first, everything else after.
+	 *
+	 * The model adapters, the tool set and the approval policy are contributed by plugins into a
+	 * context, and the kernel is pointed at that context here — before any session exists. Nothing
+	 * downstream imports a concrete implementation, so replacing one (a sandboxed shell, another
+	 * model API, a stricter policy) is a change to this list rather than to the code that uses it.
+	 */
+	kernel = await createContext();
+	useLlmRegistry(kernel.require<LlmRegistry>(LLM));
+	useToolRegistry(kernel.require<ToolRegistry>(TOOLS));
+
 	settings = await loadSettings();
 	// Before the window exists, so its very first frame gets the right material.
 	applyNativeAppearance();
@@ -611,6 +634,11 @@ app.on("before-quit", async () => {
 	terminals.clear();
 	await Promise.all([...sessions.values()].map((s) => s.dispose()));
 	await syncServer?.stop();
+	// Unwinds every capability the plugins installed, in the reverse of the order they arrived.
+	useLlmRegistry(null);
+	useToolRegistry(null);
+	await kernel?.dispose();
+	kernel = null;
 });
 
 // ---------------------------------------------------------------------------

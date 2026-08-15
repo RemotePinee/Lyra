@@ -11,10 +11,32 @@ import type {
 import { anthropicMessagesProvider } from "./anthropic-messages.ts";
 import { openaiResponsesProvider } from "./openai-responses.ts";
 
-const PROVIDERS: Record<ApiFormat, Provider> = {
+/**
+ * The adapters this module falls back to.
+ *
+ * The real registry is `ctx.llm`, contributed by the `llm` plugin — that is where an adapter for
+ * a private or experimental API gets added without editing anything here. This map is what the
+ * lookup uses when no context has been bound, which is the case in tests and in small tools that
+ * have no reason to build a plugin host.
+ */
+const BUILT_IN: Record<ApiFormat, Provider> = {
 	"anthropic-messages": anthropicMessagesProvider,
 	"openai-responses": openaiResponsesProvider,
 };
+
+/** Set once by the host that owns the plugin context; read on every lookup. */
+let registry: { get(api: string): Provider | undefined } | null = null;
+
+/**
+ * Point provider lookup at a plugin registry.
+ *
+ * Deliberately a binding rather than a parameter threaded through every call site: the adapter
+ * in use is a property of the running application, and passing it down through the agent loop,
+ * compaction and every tool that streams would say otherwise.
+ */
+export function useLlmRegistry(next: { get(api: string): Provider | undefined } | null): void {
+	registry = next;
+}
 
 export const API_FORMATS: { value: ApiFormat; label: string; hint: string }[] = [
 	{ value: "openai-responses", label: "Responses (/responses)", hint: "OpenAI Responses API" },
@@ -22,7 +44,7 @@ export const API_FORMATS: { value: ApiFormat; label: string; hint: string }[] = 
 ];
 
 export function getProvider(api: ApiFormat): Provider {
-	const provider = PROVIDERS[api];
+	const provider = registry?.get(api) ?? BUILT_IN[api];
 	if (!provider) throw new Error(`Unsupported API format: ${api}`);
 	return provider;
 }

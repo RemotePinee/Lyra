@@ -1,4 +1,19 @@
-export { API_FORMATS, getProvider, streamAssistant } from "./ai/index.ts";
+export {
+	APPROVAL,
+	Context,
+	DEFAULT_PLUGINS,
+	EVENTS,
+	LLM,
+	STORAGE,
+	TOOLS,
+	createContext,
+	type ApprovalPolicy,
+	type ApprovalVerdict,
+	type LlmRegistry,
+	type Plugin as CapabilityPlugin,
+	type ToolRegistry,
+} from "./kernel/index.ts";
+export { API_FORMATS, getProvider, streamAssistant, useLlmRegistry } from "./ai/index.ts";
 export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";
 export { errorResult, runAgent, textResult, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
@@ -73,7 +88,7 @@ export {
 	type SkillDiagnostic,
 } from "./skills/index.ts";
 export * from "./tools/index.ts";
-export { builtinTools } from "./tools/index.ts";
+export { builtinTools, useToolRegistry } from "./tools/index.ts";
 export * from "./types.ts";
 export {
 	listPreviews,

@@ -14,7 +14,26 @@ import { webFetchTool } from "./web.ts";
 import { writeTool } from "./write.ts";
 
 /** The built-in tool set, in the order they are advertised to the model. */
+/**
+ * Where the built-in tool list comes from.
+ *
+ * `ctx.tools` is the real registry — it is what lets a plugin add a tool, or displace one with
+ * its own implementation. This binding is how the session reaches it without every caller having
+ * to be handed a context; unbound, the list below is used, which is what tests and small tools
+ * see.
+ */
+let registry: { all(): Tool[] } | null = null;
+
+export function useToolRegistry(next: { all(): Tool[] } | null): void {
+	registry = next;
+}
+
 export function builtinTools(): Tool[] {
+	if (registry) return registry.all();
+	return staticTools();
+}
+
+function staticTools(): Tool[] {
 	return [
 		readTool,
 		writeTool,
