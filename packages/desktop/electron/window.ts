@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deepwiseHome, type Settings } from "@deepwise/core";
-import { app, BrowserWindow, nativeTheme, screen, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electron";
 
 /**
  * How this module reaches the rest of the app.
@@ -241,3 +241,50 @@ export function writeWindowState(): void {
  * Not `file://`: that would hand the renderer the entire disk. This one goes through a handler
  * that re-checks the project boundary on every request.
  */
+
+/**
+ * The two things the renderer can ask the window itself to do.
+ *
+ * Both are about the surface behind the page rather than the page: a fast resize exposes the
+ * window's own backing colour before the renderer has reflowed, and the vibrant material has to be
+ * turned off before an opaque colour is painted over it.
+ */
+export function registerWindowIpc(): void {
+	/**
+	 * Repaint the system window controls to match the theme.
+	 *
+	 * Only Windows and Linux have this strip — macOS keeps its own lights outside the page —
+	 * and Electron throws if the window was not created with an overlay, so the call is guarded
+	 * rather than merely no-op'd.
+	 */
+	/*
+	 * Toggled without recreating the window.
+	 *
+	 * `vibrancy` is a constructor option but also a live setter, so flipping the switch takes
+	 * effect immediately. The backing colour has to move with it: an opaque one would sit over
+	 * the vibrant layer and hide the very thing it was turned on for.
+	 */
+	ipcMain.on("window:vibrancy", (_event, on: boolean) => {
+		const window = getWindow();
+		if (process.platform !== "darwin" || !window) return;
+		vibrant = on;
+		window.setVibrancy(on ? "sidebar" : null);
+		window.setBackgroundColor(on ? "#00000000" : resolvedBackground());
+	});
+
+	ipcMain.on("window:theme", (_event, colors: { color: string; symbolColor: string }) => {
+		const window = getWindow();
+		if (!window || window.isDestroyed()) return;
+		/*
+		 * Repaint the window's own backing colour, not just the OS-drawn controls.
+		 *
+		 * This is the surface a fast resize exposes before the renderer has reflowed, so it has
+		 * to track the theme — otherwise dragging an edge flashes the old palette's background.
+		 */
+		if (!vibrant) window.setBackgroundColor(colors.color);
+		if (process.platform === "darwin") return;
+		try {
+			window.setTitleBarOverlay({ ...colors, height: 44 });
+		} catch {}
+	});
+}
