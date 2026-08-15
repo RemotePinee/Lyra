@@ -66,11 +66,12 @@ jobs:
     # Reported, not enforced. Knip is right often enough to be worth reading and wrong often
     # enough that failing a pull request on it would teach people to ignore it.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      - run: pnpm knip
+      # `--no-exit-code`, so the report lands in the log without turning the run red for
+      # something that is advisory by design.
+      - run: pnpm knip --no-exit-code
 
   build:
     runs-on: ubuntu-latest

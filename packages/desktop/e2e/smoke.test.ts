@@ -25,6 +25,8 @@ const BOOT_TIMEOUT_MS = 90_000;
 let app: ChildProcess | undefined;
 let home: string;
 let target: string;
+/** Kept so a failure to start can show what the app said on its way down. */
+const output: string[] = [];
 
 before(async () => {
 	// A profile of its own: this must not read, or write to, whatever is on the machine already.
@@ -37,14 +39,19 @@ before(async () => {
 	 * window running and the test runner waiting on a handle that never closes — which shows up as
 	 * a suite that passes and then hangs for ten minutes.
 	 */
-	app = spawn("npx", ["electron-vite", "preview", "--", `--remote-debugging-port=${PORT}`], {
+	app = spawn("pnpm", ["exec", "electron-vite", "preview", "--", `--remote-debugging-port=${PORT}`], {
 		cwd: ROOT,
 		env: { ...process.env, DEEPWISE_HOME: home, ELECTRON_ENABLE_LOGGING: "1" },
 		stdio: "pipe",
 		detached: true,
 	});
-	app.stdout?.on("data", (chunk: Buffer) => process.env.DEBUG_E2E && process.stdout.write(chunk));
-	app.stderr?.on("data", (chunk: Buffer) => process.env.DEBUG_E2E && process.stderr.write(chunk));
+	const record = (chunk: Buffer) => {
+		output.push(chunk.toString());
+		if (process.env.DEBUG_E2E) process.stdout.write(chunk);
+	};
+	app.stdout?.on("data", record);
+	app.stderr?.on("data", record);
+	app.on("error", (error) => output.push(`spawn failed: ${error.message}`));
 
 	target = await waitForWindow();
 	await waitForShell();
@@ -116,7 +123,15 @@ async function waitForWindow(): Promise<string> {
 		if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
 		await new Promise((r) => setTimeout(r, 500));
 	}
-	throw new Error(`no window after ${BOOT_TIMEOUT_MS / 1000}s`);
+	/*
+	 * What it printed, not just that it never appeared.
+	 *
+	 * The first CI run of this failed with "no window after 90s" and nothing else, which says
+	 * only that something went wrong somewhere — the app's own output is the whole diagnosis.
+	 */
+	throw new Error(
+		`no window after ${BOOT_TIMEOUT_MS / 1000}s. What the app printed:\n${output.join("").slice(-4000) || "(nothing)"}`,
+	);
 }
 
 /**
