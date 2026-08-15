@@ -188,6 +188,8 @@ export function Conversation() {
                 key={messageKey(run.message, run.index)}
                 message={run.message}
                 index={run.index}
+                /* A turn the runtime carried straight on from did not end where it stopped. */
+                continued={isNudge(messages[run.index + 1])}
               />
             ) : (
               /* Keyed on the first call, not the position: inserting anything above must not
@@ -296,7 +298,16 @@ function messageKey(message: Message, index: number): string {
   return `${message.role}-${message.timestamp}-${index}`;
 }
 
-function MessageRow({ message, index }: { message: Message; index: number }) {
+function MessageRow({
+  message,
+  index,
+  continued,
+}: {
+  message: Message;
+  index: number;
+  /** The runtime told it to keep going, so this is a pause rather than a finish. */
+  continued?: boolean;
+}) {
   if (message.role === "user") {
     /*
      * The runtime talking to the model, not the user talking.
@@ -310,24 +321,22 @@ function MessageRow({ message, index }: { message: Message; index: number }) {
      * turn started, so it gets a line of its own — a note about the conversation rather than a
      * message in it.
      */
-    const text = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-    if (text.startsWith("（自动继续）")) {
-      return (
-        <div className="mb-2.5 flex items-center gap-2 text-[11px] text-ink-faint">
-          <span className="h-px w-6 bg-line-soft" />
-          <span>自动继续 · 清单尚未完成</span>
-          <span className="h-px flex-1 bg-line-soft" />
-        </div>
-      );
-    }
-    if (message.synthetic) return null;
+    /*
+     * Invisible, including the fact that it happened.
+     *
+     * A line saying "自动继续" was there to explain why another turn began — but the work either
+     * side of it is one continuous stretch, and a rule drawn through the middle of it interrupts
+     * something that never stopped. The plan already shows what remains, and the transcript reads
+     * better without a note about the machinery that kept it going.
+     */
+    if (message.synthetic || isNudge(message)) return null;
     return <UserMessage message={message} index={index} />;
   }
 
   // Tool results are rendered inside their tool card, not as standalone rows.
   if (message.role === "toolResult") return null;
 
-  return <AssistantRow message={message} index={index} />;
+  return <AssistantRow message={message} index={index} continued={continued} />;
 }
 
 /**
@@ -418,6 +427,12 @@ type Run =
   | { kind: "compaction" }
   | { kind: "message"; message: Message; index: number }
   | { kind: "tools"; calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] };
+
+/** The runtime's "carry on" message, recognised by what it says as well as by its flag. */
+function isNudge(message: Message | undefined): boolean {
+  if (message?.role !== "user") return false;
+  return message.content.some((c) => c.type === "text" && c.text.startsWith("（自动继续）"));
+}
 
 function runs(messages: Message[], compactions: { at: number }[] = []): Run[] {
   const out: Run[] = [];
@@ -545,9 +560,11 @@ function diffOf(run: ToolRun | undefined, key: "added" | "removed"): number {
 function AssistantRow({
   message,
   index,
+  continued,
 }: {
   message: AssistantMessage;
   index: number;
+  continued?: boolean;
 }) {
   const running = useApp((s) => s.running);
   const retryFrom = useApp((s) => s.retryFrom);
@@ -634,7 +651,7 @@ function AssistantRow({
        * one was getting its own timestamp and copy button, so a single reply came back stamped
        * four times. The row belongs to the message that finished the turn.
        */}
-      {settled(message.stopReason) && text.trim() && (
+      {settled(message.stopReason) && !continued && text.trim() && (
         <MessageActions timestamp={message.timestamp} text={text} />
       )}
     </div>
