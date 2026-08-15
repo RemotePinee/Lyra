@@ -17,6 +17,7 @@ import { McpManager, type McpServerStatus } from "../mcp/client.ts";
 import { loadPlugins, type Plugin, type PluginDiagnostic } from "../plugins/loader.ts";
 import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
 import { formatSkillCatalogue, loadSkills, parseFrontmatter, type Skill, type SkillDiagnostic } from "../skills/loader.ts";
+import { registeredSkills } from "../skills/registry.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { deepwiseHome, SessionStore, type SessionMeta } from "../session/store.ts";
 import { writePreview } from "./previews.ts";
@@ -33,7 +34,7 @@ import type {
 	Tool,
 	UserContent,
 } from "../types.ts";
-import { compactIfNeeded } from "./compaction.ts";
+import { compactWith } from "./compaction.ts";
 import { buildContextBreakdown, type ContextBreakdown } from "./context.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 
@@ -174,7 +175,12 @@ export class AgentSession {
 			.flatMap((plugin) => plugin.skills)
 			.filter((skill) => !looseNames.has(skill.name));
 
-		this.skills = [...loaded.skills, ...pluginSkills];
+		// Code-provided skills sit behind both, for the same reason: what the user put on disk is
+		// the most specific statement of intent in the room.
+		const known = new Set([...looseNames, ...pluginSkills.map((skill) => skill.name)]);
+		const fromPlugins = registeredSkills().filter((skill) => !known.has(skill.name));
+
+		this.skills = [...loaded.skills, ...pluginSkills, ...fromPlugins];
 		this.skillDiagnostics = loaded.diagnostics;
 		this.state.set(SKILLS_KEY, this.skills);
 
@@ -366,7 +372,7 @@ export class AgentSession {
 					drainSteering: () => this.steering.splice(0, this.steering.length),
 					beforeToolCall: makeBeforeToolCall(this.settings.hooks, this.cwd, this.controller.signal),
 					afterToolCall: makeAfterToolCall(this.settings.hooks, this.cwd, this.controller.signal),
-					compact: (messages, model) => compactIfNeeded(messages, model, resolved.provider),
+					compact: (messages, model) => compactWith(messages, model, resolved.provider),
 					streamFn: this.streamFn,
 				},
 				(event) => this.handleAgentEvent(event),

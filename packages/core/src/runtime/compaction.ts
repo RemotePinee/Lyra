@@ -7,6 +7,7 @@
  * failed attempts).
  */
 
+import type { CompactionStrategy } from "../kernel/services.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { estimateTokens } from "../tokens.ts";
 import type { Message, ModelConfig, ProviderConfig } from "../types.ts";
@@ -44,6 +45,28 @@ Cover, in this order:
 5. Anything tried that did not work, so it is not retried.
 
 Be specific: real paths, real symbol names, real error text. Do not summarise the summary.`;
+
+/**
+ * Which strategy is in force.
+ *
+ * Bound by the host at boot; unbound everywhere else, where the built-in answer is the right one.
+ * Callers go through `compactWith` so that replacing the strategy is a plugin, not an edit to the
+ * loop that runs out of room.
+ */
+let strategy: CompactionStrategy | null = null;
+
+export function useCompaction(next: CompactionStrategy | null): void {
+	strategy = next;
+}
+
+export function compactWith(
+	messages: Message[],
+	model: ModelConfig,
+	provider: ProviderConfig,
+): Promise<Message[] | null> {
+	if (strategy) return strategy.compact(messages, model, provider);
+	return compactIfNeeded(messages, model, provider);
+}
 
 export async function compactIfNeeded(
 	messages: Message[],

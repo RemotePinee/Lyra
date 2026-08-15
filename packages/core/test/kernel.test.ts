@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Context } from "../src/kernel/context.ts";
-import { createContext, LLM, TOOLS, type LlmRegistry, type ToolRegistry } from "../src/kernel/index.ts";
+import {
+	createContext,
+	COMPACTION,
+	LLM,
+	SANDBOX,
+	SKILLS,
+	TOOLS,
+	type CompactionStrategy,
+	type LlmRegistry,
+	type Sandbox,
+	type SkillRegistry,
+	type ToolRegistry,
+} from "../src/kernel/index.ts";
 
 test("a plugin waits for the services it names, whatever order it was listed in", async () => {
 	const ctx = new Context();
@@ -129,6 +141,10 @@ test("the default context provides the seams the app is built on", async () => {
 
 	const llm = ctx.require<LlmRegistry>(LLM);
 	assert.deepEqual(llm.list().sort(), ["anthropic-messages", "openai-responses"]);
+
+	assert.ok(ctx.require<Sandbox>(SANDBOX), "commands have somewhere to run");
+	assert.ok(ctx.require<CompactionStrategy>(COMPACTION), "a full window has an answer");
+	assert.deepEqual(ctx.require<SkillRegistry>(SKILLS).all(), [], "no skills ship in the box");
 
 	const tools = ctx.require<ToolRegistry>(TOOLS);
 	assert.ok(tools.byName("bash"), "the shell tool is registered");

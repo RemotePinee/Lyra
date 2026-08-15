@@ -15,12 +15,21 @@ import {
 	deepwiseHome,
 	previewsHome,
 	pruneSessionArtifacts,
+	useCompaction,
 	useLlmRegistry,
+	useSandbox,
+	useSkillRegistry,
 	useToolRegistry,
+	COMPACTION,
 	LLM,
+	SANDBOX,
+	SKILLS,
 	TOOLS,
 	type Context as CapabilityContext,
+	type CompactionStrategy,
 	type LlmRegistry,
+	type Sandbox,
+	type SkillRegistry,
 	type ToolRegistry,
 	removeSessionArtifacts,
 	indexStats,
@@ -538,6 +547,9 @@ app.whenReady().then(async () => {
 	kernel = await createContext();
 	useLlmRegistry(kernel.require<LlmRegistry>(LLM));
 	useToolRegistry(kernel.require<ToolRegistry>(TOOLS));
+	useSandbox(kernel.require<Sandbox>(SANDBOX));
+	useCompaction(kernel.require<CompactionStrategy>(COMPACTION));
+	useSkillRegistry(kernel.require<SkillRegistry>(SKILLS));
 
 	settings = await loadSettings();
 	// Before the window exists, so its very first frame gets the right material.
@@ -637,6 +649,9 @@ app.on("before-quit", async () => {
 	// Unwinds every capability the plugins installed, in the reverse of the order they arrived.
 	useLlmRegistry(null);
 	useToolRegistry(null);
+	useSandbox(null);
+	useCompaction(null);
+	useSkillRegistry(null);
 	await kernel?.dispose();
 	kernel = null;
 });

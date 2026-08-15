@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { getSandbox } from "../sandbox/index.ts";
 import { errorResult } from "../agent/loop.ts";
 import type { Tool, ToolContext, ToolResult } from "../types.ts";
 
@@ -107,25 +107,19 @@ export const bashTool: Tool<BashArgs> = {
 
 		const timeout = Math.min(args.timeout ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
 		return new Promise<ToolResult>((resolve) => {
-			const child = spawn(args.command, {
-				cwd: ctx.cwd,
-				shell: process.env.SHELL || "/bin/bash",
-				env: { ...process.env, TERM: "dumb", NO_COLOR: "1", GIT_PAGER: "cat", PAGER: "cat" },
-			});
+			const child = getSandbox().run(args.command, { cwd: ctx.cwd });
 
 			let output = "";
 			let settled = false;
-			const append = (chunk: Buffer) => {
-				if (output.length < MAX_OUTPUT_CHARS * 2) output += chunk.toString("utf8");
+			child.onOutput((chunk) => {
+				if (output.length < MAX_OUTPUT_CHARS * 2) output += chunk;
 				ctx.onProgress?.({ content: [{ type: "text", text: clip(output) }] });
-			};
-			child.stdout.on("data", append);
-			child.stderr.on("data", append);
+			});
 
 			const timer = setTimeout(() => {
 				if (settled) return;
 				settled = true;
-				child.kill("SIGKILL");
+				child.kill();
 				resolve({
 					content: [{ type: "text", text: `${clip(output)}\n\n[timed out after ${timeout}ms]` }],
 					details: { kind: "bash", command: args.command, timedOut: true },
@@ -137,7 +131,7 @@ export const bashTool: Tool<BashArgs> = {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timer);
-				child.kill("SIGKILL");
+				child.kill();
 				resolve({
 					content: [{ type: "text", text: `${clip(output)}\n\n[cancelled]` }],
 					details: { kind: "bash", command: args.command, cancelled: true },
@@ -146,7 +140,7 @@ export const bashTool: Tool<BashArgs> = {
 			};
 			ctx.signal?.addEventListener("abort", onAbort, { once: true });
 
-			child.on("error", (error) => {
+			child.onError((error) => {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timer);
@@ -154,7 +148,7 @@ export const bashTool: Tool<BashArgs> = {
 				resolve(errorResult(`Failed to start command: ${error.message}`));
 			});
 
-			child.on("close", (code) => {
+			child.onExit((code) => {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timer);
@@ -172,12 +166,7 @@ export const bashTool: Tool<BashArgs> = {
 
 function startBackground(args: BashArgs, ctx: ToolContext): ToolResult {
 	const id = randomUUID().slice(0, 8);
-	const child = spawn(args.command, {
-		cwd: ctx.cwd,
-		shell: process.env.SHELL || "/bin/bash",
-		env: { ...process.env, TERM: "dumb", NO_COLOR: "1" },
-		detached: false,
-	});
+	const child = getSandbox().run(args.command, { cwd: ctx.cwd });
 
 	const job: BackgroundJob = {
 		id,
@@ -185,14 +174,12 @@ function startBackground(args: BashArgs, ctx: ToolContext): ToolResult {
 		startedAt: Date.now(),
 		exitCode: null,
 		output: "",
-		kill: () => child.kill("SIGKILL"),
+		kill: () => child.kill(),
 	};
-	const append = (chunk: Buffer) => {
-		job.output = clip(job.output + chunk.toString("utf8"));
-	};
-	child.stdout.on("data", append);
-	child.stderr.on("data", append);
-	child.on("close", (code) => {
+	child.onOutput((chunk) => {
+		job.output = clip(job.output + chunk);
+	});
+	child.onExit((code) => {
 		job.exitCode = code ?? 0;
 	});
 

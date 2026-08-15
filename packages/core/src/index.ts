@@ -1,18 +1,27 @@
 export {
 	APPROVAL,
+	COMPACTION,
 	Context,
 	DEFAULT_PLUGINS,
 	EVENTS,
 	LLM,
+	SANDBOX,
+	SKILLS,
 	STORAGE,
 	TOOLS,
 	createContext,
 	type ApprovalPolicy,
 	type ApprovalVerdict,
+	type CompactionStrategy,
 	type LlmRegistry,
 	type Plugin as CapabilityPlugin,
+	type Sandbox,
+	type SandboxProcess,
+	type SkillRegistry,
 	type ToolRegistry,
 } from "./kernel/index.ts";
+export { getSandbox, useSandbox, LocalSandbox } from "./sandbox/index.ts";
+export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
 export { API_FORMATS, getProvider, streamAssistant, useLlmRegistry } from "./ai/index.ts";
 export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";
@@ -64,7 +73,7 @@ export {
 	type SymbolIndex,
 } from "./index/symbols.ts";
 export { buildSystemPrompt, loadProjectInstructions } from "./prompt/system.ts";
-export { compactIfNeeded } from "./runtime/compaction.ts";
+export { compactIfNeeded, compactWith, useCompaction } from "./runtime/compaction.ts";
 export type { ContextBreakdown, ContextSegment, ContextSegmentKey } from "./runtime/context.ts";
 export { estimateTokens } from "./tokens.ts";
 export { hooksFor, makeAfterToolCall, makeBeforeToolCall, runHook } from "./runtime/hooks.ts";
