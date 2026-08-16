@@ -48,8 +48,15 @@ export function PullRequestList({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<div className="shrink-0 px-3 pt-3 pb-2">
-				<div className="flex items-center gap-0.5 pb-2.5">
+			{/*
+			 * Sits in the strip the shell reserves for the window controls, so it lines up with the
+			 * sidebar's collapse button rather than starting a second row 44px below it.
+			 *
+			 * `no-drag` because that strip is what moves the window: without it these are decoration
+			 * you cannot click. `relative z-50` to come out from under the drag band, which covers
+			 * the full width at z-40.
+			 */}
+			<div className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-0.5 px-3">
 					{FILTERS.map((option) => (
 						<button
 							key={option.key}
@@ -73,8 +80,9 @@ export function PullRequestList({
 					>
 						<RefreshCw size={13} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
 					</button>
-				</div>
+			</div>
 
+			<div className="shrink-0 px-3 pt-1 pb-2">
 				<label className="flex h-[32px] items-center gap-2 rounded-[9px] border border-line px-2.5 focus-within:border-ink-faint">
 					<Search size={13} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
 					<input

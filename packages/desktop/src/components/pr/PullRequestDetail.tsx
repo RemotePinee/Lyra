@@ -60,7 +60,8 @@ export function PullRequestDetail({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<header className="flex shrink-0 items-center gap-1 px-3 py-2">
+			{/* In the toolbar strip, level with the sidebar's collapse button — see PullRequestList. */}
+			<header className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-1 px-3">
 				{/*
 				 * Expanded, the list is gone and with it the only thing saying which pull request this
 				 * is. The heading inside the summary does not answer that — it scrolls away, and on
