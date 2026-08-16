@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeProviderLabel, groupSessions, listableSessions } from "../src/components/sidebar/grouping.ts";
+import { activeProviderLabel, groupSessions, listableSessions, NO_PROJECT } from "../src/components/sidebar/grouping.ts";
 
 type Session = Parameters<typeof listableSessions>[0][number];
 
@@ -33,7 +33,7 @@ const projects = [
 ];
 
 test("archived sessions are not listed; they live in settings", () => {
-	const kept = listableSessions([session({ id: "x", archived: true }), session({ id: "y" })], null, "");
+	const kept = listableSessions([session({ id: "x", archived: true }), session({ id: "y" })], null);
 	assert.deepEqual(
 		kept.map((s) => s.id),
 		["y"],
@@ -43,7 +43,7 @@ test("archived sessions are not listed; they live in settings", () => {
 test("an empty session is not a conversation yet, unless it is the one being started", () => {
 	const sessions = [session({ id: "empty", messageCount: 0 }), session({ id: "started", messageCount: 0 })];
 	assert.deepEqual(
-		listableSessions(sessions, "started", "").map((s) => s.id),
+		listableSessions(sessions, "started").map((s) => s.id),
 		["started"],
 	);
 });
@@ -94,42 +94,56 @@ test("with nothing configured the settings row says so", () => {
 	assert.equal(activeProviderLabel([]), "未配置模型供应商");
 });
 
-test("pull request conversations stay out of the sidebar", () => {
+test("project-less conversations are grouped together, not as a project each", () => {
 	/*
-	 * They are ordinary sessions in an ordinary directory — that is what lets one reopen months
-	 * later — but the directory is a scratch folder under the app's home, not a project. Listed,
-	 * the pane would grow a project per review anyone ever asked a question about.
+	 * They are real sessions worth returning to — a review asked about yesterday should be one
+	 * click away — but their directory is scratch space. Grouped by directory the usual way, each
+	 * one becomes a project called `owner-repo-6381` sitting among the user's actual work.
 	 */
-	const root = "/home/.lyra/pr";
+	const roots = ["/home/.lyra/scratch"];
 	const sessions = [
-		session({ id: "work", cwd: "/projects/thing" }),
-		session({ id: "review", cwd: `${root}/owner-repo-6381` }),
+		session({ id: "work", cwd: "/a" }),
+		session({ id: "review-1", cwd: "/home/.lyra/scratch/owner-repo-1" }),
+		session({ id: "review-2", cwd: "/home/.lyra/scratch/owner-repo-2" }),
 	];
 
+	const { recent } = groupSessions(sessions, projects, "", roots);
+	const scratch = recent.find((g) => g.path === NO_PROJECT);
+
+	assert.ok(scratch, "there should be one group for them");
 	assert.deepEqual(
-		listableSessions(sessions, null, root).map((s) => s.id),
-		["work"],
+		scratch.sessions.map((s) => s.id),
+		["review-1", "review-2"],
+		"both belong to the same group despite different directories",
 	);
+	assert.equal(scratch.name, "无项目");
+	assert.equal(recent[recent.length - 1].path, NO_PROJECT, "and it sorts last");
 });
 
-test("a project that merely starts with the same characters is still listed", () => {
-	/*
-	 * The root arrives without a trailing slash, which is exactly what makes this worth a test:
-	 * a plain `startsWith` also matches `/home/.lyra/prototypes`, and that project would vanish
-	 * from the sidebar with nothing on screen to explain it.
-	 */
-	const root = "/home/.lyra/pr";
+test("every historical scratch root is recognised, not just the current one", () => {
+	// The directory was renamed once. Sessions record the path they were created under, so
+	// forgetting the old one turns every already-opened review back into a fake project.
+	const sessions = [
+		session({ id: "old", cwd: "/home/.lyra/pr/owner-repo-1" }),
+		session({ id: "new", cwd: "/home/.lyra/scratch/owner-repo-2" }),
+	];
+
+	const { recent } = groupSessions(sessions, [], "", ["/home/.lyra/scratch", "/home/.lyra/pr"]);
+	assert.equal(recent.length, 1, "both are project-less, so there is one group");
+	assert.equal(recent[0].path, NO_PROJECT);
+});
+
+test("a project whose path merely starts the same is still its own project", () => {
+	// The root arrives without a trailing slash; a plain `startsWith` would swallow
+	// `/home/.lyra/prototypes` into the project-less group.
 	const sessions = [session({ id: "prototypes", cwd: "/home/.lyra/prototypes" })];
 
-	assert.deepEqual(
-		listableSessions(sessions, null, root).map((s) => s.id),
-		["prototypes"],
-	);
+	const { recent } = groupSessions(sessions, [], "", ["/home/.lyra/pr"]);
+	assert.equal(recent[0].path, "/home/.lyra/prototypes");
 });
 
-test("without the root known yet, nothing is excluded", () => {
-	// The path arrives from the main process just after boot; until then the list is simply
-	// unfiltered rather than empty.
-	const sessions = [session({ id: "review", cwd: "/home/.lyra/pr/owner-repo-1" })];
-	assert.equal(listableSessions(sessions, null, "").length, 1);
+test("with no scratch roots known yet, nothing is grouped as project-less", () => {
+	const sessions = [session({ id: "review", cwd: "/home/.lyra/scratch/owner-repo-1" })];
+	const { recent } = groupSessions(sessions, [], "", []);
+	assert.notEqual(recent[0].path, NO_PROJECT);
 });

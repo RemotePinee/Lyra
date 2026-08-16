@@ -12,6 +12,7 @@ const CARDS = [
 ];
 
 export function EmptyState() {
+	const scratchCwd = useApp((s) => s.scratchCwd);
 	const workspace = useApp((s) => s.workspace);
 	const send = useApp((s) => s.send);
 	const { compact } = useLayout();
@@ -44,7 +45,7 @@ export function EmptyState() {
 						 * "there is a definition behind this" — and there is not. A heading that
 						 * hints at an interaction it does not have is worse than a plain one.
 						 */}
-						<span className="text-ink">{workspace?.name ?? "未选择项目"}</span>{" "}
+						<span className="text-ink">{workspace?.name ?? (scratchCwd ? "无项目" : "未选择项目")}</span>{" "}
 						内开发什么？
 					</h1>
 

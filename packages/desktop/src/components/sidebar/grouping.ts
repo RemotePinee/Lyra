@@ -22,10 +22,25 @@ export interface ProjectRef {
 	lastOpenedAt: number;
 }
 
+/** The one group every project-less conversation lands in, whatever directory it actually ran in. */
+export const NO_PROJECT = "\u0000no-project";
+
 export function groupSessions(
 	sessions: SessionMeta[],
 	projects: ProjectRef[],
 	query: string,
+	/**
+	 * Directories that are scratch space rather than projects.
+	 *
+	 * Sessions there are real and worth returning to — a review you asked about yesterday should
+	 * be one click away — but they are not projects, and grouping them by directory the usual way
+	 * produces a row called `owner-repo-6381` sitting among someone's actual work. They all go
+	 * into one group instead, named for what they are.
+	 *
+	 * More than one root because the directory has been renamed once and stored sessions still
+	 * record the path they were created under.
+	 */
+	scratchRoots: string[] = [],
 ): { pinned: Group[]; recent: Group[] } {
 	const needle = query.trim().toLowerCase();
 	const filtered = needle ? sessions.filter((s) => s.title.toLowerCase().includes(needle)) : sessions;
@@ -34,11 +49,19 @@ export function groupSessions(
 	for (const project of projects) {
 		byPath.set(project.path, { path: project.path, name: project.name, sessions: [] });
 	}
+	const roots = scratchRoots.filter(Boolean).map((root) => (root.endsWith("/") ? root : `${root}/`));
+	const isScratch = (cwd: string) => roots.some((root) => cwd.startsWith(root));
+
 	for (const session of filtered) {
-		let group = byPath.get(session.cwd);
+		const key = isScratch(session.cwd) ? NO_PROJECT : session.cwd;
+		let group = byPath.get(key);
 		if (!group) {
-			group = { path: session.cwd, name: session.projectName, sessions: [] };
-			byPath.set(session.cwd, group);
+			group = {
+				path: key,
+				name: key === NO_PROJECT ? "无项目" : session.projectName,
+				sessions: [],
+			};
+			byPath.set(key, group);
 		}
 		group.sessions.push(session);
 	}
@@ -48,12 +71,18 @@ export function groupSessions(
 	const all = [...byPath.values()]
 		// A project with no sessions is only worth a row when the user pinned it.
 		.filter((g) => g.sessions.length > 0 || pinnedPaths.has(g.path))
-		.sort((a, b) => (order.get(a.path) ?? 999) - (order.get(b.path) ?? 999));
+		.sort((a, b) => rank(a.path, order) - rank(b.path, order));
 
 	return {
 		pinned: all.filter((g) => pinnedPaths.has(g.path)),
 		recent: all.filter((g) => !pinnedPaths.has(g.path)),
 	};
+}
+
+/** Configured projects in their configured order, then unknown ones, then 无项目 last of all. */
+function rank(path: string, order: Map<string, number>): number {
+	if (path === NO_PROJECT) return 1000;
+	return order.get(path) ?? 999;
 }
 
 /**
@@ -64,37 +93,8 @@ export function groupSessions(
  * The active session is exempt, because the conversation you are in the middle of starting has to
  * stay visible and selected while its first message is still in flight.
  */
-export function listableSessions(
-	sessions: SessionMeta[],
-	activeSessionId: string | null,
-	/**
-	 * Where pull request conversations live, so they can be left out.
-	 *
-	 * Those are real sessions in a real directory — which is what makes one reopen months later —
-	 * but the directory is a scratch folder, not a project. Left in, this pane grows a project
-	 * called `owner-repo-6381` for every review anyone has ever had a question about, sitting
-	 * between the things the user actually works on. They are reached from the pull request they
-	 * are about, which is the only place they mean anything.
-	 *
-	 * Empty until the main process has answered, which only means the first render of a fresh
-	 * launch may briefly include them.
-	 */
-	prChatRoot: string,
-): SessionMeta[] {
-	/*
-	 * A separator, not a bare prefix.
-	 *
-	 * The root arrives as `…/.lyra/pr` with no trailing slash, and `startsWith` on that alone also
-	 * matches `…/.lyra/prototypes` — a real project, silently missing from the sidebar with nothing
-	 * to suggest why. Comparing against `…/.lyra/pr/` makes it a directory test rather than a
-	 * string test.
-	 */
-	const inside = prChatRoot ? (prChatRoot.endsWith("/") ? prChatRoot : `${prChatRoot}/`) : "";
-
-	return sessions.filter(
-		(s) =>
-			!s.archived && (s.messageCount > 0 || s.id === activeSessionId) && !(inside && s.cwd.startsWith(inside)),
-	);
+export function listableSessions(sessions: SessionMeta[], activeSessionId: string | null): SessionMeta[] {
+	return sessions.filter((s) => !s.archived && (s.messageCount > 0 || s.id === activeSessionId));
 }
 
 /** What the settings row says it will take you to. */

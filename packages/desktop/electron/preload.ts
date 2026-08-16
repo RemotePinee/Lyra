@@ -191,8 +191,10 @@ const api: LyraApi = {
 		myPullRequests: () => ipcRenderer.invoke("git:myPullRequests"),
 		pullRequest: (repo, number) => ipcRenderer.invoke("git:pullRequest", repo, number),
 		pullRequestDiff: (repo, number) => ipcRenderer.invoke("git:pullRequestDiff", repo, number),
-		openPrChat: (pr) => ipcRenderer.invoke("prchat:open", pr),
-		prChatRoot: () => ipcRenderer.invoke("prchat:root"),
+		scratchForPullRequest: (pr) => ipcRenderer.invoke("scratch:forPullRequest", pr),
+		generalScratch: () => ipcRenderer.invoke("scratch:general"),
+		scratchRoots: () => ipcRenderer.invoke("scratch:roots"),
+		findLocalCheckout: (repo, candidates) => ipcRenderer.invoke("git:findLocalCheckout", repo, candidates),
 		commentOnPullRequest: (repo, number, body) => ipcRenderer.invoke("git:commentOnPullRequest", repo, number, body),
 		reviewPullRequest: (repo, number, verdict, body) =>
 			ipcRenderer.invoke("git:reviewPullRequest", repo, number, verdict, body),

@@ -18,7 +18,6 @@ import type {
   SyncStatus,
   WorkspaceInfo,
 } from "../electron/ipc-types.ts";
-import { usePrChat } from "./prChatStore.ts";
 import { useSide } from "./sideStore.ts";
 
 export type View = "chat" | "settings" | "pull-requests" | "scheduled";
@@ -65,8 +64,24 @@ export interface AppState {
   settings: Settings | null;
   sessions: SessionMeta[];
   workspace: WorkspaceInfo | null;
-  /** Where pull request conversations are stored, so the sidebar can exclude them. */
-  prChatRoot: string;
+  /** Every directory project-less conversations are stored under, so the sidebar can exclude them. */
+  scratchRoots: string[];
+  /**
+   * The working directory for a conversation that is not in a project.
+   *
+   * A session always needs somewhere to run. When there is no project — a review of a repository
+   * that is not checked out here, or 「不在项目中工作」 — this is where it runs instead, and it is
+   * what makes those two cases work at all rather than silently swallowing the first message.
+   */
+  scratchCwd: string | null;
+  /**
+   * Text to put in the composer, for callers that are not the composer.
+   *
+   * Opening a review's conversation fills in what to ask rather than asking it: the user should
+   * see the question, be able to change it, and press send themselves. Consumed on read.
+   */
+  composerDraft: string;
+  setComposerDraft(text: string): void;
 
   activeSessionId: string | null;
   meta: SessionMeta | null;
@@ -149,7 +164,7 @@ export interface AppState {
   /** Re-read git state for the current project, after a branch switch or an external change. */
   refreshWorkspace(): Promise<void>;
   /** Work without a project. Sessions still run; they just have no repo behind them. */
-  clearWorkspace(): void;
+  clearWorkspace(): Promise<void>;
   /** Rename a project, or drop it from the list without touching anything on disk. */
   renameProject(path: string, name: string): Promise<void>;
   setProjectPinned(path: string, pinned: boolean): Promise<void>;
@@ -189,7 +204,9 @@ export const useApp = create<AppState>((set, get) => ({
   settings: null,
   sessions: [],
   workspace: null,
-  prChatRoot: "",
+  scratchRoots: [],
+  scratchCwd: null,
+  composerDraft: "",
   activeSessionId: null,
   meta: null,
   messages: [],
@@ -235,15 +252,14 @@ export const useApp = create<AppState>((set, get) => ({
       : null;
     // Where pull request conversations live, so the sidebar can leave them out. One call, at
     // boot: it is derived from the app's home and cannot change while running.
-    const prChatRoot = await window.lyra.git.prChatRoot().catch(() => "");
-    set({ settings, sessions, workspace, prChatRoot, ready: true });
+    // Where project-less conversations live, so the sidebar can leave them out. One call, at
+    // boot: it is derived from the app's home and cannot change while running.
+    const scratchRoots = await window.lyra.git.scratchRoots().catch(() => []);
+    set({ settings, sessions, workspace, scratchRoots, ready: true });
 
-    window.lyra.agent.onEvent(({ sessionId, event }) => {
-      get().applyEvent(sessionId, event);
-      // A pull request's conversation is an ordinary session, so it arrives on this channel too.
-      // Both stores filter by session id, so exactly one of them ever draws a given event.
-      usePrChat.getState().applyEvent(sessionId, event);
-    });
+    window.lyra.agent.onEvent(({ sessionId, event }) =>
+      get().applyEvent(sessionId, event),
+    );
     // The side chat is a separate conversation on a separate channel, for the same reason
     // it is a separate store: its replies must never land in the main transcript.
     window.lyra.sideChat.onEvent(({ sessionId, event }) =>
@@ -253,6 +269,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   setView: (view) => set({ view }),
+  setComposerDraft: (composerDraft) => set({ composerDraft }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
 
   async saveSettings(settings) {

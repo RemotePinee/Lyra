@@ -1,16 +1,16 @@
 /**
- * Where a conversation about a pull request happens, given that it happens nowhere.
+ * Where a conversation happens when it happens in no project.
  *
- * A review is of someone else's branch, in a repository this machine may never have cloned — most
- * of the list is other people's projects. So the usual answer to "which directory is this session
- * in" does not exist here, and forcing one would be a lie: pointing the agent at whatever project
- * happened to be open would give it a working tree that has nothing to do with the diff on screen.
+ * A session needs a working directory, and sometimes there is honestly no right answer for one. A
+ * review is of someone else's branch in a repository this machine may never have cloned; 「不在项目
+ * 中工作」 is the user saying so outright. Pointing the agent at whichever project happened to be
+ * open would hand it a working tree with nothing to do with the question.
  *
- * Instead each pull request gets a scratch directory of its own under the app's home. Nothing is
- * expected to be in it. It is somewhere to put a patch, a note, a checkout if the conversation
- * goes that way — and, more importantly, it is a stable identity: sessions are stored by a hash of
- * their directory, so the same pull request comes back to the same conversation next time, months
- * later, without anything having to be recorded on the side.
+ * So those sessions get a scratch directory under the app's home instead. Nothing is expected to
+ * be in it. It is somewhere to put a patch, a note, a checkout if the conversation goes that way —
+ * and, for a pull request, it is also a stable identity: sessions are stored by a hash of their
+ * directory, so the same review comes back to the same conversation months later without anything
+ * being recorded on the side.
  *
  * The path is derived, never taken from the API. A repository name arrives from GitHub as
  * `owner/name` and could in principle carry anything else; this is a filesystem path being built
@@ -63,13 +63,42 @@ export function prChatSlug(repo: string, number: number): string {
  * noise. Derived here rather than pattern-matched there: the home is `LYRA_HOME`-overridable, so
  * a hard-coded `.lyra/pr` in the renderer would be wrong for anyone who moved it.
  */
-export function prChatRoot(): string {
-	return join(lyraHome(), "pr");
+export function scratchRoot(): string {
+	return join(lyraHome(), "scratch");
 }
 
-/** The scratch directory for this pull request, created if it is not there yet. */
-export async function prChatDir(repo: string, number: number): Promise<string> {
-	const dir = join(lyraHome(), "pr", prChatSlug(repo, number));
+/**
+ * Every directory these conversations have ever lived under.
+ *
+ * The first shipped release put them in `pr/`, before the same mechanism was needed for 「不在项目
+ * 中工作」 and the name stopped fitting. Renaming the directory does not move the sessions: they are
+ * filed by a hash of their working directory and each one records that path, so anything created
+ * under the old name still says so.
+ *
+ * Which matters for exactly one reason — the sidebar excludes these by path. Drop the old entry
+ * and every review anyone had already opened reappears as a project called `owner-repo-6381`,
+ * sitting among their real work. Cheaper to remember one dead path than to rewrite stored history.
+ */
+export function scratchRoots(): string[] {
+	return [scratchRoot(), join(lyraHome(), "pr")];
+}
+
+/** The scratch directory for one pull request, created if it is not there yet. */
+export async function prScratchDir(repo: string, number: number): Promise<string> {
+	const dir = join(scratchRoot(), prChatSlug(repo, number));
+	await mkdir(dir, { recursive: true });
+	return dir;
+}
+
+/**
+ * The scratch directory for a conversation with no subject at all — 「不在项目中工作」.
+ *
+ * One shared directory rather than one per session: without a pull request there is nothing to
+ * derive a stable name from, and a fresh folder per conversation would pile up empty directories
+ * nobody ever looks in.
+ */
+export async function generalScratchDir(): Promise<string> {
+	const dir = join(scratchRoot(), "general");
 	await mkdir(dir, { recursive: true });
 	return dir;
 }

@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { prChatSlug } from "../electron/pr-chat.ts";
+import { prChatSlug } from "../electron/scratch.ts";
 
 test("owner/name becomes one path component", () => {
 	const slug = prChatSlug("kittors/lyra", 42);

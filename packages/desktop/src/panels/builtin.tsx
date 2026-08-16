@@ -17,6 +17,8 @@ import { TrajectoryPanel } from "../components/trajectory/TrajectoryPanel.tsx";
 import { registerPanels, type PanelDefinition } from "./registry.ts";
 
 const needsWorkspace = (state: { workspace: boolean }) => (state.workspace ? undefined : "先打开一个项目");
+/** A shell only needs a directory, and a project-less conversation has one. */
+const needsCwd = (state: { cwd: boolean }) => (state.cwd ? undefined : "先打开一个项目");
 const needsSession = (state: { session: boolean }) => (state.session ? undefined : "先开始一个对话");
 
 const BUILTIN_PANELS: PanelDefinition[] = [
@@ -34,7 +36,7 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		label: "终端",
 		icon: SquareTerminal,
 		shortcut: "⌃`",
-		unavailable: needsWorkspace,
+		unavailable: needsCwd,
 		render: TerminalPane,
 	},
 	{ kind: "tasks", label: "任务", icon: ListTodo, shortcut: "⌘J", render: TaskPanel },

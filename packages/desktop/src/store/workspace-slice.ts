@@ -41,6 +41,8 @@ export function workspaceSlice(set: Set, get: Get) {
       });
     }
     set({
+      // Leaving the project-less mode: a session opened from here belongs to the project.
+      scratchCwd: null,
       workspace,
       activeSessionId: null,
       meta: null,
@@ -59,8 +61,17 @@ export function workspaceSlice(set: Set, get: Get) {
     if (workspace) set({ workspace });
   },
 
-  clearWorkspace() {
+  /**
+   * 「不在项目中工作」 — which now means something rather than nothing.
+   *
+   * It used to only blank the workspace, and since sending required one, the next message opened
+   * a directory picker: the menu item took you somewhere you could not do anything. Pointing it at
+   * a scratch directory is what makes it a mode instead of a dead end.
+   */
+  async clearWorkspace() {
+    const scratchCwd = await window.lyra.git.generalScratch().catch(() => null);
     set({
+      scratchCwd,
       workspace: null,
       activeSessionId: null,
       meta: null,
@@ -108,7 +119,7 @@ export function workspaceSlice(set: Set, get: Get) {
       ...settings,
       projects: settings.projects.filter((p) => p.path !== path),
     });
-    if (get().workspace?.path === path) get().clearWorkspace();
+    if (get().workspace?.path === path) void get().clearWorkspace();
   },
 
   async archiveProjectSessions(path: string) {

@@ -24,7 +24,8 @@ export function sessionSlice(set: Set, get: Get) {
    * object; `send` turns it into one the moment there is something to store.
    */
   async newSession() {
-    if (!get().workspace) {
+    // A scratch directory counts: a conversation with no project is still a conversation.
+    if (!get().workspace && !get().scratchCwd) {
       await get().pickWorkspace();
       return;
     }

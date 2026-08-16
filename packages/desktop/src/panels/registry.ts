@@ -16,7 +16,16 @@ import type { GitCompare } from "lucide-react";
 import type { PanelKind } from "../sideStore.ts";
 
 interface PanelAvailability {
+	/** Inside one of the user's projects. The files and the repository mean something. */
 	workspace: boolean;
+	/**
+	 * Somewhere to run at all, project or not.
+	 *
+	 * A project-less conversation still has a working directory — a scratch folder — which is
+	 * enough for a shell but not enough for a file tree or a git panel: there is nothing in it and
+	 * it is not a repository. Two questions, because two different sets of panels turn on them.
+	 */
+	cwd: boolean;
 	session: boolean;
 }
 

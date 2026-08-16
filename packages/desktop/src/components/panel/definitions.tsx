@@ -16,8 +16,13 @@ export type ResolvedPanel = Omit<PanelDefinition, "unavailable"> & { unavailable
 
 export function usePanelDefinitions(): ResolvedPanel[] {
 	const workspace = useApp((s) => s.workspace);
+	const scratchCwd = useApp((s) => s.scratchCwd);
 	const activeSessionId = useApp((s) => s.activeSessionId);
-	const state = { workspace: Boolean(workspace), session: Boolean(activeSessionId) };
+	const state = {
+		workspace: Boolean(workspace),
+		cwd: Boolean(workspace ?? scratchCwd),
+		session: Boolean(activeSessionId),
+	};
 	return allPanels().map((panel) => ({ ...panel, unavailable: panel.unavailable?.(state) }));
 }
 

@@ -7,7 +7,8 @@
  */
 
 import { ipcMain } from "electron";
-import { type PrBrief, prChatDir, prChatRoot, writePrBrief } from "../pr-chat.ts";
+import { findLocalCheckout } from "../git-remote.ts";
+import { generalScratchDir, type PrBrief, prScratchDir, scratchRoots, writePrBrief } from "../scratch.ts";
 import {
 	collectWorkspaceDiff,
 	commitAll,
@@ -145,13 +146,31 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	 * lets the renderer use the ordinary session IPC for everything after this — a review chat is
 	 * a normal session that simply is not in a project.
 	 */
-	ipcMain.handle("prchat:root", async () => prChatRoot());
+	ipcMain.handle("scratch:roots", async () => scratchRoots());
 
-	ipcMain.handle("prchat:open", async (_event, pr: PrBrief) => {
-		const dir = await prChatDir(pr.repo, pr.number);
-		// Refreshed every time it is opened: a description edited on GitHub should not go on being
-		// answered from a copy taken weeks ago.
+	/*
+	 * The scratch directory for a conversation about this pull request, with the facts left in it.
+	 *
+	 * Only reached when the repository is not among the user's projects. `PR.md` is refreshed each
+	 * time: a description edited on GitHub should not go on being answered from a copy taken weeks
+	 * ago.
+	 */
+	ipcMain.handle("scratch:forPullRequest", async (_event, pr: PrBrief) => {
+		const dir = await prScratchDir(pr.repo, pr.number);
 		await writePrBrief(dir, pr).catch(() => {});
 		return dir;
 	});
+
+	ipcMain.handle("scratch:general", async () => generalScratchDir());
+
+	/*
+	 * Which of the user's own projects is this repository, if any.
+	 *
+	 * Deliberately only their project list — not a scan of the disk. A checkout the user has never
+	 * added is not somewhere the app should start working in unasked, and "not in the list" is the
+	 * answer that sends this to a project-less conversation, which is the honest outcome.
+	 */
+	ipcMain.handle("git:findLocalCheckout", async (_event, repo: string, candidates: string[]) =>
+		findLocalCheckout(repo, candidates),
+	);
 }

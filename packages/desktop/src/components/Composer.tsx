@@ -1,6 +1,6 @@
 import type { UserContent } from "@lyra/core";
 import { CircleAlert, Folder, GitBranch, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
 import { ComposerSend, ComposerShell } from "./ComposerShell.tsx";
 import { ContextMeter } from "./ContextMeter.tsx";
@@ -29,6 +29,7 @@ interface Attachment {
 
 export function Composer() {
 	const workspace = useApp((s) => s.workspace);
+	const scratchCwd = useApp((s) => s.scratchCwd);
 	const settings = useApp((s) => s.settings);
 	const meta = useApp((s) => s.meta);
 	const messages = useApp((s) => s.messages);
@@ -41,6 +42,20 @@ export function Composer() {
 	const { compact } = useLayout();
 
 	const [text, setText] = useState("");
+
+	/*
+	 * Text left here by something outside the composer — opening a review, so far.
+	 *
+	 * Taken and cleared, so it lands once and is then the user's to edit or discard. Appended
+	 * rather than replacing anything already typed: whatever is in the field was typed by hand and
+	 * losing it would be worse than an awkward join.
+	 */
+	const draft = useApp((s) => s.composerDraft);
+	useEffect(() => {
+		if (!draft) return;
+		setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${draft}` : draft));
+		useApp.getState().setComposerDraft("");
+	}, [draft]);
 	const [attachments, setAttachments] = useState<Attachment[]>([]);
 	const modelMenu = usePopover();
 	const effortMenu = usePopover();
@@ -108,7 +123,15 @@ export function Composer() {
 				<div className="flex items-center gap-0.5 overflow-hidden pb-1">
 					<Chip
 						icon={<Folder size={13} strokeWidth={1.8} />}
-						label={workspace?.name ?? "选择项目"}
+						/*
+						 * 「无项目」 when that is a choice, 「选择项目」 when nothing has been chosen yet.
+						 *
+						 * Reviewing a repository that is not checked out here, or 「不在项目中工作」, both
+						 * leave the workspace empty on purpose — and a chip that goes on saying
+						 * 「选择项目」 reads as an unfinished step rather than as the state the user asked
+						 * for. The picker is still behind it either way.
+						 */
+						label={workspace?.name ?? (scratchCwd ? "无项目" : "选择项目")}
 						onClick={projectMenu.toggle}
 						active={projectMenu.open}
 					/>

@@ -13,7 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import type { PullRequestDetail as Detail } from "../../electron/ipc-types.ts";
 import { useLayout } from "../layout.tsx";
-import { usePrChat } from "../prChatStore.ts";
+import { useApp } from "../store.ts";
 import { PullRequestDetail, type PrTab } from "./pr/PullRequestDetail.tsx";
 import { PullRequestList } from "./pr/PullRequestList.tsx";
 import { ReviewBar } from "./pr/ReviewBar.tsx";
@@ -36,24 +36,61 @@ export function PullRequestsView() {
 	/* Held here rather than in the detail, because the review bar below it depends on which tab is
 	 * open — 聊天 brings its own field. */
 	const [tab, setTab] = useState<PrTab>("summary");
+	const settings = useApp((s) => s.settings);
+	const openWorkspace = useApp((s) => s.openWorkspace);
+	const newSession = useApp((s) => s.newSession);
+	const setComposerDraft = useApp((s) => s.setComposerDraft);
+	const setView = useApp((s) => s.setView);
 	const pr = usePullRequests();
 
 	/*
-	 * Asked in the pull request's own conversation, not the workspace's.
+	 * Open the app's conversation window, already pointed at the right place.
 	 *
-	 * This used to switch to the chat view and prompt the project session, which was wrong twice:
-	 * it interrupted whatever was being worked on, and it asked an agent rooted in one repository
-	 * to reason about a branch in another — usually one not on this machine at all.
+	 * The whole question is where that conversation should run. A review is about a repository,
+	 * and if that repository is one of the user's projects then everything they would want — the
+	 * files, the history, the branch switcher — is right there, so the conversation should be in
+	 * it. If it is not one of their projects, there is nothing to pretend about: it opens with no
+	 * project at all, in a scratch directory, and the agent works from the pull request itself.
 	 *
-	 * Queued rather than sent, because the conversation may still be opening. The panel sends it
-	 * the moment there is a session, which is also the click that first opens the tab.
+	 * Only their project list is searched. A checkout the app has never been told about is not
+	 * somewhere it should start working in uninvited, and matching is on `origin` rather than on
+	 * a directory name, so a folder that merely shares a name is not mistaken for the repository.
+	 *
+	 * The text is left in the composer rather than sent. What to ask about a review is the user's
+	 * to decide, and a question that appears already answered is one they never got to change.
 	 */
-	const askAgent = (detail: Detail) => {
-		usePrChat
-			.getState()
-			.queueAsk(
-				`审查这个 Pull Request：先用 gh pr diff ${detail.number} --repo ${detail.repo} 拿到改动，再指出其中的缺陷和风险，按严重程度排序。只读，不要改动任何仓库。`,
-			);
+	const openChat = async (detail: Detail, intent: "ask" | "review") => {
+		const projects = [...(settings?.projects ?? [])].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+		const local = await window.lyra.git
+			.findLocalCheckout(
+				detail.repo,
+				projects.map((p) => p.path),
+			)
+			.catch(() => null);
+
+		if (local) {
+			await openWorkspace(local);
+		} else {
+			// No project: a scratch directory with the pull request's facts written into it.
+			const cwd = await window.lyra.git
+				.scratchForPullRequest({
+					repo: detail.repo,
+					number: detail.number,
+					title: detail.title,
+					author: detail.author,
+					url: detail.url,
+					headRefName: detail.headRefName,
+					baseRefName: detail.baseRefName,
+					state: detail.state,
+					body: detail.body,
+				})
+				.catch(() => null);
+			useApp.setState({ workspace: null, scratchCwd: cwd });
+		}
+
+		await newSession();
+		setComposerDraft(draftFor(detail, intent, local));
+		setView("chat");
 	};
 
 	const submit = async (verdict: "approve" | "request-changes" | "comment", body: string): Promise<string | null> => {
@@ -98,13 +135,13 @@ export function PullRequestsView() {
 				loading={pr.detailLoading}
 				error={pr.detailError}
 				onRefresh={pr.refreshDetail}
-				onAskAgent={askAgent}
+				onOpenChat={openChat}
 				expanded={expanded}
 				onToggleExpanded={() => setExpanded((open) => !open)}
 				tab={tab}
 				onTab={setTab}
 			/>
-			{tab !== "chat" && <ReviewBar onSubmit={submit} disabled={!pr.detail} />}
+			<ReviewBar onSubmit={submit} disabled={!pr.detail} />
 		</div>
 	);
 
@@ -154,4 +191,23 @@ export function PullRequestsView() {
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col pt-11">{detail}</div>
 		</div>
 	);
+}
+
+/**
+ * What lands in the composer.
+ *
+ * `ask` is an opening, not an instruction — the user is expected to edit it, and a request to
+ * "了解" invites a summary rather than committing them to a full review they may not want.
+ * `review` is the instruction, because that button says exactly what it will ask for.
+ *
+ * The branch is only mentioned when the repository is actually here. Naming a branch that cannot
+ * be checked out reads as an instruction the agent then has to refuse.
+ */
+function draftFor(detail: Detail, intent: "ask" | "review", local: string | null): string {
+	const where = local ? `本地仓库就是当前项目，分支 ${detail.headRefName} → ${detail.baseRefName}。` : "";
+
+	if (intent === "review") {
+		return `审查 Pull Request #${detail.number}：${detail.title}\n${detail.url}\n\n${where}先拿到改动，再指出其中的缺陷和风险，按严重程度排序。只读，不要改动仓库。`;
+	}
+	return `帮我了解 Pull Request #${detail.number}：${detail.title}\n${detail.url}${where ? `\n\n${where}` : ""}`;
 }

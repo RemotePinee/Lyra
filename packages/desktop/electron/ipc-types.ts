@@ -213,14 +213,13 @@ export interface LyraApi {
 		pullRequest(repo: string, number: number): Promise<{ detail?: PullRequestDetail; error?: string }>;
 		pullRequestDiff(repo: string, number: number): Promise<{ files: WorkspaceDiffFile[]; error?: string }>;
 		/**
-		 * Prepare the scratch directory this pull request's conversation runs in, and return it.
+		 * A scratch directory for talking about this pull request, with `PR.md` written into it.
 		 *
-		 * A review is not in a project — the repository may never have been cloned here — so the
-		 * session gets a directory of its own under the app's home. Stable across launches, which is
-		 * what makes the same pull request reopen the same conversation. A `PR.md` of the facts is
-		 * written there each time, so the agent has somewhere to look that is not the transcript.
+		 * Only used when the repository is not one of the user's projects. Stable across launches
+		 * — sessions are keyed by their directory — so reopening the same review months later
+		 * finds the same conversation.
 		 */
-		openPrChat(pr: {
+		scratchForPullRequest(pr: {
 			repo: string;
 			number: number;
 			title: string;
@@ -231,8 +230,21 @@ export interface LyraApi {
 			state: string;
 			body: string;
 		}): Promise<string>;
-		/** Where those conversations live, so the sidebar can tell them from real projects. */
-		prChatRoot(): Promise<string>;
+		/** The shared scratch directory for 「不在项目中工作」. */
+		generalScratch(): Promise<string>;
+		/**
+		 * Every directory those conversations live under, so the sidebar can tell them from real
+		 * projects. More than one because the directory has been renamed and stored sessions still
+		 * record the old path.
+		 */
+		scratchRoots(): Promise<string[]>;
+		/**
+		 * Which of `candidates` has this repository as its `origin`, or null.
+		 *
+		 * Candidates are the user's own project paths. Matching is on the remote rather than the
+		 * directory name, and a fork does not count: `origin` is what a working copy pushes to.
+		 */
+		findLocalCheckout(repo: string, candidates: string[]): Promise<string | null>;
 		commentOnPullRequest(repo: string, number: number, body: string): Promise<{ error?: string }>;
 		reviewPullRequest(
 			repo: string,

@@ -16,9 +16,20 @@ type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>
 export function turnSlice(set: Set, get: Get) {
   return {
   async send(content: UserContent[]) {
-    const { workspace, settings } = get();
+    const { workspace, settings, scratchCwd } = get();
     let sessionId = get().activeSessionId;
-    if (!sessionId && !workspace) {
+    /*
+     * A project if there is one, a scratch directory if there is not.
+     *
+     * Not every conversation is about a checkout. A review is of a branch that may not be on this
+     * machine, and 「不在项目中工作」 is the user saying there is no project on purpose. Both used
+     * to end here: with no workspace this opened a directory picker and dropped the message, which
+     * made the second one a dead end and the first one impossible.
+     *
+     * Only a conversation with nowhere at all to run still asks.
+     */
+    const cwd = workspace?.path ?? scratchCwd;
+    if (!sessionId && !cwd) {
       await get().pickWorkspace();
       return;
     }
@@ -45,7 +56,7 @@ export function turnSlice(set: Set, get: Get) {
     if (!sessionId) {
       try {
         const snapshot = await window.lyra.sessions.create(
-          workspace!.path,
+          cwd!,
           settings?.defaultModelId ?? "",
         );
         sessionId = snapshot.meta.id;

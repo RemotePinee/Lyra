@@ -13,19 +13,18 @@ import { relativeTime } from "../git/relative-time.ts";
 import { Markdown } from "../Markdown.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Scroller } from "../Scroller.tsx";
-import { PullRequestChat } from "./PullRequestChat.tsx";
 import { PullRequestCode } from "./PullRequestCode.tsx";
 import { PullRequestMeta, verdictLabel } from "./PullRequestMeta.tsx";
 import { DetailSkeleton } from "./PullRequestSkeleton.tsx";
 
-export type PrTab = "summary" | "code" | "chat";
+export type PrTab = "summary" | "code";
 
 export function PullRequestDetail({
 	detail,
 	loading,
 	error,
 	onRefresh,
-	onAskAgent,
+	onOpenChat,
 	expanded,
 	onToggleExpanded,
 	tab,
@@ -35,7 +34,8 @@ export function PullRequestDetail({
 	loading: boolean;
 	error: string | null;
 	onRefresh: () => void;
-	onAskAgent: (detail: Detail) => void;
+	/** Opens the app's conversation window with something already typed. */
+	onOpenChat: (detail: Detail, intent: "ask" | "review") => void;
 	/** Whether the list beside this is collapsed, which decides if the title has to be shown here. */
 	expanded: boolean;
 	onToggleExpanded: () => void;
@@ -78,7 +78,7 @@ export function PullRequestDetail({
 					</div>
 				)}
 
-				{(["summary", "code", "chat"] as const).map((key) => (
+				{(["summary", "code"] as const).map((key) => (
 					<button
 						key={key}
 						type="button"
@@ -87,7 +87,7 @@ export function PullRequestDetail({
 							tab === key ? "bg-card-hover text-ink" : "text-ink-muted hover:text-ink"
 						}`}
 					>
-						{key === "summary" ? "摘要" : key === "code" ? "代码" : "聊天"}
+						{key === "summary" ? "摘要" : "代码"}
 					</button>
 				))}
 
@@ -99,26 +99,33 @@ export function PullRequestDetail({
 				<IconAction label="在浏览器中打开" onClick={() => void window.lyra.system.openExternal(detail.url)}>
 					<ExternalLink size={13.5} strokeWidth={1.8} />
 				</IconAction>
-				<IconAction label={expanded ? "显示列表" : "展开占满"} onClick={onToggleExpanded}>
-					{expanded ? <Minimize2 size={13} strokeWidth={1.9} /> : <Maximize2 size={13} strokeWidth={1.9} />}
-				</IconAction>
+
 				{/*
-				 * The one question worth a button of its own, asked in the pull request's own
-				 * conversation rather than in the workspace's. It used to switch to the chat view
-				 * and prompt the project session — which meant reasoning about a repository that,
-				 * for most of this list, was never cloned here.
+				 * Chat and review, in that order, then expand at the very end.
+				 *
+				 * Both open the same thing — the app's own conversation window — and differ only in
+				 * what they put in the composer: 聊天 leaves a question to edit, 让 Agent 审查 leaves
+				 * the review request. Expand is last because it is about this pane rather than about
+				 * the pull request, and because that is where the eye looks for it.
 				 */}
 				<button
 					type="button"
-					onClick={() => {
-						onTab("chat");
-						onAskAgent(detail);
-					}}
-					className="ml-1 flex h-[26px] items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+					onClick={() => onOpenChat(detail, "ask")}
+					className="ml-1 flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 				>
 					<MessagesSquare size={12.5} strokeWidth={1.8} />
+					聊天
+				</button>
+				<button
+					type="button"
+					onClick={() => onOpenChat(detail, "review")}
+					className="flex h-[26px] items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+				>
 					让 Agent 审查
 				</button>
+				<IconAction label={expanded ? "显示列表" : "展开占满"} onClick={onToggleExpanded}>
+					{expanded ? <Minimize2 size={13} strokeWidth={1.9} /> : <Maximize2 size={13} strokeWidth={1.9} />}
+				</IconAction>
 			</header>
 
 			{/*
@@ -131,9 +138,7 @@ export function PullRequestDetail({
 			 * something arriving rather than as the pane flickering. Opacity only: a transform
 			 * counts toward scrollHeight and would drag the scroll position along with it.
 			 */}
-			{tab === "chat" ? (
-				<PullRequestChat detail={detail} />
-			) : tab === "code" ? (
+			{tab === "code" ? (
 				<PullRequestCode repo={detail.repo} number={detail.number} />
 			) : (
 				<Scroller
