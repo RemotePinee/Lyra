@@ -17,7 +17,7 @@
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import type { McpServerConfig } from "../mcp/client.ts";
 import { loadSkills, type Skill } from "../skills/loader.ts";
 
@@ -158,7 +158,67 @@ async function readManifest(pluginDir: string): Promise<ManifestResult | null> {
 			return { error: `${location} 不是合法 JSON：${error instanceof Error ? error.message : String(error)}` };
 		}
 	}
-	return null;
+	return inferManifest(pluginDir);
+}
+
+/**
+ * A bundle that never declared itself one.
+ *
+ * The manifest is our format, and almost nothing in the wild ships it. What the good skill
+ * collections do ship is `skills/<name>/SKILL.md` — the same layout, arrived at independently,
+ * because it is the obvious one. Requiring the file anyway meant a repository full of perfectly
+ * loadable skills cloned into a directory that did nothing, and the only way to fix it was for
+ * us to fork it or for them to adopt us.
+ *
+ * So the shape is the declaration: a directory holding `skills/` or a `.mcp.json` is a plugin,
+ * whatever it calls itself. Anything else is still skipped — a directory has to contain
+ * something we can actually load before it earns a row in the list.
+ *
+ * `.claude-plugin/marketplace.json` is read for what it says, not for permission. Collections
+ * published for Claude Code carry their name, description, version and author there, and taking
+ * them means an inferred bundle arrives with a real label instead of its directory name.
+ */
+async function inferManifest(pluginDir: string): Promise<ManifestResult | null> {
+	const hasSkills = await stat(join(pluginDir, "skills"))
+		.then((s) => s.isDirectory())
+		.catch(() => false);
+	const hasMcp = await stat(join(pluginDir, ".mcp.json"))
+		.then((s) => s.isFile())
+		.catch(() => false);
+	if (!hasSkills && !hasMcp) return null;
+
+	const manifest: PluginManifest = { name: basename(pluginDir) };
+	if (hasMcp) manifest.mcpServers = ".mcp.json";
+
+	const raw = await readFile(join(pluginDir, ".claude-plugin", "marketplace.json"), "utf8").catch(() => null);
+	if (raw) {
+		try {
+			const parsed = JSON.parse(raw) as {
+				name?: string;
+				description?: string;
+				owner?: { name?: string };
+				plugins?: { version?: string; category?: string; homepage?: string }[];
+			};
+			if (typeof parsed.name === "string" && parsed.name) manifest.name = parsed.name;
+			if (typeof parsed.description === "string") manifest.description = parsed.description;
+			if (typeof parsed.owner?.name === "string") manifest.author = { name: parsed.owner.name };
+			// The collection's own entry is the one whose source is the root; in practice, the first.
+			const head = parsed.plugins?.[0];
+			if (head) {
+				if (typeof head.version === "string") manifest.version = head.version;
+				if (typeof head.homepage === "string") manifest.homepage = head.homepage;
+				manifest.interface = {
+					displayName: manifest.name,
+					shortDescription: manifest.description,
+					category: typeof head.category === "string" ? head.category : undefined,
+				};
+			}
+		} catch {
+			// A malformed marketplace file costs the labels, not the plugin.
+		}
+	}
+
+	return { manifest };
 }
 
 async function readMcpServers(
