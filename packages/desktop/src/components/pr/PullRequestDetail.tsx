@@ -15,6 +15,7 @@ import { Markdown } from "../Markdown.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { activityOf } from "./activity.ts";
+import { Avatar } from "./Avatar.tsx";
 import { ActivityLink, PullRequestActivity } from "./PullRequestActivity.tsx";
 import { PullRequestChecks } from "./PullRequestChecks.tsx";
 import { PullRequestCode } from "./PullRequestCode.tsx";
@@ -87,9 +88,12 @@ export function PullRequestDetail({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			{/* In the toolbar strip, level with the sidebar's collapse button — see PullRequestList. */}
+			{/*
+			 * In the toolbar strip, level with the sidebar's collapse button — see PullRequestList,
+			 * including why `no-drag` is on the controls rather than on this row.
+			 */}
 			<header
-				className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-1 px-3 transition-[padding-left] duration-[var(--ly-t-base)] ease-out"
+				className="relative z-50 flex h-11 shrink-0 items-center gap-1 px-3 transition-[padding-left] duration-[var(--ly-t-base)] ease-out"
 				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
 			>
 				{/*
@@ -109,54 +113,59 @@ export function PullRequestDetail({
 					</div>
 				)}
 
-				{(["summary", "code"] as const).map((key) => (
-					<button
-						key={key}
-						type="button"
-						onClick={() => onTab(key)}
-						className={`h-[26px] rounded-lg px-2.5 text-label transition-colors ${
-							tab === key ? "bg-card-hover text-ink" : "text-ink-muted hover:text-ink"
-						}`}
-					>
-						{key === "summary" ? "摘要" : "代码"}
-					</button>
-				))}
+				<div className="no-drag flex items-center gap-1">
+					{(["summary", "code"] as const).map((key) => (
+						<button
+							key={key}
+							type="button"
+							onClick={() => onTab(key)}
+							className={`h-[26px] rounded-lg px-2.5 text-label transition-colors ${
+								tab === key ? "bg-card-hover text-ink" : "text-ink-muted hover:text-ink"
+							}`}
+						>
+							{key === "summary" ? "摘要" : "代码"}
+						</button>
+					))}
+				</div>
 
+				{/* Everything between the tabs and the actions is the window's to drag. */}
 				<div className="flex-1" />
 
-				<IconAction label="重新读取" onClick={onRefresh} spinning={loading}>
-					<RefreshCw size={13.5} strokeWidth={1.8} />
-				</IconAction>
-				<IconAction label="在浏览器中打开" onClick={() => void window.lyra.system.openExternal(detail.url)}>
-					<ExternalLink size={13.5} strokeWidth={1.8} />
-				</IconAction>
+				<div className="no-drag flex items-center gap-1">
+					<IconAction label="重新读取" onClick={onRefresh} spinning={loading}>
+						<RefreshCw size={13.5} strokeWidth={1.8} />
+					</IconAction>
+					<IconAction label="在浏览器中打开" onClick={() => void window.lyra.system.openExternal(detail.url)}>
+						<ExternalLink size={13.5} strokeWidth={1.8} />
+					</IconAction>
 
-				{/*
-				 * Chat and review, in that order, then expand at the very end.
-				 *
-				 * Both open the same thing — the app's own conversation window — and differ only in
-				 * what they put in the composer: 聊天 leaves a question to edit, 让 Agent 审查 leaves
-				 * the review request. Expand is last because it is about this pane rather than about
-				 * the pull request, and because that is where the eye looks for it.
-				 */}
-				<button
-					type="button"
-					onClick={() => onOpenChat(detail, "ask")}
-					className="ml-1 flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-				>
-					<MessagesSquare size={12.5} strokeWidth={1.8} />
-					聊天
-				</button>
-				<button
-					type="button"
-					onClick={() => onOpenChat(detail, "review")}
-					className="flex h-[26px] items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
-				>
-					让 Agent 审查
-				</button>
-				<IconAction label={expanded ? "显示列表" : "展开占满"} onClick={onToggleExpanded}>
-					{expanded ? <Minimize2 size={13} strokeWidth={1.9} /> : <Maximize2 size={13} strokeWidth={1.9} />}
-				</IconAction>
+					{/*
+					 * Chat and review, in that order, then expand at the very end.
+					 *
+					 * Both open the same thing — the app's own conversation window — and differ only in
+					 * what they put in the composer: 聊天 leaves a question to edit, 让 Agent 审查 leaves
+					 * the review request. Expand is last because it is about this pane rather than about
+					 * the pull request, and because that is where the eye looks for it.
+					 */}
+					<button
+						type="button"
+						onClick={() => onOpenChat(detail, "ask")}
+						className="ml-1 flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+					>
+						<MessagesSquare size={12.5} strokeWidth={1.8} />
+						聊天
+					</button>
+					<button
+						type="button"
+						onClick={() => onOpenChat(detail, "review")}
+						className="flex h-[26px] items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+					>
+						让 Agent 审查
+					</button>
+					<IconAction label={expanded ? "显示列表" : "展开占满"} onClick={onToggleExpanded}>
+						{expanded ? <Minimize2 size={13} strokeWidth={1.9} /> : <Maximize2 size={13} strokeWidth={1.9} />}
+					</IconAction>
+				</div>
 			</header>
 
 			{/*
@@ -178,9 +187,17 @@ export function PullRequestDetail({
 					contentClassName="ly-fade-in px-5 pt-1 pb-6"
 				>
 					<h1 className="text-heading leading-snug font-semibold tracking-tight text-ink">{detail.title}</h1>
-					<p className="pt-1.5 pb-4 text-detail text-ink-faint">
-						{detail.author} · {relativeTime(detail.createdAt)} · {detail.repo} #{detail.number}
-					</p>
+					{/* A face on the byline, for the same reason it is on each comment: recognition. */}
+					<div className="flex items-center gap-2 pt-2 pb-4 text-detail text-ink-faint">
+						<Avatar login={detail.author} size={17} />
+						<span className="text-ink-muted">{detail.author}</span>
+						<span>·</span>
+						<span>{relativeTime(detail.createdAt)}</span>
+						<span>·</span>
+						<span className="min-w-0 truncate">
+							{detail.repo} #{detail.number}
+						</span>
+					</div>
 
 					<PullRequestMeta detail={detail} />
 

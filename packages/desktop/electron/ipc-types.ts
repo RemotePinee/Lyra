@@ -245,6 +245,13 @@ export interface LyraApi {
 		 * directory name, and a fork does not count: `origin` is what a working copy pushes to.
 		 */
 		findLocalCheckout(repo: string, candidates: string[]): Promise<string | null>;
+		/**
+		 * A GitHub account's avatar as a data URL, or null.
+		 *
+		 * Fetched in the main process on purpose: the renderer's CSP allows no remote images, and
+		 * widening it for a decoration would widen it for rendered comment bodies as well.
+		 */
+		avatar(login: string): Promise<string | null>;
 		commentOnPullRequest(repo: string, number: number, body: string): Promise<{ error?: string }>;
 		reviewPullRequest(
 			repo: string,

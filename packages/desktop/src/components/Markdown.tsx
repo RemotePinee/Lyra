@@ -1,218 +1,83 @@
 /**
  * Markdown renderer.
  *
- * Deliberately hand-written rather than `marked` + `dangerouslySetInnerHTML`: model output is
- * untrusted, and building React elements means every string goes through React's escaping.
- * Covers what assistant messages actually use — headings, nested lists, fences, tables,
- * inline code, emphasis, links.
+ * Hand-written rather than `marked` + `dangerouslySetInnerHTML`: model output and other people's
+ * pull request descriptions are both untrusted, and building React elements means every string
+ * goes through React's escaping on the way in.
+ *
+ * This file is only the drawing. Which lines are a table and which characters are emphasis are
+ * decided in `markdown-blocks.ts` and `markdown-inline.ts`, where they can be tested.
  */
 
-import { Fragment, type ReactNode } from "react";
+import { ChevronRight, ExternalLink } from "lucide-react";
+import { Fragment, type ReactNode, useState } from "react";
 import { CodeBlock } from "./CodeBlock.tsx";
+import type { Block, ListItem } from "./markdown-blocks.ts";
+import { parseMarkdown } from "./markdown-blocks.ts";
+import { type Inline, parseInline } from "./markdown-inline.ts";
+import { renderMath } from "./markdown-math.ts";
+import { stripEmoji } from "./strip-emoji.ts";
 
 export function Markdown({ text, className = "" }: { text: string; className?: string }) {
+	/*
+	 * System emoji come out first.
+	 *
+	 * Everything that reaches this component was written somewhere else — a pull request
+	 * description, a review comment, a model's reply — and a colour emoji dropped into a screen of
+	 * single-weight line icons is drawn by the OS from another font, in colours from nobody's
+	 * palette. One `🤖` in a description is the loudest thing on the page by accident.
+	 *
+	 * Here rather than at each call site, because this is the one door remote prose comes through.
+	 */
+	const clean = stripEmoji(text);
+
 	// The class rides alongside `prose-dw` rather than replacing it, so a caller can dial the
 	// size or colour down — reasoning is secondary text — without losing the block styling.
-	return <div className={`prose-dw ${className}`}>{renderBlocks(text)}</div>;
-}
-
-type Block =
-	| { kind: "heading"; level: number; text: string }
-	| { kind: "paragraph"; text: string }
-	| { kind: "code"; lang: string; code: string }
-	| { kind: "list"; ordered: boolean; items: ListItem[] }
-	| { kind: "quote"; text: string }
-	| { kind: "rule" }
-	| { kind: "table"; header: string[]; rows: string[][] };
-
-interface ListItem {
-	text: string;
-	children: Block[];
+	return <div className={`prose-dw ${className}`}>{renderBlocks(clean)}</div>;
 }
 
 function renderBlocks(source: string): ReactNode {
-	return parseBlocks(source.replace(/\r\n/g, "\n").split("\n")).map((block, index) => (
-		<Fragment key={index}>{renderBlock(block, index)}</Fragment>
-	));
+	return parseMarkdown(source).map((block, index) => <Fragment key={index}>{renderBlock(block)}</Fragment>);
 }
 
-function parseBlocks(lines: string[]): Block[] {
-	const blocks: Block[] = [];
-	let i = 0;
-
-	while (i < lines.length) {
-		const line = lines[i];
-
-		if (!line.trim()) {
-			i++;
-			continue;
-		}
-
-		// Fenced code. An unterminated fence runs to the end rather than swallowing nothing,
-		// which is what happens while a code block is still streaming in.
-		const fence = /^\s*```(\S*)\s*$/.exec(line);
-		if (fence) {
-			const lang = fence[1] ?? "";
-			const code: string[] = [];
-			i++;
-			while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
-			i++;
-			blocks.push({ kind: "code", lang, code: code.join("\n") });
-			continue;
-		}
-
-		const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-		if (heading) {
-			blocks.push({ kind: "heading", level: heading[1].length, text: heading[2].trim() });
-			i++;
-			continue;
-		}
-
-		if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) {
-			blocks.push({ kind: "rule" });
-			i++;
-			continue;
-		}
-
-		if (/^\s*>\s?/.test(line)) {
-			const quoted: string[] = [];
-			while (i < lines.length && /^\s*>\s?/.test(lines[i])) quoted.push(lines[i++].replace(/^\s*>\s?/, ""));
-			blocks.push({ kind: "quote", text: quoted.join("\n") });
-			continue;
-		}
-
-		// Table: a header row followed by a separator row of dashes.
-		if (line.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1])) {
-			const header = splitRow(line);
-			i += 2;
-			const rows: string[][] = [];
-			while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(splitRow(lines[i++]));
-			blocks.push({ kind: "table", header, rows });
-			continue;
-		}
-
-		if (isListLine(line)) {
-			const { list, next } = parseList(lines, i, indentOf(line));
-			blocks.push(list);
-			i = next;
-			continue;
-		}
-
-		const paragraph: string[] = [];
-		while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) paragraph.push(lines[i++]);
-		if (paragraph.length > 0) blocks.push({ kind: "paragraph", text: paragraph.join("\n") });
-		else i++;
-	}
-
-	return blocks;
-}
-
-function isBlockStart(line: string): boolean {
-	return (
-		/^\s*```/.test(line) ||
-		/^#{1,6}\s/.test(line) ||
-		/^\s*>\s?/.test(line) ||
-		/^\s*(---|\*\*\*|___)\s*$/.test(line) ||
-		isListLine(line)
-	);
-}
-
-function isListLine(line: string): boolean {
-	return /^\s*([-*+]|\d+[.)])\s+/.test(line);
-}
-
-function indentOf(line: string): number {
-	return line.length - line.trimStart().length;
-}
-
-/** Parse one list level; deeper-indented lines recurse into the current item's children. */
-function parseList(lines: string[], start: number, baseIndent: number): { list: Block; next: number } {
-	const first = /^\s*(\d+)[.)]\s+/.exec(lines[start]);
-	const ordered = first !== null;
-	const items: ListItem[] = [];
-	let i = start;
-
-	while (i < lines.length) {
-		const line = lines[i];
-		if (!line.trim()) {
-			// A blank line only ends the list when the next content is not part of it.
-			const lookahead = lines[i + 1];
-			if (!lookahead || (!isListLine(lookahead) && indentOf(lookahead) <= baseIndent)) break;
-			i++;
-			continue;
-		}
-
-		const indent = indentOf(line);
-		if (indent < baseIndent || !isListLine(line)) {
-			if (indent > baseIndent && items.length > 0) {
-				// Continuation text belonging to the previous item.
-				items[items.length - 1].text += `\n${line.trim()}`;
-				i++;
-				continue;
-			}
-			break;
-		}
-
-		if (indent > baseIndent) {
-			const nested = parseList(lines, i, indent);
-			if (items.length > 0) items[items.length - 1].children.push(nested.list);
-			i = nested.next;
-			continue;
-		}
-
-		const marker = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
-		items.push({ text: marker?.[1] ?? line.trim(), children: [] });
-		i++;
-	}
-
-	return { list: { kind: "list", ordered, items }, next: i };
-}
-
-function splitRow(line: string): string[] {
-	return line
-		.replace(/^\s*\|/, "")
-		.replace(/\|\s*$/, "")
-		.split("|")
-		.map((cell) => cell.trim());
-}
-
-function renderBlock(block: Block, _key: number): ReactNode {
+function renderBlock(block: Block): ReactNode {
 	switch (block.kind) {
 		case "heading": {
 			const Tag = `h${Math.min(block.level, 4)}` as "h1" | "h2" | "h3" | "h4";
-			return <Tag>{renderInline(block.text)}</Tag>;
+			return <Tag>{inline(block.text)}</Tag>;
 		}
 		case "paragraph":
-			return <p>{renderInline(block.text)}</p>;
+			return <p>{inline(block.text)}</p>;
 		case "code":
 			return <CodeBlock lang={block.lang} code={block.code} />;
 		case "rule":
 			return <hr />;
 		case "quote":
 			return <blockquote>{renderBlocks(block.text)}</blockquote>;
+		case "math":
+			return <MathBlock tex={block.tex} />;
+		case "details":
+			return <Details summary={block.summary} blocks={block.children} />;
 		case "list": {
 			const Tag = block.ordered ? "ol" : "ul";
 			return (
 				<Tag>
 					{block.items.map((item, index) => (
-						<li key={index}>
-							{renderInline(item.text)}
-							{item.children.map((child, childIndex) => (
-								<Fragment key={childIndex}>{renderBlock(child, childIndex)}</Fragment>
-							))}
-						</li>
+						<Item key={index} item={item} />
 					))}
 				</Tag>
 			);
 		}
 		case "table":
 			return (
-				<div className="overflow-x-auto">
+				<div className="ly-table">
 					<table>
 						<thead>
 							<tr>
 								{block.header.map((cell, index) => (
-									<th key={index}>{renderInline(cell)}</th>
+									<th key={index} style={{ textAlign: block.align[index] ?? "left" }}>
+										{inline(cell)}
+									</th>
 								))}
 							</tr>
 						</thead>
@@ -220,7 +85,9 @@ function renderBlock(block: Block, _key: number): ReactNode {
 							{block.rows.map((row, rowIndex) => (
 								<tr key={rowIndex}>
 									{row.map((cell, cellIndex) => (
-										<td key={cellIndex}>{renderInline(cell)}</td>
+										<td key={cellIndex} style={{ textAlign: block.align[cellIndex] ?? "left" }}>
+											{inline(cell)}
+										</td>
 									))}
 								</tr>
 							))}
@@ -233,63 +100,139 @@ function renderBlock(block: Block, _key: number): ReactNode {
 	}
 }
 
-/**
- * Inline formatting. Code spans are matched first and their contents are not re-scanned, so
- * `**not bold**` inside backticks stays literal.
- */
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(~~[^~]+~~)|(\[[^\]]+\]\([^)\s]+\))/g;
+function Item({ item }: { item: ListItem }) {
+	const body = (
+		<>
+			{inline(item.text)}
+			{item.children.map((child, index) => (
+				<Fragment key={index}>{renderBlock(child)}</Fragment>
+			))}
+		</>
+	);
 
-function renderInline(text: string): ReactNode[] {
-	const out: ReactNode[] = [];
-	let lastIndex = 0;
-	let key = 0;
-
-	for (const match of text.matchAll(INLINE)) {
-		const index = match.index ?? 0;
-		if (index > lastIndex) out.push(<Fragment key={key++}>{softBreaks(text.slice(lastIndex, index))}</Fragment>);
-		const token = match[0];
-
-		if (token.startsWith("`")) out.push(<code key={key++}>{token.slice(1, -1)}</code>);
-		else if (token.startsWith("**") || token.startsWith("__")) out.push(<strong key={key++}>{token.slice(2, -2)}</strong>);
-		else if (token.startsWith("~~")) out.push(<del key={key++}>{token.slice(2, -2)}</del>);
-		else if (token.startsWith("*")) out.push(<em key={key++}>{token.slice(1, -1)}</em>);
-		else {
-			const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(token);
-			if (link) {
-				const href = link[2];
-				const safe = href.startsWith("http://") || href.startsWith("https://");
-				out.push(
-					safe ? (
-						<a
-							key={key++}
-							href={href}
-							onClick={(event) => {
-								event.preventDefault();
-								void window.lyra.system.openExternal(href);
-							}}
-						>
-							{link[1]}
-						</a>
-					) : (
-						<Fragment key={key++}>{link[1]}</Fragment>
-					),
-				);
-			}
-		}
-		lastIndex = index + token.length;
-	}
-
-	if (lastIndex < text.length) out.push(<Fragment key={key++}>{softBreaks(text.slice(lastIndex))}</Fragment>);
-	return out;
+	if (item.checked === undefined) return <li>{body}</li>;
+	return (
+		<li className="ly-task" data-done={item.checked}>
+			{/* Drawn, not an <input>: this reflects what the author wrote, and is not a control. */}
+			<span aria-hidden className="ly-task-box">
+				{item.checked && (
+					<svg viewBox="0 0 12 12" fill="none" aria-hidden>
+						<path d="M2.5 6.2 4.8 8.5 9.5 3.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+					</svg>
+				)}
+			</span>
+			<span>{body}</span>
+		</li>
+	);
 }
 
-function softBreaks(text: string): ReactNode {
-	const parts = text.split("\n");
-	if (parts.length === 1) return text;
-	return parts.map((part, index) => (
-		<Fragment key={index}>
-			{index > 0 && <br />}
-			{part}
-		</Fragment>
-	));
+/** `<details>`, folded, with the same motion as every other disclosure in the app. */
+function Details({ summary, blocks }: { summary: string; blocks: Block[] }) {
+	const [open, setOpen] = useState(false);
+
+	return (
+		<div className="ly-details" data-open={open}>
+			<button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="ly-details-summary">
+				<ChevronRight size={13} strokeWidth={2} className="ly-details-chevron" />
+				<span>{inline(summary)}</span>
+			</button>
+			<div className="ly-reveal" data-open={open} aria-hidden={!open}>
+				<div>
+					<div className="ly-details-body">
+						{blocks.map((child, index) => (
+							<Fragment key={index}>{renderBlock(child)}</Fragment>
+						))}
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function MathBlock({ tex }: { tex: string }) {
+	const html = renderMath(tex, true);
+	// TeX that does not parse is shown as it was written; a red error box helps nobody read it.
+	if (!html) return <pre className="ly-math-raw">{tex}</pre>;
+	// biome-ignore lint/security/noDangerouslySetInnerHtml: KaTeX's own output, built from a parse tree it escapes.
+	return <div className="ly-math-block" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function inline(text: string): ReactNode[] {
+	return renderTokens(parseInline(text));
+}
+
+function renderTokens(tokens: Inline[]): ReactNode[] {
+	return tokens.map((token, index) => <Fragment key={index}>{renderToken(token)}</Fragment>);
+}
+
+function renderToken(token: Inline): ReactNode {
+	switch (token.kind) {
+		case "text":
+			return token.text;
+		case "code":
+			return <code>{token.text}</code>;
+		case "break":
+			return <br />;
+		case "strong":
+			return <strong>{renderTokens(token.children)}</strong>;
+		case "em":
+			return <em>{renderTokens(token.children)}</em>;
+		case "del":
+			return <del>{renderTokens(token.children)}</del>;
+		case "tag": {
+			const Tag = token.name;
+			return <Tag>{renderTokens(token.children)}</Tag>;
+		}
+		case "math": {
+			const html = renderMath(token.tex, false);
+			if (!html) return `$${token.tex}$`;
+			// biome-ignore lint/security/noDangerouslySetInnerHtml: KaTeX's own output, built from a parse tree it escapes.
+			return <span className="ly-math" dangerouslySetInnerHTML={{ __html: html }} />;
+		}
+		case "link":
+			return <Link href={token.href}>{renderTokens(token.children)}</Link>;
+		case "image":
+			return <Image src={token.src} alt={token.alt} />;
+		default:
+			return null;
+	}
+}
+
+/** Only http(s) opens, and it opens outside — nothing navigates this window away from the app. */
+function Link({ href, children }: { href: string; children: ReactNode }) {
+	const safe = href.startsWith("http://") || href.startsWith("https://");
+	if (!safe) return <>{children}</>;
+	return (
+		<a
+			href={href}
+			onClick={(event) => {
+				event.preventDefault();
+				void window.lyra.system.openExternal(href);
+			}}
+		>
+			{children}
+		</a>
+	);
+}
+
+/**
+ * A picture from somewhere else.
+ *
+ * The page's `img-src` is `self data: blob:`, so a remote screenshot cannot be drawn here, and
+ * widening it for pull request bodies would widen it for every comment anybody can write. A named
+ * link that opens in the browser keeps the reference — and its filename — rather than dropping it.
+ */
+function Image({ src, alt }: { src: string; alt: string }) {
+	const local = src.startsWith("data:") || src.startsWith("blob:");
+	if (local) return <img src={src} alt={alt} className="ly-md-image" />;
+
+	const name = alt || decodeURIComponent(src.split("/").pop()?.split("?")[0] || "图片");
+	return (
+		<Link href={src}>
+			<span className="ly-md-image-link">
+				<ExternalLink size={11.5} strokeWidth={1.9} />
+				{name}
+			</span>
+		</Link>
+	);
 }

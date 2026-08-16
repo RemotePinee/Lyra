@@ -70,3 +70,47 @@ test("entries keep distinct keys across the two sources", () => {
 test("nothing at all is an empty timeline, not a crash", () => {
 	assert.deepEqual(activityOf({ reviews: [], threads: [] } as never), []);
 });
+
+test("commits and the opening join the same timeline, in time order", () => {
+	/*
+	 * What was pushed and what was said about it are the two halves of a review. Before commits
+	 * were included, the timeline showed opinions about a change it never showed.
+	 */
+	const entries = activityOf({
+		author: "kittors",
+		createdAt: at("2026-03-01T00:00:00Z"),
+		commits: [
+			{ sha: "c1adc75", headline: "fix(tun): prevent DNS loop", author: "kittors", at: at("2026-03-02T00:00:00Z") },
+		],
+		reviews: [],
+		threads: [{ author: "bot", body: "分析", createdAt: at("2026-03-03T00:00:00Z") }],
+	} as never);
+
+	assert.deepEqual(
+		entries.map((e) => e.kind),
+		["opened", "commit", "comment"],
+	);
+	assert.equal(entries[1].sha, "c1adc75");
+});
+
+test("a commit with no date is dropped rather than sorted to 1970", () => {
+	// `new Date("")` is NaN; sorting on it puts the row in an arbitrary place, which reads as the
+	// timeline being wrong rather than as one commit being odd.
+	const entries = activityOf({
+		commits: [{ sha: "aaa", headline: "no date", author: "x", at: "" }],
+		reviews: [],
+		threads: [{ author: "b", body: "c", createdAt: at("2026-03-02T00:00:00Z") }],
+	} as never);
+
+	assert.deepEqual(
+		entries.map((e) => e.kind),
+		["comment"],
+	);
+});
+
+test("without an author or a date there is no opening row", () => {
+	// The summary caches an older shape; a row saying "undefined 打开了此 Pull Request" is worse
+	// than no row.
+	const entries = activityOf({ reviews: [], threads: [] } as never);
+	assert.deepEqual(entries, []);
+});

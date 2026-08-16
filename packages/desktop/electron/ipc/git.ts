@@ -7,6 +7,7 @@
  */
 
 import { ipcMain } from "electron";
+import { githubAvatar } from "../avatars.ts";
 import { findLocalCheckout } from "../git-remote.ts";
 import { generalScratchDir, type PrBrief, prScratchDir, scratchRoots, writePrBrief } from "../scratch.ts";
 import {
@@ -162,6 +163,14 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	});
 
 	ipcMain.handle("scratch:general", async () => generalScratchDir());
+
+	/*
+	 * An avatar as a data URL, so the renderer never reaches out to github.com itself.
+	 *
+	 * Keeping the page's CSP narrow is worth one IPC round trip: widening `img-src` for a 20pt
+	 * circle would widen it for every rendered comment body too.
+	 */
+	ipcMain.handle("git:avatar", async (_event, login: string) => githubAvatar(login));
 
 	/*
 	 * Which of the user's own projects is this repository, if any.

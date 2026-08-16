@@ -11,12 +11,25 @@
 
 import type { PullRequestDetail } from "../../../electron/ipc-types.ts";
 
+/**
+ * What a row is, which decides how it is drawn.
+ *
+ * A commit and a comment are both "something that happened at a time", and drawn identically that
+ * is all they say. What was pushed and what was said about it are the two halves of reviewing, and
+ * a timeline that does not distinguish them is a list you have to read every line of to navigate.
+ */
+export type ActivityKind = "opened" | "commit" | "review" | "comment";
+
 export interface ActivityEntry {
 	key: string;
+	kind: ActivityKind;
 	author: string;
 	at: string;
-	/** A review's verdict — 已批准, 请求修改. Comments have none. */
+	/** A review's verdict — 已批准, 请求修改. Only reviews have one. */
 	verdict?: string;
+	/** A commit's short sha. */
+	sha?: string;
+	/** Prose for a comment or review; the headline for a commit; empty for an event. */
 	body: string;
 }
 
@@ -29,8 +42,33 @@ export function verdictLabel(state: string): string {
 	return "已评论";
 }
 
-export function activityOf(detail: Pick<PullRequestDetail, "reviews" | "threads">): ActivityEntry[] {
+export function activityOf(
+	detail: Pick<PullRequestDetail, "reviews" | "threads"> &
+		Partial<Pick<PullRequestDetail, "commits" | "author" | "createdAt">>,
+): ActivityEntry[] {
 	const entries: ActivityEntry[] = [
+		/*
+		 * The opening, which is an event rather than anything anybody wrote.
+		 *
+		 * Always first, and worth a row: without it the timeline begins mid-conversation, and the
+		 * gap between "opened" and the first comment is often the interesting part.
+		 */
+		...(detail.author && detail.createdAt
+			? [{ key: "opened", kind: "opened" as const, author: detail.author, at: detail.createdAt, body: "" }]
+			: []),
+
+		// Commits carry no body of their own — the headline is the row.
+		...(detail.commits ?? [])
+			.filter((commit) => commit.at)
+			.map((commit, index) => ({
+				key: `k-${index}`,
+				kind: "commit" as const,
+				author: commit.author,
+				at: commit.at,
+				sha: commit.sha,
+				body: commit.headline,
+			})),
+
 		/*
 		 * Keys are prefixed by source.
 		 *
@@ -39,6 +77,7 @@ export function activityOf(detail: Pick<PullRequestDetail, "reviews" | "threads"
 		 */
 		...detail.reviews.map((review, index) => ({
 			key: `r-${index}`,
+			kind: "review" as const,
 			author: review.author,
 			at: review.submittedAt,
 			verdict: verdictLabel(review.state),
@@ -46,6 +85,7 @@ export function activityOf(detail: Pick<PullRequestDetail, "reviews" | "threads"
 		})),
 		...detail.threads.map((comment, index) => ({
 			key: `c-${index}`,
+			kind: "comment" as const,
 			author: comment.author,
 			at: comment.createdAt,
 			body: comment.body,

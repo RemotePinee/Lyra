@@ -161,6 +161,16 @@ export interface PullRequestDetail extends PullRequestSummary {
 	checks: { total: number; passed: number; failed: number; pending: number; items: PullRequestCheck[] } | null;
 	mergeable: string;
 	labels: string[];
+	/** What was pushed, oldest first — the other half of the timeline. */
+	commits: PullRequestCommit[];
+}
+
+/** One commit on the branch, trimmed to what a timeline row shows. */
+export interface PullRequestCommit {
+	sha: string;
+	headline: string;
+	author: string;
+	at: string;
 }
 
 export interface WorkspaceDiffFile {

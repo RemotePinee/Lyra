@@ -125,6 +125,7 @@ const DETAIL_FIELDS = [
 	"reviews",
 	"reviewRequests",
 	"statusCheckRollup",
+	"commits",
 	"mergeable",
 	"labels",
 ].join(",");
@@ -154,6 +155,12 @@ interface RawDetail extends RawSearchItem {
 	reviews?: { author?: { login?: string }; state?: string; body?: string; submittedAt?: string }[];
 	reviewRequests?: { login?: string }[];
 	statusCheckRollup?: { name?: string; state?: string; conclusion?: string; status?: string; detailsUrl?: string }[];
+	commits?: {
+		oid?: string;
+		messageHeadline?: string;
+		committedDate?: string;
+		authors?: { login?: string; name?: string }[];
+	}[];
 	mergeable?: string;
 	labels?: { name?: string }[];
 }
@@ -192,6 +199,19 @@ function toDetail(repo: string, raw: RawDetail): PullRequestDetail {
 			...reviews.map((r) => ({ login: r.author, state: r.state })),
 		].filter((r) => r.login),
 		checks: summariseChecks(raw.statusCheckRollup),
+		/*
+		 * Commits, so the timeline can say what was pushed and not only what was said about it.
+		 *
+		 * Trimmed to what a row shows: headline, who, when, and a short sha. A commit's body belongs
+		 * in the diff view — carrying it here would put a screen of text into a cache entry for a
+		 * line nobody expanded.
+		 */
+		commits: (raw.commits ?? []).map((commit) => ({
+			sha: (commit.oid ?? "").slice(0, 7),
+			headline: commit.messageHeadline ?? "",
+			author: commit.authors?.[0]?.login || commit.authors?.[0]?.name || "",
+			at: commit.committedDate ?? "",
+		})),
 		mergeable: raw.mergeable ?? "UNKNOWN",
 		labels: (raw.labels ?? []).map((l) => l.name ?? "").filter(Boolean),
 	};

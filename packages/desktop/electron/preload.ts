@@ -195,6 +195,7 @@ const api: LyraApi = {
 		generalScratch: () => ipcRenderer.invoke("scratch:general"),
 		scratchRoots: () => ipcRenderer.invoke("scratch:roots"),
 		findLocalCheckout: (repo, candidates) => ipcRenderer.invoke("git:findLocalCheckout", repo, candidates),
+		avatar: (login) => ipcRenderer.invoke("git:avatar", login),
 		commentOnPullRequest: (repo, number, body) => ipcRenderer.invoke("git:commentOnPullRequest", repo, number, body),
 		reviewPullRequest: (repo, number, verdict, body) =>
 			ipcRenderer.invoke("git:reviewPullRequest", repo, number, verdict, body),

@@ -2,6 +2,46 @@ import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import type { Plugin } from "vite";
+
+/**
+ * Drop KaTeX's `woff` and `ttf` faces.
+ *
+ * KaTeX ships each of its twenty-odd faces three times over for browsers that predate `woff2`.
+ * This app runs on one engine, and that engine has supported `woff2` for a decade — so those two
+ * copies are 3.4MB that can never be requested.
+ *
+ * Done on the finished bundle rather than on the stylesheet, because by the time Vite sees the
+ * stylesheet Tailwind has already inlined the `@import` and the file no longer identifies itself
+ * as KaTeX's. Here the filenames still do.
+ */
+function katexWoff2Only(): Plugin {
+	return {
+		name: "katex-woff2-only",
+		generateBundle(_options, bundle) {
+			const dropped: string[] = [];
+			for (const file of Object.keys(bundle)) {
+				// `.woff2` does not match: the `$` requires the name to end at `woff`.
+				if (/KaTeX_[^/]*\.(woff|ttf)$/.test(file)) {
+					dropped.push(file.split("/").pop() as string);
+					delete bundle[file];
+				}
+			}
+			if (dropped.length === 0) return;
+
+			for (const asset of Object.values(bundle)) {
+				if (asset.type !== "asset" || !asset.fileName.endsWith(".css")) continue;
+				let css = String(asset.source);
+				for (const name of dropped) {
+					// The whole `, url(…) format(…)` clause goes; leaving a dangling comma breaks the rule.
+					const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					css = css.replace(new RegExp(`\\s*,\\s*url\\(["']?[^)"']*${escaped}["']?\\)\\s*format\\([^)]*\\)`, "g"), "");
+				}
+				asset.source = css;
+			}
+		},
+	};
+}
 
 export default defineConfig({
 	main: {
@@ -42,7 +82,7 @@ export default defineConfig({
 	},
 	renderer: {
 		root: ".",
-		plugins: [react(), tailwindcss()],
+		plugins: [react(), tailwindcss(), katexWoff2Only()],
 		resolve: {
 			alias: { "@": resolve("src") },
 		},
