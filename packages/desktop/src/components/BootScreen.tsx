@@ -3,15 +3,27 @@
  *
  * Almost always a few hundred milliseconds, which is the whole design problem: anything that
  * announces itself immediately is a flash, and a flash is what makes a fast launch feel broken.
- * So nothing is drawn for the first half-second, and what does appear afterwards is one arc and
- * the app's name, fading in over a full second rather than snapping on.
+ * So nothing is drawn for the first half-second, and what does appear afterwards fades in over
+ * most of a second rather than snapping on.
  *
  * The colours come from the preload, which paints the saved theme before the first frame — without
  * it this screen was always dark, and a light-theme app began every launch by flashing.
  */
 
 import { useEffect, useState } from "react";
-import { Spinner } from "./RunningIndicator.tsx";
+/*
+ * Inlined, not linked.
+ *
+ * Two reasons, and the first is correctness. Packaged, the renderer is loaded with `loadFile`,
+ * so the page's origin is `file://` — and `img-src 'self'` in the Content-Security-Policy does
+ * not reliably cover a file-origin document. A data URL is covered explicitly by `data:` in that
+ * same policy, which makes this the one form guaranteed to work both packaged and in dev.
+ *
+ * The second is that this is the first thing drawn. A separate request means the layout can
+ * appear before the artwork does, and a boot screen that flashes its own empty frame is worse
+ * than one that waits. Arriving with the bundle means it is never late.
+ */
+import mark from "../assets/boot-mark.png?inline";
 
 /** Long enough that a normal launch never shows anything at all. */
 const QUIET_MS = 500;
@@ -25,13 +37,18 @@ export function BootScreen() {
 	}, []);
 
 	return (
-		<div className="flex h-full items-center justify-center bg-shell" aria-busy>
+		<div className="flex h-full items-center justify-center bg-shell" aria-busy aria-label="Lyra 正在启动">
 			<div
-				className="flex flex-col items-center gap-3.5 transition-opacity duration-[900ms] ease-out"
+				className="flex flex-col items-center gap-8 transition-opacity duration-[900ms] ease-out"
 				style={{ opacity: shown ? 1 : 0 }}
 			>
-				<Spinner size={20} />
-				<span className="text-detail tracking-[0.14em] text-ink-faint/80 uppercase">Lyra</span>
+				{/*
+				 * Sized in CSS rather than left to the file, and `alt=""` because the name is drawn
+				 * into the artwork — a screen reader announcing it twice is worse than not at all.
+				 * The label is on the region instead, where it can say what is happening.
+				 */}
+				<img src={mark} alt="" width={192} height={192} className="ly-boot-mark" draggable={false} />
+				<div className="ly-boot-rail" />
 			</div>
 		</div>
 	);
