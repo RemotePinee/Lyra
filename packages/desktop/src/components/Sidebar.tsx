@@ -15,7 +15,7 @@ import { ScrollText } from "./ScrollText.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
 import { activeProviderLabel, groupSessions, listableSessions } from "./sidebar/grouping.ts";
-import { ProjectGroup } from "./sidebar/ProjectGroup.tsx";
+import { ProjectGroup, SESSION_PAGE } from "./sidebar/ProjectGroup.tsx";
 
 export function Sidebar() {
 	const settings = useApp((s) => s.settings);
@@ -38,7 +38,8 @@ export function Sidebar() {
 
 	const [query, setQuery] = useState("");
 	const [searching, setSearching] = useState(false);
-	const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+	/** How many rows each project is showing. Absent means the default five. */
+	const [shown, setShown] = useState<Record<string, number>>({});
 
 	const groups = useMemo(
 		() => groupSessions(listableSessions(sessions, activeSessionId), settings?.projects ?? [], query, scratchRoots),
@@ -46,8 +47,9 @@ export function Sidebar() {
 	);
 
 	const groupProps = (path: string) => ({
-		expanded: expanded[path] === true,
-		onToggleExpand: () => setExpanded((prev) => ({ ...prev, [path]: !prev[path] })),
+		shown: shown[path] ?? SESSION_PAGE,
+		onShowMore: () => setShown((prev) => ({ ...prev, [path]: (prev[path] ?? SESSION_PAGE) + SESSION_PAGE })),
+		onCollapse: () => setShown((prev) => ({ ...prev, [path]: SESSION_PAGE })),
 		activeSessionId,
 		onOpenSession: (meta: Parameters<typeof openSession>[0]) => {
 			void openSession(meta);

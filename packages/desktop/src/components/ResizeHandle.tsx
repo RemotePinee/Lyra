@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-/** How far the pointer can wander from the edge and still be grabbing it. */
-const HIT_WIDTH = 9;
+/**
+ * How far the pointer can wander from the edge and still be grabbing it.
+ *
+ * Exported because a scroller inside a resizable pane has to keep out of this strip. Both used to
+ * sit on the same 9 pixels of edge with the handle on top, so the scrollbar was drawn, could be
+ * seen, and could never be grabbed — every press within reach of it started a resize instead.
+ */
+export const RESIZE_HIT_WIDTH = 9;
+const HIT_WIDTH = RESIZE_HIT_WIDTH;
 /** Keyboard resizing, per press. Shift multiplies it, the way nudging does everywhere else. */
 const STEP = 16;
 /** Long enough to read as a grab handle, short enough not to read as a border. */

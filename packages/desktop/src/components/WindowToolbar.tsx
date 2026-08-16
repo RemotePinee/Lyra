@@ -30,6 +30,22 @@ const TOOLBAR_LEFT = 78;
 const TOOLBAR_LEFT_FULLSCREEN = 12;
 
 /**
+ * Where a view's own toolbar content may start.
+ *
+ * The top 44px belongs to the window: the traffic lights, then the sidebar toggle. A view that
+ * puts its own controls up there — the pull request list does — has to begin after both, or its
+ * buttons land underneath ones that are drawn at a higher layer and simply stop responding.
+ *
+ * Only when the sidebar is closed. Open, it covers this corner itself and the view starts well
+ * to the right of it.
+ */
+export function toolbarContentLeft(navOpen: boolean, nativeFullScreen: boolean): number {
+	if (navOpen) return 0;
+	// The toggle is 28 wide, plus the same ~10 gap the lights get.
+	return (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + 28 + 10;
+}
+
+/**
  * The draggable band.
  *
  * Deliberately below the panel: a full-width band above it would intercept every click meant for

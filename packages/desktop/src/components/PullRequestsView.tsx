@@ -13,6 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import type { PullRequestDetail as Detail } from "../../electron/ipc-types.ts";
 import { useLayout } from "../layout.tsx";
+import { toolbarContentLeft } from "./WindowToolbar.tsx";
 import { useApp } from "../store.ts";
 import { PullRequestDetail, type PrTab } from "./pr/PullRequestDetail.tsx";
 import { PullRequestList } from "./pr/PullRequestList.tsx";
@@ -23,7 +24,8 @@ import { usePullRequests } from "./pr/usePullRequests.ts";
 const LIST_WIDTH = 300;
 
 export function PullRequestsView() {
-	const { compact } = useLayout();
+	const { compact, navOpen, nativeFullScreen } = useLayout();
+	const toolbarLeft = toolbarContentLeft(navOpen, nativeFullScreen);
 	/*
 	 * Reviewing happens in two postures, and the list is only wanted in one of them.
 	 *
@@ -118,6 +120,7 @@ export function PullRequestsView() {
 			loading={pr.loading}
 			error={pr.error}
 			onRefresh={pr.refresh}
+			toolbarLeft={toolbarLeft}
 		/>
 	);
 
@@ -181,7 +184,19 @@ export function PullRequestsView() {
 	return (
 		<div className="-mt-11 flex min-h-0 flex-1">
 			{!expanded && (
-				<div style={{ width: LIST_WIDTH }} className="flex min-h-0 shrink-0 flex-col border-r border-line-soft">
+				/*
+				 * Wider by exactly what the window controls take.
+				 *
+				 * With the sidebar closed this column starts at the window's edge and its header has
+				 * to begin after the traffic lights and the toggle — which comes straight out of the
+				 * 300px the filters had, and they wrapped mid-word. Giving the column that space back
+				 * keeps the row on one line without moving anything when the sidebar is open, where
+				 * the inset is zero.
+				 */
+				<div
+					style={{ width: LIST_WIDTH + toolbarLeft }}
+					className="flex min-h-0 shrink-0 flex-col border-r border-line-soft"
+				>
 					{list}
 				</div>
 			)}

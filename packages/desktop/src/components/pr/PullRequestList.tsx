@@ -32,6 +32,7 @@ export function PullRequestList({
 	loading,
 	error,
 	onRefresh,
+	toolbarLeft,
 }: {
 	groups: Group[];
 	filter: Filter;
@@ -43,6 +44,8 @@ export function PullRequestList({
 	loading: boolean;
 	error: string | null;
 	onRefresh: () => void;
+	/** Left inset that keeps this clear of the window controls; 0 when the sidebar covers them. */
+	toolbarLeft: number;
 }) {
 	const empty = groups.length === 0;
 
@@ -56,13 +59,23 @@ export function PullRequestList({
 			 * you cannot click. `relative z-50` to come out from under the drag band, which covers
 			 * the full width at z-40.
 			 */}
-			<div className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-0.5 px-3">
+			<div
+				className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-0.5 px-3"
+				/*
+				 * Clear of the window's own controls when the sidebar is not covering them.
+				 *
+				 * Closed, this column starts at the window's left edge — right on top of the traffic
+				 * lights and the sidebar toggle, which are drawn above it. The filters were both
+				 * overlapping them and unclickable.
+				 */
+				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
+			>
 					{FILTERS.map((option) => (
 						<button
 							key={option.key}
 							type="button"
 							onClick={() => onFilter(option.key)}
-							className={`h-[26px] rounded-lg px-2.5 text-label transition-colors ${
+							className={`h-[26px] shrink-0 rounded-lg px-2.5 text-label whitespace-nowrap transition-colors ${
 								filter === option.key ? "bg-card-hover text-ink" : "text-ink-muted hover:text-ink"
 							}`}
 						>

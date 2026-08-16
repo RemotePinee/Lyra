@@ -23,31 +23,45 @@ import { ScrollText } from "../ScrollText.tsx";
 import type { Group } from "./grouping.ts";
 import { SessionRow } from "./SessionRow.tsx";
 
-/** Past this many, the rest are behind "展开显示". */
+/**
+ * How many sessions a project shows before the rest are behind 展开显示, and how many more each
+ * press reveals.
+ *
+ * The same number for both on purpose. One press used to open everything, which on a project with
+ * forty conversations replaced a five-row group with a wall — and the only way back was a single
+ * 收起 that threw away however far you had read. Revealing another five is a step you can take
+ * repeatedly and stop at.
+ */
 const COLLAPSED_SESSION_COUNT = 5;
+export const SESSION_PAGE = COLLAPSED_SESSION_COUNT;
 
 export function ProjectGroup({
 	group,
 	active,
 	activeSessionId,
-	expanded,
-	onToggleExpand,
+	shown,
+	onShowMore,
+	onCollapse,
 	onOpenSession,
 	onArchiveSession,
 }: {
 	group: Group;
 	active: boolean;
 	activeSessionId: string | null;
-	expanded: boolean;
-	onToggleExpand: () => void;
+	/** How many rows this group is currently showing. */
+	shown: number;
+	onShowMore: () => void;
+	onCollapse: () => void;
 	onOpenSession: (meta: SessionMeta) => void;
 	onArchiveSession: (meta: SessionMeta) => void;
 }) {
 	const openWorkspace = useApp((s) => s.openWorkspace);
 	const { compact, dismissNav } = useLayout();
 	const menu = usePopover();
-	const visible = expanded ? group.sessions : group.sessions.slice(0, COLLAPSED_SESSION_COUNT);
+	const visible = group.sessions.slice(0, Math.max(COLLAPSED_SESSION_COUNT, shown));
 	const hidden = group.sessions.length - visible.length;
+	// Only worth offering once something has actually been opened up.
+	const canCollapse = visible.length > COLLAPSED_SESSION_COUNT;
 
 	return (
 		<div className={`mb-2 flex flex-col ${compact ? "gap-[5px]" : "gap-[4px]"}`}>
@@ -102,16 +116,35 @@ export function ProjectGroup({
 				/>
 			))}
 
-			{group.sessions.length > COLLAPSED_SESSION_COUNT && (
-				<button
-					type="button"
-					onClick={onToggleExpand}
-					className={`flex w-full items-center pl-9 text-left text-label text-ink-faint transition-colors hover:text-ink-muted ${
-						compact ? "h-[32px]" : "h-[26px]"
-					}`}
-				>
-					{expanded ? "收起" : `展开显示${hidden > 0 ? ` (${hidden})` : ""}`}
-				</button>
+			{/*
+			 * Two separate actions rather than one toggle.
+			 *
+			 * "More" and "back to the top" are different intentions, and a single control that means
+			 * whichever one the current state implies makes the second press unpredictable. The count
+			 * is what is left, not what a press will reveal — how much more there is is the question
+			 * being asked.
+			 */}
+			{(hidden > 0 || canCollapse) && (
+				<div className={`flex items-center gap-3 pl-9 ${compact ? "h-[32px]" : "h-[26px]"}`}>
+					{hidden > 0 && (
+						<button
+							type="button"
+							onClick={onShowMore}
+							className="text-left text-label text-ink-faint transition-colors hover:text-ink-muted"
+						>
+							展开显示 ({hidden})
+						</button>
+					)}
+					{canCollapse && (
+						<button
+							type="button"
+							onClick={onCollapse}
+							className="text-left text-label text-ink-faint transition-colors hover:text-ink-muted"
+						>
+							收起
+						</button>
+					)}
+				</div>
 			)}
 		</div>
 	);

@@ -226,7 +226,16 @@ export function Scroller({
 					 * track, so without a higher layer the header slid over the thumb and the one
 					 * control that tells you where you are in a long list disappeared.
 					 */
-					className="absolute top-0 right-0 bottom-0 z-20 w-[10px]"
+					/*
+					 * Inset by `--ly-scroll-inset` where something else owns the edge.
+					 *
+					 * A resizable pane puts a drag handle on its last 9 pixels, at a higher layer than
+					 * this. Sharing them means the thumb is visible and permanently unusable: the press
+					 * that should have grabbed it starts a resize. The pane declares how much edge is
+					 * spoken for and the track steps inside it.
+					 */
+					style={{ right: "var(--ly-scroll-inset, 0px)" }}
+					className="absolute top-0 bottom-0 z-20 w-[10px]"
 					onMouseDown={(event) => {
 						// Clicking the track jumps to that spot, then hands over to the drag.
 						if (event.target !== track.current) return;
