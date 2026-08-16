@@ -1,113 +1,207 @@
 /**
- * Make the development app say "Lyra" in the dock.
+ * Make the development app say "Lyra" instead of "Electron".
  *
- * `app.setName()` cannot do this, and it is worth being precise about why. In development the
- * process running is Electron's own prebuilt `Electron.app`, and macOS reads the dock tooltip,
- * the menu bar's application menu and the force-quit list straight out of that bundle's
- * `Info.plist` — before any JavaScript exists to have an opinion. `setName()` changes what the
- * app calls itself at runtime, which affects `app.getName()` and the userData path; it does not
- * reach the bundle metadata the window server already read.
+ * Packaged builds never come through here — electron-builder writes productName into the bundle.
+ * This is only about development, where the process being run is Electron's own prebuilt
+ * `Electron.app`, and where the dock, ⌘-tab, Finder and the force-quit list all read that
+ * bundle's identity. `app.setName()` cannot reach any of it: it changes `app.getName()` and the
+ * userData path, and the window server has already read the bundle by the time JavaScript exists.
  *
- * So the bundle is what has to change. Packaged builds get their name from electron-builder and
- * never come through here; this is only about not staring at "Electron" all day while working.
+ * Four things carry the name, and the dock falls back through all of them. Changing only the
+ * plist changes nothing visible, which is exactly what it looked like for several attempts:
  *
- * Idempotent, and a no-op off macOS. `node_modules` is disposable, so this runs from
- * `postinstall` and again before `dev` — a reinstall silently restores the stock plist, and
- * without the second call the name comes back the next time someone installs a dependency.
+ *   1. `CFBundleName` / `CFBundleDisplayName` — the answer when the app is launched properly.
+ *   2. `CFBundleIdentifier` — still `com.github.Electron` means the dock matches the long-standing
+ *      "Electron" record already in LaunchServices, and shows our icon under that name.
+ *   3. The executable's filename — development runs the binary directly rather than through
+ *      `open -a`, so LaunchServices never registers it as a launched application and the dock
+ *      falls back to the process name, which comes from argv[0].
+ *   4. The `.app` directory name — the last fallback, and the one VS Code also changes (they
+ *      ship `Code - OSS.app`).
+ *
+ * Then LaunchServices caches the result by path, and the Dock caches it again on top of that.
+ *
+ * All of it is confined to this repository's `node_modules` copy — no global pnpm store is
+ * touched — and `--restore` puts every piece back. Reinstalling `electron` also restores it,
+ * and the script runs again from `postinstall`.
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const NAME = "Lyra";
+/** Matches `appId` in electron-builder.yml, so development and release are one identity. */
+const APP_ID = "dev.lyra.app";
 const LSREGISTER =
 	"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+
+/*
+ * Packaging has to run this first with `--restore`.
+ *
+ * electron-builder builds a macOS app by copying `dist/Electron.app` out of node_modules and
+ * renaming it. It looks for that exact name, so a renamed bundle fails the build outright — and
+ * it fails per-architecture, which is the kind of thing that passes locally on arm64 and breaks
+ * the x64 job. Development polish is never worth a broken artifact.
+ */
+const restore = process.argv.includes("--restore");
 
 if (process.platform !== "darwin") process.exit(0);
 
 const require = createRequire(import.meta.url);
 
-/** The executable inside the bundle, from which the bundle itself is two levels up. */
-let executable;
+/** pnpm links `electron` into place, so resolve the entry and work down from the real package. */
+let bundle;
 try {
-	executable = require("electron");
+	const dist = join(dirname(require.resolve("electron")), "dist");
+	// Either name may be on disk, depending on whether this has run before.
+	bundle = existsSync(join(dist, `${NAME}.app`)) ? join(dist, `${NAME}.app`) : join(dist, "Electron.app");
 } catch {
-	// Electron is not installed yet — postinstall ordering, or a CI job that never launches it.
+	// Not installed yet — postinstall ordering, or a CI job that never launches it.
 	process.exit(0);
 }
 
-if (typeof executable !== "string") process.exit(0);
-
-const contents = dirname(dirname(executable)); // …/Electron.app/Contents/MacOS/Electron → …/Contents
-const plist = join(contents, "Info.plist");
-const bundle = dirname(contents);
-
+const plist = join(bundle, "Contents", "Info.plist");
 if (!existsSync(plist)) process.exit(0);
 
 const read = (key) => {
 	try {
 		return execFileSync("/usr/libexec/PlistBuddy", ["-c", `Print :${key}`, plist], { encoding: "utf8" }).trim();
 	} catch {
-		return null;
+		return "";
 	}
 };
 
-const renamed = read("CFBundleName") !== NAME;
-
-if (renamed) {
-	for (const key of ["CFBundleName", "CFBundleDisplayName"]) {
-		// `Set` fails on a key that does not exist, so fall back to adding it.
+const set = (key, value) => {
+	try {
+		execFileSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${value}`, plist]);
+	} catch {
 		try {
-			execFileSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${NAME}`, plist]);
+			execFileSync("/usr/libexec/PlistBuddy", ["-c", `Add :${key} string ${value}`, plist]);
 		} catch {
-			try {
-				execFileSync("/usr/libexec/PlistBuddy", ["-c", `Add :${key} string ${NAME}`, plist]);
-			} catch {
-				// A read-only store or a plist shape we do not recognise: the name is cosmetic, so
-				// losing it must never be what stops the app from starting.
-			}
+			// A read-only store, or a plist shape we do not recognise. The name is cosmetic and
+			// must never be the reason the app will not start.
 		}
 	}
+};
+
+/** Re-signing the bundle takes seconds, so nothing below runs on an already-branded copy. */
+const done =
+	bundle.endsWith(`${NAME}.app`) &&
+	read("CFBundleName") === NAME &&
+	read("CFBundleExecutable") === NAME &&
+	read("CFBundleIdentifier") === APP_ID;
+
+if (!restore && done) process.exit(0);
+
+const sign = () => {
+	try {
+		// Required: macOS checks the bundle against its signature, and an edited Info.plist
+		// without a re-sign is an app that will not launch at all.
+		execFileSync("codesign", ["--force", "--sign", "-", "--deep", bundle], { stdio: "ignore" });
+	} catch {
+		// Missing codesign is rare, and an ad-hoc signature is not strictly required to run.
+	}
+};
+
+const pathFileFor = (app) => resolve(app, "..", "..", "path.txt");
+
+if (restore) {
+	const macOS = join(bundle, "Contents", "MacOS");
+	const renamed = join(macOS, NAME);
+	const original = join(macOS, "Electron");
+	if (existsSync(renamed)) {
+		// The compatibility symlink sits at the original name; drop it before moving the binary back.
+		if (existsSync(original)) rmSync(original);
+		renameSync(renamed, original);
+	}
+	set("CFBundleExecutable", "Electron");
+	set("CFBundleIdentifier", "com.github.Electron");
+	set("CFBundleName", "Electron");
+	set("CFBundleDisplayName", "Electron");
+
+	const originalApp = join(dirname(bundle), "Electron.app");
+	if (bundle !== originalApp && !existsSync(originalApp)) {
+		renameSync(bundle, originalApp);
+		bundle = originalApp;
+	}
+	const pathFile = pathFileFor(bundle);
+	if (existsSync(pathFile)) writeFileSync(pathFile, "Electron.app/Contents/MacOS/Electron");
+
+	sign();
+	console.log("[brand] Electron bundle restored — safe to package");
+	process.exit(0);
+}
+
+set("CFBundleName", NAME);
+set("CFBundleDisplayName", NAME);
+set("CFBundleIdentifier", APP_ID);
+
+/*
+ * Rename the binary, and leave a symlink behind under the old name.
+ *
+ * The symlink is not optional: `electron/index.js` joins `dist` with whatever `path.txt` says,
+ * and other tools in the chain have the original layout baked in. Renaming without it is how the
+ * `electron` command stops finding its own binary.
+ */
+const macOS = join(bundle, "Contents", "MacOS");
+const original = join(macOS, "Electron");
+const renamed = join(macOS, NAME);
+if (existsSync(original) && !existsSync(renamed)) {
+	renameSync(original, renamed);
+	symlinkSync(NAME, original);
+	set("CFBundleExecutable", NAME);
+}
+
+// The dock icon comes from the bundle too, and Electron's default is its own atom.
+const icon = join(dirname(dirname(fileURLToPath(import.meta.url))), "build", "icon.icns");
+const iconTarget = join(bundle, "Contents", "Resources", "electron.icns");
+if (existsSync(icon) && existsSync(iconTarget)) copyFileSync(icon, iconTarget);
+
+// The last fallback the dock reaches for, and the one VS Code changes as well.
+const renamedApp = join(dirname(bundle), `${NAME}.app`);
+if (bundle !== renamedApp && !existsSync(renamedApp)) {
+	renameSync(bundle, renamedApp);
+	bundle = renamedApp;
 }
 
 /*
- * Re-register the bundle, which is the step that actually makes the name appear.
+ * `path.txt` is how the `electron` command finds the binary, and it decides argv[0].
  *
- * LaunchServices reads a bundle's metadata once and keeps it in a database of its own, keyed by
- * path. Editing the plist does not invalidate that record and neither does relaunching the app:
- * the dock, ⌘-tab and the menu bar go on saying "Electron" from what was written the first time
- * the bundle was seen. Touching the directory does not help either — the cache is not
- * mtime-driven. `lsregister -f` forces the re-read for this one bundle.
- *
- * Unconditional, unlike the rename above. The plist is on disk and survives; this record is not
- * ours and can be rebuilt without warning, and at ~60ms it is not worth being clever about. The
- * rename is the part that is idempotent; this is the part that makes it true again.
+ * Left pointing at the old path, launching goes through the compatibility symlink — and macOS
+ * takes the process name from argv[0] without resolving symlinks, so the dock would still say
+ * Electron with everything else already correct.
  */
+const pathFile = pathFileFor(bundle);
+if (existsSync(pathFile)) {
+	const want = `${NAME}.app/Contents/MacOS/${NAME}`;
+	if (readFileSync(pathFile, "utf8").trim() !== want) writeFileSync(pathFile, want);
+}
+
+sign();
+
+// LaunchServices caches bundle metadata by path, and neither an edited plist nor a relaunch
+// invalidates that record. This is what makes it re-read.
 try {
 	execFileSync(LSREGISTER, ["-f", bundle], { stdio: "ignore" });
 } catch {
-	// Present on every macOS this runs on, but the name is cosmetic: never fail the build for it.
+	// Restarting the Dock below reaches the same place.
 }
 
 /*
- * And restart the Dock, which keeps a third copy of the name.
+ * The Dock keeps its own copy on top of LaunchServices.
  *
- * There are three caches between the plist and the tooltip, and each needs its own answer.
- * The plist is the fact. `lsregister -f` makes LaunchServices re-read it. The Dock then keeps
- * its own record per bundle path, which is why the tooltip went on saying "Electron" even with
- * `lsappinfo` already reporting Lyra — that was the last one holding the old name.
- *
- * Only when the plist actually changed, which in practice means once per `electron` reinstall.
- * The Dock relaunches itself within a second and loses nothing, but it is still the user's whole
- * desktop, and doing it on every `pnpm dev` to no effect would not be worth the flicker.
+ * This was the last one holding the old name: `lsappinfo` reported Lyra while the tooltip still
+ * said Electron. Only on an actual change — in practice once per `electron` reinstall. The Dock
+ * relaunches itself within a second, but it is the user's whole desktop, and flickering it on
+ * every `pnpm dev` for no change would not be worth it.
  */
-if (renamed) {
-	try {
-		execFileSync("/usr/bin/killall", ["Dock"], { stdio: "ignore" });
-	} catch {
-		// Not running, or not permitted. The name is right everywhere else.
-	}
-	console.log(`[brand] development Electron bundle now named ${NAME}`);
+try {
+	execFileSync("/usr/bin/killall", ["Dock"], { stdio: "ignore" });
+} catch {
+	// Not running, or not permitted.
 }
+
+console.log(`[brand] development Electron bundle is now ${NAME} (${APP_ID})`);
