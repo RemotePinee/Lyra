@@ -46,7 +46,7 @@ export function NavPane({
 		return () => window.clearTimeout(id);
 	}, [compact]);
 
-	return (
+	const pane = (
 		<aside
 			ref={ref}
 			aria-label={label}
@@ -63,24 +63,47 @@ export function NavPane({
 			 * navigation: two columns of text on top of each other, neither legible.
 			 */
 			data-pane={compact ? "drawer" : "beside"}
-			className={`${compact ? "fixed inset-0 z-30 shadow-2xl shadow-black/60" : "relative shrink-0 overflow-hidden"} ${
-				snap ? "transition-none" : "transition-[margin-left,opacity,transform] duration-[var(--ly-t-base)] ease-out"
+			className={`${compact ? "fixed inset-0 z-30 shadow-2xl shadow-black/60" : "h-full w-full overflow-hidden"} ${
+				snap ? "transition-none" : "transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
 			}`}
-			style={
-				compact
-					? { transform: navOpen ? "none" : "translateX(-100%)", opacity: navOpen ? 1 : 0 }
-					: { width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }
-			}
+			style={compact ? { transform: navOpen ? "none" : "translateX(-100%)", opacity: navOpen ? 1 : 0 } : undefined}
 		>
 			{children}
+		</aside>
+	);
+
+	if (compact) return pane;
+
+	return (
+		/*
+		 * A frame around the pane, so the drag handle can hang outside it.
+		 *
+		 * The pane clips its own overflow — it has to, or a long title spills onto the content
+		 * while the pane is sliding shut. That clipping is also what forced the resize handle to
+		 * live *inside* the pane, on the same nine pixels of edge as the scrollbar's thumb, and no
+		 * arrangement of layers fixes that: the thumb can only be reached when its scroller is
+		 * hovered, and a pointer sitting on the handle is not hovering the scroller. Which meant
+		 * the scrollbar was draggable or not depending on which direction you approached it from.
+		 *
+		 * The edge belongs to the boundary between two panes, not to either one of them. So the
+		 * frame carries the width and the clipping stays on the pane, leaving the handle free to
+		 * sit where the boundary actually is — one pixel inside, the rest over the content beside
+		 * it. Nothing moved on screen: the scrollbar is where it was, the hairline is where it was.
+		 * Only the invisible hit area stepped aside.
+		 */
+		<div
+			className={`relative shrink-0 ${
+				snap ? "transition-none" : "transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out"
+			}`}
+			style={{ width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }}
+		>
+			{pane}
 
 			{/*
-			 * Only while it is a pane you can see beside the content.
-			 *
-			 * As a drawer it covers the window, and dragging the edge of something that is over
-			 * everything else resizes nothing you can compare it against. Closed, there is no edge.
+			 * Only while it is a pane you can see beside the content. Closed, there is no edge —
+			 * and a handle over the content with no pane attached to it resizes nothing.
 			 */}
-			{!compact && navOpen && (
+			{navOpen && (
 				<ResizeHandle
 					edge="end"
 					width={sidebarWidth}
@@ -91,7 +114,7 @@ export function NavPane({
 					label="调整侧边栏宽度"
 				/>
 			)}
-		</aside>
+		</div>
 	);
 }
 

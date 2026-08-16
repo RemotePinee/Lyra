@@ -3,11 +3,25 @@ import { useEffect, useRef, useState } from "react";
 /**
  * How far the pointer can wander from the edge and still be grabbing it.
  *
- * A scroller in the same pane puts its thumb on this strip too, and the two share it rather than
- * one moving aside: the thumb sits above and takes back the few pixels it occupies, but only
- * while it is visible. See `.ly-thumb` in styles.css.
+ * Almost all of it on the far side of the boundary — see `INSIDE`.
  */
 const HIT_WIDTH = 9;
+/**
+ * How much of that strip lies within the pane being resized.
+ *
+ * One pixel, and it is there so the boundary itself is grabbable rather than only the content
+ * beside it. The rest hangs over the neighbour.
+ *
+ * The reason is the scrollbar. A pane's scroller puts its thumb on the last few pixels of the same
+ * edge, and a thumb is only reachable while its scroller is hovered — which a pointer resting on
+ * the handle is not doing. Sharing the strip therefore does not merely make the two compete; it
+ * makes the scrollbar draggable or not depending on which direction the pointer arrived from,
+ * because approaching across the list hovers the scroller on the way in and approaching from the
+ * content does not. No z-order fixes that. Stepping the hit area over to the other side does, and
+ * costs nothing visible: the thumb occupies pixels 2 through 8 measured from the pane's edge, so
+ * one pixel of overlap leaves them disjoint.
+ */
+const INSIDE = 1;
 /** Keyboard resizing, per press. Shift multiplies it, the way nudging does everywhere else. */
 const STEP = 16;
 /** Long enough to read as a grab handle, short enough not to read as a border. */
@@ -21,8 +35,10 @@ const GRIP_HEIGHT = 30;
  * particular spot can be dragged". A grip that follows the pointer says that and nothing else,
  * and it leaves the boundary looking the same whether or not you happen to be near it.
  *
- * The 9px target lies wholly inside the pane rather than straddling the boundary: the sidebar
- * clips its own overflow, and half a handle hanging outside would simply be cut off.
+ * The target straddles the boundary with almost all of it on the neighbour's side, which is what
+ * keeps it clear of the scrollbar inside the pane — see `INSIDE`. Whoever renders this has to give
+ * it a positioning context that does not clip: a pane clips its own overflow, so a handle hanging
+ * outside one would simply be cut off. `NavPane` wraps the pane in a frame for exactly that.
  *
  * Reports an absolute width rather than a delta, computed from where the drag started. Summing
  * deltas per mousemove accumulates the clamping error: drag past the minimum, come back, and the
@@ -135,11 +151,17 @@ export function ResizeHandle({
 				else return;
 				event.preventDefault();
 			}}
-			style={{ width: HIT_WIDTH, [edge === "end" ? "right" : "left"]: 0 }}
+			// Pushed out by everything except `INSIDE`, so the strip lands beyond the pane's edge.
+			style={{ width: HIT_WIDTH, [edge === "end" ? "right" : "left"]: INSIDE - HIT_WIDTH }}
 			className="group/resize absolute top-0 bottom-0 z-30 cursor-col-resize [--ly-grip:30px]"
 		>
 			{/*
 			 * The grip: a short rounded bar centred on the pointer, pinned to the boundary itself.
+			 *
+			 * The boundary is now the *near* edge of this strip rather than its far one, because the
+			 * strip stepped over to the neighbour's side. Drawn there rather than in the middle of
+			 * the hit area, so what appears under the pointer is still the seam between two panes
+			 * and not a mark floating in the content.
 			 *
 			 * Clamped away from the ends so it never collides with the window controls above or
 			 * the status row below — at those extremes it stops travelling rather than sliding out
@@ -150,7 +172,7 @@ export function ResizeHandle({
 					aria-hidden
 					style={{ top: `clamp(${GRIP_HEIGHT / 2 + 8}px, ${grip}px, calc(100% - ${GRIP_HEIGHT / 2 + 8}px))` }}
 					className={`absolute h-[var(--ly-grip)] w-[3px] -translate-y-1/2 rounded-full transition-colors duration-[var(--ly-t-quick)] ${
-						edge === "end" ? "right-[1px]" : "left-[1px]"
+						edge === "end" ? "left-0" : "right-0"
 					} ${active ? "bg-accent" : "bg-ink-faint/45"}`}
 				/>
 			)}

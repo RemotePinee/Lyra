@@ -829,22 +829,25 @@
  * ------------------------------------------------------------------------- */
 
 /*
- * Nothing to grab until there is something to see.
+ * Invisible, but still there to be grabbed.
  *
- * The thumb sits above the pane's resize handle, which is the only way it can be dragged at all —
- * they share the same strip of edge. That trade is only honest while the thumb is visible: an
- * invisible six pixels that silently refuse to resize the sidebar is a dead spot nobody can
- * explain. Out of sight, it takes no clicks and the whole edge drags.
+ * It used to take clicks only while its scroller was hovered, back when the resize handle sat on
+ * the same pixels and something had to give. That rule was the bug rather than the fix: reaching
+ * the thumb means putting the pointer on it, and the pointer being on it is what the rule was
+ * waiting for — so whether the scrollbar could be dragged depended on whether the approach
+ * happened to cross the list on the way. The handle has since moved off this strip entirely
+ * (see `ResizeHandle`), so the thumb can simply be what it is.
  */
 .ly-thumb {
   opacity: 0;
-  pointer-events: none;
+  /* Explicit, because the track it sits in is `none` and this property inherits. Invisible is not
+     the same as absent: the thumb is what you reach for, and it has to be there before you do. */
+  pointer-events: auto;
   transition: opacity 200ms ease-out;
 }
 
 .ly-scroll-host:hover .ly-thumb {
   opacity: 0.5;
-  pointer-events: auto;
 }
 
 .ly-scroll-host .ly-thumb:hover,
