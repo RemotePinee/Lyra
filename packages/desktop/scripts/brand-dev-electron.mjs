@@ -91,4 +91,23 @@ try {
 	// Present on every macOS this runs on, but the name is cosmetic: never fail the build for it.
 }
 
-if (renamed) console.log(`[brand] development Electron bundle now named ${NAME}`);
+/*
+ * And restart the Dock, which keeps a third copy of the name.
+ *
+ * There are three caches between the plist and the tooltip, and each needs its own answer.
+ * The plist is the fact. `lsregister -f` makes LaunchServices re-read it. The Dock then keeps
+ * its own record per bundle path, which is why the tooltip went on saying "Electron" even with
+ * `lsappinfo` already reporting Lyra — that was the last one holding the old name.
+ *
+ * Only when the plist actually changed, which in practice means once per `electron` reinstall.
+ * The Dock relaunches itself within a second and loses nothing, but it is still the user's whole
+ * desktop, and doing it on every `pnpm dev` to no effect would not be worth the flicker.
+ */
+if (renamed) {
+	try {
+		execFileSync("/usr/bin/killall", ["Dock"], { stdio: "ignore" });
+	} catch {
+		// Not running, or not permitted. The name is right everywhere else.
+	}
+	console.log(`[brand] development Electron bundle now named ${NAME}`);
+}
