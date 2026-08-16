@@ -26,6 +26,7 @@ const LIST_WIDTH = 300;
 export function PullRequestsView() {
 	const { compact, navOpen, nativeFullScreen } = useLayout();
 	const toolbarLeft = toolbarContentLeft(navOpen, nativeFullScreen);
+	const listWidth = LIST_WIDTH + toolbarLeft;
 	/*
 	 * Reviewing happens in two postures, and the list is only wanted in one of them.
 	 *
@@ -141,6 +142,7 @@ export function PullRequestsView() {
 				onOpenChat={openChat}
 				expanded={expanded}
 				onToggleExpanded={() => setExpanded((open) => !open)}
+				toolbarLeft={expanded ? toolbarLeft : 0}
 				tab={tab}
 				onTab={setTab}
 			/>
@@ -182,24 +184,37 @@ export function PullRequestsView() {
 	 * push the rule back down.
 	 */
 	return (
-		<div className="-mt-11 flex min-h-0 flex-1">
-			{!expanded && (
-				/*
-				 * Wider by exactly what the window controls take.
-				 *
-				 * With the sidebar closed this column starts at the window's edge and its header has
-				 * to begin after the traffic lights and the toggle — which comes straight out of the
-				 * 300px the filters had, and they wrapped mid-word. Giving the column that space back
-				 * keeps the row on one line without moving anything when the sidebar is open, where
-				 * the inset is zero.
-				 */
-				<div
-					style={{ width: LIST_WIDTH + toolbarLeft }}
-					className="flex min-h-0 shrink-0 flex-col border-r border-line-soft"
-				>
-					{list}
-				</div>
-			)}
+		<div className="-mt-11 flex min-h-0 flex-1 overflow-hidden">
+			{/*
+			 * Slid out rather than unmounted, so expanding is a movement instead of a cut.
+			 *
+			 * The same treatment — and the same 220ms — the sidebar and the panel use, because to
+			 * the eye this is the same gesture: a column leaving to give its width to what is beside
+			 * it. Unmounting made both halves jump at once, and a jump reads as a redraw rather than
+			 * as something opening.
+			 *
+			 * The negative margin is what animates the *other* pane too: the detail is `flex-1`, so
+			 * as this column's margin pulls it out of the flow the space is handed over continuously
+			 * rather than reassigned in one frame.
+			 *
+			 * `inert` while it is away: still in the DOM, so still in the tab order otherwise, and
+			 * tabbing into an invisible list is worse than not being able to reach it at all.
+			 *
+			 * The width itself is 300 plus whatever the window controls take, since with the sidebar
+			 * closed this column starts at the window's edge and its header has to clear the traffic
+			 * lights. Taken out of the 300 instead, the filters wrapped mid-word.
+			 */}
+			<div
+				inert={expanded}
+				style={{
+					width: listWidth,
+					marginLeft: expanded ? -listWidth : 0,
+					opacity: expanded ? 0 : 1,
+				}}
+				className="flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-line-soft transition-[margin-left,opacity] duration-[220ms] ease-out"
+			>
+				{list}
+			</div>
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">{detail}</div>
 		</div>
 	);

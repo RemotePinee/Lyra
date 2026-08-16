@@ -27,6 +27,7 @@ export function PullRequestDetail({
 	onOpenChat,
 	expanded,
 	onToggleExpanded,
+	toolbarLeft,
 	tab,
 	onTab,
 }: {
@@ -39,6 +40,14 @@ export function PullRequestDetail({
 	/** Whether the list beside this is collapsed, which decides if the title has to be shown here. */
 	expanded: boolean;
 	onToggleExpanded: () => void;
+	/**
+	 * Left inset keeping this header clear of the window controls.
+	 *
+	 * Only non-zero once the list has slid away and this column is the one at the window's edge.
+	 * Transitioned alongside it, or the tabs would jump to their new place while the column they
+	 * sit in was still moving.
+	 */
+	toolbarLeft: number;
 	/**
 	 * Lifted, because the review bar below this belongs to two of these tabs and not the third.
 	 * 摘要 and 代码 are things you form an opinion about; 聊天 has a field of its own, and stacking
@@ -61,7 +70,10 @@ export function PullRequestDetail({
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			{/* In the toolbar strip, level with the sidebar's collapse button — see PullRequestList. */}
-			<header className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-1 px-3">
+			<header
+				className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-1 px-3 transition-[padding-left] duration-[220ms] ease-out"
+				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
+			>
 				{/*
 				 * Expanded, the list is gone and with it the only thing saying which pull request this
 				 * is. The heading inside the summary does not answer that — it scrolls away, and on
