@@ -33,7 +33,7 @@ export function EmptyState() {
 
 					<h1
 						className={`mt-6 shrink-0 text-center leading-tight font-semibold tracking-tight text-balance text-ink ${
-							compact ? "text-[21px]" : "text-[24px]"
+							compact ? "text-heading" : "text-display"
 						}`}
 					>
 						要在{" "}
@@ -69,7 +69,7 @@ export function EmptyState() {
 									className="group flex min-h-[72px] flex-col justify-between gap-2 rounded-[11px] border border-line bg-transparent p-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-ink-faint/60 hover:bg-card/60 active:translate-y-0"
 								>
 									<card.icon size={17} strokeWidth={1.7} className={`shrink-0 ${card.tint}`} />
-									<span className="text-[12.5px] leading-snug text-ink">{card.label}</span>
+									<span className="text-label leading-snug text-ink">{card.label}</span>
 								</button>
 							))}
 						</div>

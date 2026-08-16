@@ -93,7 +93,7 @@ export function PullRequestsView() {
 						<button
 							type="button"
 							onClick={() => pr.setSelected(null)}
-							className="ly-item flex h-9 shrink-0 items-center gap-1.5 px-3 text-[12.5px] text-ink-muted"
+							className="ly-item flex h-9 shrink-0 items-center gap-1.5 px-3 text-label text-ink-muted"
 						>
 							<ArrowLeft size={13.5} strokeWidth={1.9} />
 							全部 Pull Request

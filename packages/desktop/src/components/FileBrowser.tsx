@@ -207,7 +207,7 @@ export function FileBrowser() {
 								type="button"
 								data-ly-tip={entry.path}
 								onClick={() => (entry.isDirectory ? toggleDirectory(entry.path) : void openFile(entry))}
-								className={`ly-scroll flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-[12px] transition-colors ${
+								className={`ly-scroll flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-detail transition-colors ${
 									// Marked at every width now that the tree stays visible beside what it opened.
 									selected === entry.path ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover/60"
 								}`}
@@ -248,7 +248,7 @@ export function FileBrowser() {
 						))}
 
 						{rows.length === 0 && (
-							<p className="px-2 py-6 text-center text-[12px] text-ink-faint">这个目录是空的</p>
+							<p className="px-2 py-6 text-center text-detail text-ink-faint">这个目录是空的</p>
 						)}
 					</Scroller>
 				</div>
@@ -263,11 +263,11 @@ export function FileBrowser() {
 				{(!narrow || selected) && (
 					<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[5px] border border-line-soft">
 						{!selected ? (
-							<p className="p-6 text-center text-[12px] text-ink-faint">选择左侧文件查看内容</p>
+							<p className="p-6 text-center text-detail text-ink-faint">选择左侧文件查看内容</p>
 						) : loadingFile ? (
-							<p className="ly-pulse p-6 text-center text-[12px] text-ink-faint">读取中…</p>
+							<p className="ly-pulse p-6 text-center text-detail text-ink-faint">读取中…</p>
 						) : !contents ? (
-							<p className="p-6 text-center text-[12px] text-ink-faint">读不到这个文件</p>
+							<p className="p-6 text-center text-detail text-ink-faint">读不到这个文件</p>
 						) : (
 							<FileViewer
 								// Keyed on the path so a different file gets a fresh editor rather than

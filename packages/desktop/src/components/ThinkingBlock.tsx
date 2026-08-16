@@ -23,7 +23,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 			<button
 				type="button"
 				onClick={() => setOpen((v) => !v)}
-				className="flex items-center gap-1.5 rounded-md py-0.5 text-[12px] text-ink-faint transition-colors hover:text-ink-muted"
+				className="flex items-center gap-1.5 rounded-md py-0.5 text-detail text-ink-faint transition-colors hover:text-ink-muted"
 			>
 				<Brain size={13} strokeWidth={1.8} className={live ? "ly-pulse" : undefined} />
 				{redacted ? "思考过程（已被安全过滤）" : "思考过程"}
@@ -42,7 +42,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 					 * identifiers, numbered steps, the occasional block — so showing it verbatim
 					 * meant reading `handle()` with the backticks still on.
 					 */}
-					<Markdown text={text} className="text-[12.5px] text-ink-muted" />
+					<Markdown text={text} className="text-label text-ink-muted" />
 				</div>
 			)}
 		</div>

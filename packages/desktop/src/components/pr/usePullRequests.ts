@@ -28,8 +28,95 @@ const GROUP_LABELS: Record<PullRequestSummary["relation"], string> = {
 /** The order the groups appear in, which is the order they need attention. */
 const GROUP_ORDER: PullRequestSummary["relation"][] = ["reviewing", "authored", "reviewed"];
 
+/*
+ * Last known list, kept across launches.
+ *
+ * `gh search prs` is three round trips to GitHub and takes seconds — which is fine as the cost of
+ * finding out what changed, and not fine as the cost of opening a screen. Without this, every
+ * visit started from an empty pane and a spinner, including the visits where nothing had changed
+ * and including the first one after a restart.
+ *
+ * So the list renders from what it saw last and refreshes underneath. Stale-but-there beats
+ * blank-but-honest for something you are about to replace in a second either way, and it is what
+ * makes reopening the pane feel instant rather than merely fast.
+ *
+ * `localStorage` rather than a file through IPC: this is a redraw of a remote list, no more
+ * authoritative than a browser's back-forward cache, and it should cost nothing to write.
+ * Versioned in the key, so a change to the row shape retires the old entry instead of
+ * half-rendering it.
+ */
+const CACHE_KEY = "lyra.pull-requests.v1";
+
+function readCache(): PullRequestSummary[] {
+	try {
+		const raw = localStorage.getItem(CACHE_KEY);
+		const parsed = raw ? JSON.parse(raw) : null;
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
+function writeCache(items: PullRequestSummary[]): void {
+	try {
+		localStorage.setItem(CACHE_KEY, JSON.stringify(items));
+	} catch {
+		// A full or disabled store: the list still works, it just opens cold next time.
+	}
+}
+
+/*
+ * The same treatment for whichever ones have been opened.
+ *
+ * Caching the list alone still left every click on a row costing a round trip, including clicking
+ * back to the row you were just on — which is the click most likely to happen while comparing two
+ * pull requests, and the one where a spinner is least defensible. A review is read, then
+ * re-opened, then read again.
+ *
+ * Bounded, because a detail carries its description, its reviews and its comment threads, and
+ * a session of triage would otherwise grow this without limit. Insertion order is the eviction
+ * order: the twenty-four most recently *fetched*, which for a list this size is everything
+ * anybody is switching between.
+ */
+const DETAIL_KEY = "lyra.pull-request-details.v1";
+const DETAIL_LIMIT = 24;
+
+const detailId = (repo: string, number: number) => `${repo}#${number}`;
+
+function readDetails(): Record<string, PullRequestDetail> {
+	try {
+		const raw = localStorage.getItem(DETAIL_KEY);
+		const parsed = raw ? JSON.parse(raw) : null;
+		return parsed && typeof parsed === "object" ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
+function readDetail(id: string): PullRequestDetail | null {
+	return readDetails()[id] ?? null;
+}
+
+function writeDetail(id: string, detail: PullRequestDetail): void {
+	try {
+		const all = readDetails();
+		// Delete first, so re-fetching an old one moves it to the back of the queue rather than
+		// leaving it next in line to be dropped.
+		delete all[id];
+		all[id] = detail;
+		const keys = Object.keys(all);
+		for (const stale of keys.slice(0, Math.max(0, keys.length - DETAIL_LIMIT))) delete all[stale];
+		localStorage.setItem(DETAIL_KEY, JSON.stringify(all));
+	} catch {
+		// Out of room: drop the whole cache rather than leave a half-written one behind.
+		try {
+			localStorage.removeItem(DETAIL_KEY);
+		} catch {}
+	}
+}
+
 export function usePullRequests() {
-	const [items, setItems] = useState<PullRequestSummary[]>([]);
+	const [items, setItems] = useState<PullRequestSummary[]>(readCache);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
@@ -45,7 +132,20 @@ export function usePullRequests() {
 		setLoading(true);
 		try {
 			const result = await window.lyra.git.myPullRequests();
+			/*
+			 * A failed refresh keeps what is already on screen.
+			 *
+			 * `gh` reports every failure the same way — an empty list and a message — so replacing
+			 * the rows unconditionally meant one expired token, one flaky network or one rate limit
+			 * wiped a list that was still perfectly good, and did it on a timer nobody asked for.
+			 * The error is worth showing; discarding the answer alongside it is not.
+			 */
+			if (result.error && result.pullRequests.length === 0) {
+				setError(result.error);
+				return;
+			}
 			setItems(result.pullRequests);
+			writeCache(result.pullRequests);
 			setError(result.error ?? null);
 		} finally {
 			setLoading(false);
@@ -57,7 +157,11 @@ export function usePullRequests() {
 	}, [refresh]);
 
 	/*
-	 * The detail is fetched for whatever is selected, and thrown away when the selection changes.
+	 * The detail for whatever is selected: shown from cache at once, then refreshed underneath.
+	 *
+	 * Blanking the pane before every fetch is what made switching rows feel slow even when the
+	 * answer was already known. A pull request that has been opened before is drawn on the same
+	 * frame as the click, and the request that follows only ever replaces it with something newer.
 	 *
 	 * `cancelled` matters here: clicking down a list faster than GitHub answers would otherwise
 	 * leave whichever request happened to finish last on screen, which is not the one you clicked.
@@ -69,15 +173,28 @@ export function usePullRequests() {
 			return;
 		}
 		let cancelled = false;
-		setDetailLoading(true);
-		setDetail(null);
+		const id = detailId(selected.repo, selected.number);
+		const cached = readDetail(id);
+
+		setDetail(cached);
 		setDetailError(null);
+		// Only a pane with nothing in it is loading. With a cached copy up, the header's spinner
+		// carries the refresh and the content stays readable throughout.
+		setDetailLoading(!cached);
+
 		void window.lyra.git
 			.pullRequest(selected.repo, selected.number)
 			.then((result) => {
 				if (cancelled) return;
-				setDetail(result.detail ?? null);
-				setDetailError(result.error ?? null);
+				if (result.detail) {
+					setDetail(result.detail);
+					writeDetail(id, result.detail);
+					setDetailError(null);
+					return;
+				}
+				// A failure with something already on screen is reported by leaving it there: the
+				// cached review is still the truth as of the last time anyone could reach GitHub.
+				if (!cached) setDetailError(result.error ?? null);
 			})
 			.finally(() => {
 				if (!cancelled) setDetailLoading(false);

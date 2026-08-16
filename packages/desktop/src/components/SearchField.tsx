@@ -57,7 +57,7 @@ export function SearchField({
 				}}
 				placeholder={placeholder}
 				className={`min-w-0 flex-1 bg-transparent text-ink placeholder:text-ink-faint ${
-					comfortable ? "text-[12.5px]" : "text-[12px]"
+					comfortable ? "text-label" : "text-detail"
 				}`}
 			/>
 			{value && (

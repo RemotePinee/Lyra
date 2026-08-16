@@ -185,7 +185,7 @@ export function Composer() {
 								onClick={permissionMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={permissionMenu.open}
-								className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] transition-colors duration-150 ${
+								className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-label transition-colors duration-150 ${
 									permissionMode === "full"
 										? // Red, not the accent: this is the one mode that hands over the machine.
 											`text-danger ${permissionMenu.open ? "bg-danger/10" : "hover:bg-danger/10"}`
@@ -223,7 +223,7 @@ export function Composer() {
 								// clickable, so it should not look like something that might.
 								<span
 									data-ly-tip={`${modelName ?? "模型"} · 对话开始后不能更换，新建对话可选`}
-									className="h-7 min-w-0 truncate px-2 text-[12.5px] leading-7 text-ink-faint"
+									className="h-7 min-w-0 truncate px-2 text-label leading-7 text-ink-faint"
 								>
 									{modelName ?? "未配置模型"}
 								</span>
@@ -234,7 +234,7 @@ export function Composer() {
 									data-ly-tip={modelName ?? "选择模型"}
 									aria-haspopup="menu"
 									aria-expanded={modelMenu.open}
-									className={`h-7 min-w-0 truncate rounded-md px-2 text-[12.5px] transition-colors ${
+									className={`h-7 min-w-0 truncate rounded-md px-2 text-label transition-colors ${
 										modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
 									}`}
 								>
@@ -247,7 +247,7 @@ export function Composer() {
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
 								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium")}`}
-								className={`mr-1.5 h-7 shrink-0 rounded-md px-2 text-[12.5px] transition-colors ${
+								className={`mr-1.5 h-7 shrink-0 rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>
@@ -292,7 +292,7 @@ function Chip({
 			aria-haspopup="menu"
 			aria-expanded={active}
 			onClick={onClick}
-			className={`ly-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] transition-colors duration-150 ${
+			className={`ly-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors duration-150 ${
 				active ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
 			}`}
 		>

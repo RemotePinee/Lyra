@@ -25,7 +25,7 @@ export function MessageRow({ message }: { message: Message }) {
 			.join("\n");
 		return (
 			<div className="ly-enter mb-4 flex justify-end">
-				<div className="max-w-[88%] rounded-[13px] rounded-br-[5px] bg-card px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
+				<div className="max-w-[88%] rounded-[13px] rounded-br-[5px] bg-card px-3 py-2 text-label leading-relaxed whitespace-pre-wrap text-ink">
 					{text}
 				</div>
 			</div>
@@ -72,7 +72,7 @@ function AssistantRow({ message }: { message: AssistantMessage }) {
 			})}
 
 			{message.stopReason === "error" && message.errorMessage && (
-				<div className="mt-2 rounded-[9px] border border-danger/35 bg-danger/8 px-3 py-2 text-[12px] text-danger">
+				<div className="mt-2 rounded-[9px] border border-danger/35 bg-danger/8 px-3 py-2 text-detail text-danger">
 					{message.errorMessage}
 				</div>
 			)}

@@ -45,8 +45,8 @@ export function IndexSettings() {
 
 	return (
 		<div className="pt-8">
-			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">索引库</h1>
-			<p className="mt-2 max-w-[580px] pb-7 text-[13px] leading-relaxed text-ink-muted">
+			<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">索引库</h1>
+			<p className="mt-2 max-w-[580px] pb-7 text-label leading-relaxed text-ink-muted">
 				索引记录函数、类、接口、类型和常量的<strong className="font-medium text-ink">定义位置</strong>，Agent 用 symbol 工具查它。
 			</p>
 
@@ -83,19 +83,19 @@ export function IndexSettings() {
 						<Row
 							title="符号数"
 							control={
-								<span className="font-mono text-[13px] text-ink">
+								<span className="font-mono text-label text-ink">
 									{stats?.symbols?.toLocaleString() ?? "—"}
 								</span>
 							}
 						/>
 						<Row
 							title="已索引文件"
-							control={<span className="font-mono text-[13px] text-ink">{stats?.files?.toLocaleString() ?? "—"}</span>}
+							control={<span className="font-mono text-label text-ink">{stats?.files?.toLocaleString() ?? "—"}</span>}
 						/>
 						<Row
 							title="索引大小"
 							control={
-								<span className="font-mono text-[13px] text-ink">
+								<span className="font-mono text-label text-ink">
 									{stats?.bytes ? `${(stats.bytes / 1024).toFixed(0)} KB` : "—"}
 								</span>
 							}
@@ -103,7 +103,7 @@ export function IndexSettings() {
 						<Row
 							title="上次构建"
 							control={
-								<span className="text-[12.5px] text-ink-muted">
+								<span className="text-label text-ink-muted">
 									{stats?.builtAt ? new Date(stats.builtAt).toLocaleString("zh-CN") : "从未"}
 								</span>
 							}
@@ -123,7 +123,7 @@ export function IndexSettings() {
 									value={query}
 									onChange={(e) => setQuery(e.target.value)}
 									placeholder="输入符号名，例如 runAgent"
-									className="h-[34px] w-full rounded-[10px] border border-line bg-input pr-3 pl-9 text-[13px] text-ink placeholder:text-ink-faint focus:border-ink-faint"
+									className="h-[34px] w-full rounded-[10px] border border-line bg-input pr-3 pl-9 text-label text-ink placeholder:text-ink-faint focus:border-ink-faint"
 								/>
 							</div>
 						</div>
@@ -146,11 +146,11 @@ export function IndexSettings() {
 										className="flex w-full items-center gap-2.5 border-b border-line-soft px-4 py-2 text-left transition-colors last:border-b-0 hover:bg-card-hover/50"
 									>
 										<Database size={12} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
-										<span className="shrink-0 font-mono text-[12.5px] text-ink">{hit.name}</span>
-										<span className="shrink-0 rounded bg-card px-1.5 py-0.5 text-[10.5px] text-ink-faint">
+										<span className="shrink-0 font-mono text-label text-ink">{hit.name}</span>
+										<span className="shrink-0 rounded bg-card px-1.5 py-0.5 text-caption text-ink-faint">
 											{hit.kind}
 										</span>
-										<span className="min-w-0 flex-1 truncate text-right font-mono text-[11.5px] text-ink-muted">
+										<span className="min-w-0 flex-1 truncate text-right font-mono text-detail text-ink-muted">
 											{hit.file}:{hit.line}
 										</span>
 									</button>

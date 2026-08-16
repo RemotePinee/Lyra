@@ -14,24 +14,24 @@ export function PullRequestMeta({ detail }: { detail: PullRequestDetail }) {
 	return (
 		<dl className="space-y-2.5">
 			<Row icon={GitBranch} label="分支">
-				<span className="font-mono text-[12px] text-ink">{detail.headRefName}</span>
+				<span className="font-mono text-detail text-ink">{detail.headRefName}</span>
 				<span className="px-1.5 text-ink-faint">›</span>
-				<span className="font-mono text-[12px] text-ink-muted">{detail.baseRefName}</span>
-				<span className="pl-2 font-mono text-[12px]">
+				<span className="font-mono text-detail text-ink-muted">{detail.baseRefName}</span>
+				<span className="pl-2 font-mono text-detail">
 					<span className="text-ok">+{detail.additions}</span> <span className="text-danger">−{detail.deletions}</span>
 				</span>
-				<span className="pl-2 text-[12px] text-ink-faint">{detail.changedFiles} 个文件</span>
+				<span className="pl-2 text-detail text-ink-faint">{detail.changedFiles} 个文件</span>
 			</Row>
 
 			<Row icon={Users} label="审查者">
 				{detail.reviewers.length === 0 ? (
-					<span className="text-[12px] text-ink-faint">还没有人</span>
+					<span className="text-detail text-ink-faint">还没有人</span>
 				) : (
 					<span className="flex flex-wrap items-center gap-1.5">
 						{detail.reviewers.map((reviewer, index) => (
 							<span
 								key={`${reviewer.login}-${index}`}
-								className="rounded-md bg-card px-1.5 py-0.5 text-[11.5px] text-ink-muted"
+								className="rounded-md bg-card px-1.5 py-0.5 text-detail text-ink-muted"
 							>
 								{reviewer.login}
 								<span className={`pl-1 ${verdictTone(reviewer.state)}`}>{verdictLabel(reviewer.state)}</span>
@@ -42,7 +42,7 @@ export function PullRequestMeta({ detail }: { detail: PullRequestDetail }) {
 			</Row>
 
 			<Row icon={MessageSquare} label="评论">
-				<span className="text-[12px] text-ink">{detail.comments} 条评论</span>
+				<span className="text-detail text-ink">{detail.comments} 条评论</span>
 			</Row>
 
 			<Row icon={checkIcon(detail.checks)} label="检查">
@@ -50,11 +50,11 @@ export function PullRequestMeta({ detail }: { detail: PullRequestDetail }) {
 			</Row>
 
 			<Row icon={GitPullRequest} label="状态">
-				<span className="text-[12px] text-ink">{stateLabel(detail)}</span>
+				<span className="text-detail text-ink">{stateLabel(detail)}</span>
 				{detail.labels.length > 0 && (
 					<span className="flex flex-wrap items-center gap-1.5 pl-2">
 						{detail.labels.map((label) => (
-							<span key={label} className="rounded-md bg-card px-1.5 py-0.5 text-[11px] text-ink-muted">
+							<span key={label} className="rounded-md bg-card px-1.5 py-0.5 text-caption text-ink-muted">
 								{label}
 							</span>
 						))}
@@ -76,7 +76,7 @@ function Row({
 }) {
 	return (
 		<div className="flex items-start gap-3">
-			<dt className="flex w-[104px] shrink-0 items-center gap-2 pt-[1px] text-[12px] text-ink-faint">
+			<dt className="flex w-[104px] shrink-0 items-center gap-2 pt-[1px] text-detail text-ink-faint">
 				<Icon size={13} strokeWidth={1.8} className="shrink-0" />
 				{label}
 			</dt>
@@ -87,22 +87,22 @@ function Row({
 
 /** No checks at all is a different answer from "none passed", and says so. */
 function Checks({ checks }: { checks: PullRequestDetail["checks"] }) {
-	if (!checks) return <span className="text-[12px] text-ink-faint">无 CI 检查</span>;
+	if (!checks) return <span className="text-detail text-ink-faint">无 CI 检查</span>;
 	if (checks.failed > 0) {
 		return (
-			<span className="text-[12px] text-danger">
+			<span className="text-detail text-danger">
 				{checks.failed} 项失败 · 共 {checks.total} 项
 			</span>
 		);
 	}
 	if (checks.pending > 0) {
 		return (
-			<span className="text-[12px] text-ink-muted">
+			<span className="text-detail text-ink-muted">
 				{checks.pending} 项进行中 · 共 {checks.total} 项
 			</span>
 		);
 	}
-	return <span className="text-[12px] text-ok">{checks.total} 项全部通过</span>;
+	return <span className="text-detail text-ok">{checks.total} 项全部通过</span>;
 }
 
 function checkIcon(checks: PullRequestDetail["checks"]): typeof GitBranch {

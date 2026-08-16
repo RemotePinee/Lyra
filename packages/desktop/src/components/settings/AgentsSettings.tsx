@@ -19,8 +19,8 @@ export function AgentsSettings() {
 
 	return (
 		<div className="pt-8">
-			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">子智能体</h1>
-			<p className="mt-2 max-w-[600px] pb-7 text-[13px] leading-relaxed text-ink-muted">
+			<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">子智能体</h1>
+			<p className="mt-2 max-w-[600px] pb-7 text-label leading-relaxed text-ink-muted">
 				子智能体有独立的上下文窗口，只把结论交回主对话。
 			</p>
 
@@ -33,13 +33,13 @@ export function AgentsSettings() {
 						<div key={agent.name} className="border-b border-line-soft px-4 py-3.5 last:border-b-0">
 							<div className="flex items-center gap-2">
 								<Bot size={14} strokeWidth={1.8} className="shrink-0 text-info" />
-								<span className="font-mono text-[13px] text-ink">{agent.name}</span>
+								<span className="font-mono text-label text-ink">{agent.name}</span>
 								<Badge tone="muted">{SOURCE_LABEL[agent.source] ?? agent.source}</Badge>
 								<Badge tone="muted">
 									{agent.tools === "*" ? "全部工具" : `${(agent.tools as string[]).length} 个工具`}
 								</Badge>
 							</div>
-							<p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{agent.description}</p>
+							<p className="mt-1 text-label leading-relaxed text-ink-muted">{agent.description}</p>
 						</div>
 					))
 				)}

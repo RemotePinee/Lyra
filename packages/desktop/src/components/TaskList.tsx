@@ -118,7 +118,7 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 								? "全部完成"
 								: "待开始"
 					}
-					className="ly-fade-tail min-w-0 flex-1 text-[12.5px]"
+					className="ly-fade-tail min-w-0 flex-1 text-label"
 				/>
 				<Text size="caption" tone="faint" numeric className="shrink-0">
 					{done}/{todos.length}
@@ -225,7 +225,7 @@ function Row({
 			)}
 			<ScrollText
 				text={todo.content}
-				className={`ly-fade-tail min-w-0 flex-1 text-[12px] ${
+				className={`ly-fade-tail min-w-0 flex-1 text-detail ${
 					todo.status === "completed"
 						? "text-ink-faint line-through decoration-line"
 						: todo.status === "in_progress"

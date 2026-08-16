@@ -29,7 +29,7 @@ export function SourceFilter({
 			<button
 				type="button"
 				onClick={onClear}
-				className={`ly-item rounded-full px-2 py-[3px] text-[11px] ${
+				className={`ly-item rounded-full px-2 py-[3px] text-caption ${
 					active.size === 0 ? "bg-accent/12 text-accent" : "text-ink-faint"
 				}`}
 			>
@@ -43,7 +43,7 @@ export function SourceFilter({
 						type="button"
 						disabled={count === 0}
 						onClick={() => onToggle(source)}
-						className={`ly-item rounded-full px-2 py-[3px] text-[11px] disabled:opacity-40 ${
+						className={`ly-item rounded-full px-2 py-[3px] text-caption disabled:opacity-40 ${
 							active.has(source) ? "bg-accent/12 text-accent" : "text-ink-muted"
 						}`}
 					>

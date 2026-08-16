@@ -74,7 +74,7 @@ export function ModelMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => 
 								<Check size={13} strokeWidth={2.2} className="shrink-0 text-ink" />
 							) : (
 								// Reserves the checkmark's width so rows do not shift as the choice moves.
-								<span className="w-[13px] shrink-0 text-right font-mono text-[11px] text-ink-faint">
+								<span className="w-[13px] shrink-0 text-right font-mono text-caption text-ink-faint">
 									{!showAll && index < SHORTLIST ? index + 1 : ""}
 								</span>
 							)

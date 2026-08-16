@@ -46,13 +46,13 @@ export function ExtensionsSettings() {
 	return (
 		<div className="flex min-h-0 flex-1 flex-col pt-8">
 			<header className="flex shrink-0 items-center justify-between pb-5">
-				<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">插件</h1>
+				<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">插件</h1>
 
 				<div className="flex shrink-0 items-center gap-2">
 					<button
 						type="button"
 						onClick={() => setBrowsing(true)}
-						className="flex h-[30px] items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] text-ink-muted transition-colors duration-150 hover:border-ink-faint hover:text-ink"
+						className="flex h-[30px] items-center gap-1.5 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-150 hover:border-ink-faint hover:text-ink"
 					>
 						<Store size={13} strokeWidth={1.8} />
 						浏览市场
@@ -62,7 +62,7 @@ export function ExtensionsSettings() {
 						onClick={add.toggle}
 						aria-haspopup="menu"
 						aria-expanded={add.open}
-						className="flex h-[30px] items-center gap-1.5 rounded-lg bg-ink px-3 text-[12.5px] font-medium text-shell transition-opacity duration-150 hover:opacity-90"
+						className="flex h-[30px] items-center gap-1.5 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-150 hover:opacity-90"
 					>
 						添加
 						<ChevronDown size={13} strokeWidth={2} />
@@ -112,7 +112,7 @@ export function ExtensionsSettings() {
 							key={entry.id}
 							type="button"
 							onClick={() => setTab(entry.id)}
-							className={`flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-[12.5px] transition-colors duration-150 ${
+							className={`flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-label transition-colors duration-150 ${
 								tab === entry.id ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover/60"
 							}`}
 						>

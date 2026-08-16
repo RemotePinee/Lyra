@@ -146,7 +146,7 @@ export function BrowserPanel() {
 						onChange={(event) => setAddress(event.target.value)}
 						placeholder="输入网址"
 						spellCheck={false}
-						className="h-[26px] w-full rounded-md border border-line bg-input px-2.5 text-[12px] text-ink placeholder:text-ink-faint focus:border-ink-faint"
+						className="h-[26px] w-full rounded-md border border-line bg-input px-2.5 text-detail text-ink placeholder:text-ink-faint focus:border-ink-faint"
 					/>
 				</form>
 

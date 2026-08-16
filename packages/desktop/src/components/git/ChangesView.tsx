@@ -89,7 +89,7 @@ export function ChangesView({
 
   return (
     <>
-      <Scroller className="flex-1" contentClassName="px-1.5 pb-2" fade={false}>
+      <Scroller className="flex-1" contentClassName="px-1.5 pb-2" top="none" bottom="none">
         {stagedPaths.length > 0 && (
           <GroupHeader
             label="已暂存"
@@ -179,7 +179,7 @@ export function ChangesView({
           }}
           rows={2}
           placeholder="提交信息"
-          className="block w-full resize-none rounded-lg border border-line bg-input px-2.5 py-2 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-ink-faint"
+          className="block w-full resize-none rounded-lg border border-line bg-input px-2.5 py-2 text-label leading-relaxed text-ink placeholder:text-ink-faint focus:border-ink-faint"
         />
         <div className="flex items-center justify-between gap-2 pt-1.5">
           <Text size="caption" tone="faint">
@@ -191,7 +191,7 @@ export function ChangesView({
             type="button"
             disabled={busy || stagedPaths.length === 0 || !message.trim()}
             onClick={() => void commit()}
-            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-[12px] font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
+            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-detail font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
           >
             <Check size={12} strokeWidth={2.2} />
             提交

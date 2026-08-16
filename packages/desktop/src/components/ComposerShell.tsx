@@ -112,7 +112,7 @@ export function ComposerShell({
           }}
           rows={1}
           placeholder={placeholder}
-          className="block max-h-[min(300px,34vh)] w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-2.5 text-[13.5px] leading-relaxed text-ink placeholder:text-ink-faint"
+          className="block max-h-[min(300px,34vh)] w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-2.5 text-body leading-relaxed text-ink placeholder:text-ink-faint"
         />
         <OverlayScrollbar viewport={field} orientation="vertical" />
       </div>

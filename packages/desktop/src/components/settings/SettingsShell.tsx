@@ -122,7 +122,7 @@ export function SettingsShell() {
 								setView("chat");
 								dismissNav();
 							}}
-							className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-[13px] text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink active:bg-elevated ${
+							className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink active:bg-elevated ${
 								compact ? "h-[40px]" : "h-[32px]"
 							}`}
 						>
@@ -131,9 +131,11 @@ export function SettingsShell() {
 						</button>
 					</div>
 
+					{/* Same as the workspace sidebar: a solid control at each end, so neither fades. */}
 					<Scroller
 						className="flex-1"
-						divider
+						top="line"
+						bottom="none"
 						contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}
 						fadeColor="var(--color-sidebar)"
 					>
@@ -141,7 +143,7 @@ export function SettingsShell() {
 							// Spaced for the same reason as the session list: adjacent filled rows
 							// would otherwise merge into one block on hover.
 							<div key={group.label} className="flex flex-col gap-[2px]">
-								<div className="px-2 pt-4 pb-1 text-[11.5px] text-ink-faint">{group.label}</div>
+								<div className="px-2 pt-4 pb-1 text-detail text-ink-faint">{group.label}</div>
 								{group.items.map((item) => (
 									<button
 										key={item.id}
@@ -150,7 +152,7 @@ export function SettingsShell() {
 											setSection(item.id);
 											dismissNav();
 										}}
-										className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-[13px] transition-colors ${
+										className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label transition-colors ${
 											compact ? "h-[40px]" : "h-[32px]"
 										} ${
 											section === item.id
@@ -175,7 +177,7 @@ export function SettingsShell() {
 								setSection("models");
 								dismissNav();
 							}}
-							className="flex h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line text-[12.5px] text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink active:bg-elevated"
+							className="flex h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink active:bg-elevated"
 						>
 							<Rocket size={14} strokeWidth={1.8} />
 							引导

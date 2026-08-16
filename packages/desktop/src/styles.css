@@ -125,13 +125,15 @@
    * deliberately different rather than accidentally unequal.
    *
    * The second is that "界面字号" in Settings did almost nothing: it set the body size, and then
-   * 354 absolute `text-[Npx]` overrode it everywhere that mattered. Every step here is `calc()`
-   * off `--ly-ui-size`, so moving that one slider moves the whole scale together.
+   * 351 absolute `text-[Npx]` at the call sites overrode it everywhere that mattered. Those are
+   * all gone now — every size in the app resolves to one of these steps, and every step is
+   * `calc()` off `--ly-ui-size`, so moving that one slider moves the whole scale together.
    *
    * Deliberately no `--font-weight` on any step. Tailwind would emit it inside the same rule as
    * the size, and whether a later `font-medium` wins then depends on utility ordering; keeping
    * weight in its own class means the override is always just cascade. Weight is paired with
-   * size once, in Text.tsx.
+   * size once, in `Text.tsx` — see DEFAULT_WEIGHT, which is what stops hierarchy from resting on
+   * size alone.
    *
    * Tracking follows Inter's own optical curve — near zero at reading sizes, tightening as the
    * type grows, because letterfit that looks right at 13px looks loose at 26px.
@@ -161,6 +163,26 @@
   --text-display: calc(var(--ly-ui-size, 13px) + 13px);
   --text-display--line-height: 1.2;
   --text-display--letter-spacing: -0.022em;
+
+  /*
+   * Code is its own step, off its own setting.
+   *
+   * Not part of the scale above, and deliberately: code is set in another face, at another
+   * measure, and read down a column rather than along a line. Settings has always offered it as
+   * a separate control for that reason.
+   *
+   * What was wrong is that only half the app listened. Markdown's blocks and inline spans read
+   * `--ly-code-size`; the diff viewer was on the UI scale with a hand-written `leading-[1.65]`
+   * on top. So "代码字号" moved a chat transcript and left every review untouched, and the same
+   * function read two sizes depending on which screen you opened it from. Naming it as a step
+   * here is what lets every code surface ask for one thing.
+   *
+   * 1.6 rather than prose's 1.7: indentation and bracket columns are the shape being read, and
+   * prose leading pulls that shape apart. Rather than 1.55, which is tight once line numbers and
+   * +/- markers share the row.
+   */
+  --text-code: var(--ly-code-size, 12.5px);
+  --text-code--line-height: 1.6;
 }
 
 @layer base {
@@ -205,7 +227,20 @@
     overscroll-behavior: none;
   }
 
-  :root[data-font-smoothing="true"] body {
+  /*
+   * Thinner strokes, and only where they are an improvement.
+   *
+   * `antialiased` turns off subpixel rendering: every glyph is drawn in grey levels on one
+   * channel instead of three, which costs about a third of the horizontal resolution the LCD
+   * actually has. On a dark theme that is a good trade — subpixel rendering on light-on-dark
+   * fringes the stems with colour and fattens them — but on a light theme it is pure loss.
+   * Black-on-white is where subpixel AA is at its best, and switching it off there is exactly
+   * what makes text look thin, grey and slightly out of focus next to an app that left it on.
+   *
+   * So it is scoped to the dark class rather than applied to `body` outright. The setting still
+   * decides *whether* to smooth; the theme decides whether smoothing is the right answer.
+   */
+  :root.dark[data-font-smoothing="true"] body {
     -webkit-font-smoothing: antialiased;
   }
 
@@ -277,10 +312,20 @@
   -webkit-app-region: no-drag;
 }
 
-/* Assistant markdown rendering. Kept close to the reference: tight leading, clear hierarchy. */
+/*
+ * Assistant markdown rendering.
+ *
+ * On the scale like everything else. These were six absolute pixel values — 13.5 for the body,
+ * 19/17/15/13.5 for the headings — which made a transcript the one surface in the app that
+ * ignored 界面字号 entirely, and put its h4 at the same size as its own body text.
+ *
+ * The bottom two levels land on the same step now and separate by weight instead. Four heading
+ * sizes inside a chat bubble was never four levels of anything; past h3, markdown nesting is
+ * deeper than the container is tall.
+ */
 @layer components {
   .prose-dw {
-    font-size: 13.5px;
+    font-size: var(--text-body);
     line-height: 1.75;
     color: var(--color-ink);
   }
@@ -300,16 +345,17 @@
   }
 
   .prose-dw h1 {
-    font-size: 19px;
+    font-size: var(--text-heading);
   }
   .prose-dw h2 {
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .prose-dw h3 {
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .prose-dw h4 {
-    font-size: 13.5px;
+    font-size: var(--text-body);
+    font-weight: 500;
   }
 
   .prose-dw ul,
@@ -358,12 +404,12 @@
      * leading pulls that shape apart. 1.55 is where JetBrains Mono's own metrics sit; the
      * editor and the prose blocks restate it, since both bring their own cascade.
      */
-    line-height: 1.55;
+    line-height: var(--text-code--line-height);
   }
 
   .prose-dw code {
     font-family: var(--ly-code-font, var(--font-mono));
-    font-size: var(--ly-code-size, 12px);
+    font-size: var(--text-code);
     background: var(--color-card-hover);
     color: var(--color-ink);
     border-radius: 4px;
@@ -381,8 +427,8 @@
   .prose-dw pre code {
     background: transparent;
     padding: 0;
-    font-size: var(--ly-code-size, 12px);
-    line-height: 1.55;
+    font-size: var(--text-code);
+    line-height: var(--text-code--line-height);
   }
 
   .prose-dw a {
@@ -403,7 +449,7 @@
   .prose-dw table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12.5px;
+    font-size: var(--text-label);
   }
 
   .prose-dw th,
@@ -1229,8 +1275,8 @@
   max-width: 260px;
   padding: 4px 8px;
   border-radius: 6px;
-  font-size: 11.5px;
-  line-height: 1.45;
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
   /*
    * Wrapping, not `nowrap`, or the max-width above means nothing: a sentence-length tip — "开一个新
    * 会话，原会话不受影响" — ran the full width of the window as one line. Short labels are still one

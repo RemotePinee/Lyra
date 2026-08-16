@@ -91,7 +91,7 @@ export function UserMessage({
                 }
               }}
               rows={1}
-              className="block max-h-[320px] w-full resize-none overflow-y-auto bg-transparent text-[13.5px] leading-relaxed text-ink"
+              className="block max-h-[320px] w-full resize-none overflow-y-auto bg-transparent text-body leading-relaxed text-ink"
             />
             {/* Same treatment as the composer: a long edit scrolls, so it needs a thumb. */}
             <OverlayScrollbar viewport={textareaRef} orientation="vertical" />
@@ -103,7 +103,7 @@ export function UserMessage({
                 setEditing(false);
                 setDraft(text);
               }}
-              className="h-7 rounded-lg border border-line px-3 text-[12.5px] text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink"
+              className="h-7 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink"
             >
               取消
             </button>
@@ -111,7 +111,7 @@ export function UserMessage({
               type="button"
               disabled={!draft.trim()}
               onClick={submit}
-              className="h-7 rounded-lg bg-ink px-3 text-[12.5px] font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-45"
+              className="h-7 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-45"
             >
               发送
             </button>
@@ -131,7 +131,7 @@ export function UserMessage({
        * enough that the explanation cannot be something you have to go looking for.
        */}
       {message.origin === "side-chat" && (
-        <span className="mb-1 flex items-center gap-1 pr-1 text-[11px] text-ink-faint">
+        <span className="mb-1 flex items-center gap-1 pr-1 text-caption text-ink-faint">
           <MessageSquarePlus size={11} strokeWidth={1.9} />
           来自侧边聊天
         </span>
@@ -139,7 +139,7 @@ export function UserMessage({
 
       <div className="max-w-[75%] rounded-[16px] rounded-br-[6px] bg-card px-4 py-2.5">
         {text && (
-          <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink">
+          <p className="text-body leading-relaxed whitespace-pre-wrap text-ink">
             {text}
           </p>
         )}

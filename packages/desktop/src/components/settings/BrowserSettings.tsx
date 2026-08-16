@@ -28,8 +28,8 @@ export function BrowserSettings() {
 
 	return (
 		<div className="pt-8">
-			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">浏览器</h1>
-			<p className="mt-2 max-w-[580px] pb-7 text-[13px] leading-relaxed text-ink-muted">
+			<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">浏览器</h1>
+			<p className="mt-2 max-w-[580px] pb-7 text-label leading-relaxed text-ink-muted">
 				Agent 驱动真实的浏览器内核，看到的是脚本执行之后、人眼所见的页面。
 			</p>
 
@@ -42,9 +42,9 @@ export function BrowserSettings() {
 						detail={tool.detail}
 						control={
 							tools === null ? null : tools.includes(tool.name) ? (
-								<span className="rounded-full bg-ok/15 px-2 py-0.5 text-[11.5px] text-ok">已加载</span>
+								<span className="rounded-full bg-ok/15 px-2 py-0.5 text-detail text-ok">已加载</span>
 							) : (
-								<span className="rounded-full bg-card px-2 py-0.5 text-[11.5px] text-ink-faint">未加载</span>
+								<span className="rounded-full bg-card px-2 py-0.5 text-detail text-ink-faint">未加载</span>
 							)
 						}
 					/>

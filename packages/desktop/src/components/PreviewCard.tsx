@@ -253,7 +253,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					}}
 					className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-2"
 				>
-					<span className="ly-glass rounded-full px-2.5 py-1 text-[11.5px] text-ink-muted transition-colors hover:text-ink">
+					<span className="ly-glass rounded-full px-2.5 py-1 text-detail text-ink-muted transition-colors hover:text-ink">
 						内容更长 · 在侧栏中查看
 					</span>
 				</button>

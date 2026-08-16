@@ -50,14 +50,14 @@ export function ApprovalOverlay() {
             strokeWidth={1.9}
             className="shrink-0 text-accent"
           />
-          <span className="min-w-0 truncate text-[13px] font-medium text-ink">
+          <span className="min-w-0 truncate text-label font-medium text-ink">
             {request.title}
           </span>
-          <span className="shrink-0 rounded-md bg-card px-1.5 py-0.5 text-[11px] text-ink-faint">
+          <span className="shrink-0 rounded-md bg-card px-1.5 py-0.5 text-caption text-ink-faint">
             {KIND_LABEL[request.kind] ?? request.kind}
           </span>
           {approvals.length > 1 && (
-            <span className="ml-auto shrink-0 text-[11px] text-ink-faint">
+            <span className="ml-auto shrink-0 text-caption text-ink-faint">
               还有 {approvals.length - 1} 个
             </span>
           )}
@@ -65,10 +65,12 @@ export function ApprovalOverlay() {
 
         <Scroller
           className="max-h-[min(280px,30vh)] bg-shell/60"
+          bottom="none"
           contentClassName="px-4 py-3"
           fadeColor="var(--color-shell)"
         >
-          <pre className="font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-muted">
+          {/* The command itself is code being read before it runs, so it takes 代码字号. */}
+          <pre className="font-mono text-code whitespace-pre-wrap text-ink-muted">
             {request.detail}
           </pre>
         </Scroller>
@@ -77,14 +79,14 @@ export function ApprovalOverlay() {
           <button
             type="button"
             onClick={() => void respond(request.id, "reject")}
-            className="h-8 rounded-lg px-3 text-[12.5px] text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+            className="h-8 rounded-lg px-3 text-label text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
           >
             拒绝
           </button>
           <button
             type="button"
             onClick={() => void respond(request.id, "always")}
-            className="h-8 rounded-lg border border-line px-3 text-[12.5px] text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+            className="h-8 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
           >
             始终允许
           </button>
@@ -92,7 +94,7 @@ export function ApprovalOverlay() {
             type="button"
             autoFocus
             onClick={() => void respond(request.id, "once")}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-[12.5px] font-medium text-shell transition-opacity hover:opacity-90"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity hover:opacity-90"
           >
             <Terminal size={13} strokeWidth={2} />
             允许一次

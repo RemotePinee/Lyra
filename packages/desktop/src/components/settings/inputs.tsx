@@ -33,9 +33,9 @@ export function TextInput({
 			value={value}
 			onChange={(e) => onChange(e.target.value)}
 			placeholder={placeholder}
-			className={`h-[38px] rounded-[10px] border bg-input px-3.5 text-[13px] text-ink placeholder:text-ink-faint focus:border-ink-faint ${
+			className={`h-[38px] rounded-[10px] border bg-input px-3.5 text-label text-ink placeholder:text-ink-faint focus:border-ink-faint ${
 				invalid ? "border-danger/60" : "border-line"
-			} ${mono ? "font-mono text-[12.5px]" : ""} ${className || "w-full"}`}
+			} ${mono ? "font-mono text-label" : ""} ${className || "w-full"}`}
 		/>
 	);
 }
@@ -59,7 +59,7 @@ export function SecretInput({
 				placeholder={placeholder}
 				spellCheck={false}
 				autoComplete="off"
-				className="h-[38px] w-full rounded-[10px] border border-line bg-input pr-10 pl-3.5 text-[13px] tracking-wide text-ink placeholder:text-ink-faint focus:border-ink-faint"
+				className="h-[38px] w-full rounded-[10px] border border-line bg-input pr-10 pl-3.5 text-label tracking-wide text-ink placeholder:text-ink-faint focus:border-ink-faint"
 			/>
 			<button
 				type="button"
@@ -107,8 +107,8 @@ function Dropdown<T extends string>({
 				aria-expanded={menu.open}
 				className={`flex items-center justify-between gap-2 border text-ink transition-colors ${
 					field
-						? "h-[38px] w-full rounded-[10px] border-line bg-input px-3.5 text-[13px]"
-						: "h-[30px] rounded-lg border-line bg-card px-3 text-[12.5px]"
+						? "h-[38px] w-full rounded-[10px] border-line bg-input px-3.5 text-label"
+						: "h-[30px] rounded-lg border-line bg-card px-3 text-label"
 				} ${menu.open ? "border-ink-faint" : "hover:border-ink-faint"}`}
 			>
 				<span className="flex min-w-0 items-center gap-2">

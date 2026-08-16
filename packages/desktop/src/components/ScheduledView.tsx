@@ -53,15 +53,15 @@ export function ScheduledView() {
 			<Scroller className="flex-1" contentClassName={`mx-auto w-full max-w-[880px] py-6 ${compact ? "px-4" : "px-8"}`}>
 				<header className="flex flex-wrap items-start justify-between gap-3 pb-6">
 					<div>
-						<h1 className="text-[22px] leading-tight font-semibold tracking-tight text-ink">已安排</h1>
-						<p className="mt-1.5 max-w-[560px] text-[12.5px] leading-relaxed text-ink-muted">
+						<h1 className="text-heading leading-tight font-semibold tracking-tight text-ink">已安排</h1>
+						<p className="mt-1.5 max-w-[560px] text-label leading-relaxed text-ink-muted">
 							到点自动开一个新会话并发送提示。每次都是全新会话 —— 反复累积的历史会让任务逐渐跑偏，最后撑爆上下文。
 						</p>
 					</div>
 					<button
 						type="button"
 						onClick={add}
-						className="flex h-7 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+						className="flex h-7 items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
 					>
 						<Plus size={12} strokeWidth={2} />
 						新建
@@ -69,7 +69,7 @@ export function ScheduledView() {
 				</header>
 
 				{tasks.length === 0 && (
-					<p className="py-16 text-center text-[13px] leading-relaxed text-ink-faint">
+					<p className="py-16 text-center text-label leading-relaxed text-ink-faint">
 						还没有安排任务。
 						<br />
 						常见用途：每天早上审一遍未提交改动、每小时跑一次测试并报告失败。
@@ -128,7 +128,7 @@ function TaskCard({
 					value={name}
 					onChange={(e) => setName(e.target.value)}
 					onBlur={() => name !== task.name && onChange({ name })}
-					className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink focus:outline-none"
+					className="min-w-0 flex-1 bg-transparent text-body text-ink focus:outline-none"
 				/>
 				<button
 					type="button"
@@ -159,13 +159,13 @@ function TaskCard({
 
 			<div className="space-y-3 px-4 py-3">
 				<label className="block">
-					<span className="mb-1.5 block text-[12px] text-ink-muted">提示</span>
+					<span className="mb-1.5 block text-detail text-ink-muted">提示</span>
 					<textarea
 						value={prompt}
 						onChange={(e) => setPrompt(e.target.value)}
 						onBlur={() => prompt !== task.prompt && onChange({ prompt })}
 						rows={2}
-						className="w-full resize-none rounded-[10px] border border-line bg-input px-3 py-2 text-[12.5px] leading-relaxed text-ink focus:border-ink-faint"
+						className="w-full resize-none rounded-[10px] border border-line bg-input px-3 py-2 text-label leading-relaxed text-ink focus:border-ink-faint"
 					/>
 				</label>
 
@@ -180,7 +180,7 @@ function TaskCard({
 										schedule: kind === "daily" ? { kind: "daily", time: "09:00" } : { kind: "interval", minutes: 60 },
 									})
 								}
-								className={`h-[26px] rounded-md px-3 text-[12px] transition-colors ${
+								className={`h-[26px] rounded-md px-3 text-detail transition-colors ${
 									task.schedule.kind === kind ? "bg-elevated text-ink" : "text-ink-muted hover:text-ink"
 								}`}
 							>
@@ -194,7 +194,7 @@ function TaskCard({
 							type="time"
 							value={task.schedule.time}
 							onChange={(e) => onChange({ schedule: { kind: "daily", time: e.target.value } })}
-							className="h-[30px] rounded-lg border border-line bg-input px-2.5 font-mono text-[12.5px] text-ink focus:border-ink-faint"
+							className="h-[30px] rounded-lg border border-line bg-input px-2.5 font-mono text-label text-ink focus:border-ink-faint"
 						/>
 					) : (
 						<div className="flex items-center gap-1.5">
@@ -206,17 +206,17 @@ function TaskCard({
 									const minutes = Number(e.target.value);
 									if (minutes >= 1) onChange({ schedule: { kind: "interval", minutes } });
 								}}
-								className="h-[30px] w-[70px] rounded-lg border border-line bg-input px-2.5 text-center font-mono text-[12.5px] text-ink focus:border-ink-faint"
+								className="h-[30px] w-[70px] rounded-lg border border-line bg-input px-2.5 text-center font-mono text-label text-ink focus:border-ink-faint"
 							/>
-							<span className="text-[12px] text-ink-faint">分钟</span>
+							<span className="text-detail text-ink-faint">分钟</span>
 						</div>
 					)}
 
 					<div className="flex-1" />
-					<span className="font-mono text-[11.5px] text-ink-faint">{task.cwd || "（未设置工作区）"}</span>
+					<span className="font-mono text-detail text-ink-faint">{task.cwd || "（未设置工作区）"}</span>
 				</div>
 
-				<div className="flex flex-wrap items-center gap-x-3 text-[11.5px] text-ink-faint">
+				<div className="flex flex-wrap items-center gap-x-3 text-detail text-ink-faint">
 					<span>上次运行：{task.lastRunAt ? new Date(task.lastRunAt).toLocaleString("zh-CN") : "从未"}</span>
 					{/*
 					 * Computed from the same rules the scheduler runs on, not from a second copy of

@@ -96,9 +96,9 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 						<div key={entry.id} className="flex items-center gap-3 border-b border-line-soft px-4 py-3 last:border-b-0">
 							<Cable size={15} strokeWidth={1.8} className="shrink-0 text-info" />
 							<div className="min-w-0 flex-1">
-								<div className="text-[13.5px] text-ink">{entry.name}</div>
-								<div className="mt-0.5 text-[12.5px] text-ink-muted">{entry.detail}</div>
-								<div className="mt-1 font-mono text-[11.5px] text-ink-faint">
+								<div className="text-body text-ink">{entry.name}</div>
+								<div className="mt-0.5 text-label text-ink-muted">{entry.detail}</div>
+								<div className="mt-1 font-mono text-detail text-ink-faint">
 									{entry.server.transport === "stdio"
 										? `${entry.server.command} ${(entry.server.args ?? []).join(" ")}`
 										: entry.server.url}
@@ -137,7 +137,7 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 									<input
 										value={server.name}
 										onChange={(e) => update(server.id, { name: e.target.value })}
-										className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink focus:outline-none"
+										className="min-w-0 flex-1 bg-transparent text-body text-ink focus:outline-none"
 									/>
 									<Badge tone="muted">{server.transport}</Badge>
 									{status?.state === "connected" && <Badge tone="ok">{status.toolCount} 个工具</Badge>}
@@ -199,19 +199,19 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 									)}
 
 									{status?.error && (
-										<div className="rounded-lg border border-danger/35 bg-danger/8 px-3 py-2 text-[12px] text-danger">
+										<div className="rounded-lg border border-danger/35 bg-danger/8 px-3 py-2 text-detail text-danger">
 											{status.error}
 										</div>
 									)}
 
 									{status?.tools && status.tools.length > 0 && (
 										<details>
-											<summary className="cursor-pointer text-[12px] text-ink-muted">
+											<summary className="cursor-pointer text-detail text-ink-muted">
 												查看 {status.tools.length} 个工具
 											</summary>
 											<div className="mt-2 space-y-1">
 												{status.tools.map((tool) => (
-													<div key={tool.name} className="text-[12px]">
+													<div key={tool.name} className="text-detail">
 														<span className="font-mono text-ink">{tool.name}</span>
 														<span className="ml-2 text-ink-faint">{tool.description.slice(0, 120)}</span>
 													</div>

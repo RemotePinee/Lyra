@@ -55,7 +55,7 @@ export function TaskPanel() {
 	}
 
 	return (
-		<Scroller className="flex-1 pt-2" contentClassName="px-2 pb-3" fade={false}>
+		<Scroller className="flex-1 pt-2" contentClassName="px-2 pb-3" top="none" bottom="none">
 			{todos.length > 0 && (
 				<>
 					<Header label="计划" hint={`${done}/${todos.length}`} />
@@ -64,7 +64,7 @@ export function TaskPanel() {
 							<Mark status={todo.status} paused={!running && !failed} failed={failed} />
 							<ScrollText
 								text={todo.content}
-								className={`ly-fade-tail min-w-0 flex-1 text-[12px] ${
+								className={`ly-fade-tail min-w-0 flex-1 text-detail ${
 									todo.status === "completed" ? "text-ink-faint line-through decoration-line" : "text-ink-muted"
 								}`}
 							/>
@@ -81,7 +81,7 @@ export function TaskPanel() {
 							key={run.toolCallId}
 							open={openId === run.toolCallId}
 							onToggle={() => setOpenId(openId === run.toolCallId ? null : run.toolCallId)}
-							summary={<ScrollText text={run.summary} className="ly-fade-tail min-w-0 flex-1 text-[12px]" />}
+							summary={<ScrollText text={run.summary} className="ly-fade-tail min-w-0 flex-1 text-detail" />}
 							trailing={
 								<>
 									<span

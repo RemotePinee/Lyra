@@ -74,7 +74,7 @@ export function GeneralSettings() {
 
   return (
     <div className="pt-8">
-      <h1 className="pb-7 text-[26px] leading-tight font-semibold tracking-tight text-ink">
+      <h1 className="pb-7 text-display leading-tight font-semibold tracking-tight text-ink">
         常规
       </h1>
 
@@ -92,7 +92,7 @@ export function GeneralSettings() {
           title="默认权限"
           detail="Lyra 始终可以读取和编辑当前工作区内的文件。需要时它会请求额外的访问权限。"
           control={
-            <span className="text-[12.5px] text-ink-faint">始终开启</span>
+            <span className="text-label text-ink-faint">始终开启</span>
           }
         />
         <Row
@@ -190,7 +190,7 @@ export function GeneralSettings() {
           title="平台"
           detail="当前运行环境"
           control={
-            <span className="text-[12.5px] text-ink-faint">{platform}</span>
+            <span className="text-label text-ink-faint">{platform}</span>
           }
         />
       </Card>

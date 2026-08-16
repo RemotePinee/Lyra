@@ -33,7 +33,7 @@ export function GroupHeader({
         type="button"
         disabled={disabled}
         onClick={onAction}
-        className="rounded px-1 text-[11px] text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
+        className="rounded px-1 text-caption text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
       >
         {action}
       </button>

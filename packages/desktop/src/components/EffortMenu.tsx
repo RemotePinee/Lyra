@@ -51,8 +51,8 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 		<Popover anchor={anchor} onClose={onClose} placement="top" align="center" width={232}>
 			<div className="px-3 py-2.5">
 				<div className="flex items-center gap-1.5">
-					<span className="text-[12.5px] text-ink-muted">推理强度</span>
-					<span className="text-[12.5px] font-medium" style={{ color: "var(--color-info)" }}>
+					<span className="text-label text-ink-muted">推理强度</span>
+					<span className="text-label font-medium" style={{ color: "var(--color-info)" }}>
 						{current.label}
 					</span>
 					<div className="flex-1" />
@@ -66,19 +66,19 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					</button>
 				</div>
 
-				<div className="mt-2 mb-1.5 flex items-center justify-between text-[11.5px] text-ink-faint">
+				<div className="mt-2 mb-1.5 flex items-center justify-between text-detail text-ink-faint">
 					<span>更快</span>
 					<span>更聪明</span>
 				</div>
 
 				<DotSlider value={index} max={EFFORT_LEVELS.length - 1} disabled={!supported} atMax={atMax} onChange={set} />
 
-				<p className="mt-2 text-[11.5px] leading-relaxed text-ink-faint">
+				<p className="mt-2 text-detail leading-relaxed text-ink-faint">
 					{supported ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
 				</p>
 
 				{showHelp && (
-					<div className="ly-enter mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-[11px] leading-relaxed text-ink-faint">
+					<div className="ly-enter mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-caption leading-relaxed text-ink-faint">
 						{EFFORT_LEVELS.map((entry) => (
 							<div key={entry.value} className="flex gap-2">
 								<span className={`w-7 shrink-0 ${entry.value === level ? "text-ink" : ""}`}>{entry.label}</span>

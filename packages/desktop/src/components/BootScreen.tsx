@@ -31,7 +31,7 @@ export function BootScreen() {
 				style={{ opacity: shown ? 1 : 0 }}
 			>
 				<Spinner size={20} />
-				<span className="text-[12px] tracking-[0.14em] text-ink-faint/80 uppercase">Lyra</span>
+				<span className="text-detail tracking-[0.14em] text-ink-faint/80 uppercase">Lyra</span>
 			</div>
 		</div>
 	);

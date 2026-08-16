@@ -91,14 +91,14 @@ export function BranchesView({
       : branches.remote;
 
   return (
-    <Scroller className="flex-1" contentClassName="px-1.5 pb-2" fade={false}>
+    <Scroller className="flex-1" contentClassName="px-1.5 pb-2" top="none" bottom="none">
       {compare ? (
         <>
           <div className="flex items-center gap-1.5 px-1 py-1.5">
             <button
               type="button"
               onClick={() => setCompare(null)}
-              className="rounded px-1 text-[11px] text-ink-faint transition-colors hover:text-ink"
+              className="rounded px-1 text-caption text-ink-faint transition-colors hover:text-ink"
             >
               ← 返回
             </button>
@@ -194,12 +194,12 @@ export function BranchesView({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="新分支名"
-                className="h-[26px] min-w-0 flex-1 rounded-md border border-line bg-input px-2 text-[12px] text-ink placeholder:text-ink-faint focus:border-ink-faint"
+                className="h-[26px] min-w-0 flex-1 rounded-md border border-line bg-input px-2 text-detail text-ink placeholder:text-ink-faint focus:border-ink-faint"
               />
               <button
                 type="submit"
                 disabled={busy || !name.trim()}
-                className="h-[26px] shrink-0 rounded-md bg-ink px-2.5 text-[11.5px] font-medium text-shell disabled:opacity-40"
+                className="h-[26px] shrink-0 rounded-md bg-ink px-2.5 text-detail font-medium text-shell disabled:opacity-40"
               >
                 创建并切换
               </button>

@@ -112,8 +112,8 @@ export function ContextMeter({
 				<Popover anchor={popover.anchor} onClose={popover.close} placement="top" align="center">
 					<div className="w-[300px] px-3.5 py-3">
 						<div className="flex items-baseline justify-between gap-4">
-							<span className="text-[12.5px] text-ink">上下文窗口</span>
-							<span className={`text-[12.5px] tabular-nums ${tight ? "text-danger" : "text-ink-muted"}`}>
+							<span className="text-label text-ink">上下文窗口</span>
+							<span className={`text-label tabular-nums ${tight ? "text-danger" : "text-ink-muted"}`}>
 								{formatTokens(used)} / {formatTokens(limit)}（{percent}%）
 							</span>
 						</div>
@@ -148,7 +148,7 @@ export function ContextMeter({
 						)}
 
 						{tight && (
-							<p className="mt-2.5 border-t border-line-soft pt-2 text-[11.5px] leading-relaxed text-ink-faint">
+							<p className="mt-2.5 border-t border-line-soft pt-2 text-detail leading-relaxed text-ink-faint">
 								接近上限，较早的消息会被自动摘要压缩。开新对话可以拿回全部窗口。
 							</p>
 						)}
@@ -217,7 +217,7 @@ function Bar({
 
 function Row({ swatch, label, tokens, share }: { swatch: string; label: string; tokens: number; share: number }) {
 	return (
-		<div className="flex items-center gap-2 text-[11.5px]">
+		<div className="flex items-center gap-2 text-detail">
 			<span className="h-[8px] w-[8px] shrink-0 rounded-[2px]" style={{ background: swatch }} />
 			<span className="min-w-0 flex-1 truncate text-ink-muted">{label}</span>
 			<span className="shrink-0 tabular-nums text-ink-muted">{formatTokens(tokens)}</span>

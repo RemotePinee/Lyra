@@ -19,8 +19,8 @@ export function CommandsSettings() {
 
 	return (
 		<div className="pt-8">
-			<h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">命令</h1>
-			<p className="mt-2 pb-7 text-[13px] text-ink-muted">当前会话中 Agent 可以调用的全部工具。</p>
+			<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">命令</h1>
+			<p className="mt-2 pb-7 text-label text-ink-muted">当前会话中 Agent 可以调用的全部工具。</p>
 
 			<SectionTitle>内置工具（{builtin.length}）</SectionTitle>
 			<Card className="mb-6">
@@ -29,7 +29,7 @@ export function CommandsSettings() {
 				) : (
 					<div className="flex flex-wrap gap-2 p-4">
 						{builtin.map((tool) => (
-							<span key={tool} className="rounded-lg bg-card px-2.5 py-1 font-mono text-[12px] text-ink">
+							<span key={tool} className="rounded-lg bg-card px-2.5 py-1 font-mono text-detail text-ink">
 								{tool}
 							</span>
 						))}
@@ -44,7 +44,7 @@ export function CommandsSettings() {
 				) : (
 					<div className="flex flex-wrap gap-2 p-4">
 						{external.map((tool) => (
-							<span key={tool} className="rounded-lg bg-card px-2.5 py-1 font-mono text-[12px] text-ink-muted">
+							<span key={tool} className="rounded-lg bg-card px-2.5 py-1 font-mono text-detail text-ink-muted">
 								{tool}
 							</span>
 						))}

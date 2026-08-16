@@ -59,7 +59,9 @@ export function TerminalPane() {
 
 		const terminal = new Terminal({
 			fontFamily: readVar("--ly-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
-			fontSize: Number.parseFloat(readVar("--ly-code-size")) || 12,
+			// The resolved step, not the raw setting: `--text-code` carries the default for when
+			// nothing has been configured, so the terminal cannot drift from the diff viewer.
+			fontSize: Number.parseFloat(readVar("--text-code")) || 12.5,
 			lineHeight: 1.35,
 			cursorBlink: true,
 			// The panel draws its own edges; the terminal should sit flush inside them.
@@ -154,7 +156,7 @@ export function TerminalPane() {
 		<div className="relative flex min-h-0 flex-1 flex-col">
 			<div ref={host} className="ly-term min-h-0 flex-1 px-2 pt-1.5" />
 			{exited !== null && (
-				<div className="shrink-0 px-3 pb-2 text-[11.5px] text-ink-faint">
+				<div className="shrink-0 px-3 pb-2 text-detail text-ink-faint">
 					shell 已退出（代码 {exited}）。关掉这个标签再打开一个新的。
 				</div>
 			)}

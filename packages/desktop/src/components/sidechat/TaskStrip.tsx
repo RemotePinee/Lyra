@@ -57,7 +57,7 @@ export function TaskStrip() {
 					type="button"
 					onClick={() => setOpen((v) => !v)}
 					aria-expanded={open}
-					className="ly-item flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left text-[12px]"
+					className="ly-item flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left text-detail"
 				>
 					{active.some((t) => t.status === "running") ? (
 						<CircleDashed size={12.5} strokeWidth={1.9} className="ly-spin shrink-0 text-ink-muted" />
@@ -91,7 +91,7 @@ function TaskRow({ task }: { task: QueuedTask }) {
 	const Icon = TASK_ICON[task.status];
 
 	return (
-		<div className="flex items-start gap-2 rounded-lg border border-line-soft px-2 py-1.5 text-[12px]">
+		<div className="flex items-start gap-2 rounded-lg border border-line-soft px-2 py-1.5 text-detail">
 			<Icon
 				size={12.5}
 				strokeWidth={1.9}
@@ -107,7 +107,7 @@ function TaskRow({ task }: { task: QueuedTask }) {
 			/>
 			<div className="min-w-0 flex-1">
 				<p className="line-clamp-3 leading-relaxed text-ink-muted">{task.text}</p>
-				<p className="pt-0.5 text-[11px] text-ink-faint">
+				<p className="pt-0.5 text-caption text-ink-faint">
 					{TASK_LABEL[task.status]}
 					{task.error ? ` · ${task.error}` : ""}
 				</p>
@@ -117,7 +117,7 @@ function TaskRow({ task }: { task: QueuedTask }) {
 					type="button"
 					data-ly-tip="撤回这个任务"
 					onClick={() => void cancelTask(task.id)}
-					className="shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+					className="shrink-0 rounded-md px-1.5 py-0.5 text-detail text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
 				>
 					撤回
 				</button>

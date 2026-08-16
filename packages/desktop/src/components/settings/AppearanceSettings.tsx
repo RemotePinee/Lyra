@@ -49,7 +49,7 @@ export function AppearanceSettings() {
 
 	return (
 		<div className="pt-8">
-			<h1 className="pb-6 text-[26px] leading-tight font-semibold tracking-tight text-ink">外观</h1>
+			<h1 className="pb-6 text-display leading-tight font-semibold tracking-tight text-ink">外观</h1>
 
 			<SectionTitle>主题</SectionTitle>
 			<div className="mb-8 grid grid-cols-3 gap-3">
@@ -65,7 +65,7 @@ export function AppearanceSettings() {
 						}`}
 					>
 						<ThemePreview variant={theme} accent={appearance.accent} />
-						<span className="mt-2 mb-1 block text-[12.5px] text-ink">
+						<span className="mt-2 mb-1 block text-label text-ink">
 							{{ system: "系统", light: "浅色", dark: "深色" }[theme]}
 						</span>
 					</button>
@@ -75,7 +75,7 @@ export function AppearanceSettings() {
 			<SectionTitle>{isDark ? "深色主题" : "浅色主题"}</SectionTitle>
 			<Card className="mb-8">
 				<div className="flex items-center justify-between border-b border-line-soft px-4 py-2.5">
-					<span className="text-[12.5px] text-ink-muted">预设</span>
+					<span className="text-label text-ink-muted">预设</span>
 					<div className="flex gap-1.5">
 						{PRESETS.map((preset) => (
 							<button
@@ -146,7 +146,7 @@ export function AppearanceSettings() {
 								className="h-1 w-[180px] cursor-pointer appearance-none rounded-full bg-line accent-[var(--color-info)]"
 								style={{ accentColor: appearance.accent }}
 							/>
-							<span className="w-6 text-right font-mono text-[12.5px] text-ink">{appearance.contrast}</span>
+							<span className="w-6 text-right font-mono text-label text-ink">{appearance.contrast}</span>
 						</div>
 					}
 				/>

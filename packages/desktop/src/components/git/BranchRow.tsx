@@ -59,7 +59,7 @@ export function BranchRow({
             type="button"
             disabled={busy}
             onClick={onSwitch}
-            className="h-[22px] rounded px-1.5 text-[11px] text-ink-muted transition-colors hover:bg-elevated hover:text-ink disabled:opacity-40"
+            className="h-[22px] rounded px-1.5 text-caption text-ink-muted transition-colors hover:bg-elevated hover:text-ink disabled:opacity-40"
           >
             {remote ? "检出" : "切换"}
           </button>

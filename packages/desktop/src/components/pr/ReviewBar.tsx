@@ -46,7 +46,7 @@ export function ReviewBar({
 
 	return (
 		<div className="shrink-0 px-4 pt-1 pb-3">
-			{error && <p className="pb-1.5 text-[12px] leading-relaxed text-danger">{error}</p>}
+			{error && <p className="pb-1.5 text-detail leading-relaxed text-danger">{error}</p>}
 
 			<ComposerShell
 				value={body}
@@ -82,7 +82,7 @@ function Verdicts({
 				disabled={busy || disabled}
 				onClick={() => onSend("approve")}
 				data-ly-tip="批准这个 Pull Request"
-				className="flex h-[26px] items-center gap-1 rounded-lg px-2 text-[12px] text-ink-muted transition-colors hover:bg-card-hover hover:text-ok disabled:opacity-45"
+				className="flex h-[26px] items-center gap-1 rounded-lg px-2 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ok disabled:opacity-45"
 			>
 				<Check size={12.5} strokeWidth={2} />
 				批准
@@ -92,7 +92,7 @@ function Verdicts({
 				disabled={busy || disabled}
 				onClick={() => onSend("request-changes")}
 				data-ly-tip="请求修改，需要写明理由"
-				className="flex h-[26px] items-center gap-1 rounded-lg px-2 text-[12px] text-ink-muted transition-colors hover:bg-card-hover hover:text-danger disabled:opacity-45"
+				className="flex h-[26px] items-center gap-1 rounded-lg px-2 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-danger disabled:opacity-45"
 			>
 				<X size={12.5} strokeWidth={2} />
 				请求修改

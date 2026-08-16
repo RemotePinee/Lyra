@@ -114,7 +114,7 @@ export function FileDiffList({
                    * truncated from the left, where the shared prefix is.
                    */}
                   <span
-                    className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-muted"
+                    className="min-w-0 flex-1 truncate text-left text-detail text-ink-muted"
                     dir="rtl"
                   >
                     <span dir="ltr">{file.path}</span>
@@ -165,7 +165,7 @@ export function FileDiffList({
                     这个文件没有可以按行对比的内容（二进制或过大）。
                   </Text>
                 ) : (
-                  <DiffView hunks={file.hunks} />
+                  <DiffView hunks={file.hunks} path={file.path} />
                 )}
               </div>
             )}

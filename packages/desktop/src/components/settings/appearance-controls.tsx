@@ -22,7 +22,7 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
 
 	return (
 		<div className="flex items-center justify-between border-b border-line-soft px-4 py-3 last:border-b-0">
-			<span className="text-[13.5px] text-ink">{label}</span>
+			<span className="text-body text-ink">{label}</span>
 			<label
 				className="flex h-[30px] cursor-pointer items-center gap-2 rounded-lg px-2.5 transition-colors"
 				style={{ background: valid ? draft : "transparent", color: valid ? contrastingInk(draft) : undefined }}
@@ -37,7 +37,7 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
 					}}
 					onBlur={() => !valid && setDraft(value)}
 					spellCheck={false}
-					className={`w-[74px] bg-transparent font-mono text-[12.5px] tracking-wide ${valid ? "" : "text-danger"}`}
+					className={`w-[74px] bg-transparent font-mono text-label tracking-wide ${valid ? "" : "text-danger"}`}
 				/>
 			</label>
 		</div>
@@ -66,9 +66,9 @@ export function NumberField({
 					const next = Number(e.target.value);
 					if (Number.isFinite(next) && next >= min && next <= max) onChange(next);
 				}}
-				className="h-[30px] w-[64px] rounded-lg border border-line bg-input px-2.5 text-center font-mono text-[12.5px] text-ink focus:border-ink-faint"
+				className="h-[30px] w-[64px] rounded-lg border border-line bg-input px-2.5 text-center font-mono text-label text-ink focus:border-ink-faint"
 			/>
-			<span className="text-[12px] text-ink-faint">px</span>
+			<span className="text-detail text-ink-faint">px</span>
 		</div>
 	);
 }

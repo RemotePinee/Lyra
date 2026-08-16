@@ -165,7 +165,7 @@ export function GitPanel() {
               if (ok) setRescan((n) => n + 1);
             });
           }}
-          className="mt-3 h-[26px] rounded-md bg-ink px-2.5 text-[11.5px] font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="mt-3 h-[26px] rounded-md bg-ink px-2.5 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           初始化仓库
         </button>
@@ -244,7 +244,7 @@ export function GitPanel() {
             key={entry.id}
             type="button"
             onClick={() => setView(entry.id)}
-            className={`flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors duration-150 ${
+            className={`flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-detail transition-colors duration-150 ${
               view === entry.id
                 ? "bg-card-hover text-ink"
                 : "text-ink-muted hover:bg-card-hover/60"

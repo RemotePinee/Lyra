@@ -78,7 +78,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 					className={`shrink-0 transition-colors duration-200 ${running ? "ly-pulse text-info" : "text-ink-faint"}`}
 				/>
 				<span
-					className={`min-w-0 flex-1 truncate text-[12.5px] transition-colors duration-200 ${
+					className={`min-w-0 flex-1 truncate text-label transition-colors duration-200 ${
 						running ? "text-ink" : "text-ink-muted"
 					}`}
 				>
@@ -86,7 +86,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				</span>
 
 				{running && (
-					<span className="flex shrink-0 items-center gap-1.5 text-[11px] text-info/80">
+					<span className="flex shrink-0 items-center gap-1.5 text-caption text-info/80">
 						{elapsed > 0 && <span className="tabular-nums">{elapsed}s</span>}
 						<Loader2 size={12} strokeWidth={2.2} className="ly-spin" />
 					</span>
@@ -95,7 +95,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				{status === "error" && <CircleX size={13} strokeWidth={1.9} className="ly-pop shrink-0 text-danger/85" />}
 
 				{hasDiff && (
-					<span className="ly-pop shrink-0 font-mono text-[11px]">
+					<span className="ly-pop shrink-0 font-mono text-caption">
 						<span className="text-ok">+{String(details?.added ?? 0)}</span>{" "}
 						<span className="text-danger">-{String(details?.removed ?? 0)}</span>
 					</span>
@@ -112,7 +112,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 			{open && (
 				<div className="ly-enter border-t border-line-soft">
 					{hasDiff ? (
-						<DiffView hunks={details?.hunks as DiffHunk[]} path={String(details?.path ?? "")} />
+						<DiffView hunks={details?.hunks as DiffHunk[]} path={String(details?.path ?? "")} showPath />
 					) : (
 						<>
 							{/*

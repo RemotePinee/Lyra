@@ -149,9 +149,9 @@ export function FileViewer({
 
 					<div className="min-w-2 flex-1" />
 
-					{readOnly && <span className="shrink-0 text-[11px] text-ink-faint">文件过大，只读</span>}
+					{readOnly && <span className="shrink-0 text-caption text-ink-faint">文件过大，只读</span>}
 					{error && (
-						<span data-ly-tip={error} className="min-w-0 truncate text-[11px] text-danger">
+						<span data-ly-tip={error} className="min-w-0 truncate text-caption text-danger">
 							{error}
 						</span>
 					)}
@@ -161,14 +161,14 @@ export function FileViewer({
 							onClick={() => void save()}
 							disabled={saving}
 							data-ly-tip="保存 ⌘S"
-							className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
+							className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-detail"
 						>
 							<Save size={11.5} strokeWidth={1.9} />
 							{saving ? "保存中…" : "未保存"}
 						</button>
 					)}
 					{justSaved && !dirty && (
-						<span className="ly-pop flex shrink-0 items-center gap-1 text-[11px] text-ok">
+						<span className="ly-pop flex shrink-0 items-center gap-1 text-caption text-ok">
 							<Check size={11.5} strokeWidth={2.2} />
 							已保存
 						</span>
@@ -196,8 +196,8 @@ export function FileViewer({
 			) : kind === "binary" ? (
 				<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
 					<FileWarning size={26} strokeWidth={1.4} className="text-ink-faint" />
-					<p className="text-[12.5px] text-ink-muted">二进制文件，无法以文本显示。</p>
-					<p className="text-[11.5px] text-ink-faint">{formatBytes(contents.bytes)}</p>
+					<p className="text-label text-ink-muted">二进制文件，无法以文本显示。</p>
+					<p className="text-detail text-ink-faint">{formatBytes(contents.bytes)}</p>
 				</div>
 			) : kind === "markdown" && !showSource ? (
 				<Scroller className="flex-1" contentClassName="px-3" fadeColor="var(--color-shell)">
@@ -235,7 +235,7 @@ function Toggle({
 			type="button"
 			onClick={onClick}
 			data-selected={active ? "true" : undefined}
-			className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11.5px]"
+			className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-detail"
 		>
 			{icon}
 			{label}

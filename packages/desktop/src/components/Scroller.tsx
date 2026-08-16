@@ -1,15 +1,47 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
+ * A fade that has no edge in it.
+ *
+ * Two colour stops give a linear ramp in alpha, and a linear ramp in alpha does not look linear:
+ * the eye is far more sensitive to change in the sparse end, so the gradient appears to hold its
+ * colour and then stop, and where it stops reads as a faint rule somebody drew. That "虚线" above
+ * the composer was never a border — it was this, the end of a two-stop gradient.
+ *
+ * These stops trace an ease-out curve instead, so the alpha falls fastest where the fade is
+ * densest and trails off to nothing. There is no point along it where the rate of change jumps,
+ * which is what it takes for a fade to read as a fade rather than as a band with a boundary.
+ *
+ * `color-mix` rather than baking in an rgba: the colour arrives as `--ly-fade-color` and is a
+ * different surface on every pane it is used in.
+ */
+function fadeTo(direction: "top" | "bottom"): string {
+	const base = "var(--ly-fade-color, var(--color-shell))";
+	const at = (percent: number, position: number) =>
+		`color-mix(in srgb, ${base} ${percent}%, transparent) ${position}%`;
+	return [
+		`linear-gradient(to ${direction}`,
+		`${base} 0%`,
+		at(94, 14),
+		at(80, 28),
+		at(60, 43),
+		at(38, 59),
+		at(19, 74),
+		at(6, 88),
+		"transparent 100%)",
+	].join(", ");
+}
+
+/**
  * The app's only scrolling surface.
  *
  * Three things the native scroller does not do, and which the reference has everywhere:
  *
  *   - a scrollbar that overlays the content instead of reserving a gutter, so nothing
  *     reflows sideways the moment a list grows past its box;
- *   - edges that dissolve while there is more to see, which reads as "keep going" without
- *     spending a row on a hint;
- *   - a hairline under a fixed header, appearing only once the content has moved under it.
+ *   - an edge that says more is hidden that way, drawn as whatever the boundary actually is:
+ *     a fade where content dissolves into empty space, a hairline where it slides under
+ *     something solid. See `top` — picking the wrong one is what makes a list look broken.
  *
  * `overscroll-contain` keeps a wheel that reaches the end here rather than passing it to the
  * window behind — a nested list would otherwise scroll its parent as soon as it bottomed out.
@@ -18,10 +50,8 @@ export function Scroller({
 	children,
 	className = "",
 	contentClassName = "",
-	/** Fade the top and bottom edges while there is more content that way. */
-	fade = true,
-	/** Draw a hairline at the top once the content has scrolled under whatever sits above. */
-	divider = false,
+	top = "fade",
+	bottom = "fade",
 	onScroll,
 	scrollRef,
 	fadeColor,
@@ -30,14 +60,32 @@ export function Scroller({
 	className?: string;
 	contentClassName?: string;
 	/**
-	 * The soft edge that says "there is more this way".
+	 * How the top edge ends — and these are two different physical situations, not two styles.
 	 *
-	 * `"top"` keeps it only where content slides under a header. Below a composer it is noise: the
-	 * gradient fades to the same colour the composer sits on, and the seam between them reads as a
-	 * faint rule nobody drew.
+	 * `"fade"` is content dissolving into nothing: what sits above the scroller is the same empty
+	 * surface the gradient fades to, so the softness reads as "there is more this way".
+	 *
+	 * `"line"` is content passing *under* something solid — a nav, a header, a toolbar. There the
+	 * gradient is wrong twice over. It leaves half-lit rows hanging below an opaque block, which
+	 * looks like a rendering fault rather than a hint, and it contradicts the boundary: a hairline
+	 * says "this is an edge" while a fade says "this dissolves". The sidebar had both switched on
+	 * at once, which is exactly what that ghosted row under the nav was. Solid things clip; only
+	 * emptiness fades.
+	 *
+	 * The hairline appears only once something has actually gone under, so a short list has no
+	 * rule at all — the boundary is only worth drawing when it is doing something.
 	 */
-	fade?: boolean | "top";
-	divider?: boolean;
+	top?: "fade" | "line" | "none";
+	/**
+	 * Same question at the bottom, minus the hairline: nothing is ever pinned below the content.
+	 *
+	 * The test is whether what follows reaches the edge. A composer or a comment box is a rounded
+	 * card with the pane's own colour all around it, so content really is scrolling away into
+	 * empty space and should fade. A settings row with a `border-t` across the full width is a
+	 * wall — content passes behind it, and a gradient stacked on its border draws one boundary
+	 * twice.
+	 */
+	bottom?: "fade" | "none";
 	/** The surface behind the content, so the edge gradients dissolve into it rather than
 	 *  into the default shell colour. */
 	fadeColor?: string;
@@ -116,8 +164,11 @@ export function Scroller({
 		};
 	}, [active, metrics.thumbHeight, viewport]);
 
-	const showTopFade = fade !== false && metrics.overflow && !metrics.atTop;
-	const showBottomFade = fade === true && metrics.overflow && !metrics.atBottom;
+	// Both only mean anything once something is actually hidden that way.
+	const hiddenAbove = metrics.overflow && !metrics.atTop;
+	const showTopFade = top === "fade" && hiddenAbove;
+	const showTopLine = top === "line" && hiddenAbove;
+	const showBottomFade = bottom === "fade" && metrics.overflow && !metrics.atBottom;
 
 	return (
 		<div
@@ -146,30 +197,23 @@ export function Scroller({
 				{children}
 			</div>
 
-			{/* Hairline under a fixed header, only once something has passed beneath it. */}
-			{divider && (
+			{top === "line" && (
 				<div
 					aria-hidden
 					className="pointer-events-none absolute inset-x-0 top-0 h-px bg-line transition-opacity duration-200"
-					style={{ opacity: metrics.atTop ? 0 : 1 }}
+					style={{ opacity: showTopLine ? 1 : 0 }}
 				/>
 			)}
 
 			<div
 				aria-hidden
-				className="pointer-events-none absolute inset-x-0 top-0 h-8 transition-opacity duration-200"
-				style={{
-					opacity: showTopFade ? 1 : 0,
-					background: "linear-gradient(to bottom, var(--ly-fade-color, var(--color-shell)), transparent)",
-				}}
+				className="pointer-events-none absolute inset-x-0 top-0 h-9 transition-opacity duration-200"
+				style={{ opacity: showTopFade ? 1 : 0, background: fadeTo("bottom") }}
 			/>
 			<div
 				aria-hidden
-				className="pointer-events-none absolute inset-x-0 bottom-0 h-10 transition-opacity duration-200"
-				style={{
-					opacity: showBottomFade ? 1 : 0,
-					background: "linear-gradient(to top, var(--ly-fade-color, var(--color-shell)), transparent)",
-				}}
+				className="pointer-events-none absolute inset-x-0 bottom-0 h-12 transition-opacity duration-200"
+				style={{ opacity: showBottomFade ? 1 : 0, background: fadeTo("top") }}
 			/>
 
 			{metrics.overflow && (

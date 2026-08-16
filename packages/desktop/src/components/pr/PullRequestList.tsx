@@ -12,6 +12,7 @@ import { relativeTime } from "../git/relative-time.ts";
 import { ScrollText } from "../ScrollText.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { Text } from "../Text.tsx";
+import { ListSkeleton } from "./PullRequestSkeleton.tsx";
 import type { Filter, Group } from "./usePullRequests.ts";
 
 const FILTERS: { key: Filter; label: string }[] = [
@@ -54,7 +55,7 @@ export function PullRequestList({
 							key={option.key}
 							type="button"
 							onClick={() => onFilter(option.key)}
-							className={`h-[26px] rounded-lg px-2.5 text-[12.5px] transition-colors ${
+							className={`h-[26px] rounded-lg px-2.5 text-label transition-colors ${
 								filter === option.key ? "bg-card-hover text-ink" : "text-ink-muted hover:text-ink"
 							}`}
 						>
@@ -81,27 +82,35 @@ export function PullRequestList({
 						onChange={(event) => onQuery(event.target.value)}
 						placeholder="搜索 Pull Request"
 						spellCheck={false}
-						className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-ink-faint focus:outline-none"
+						className="min-w-0 flex-1 bg-transparent text-label text-ink placeholder:text-ink-faint focus:outline-none"
 					/>
 				</label>
 			</div>
 
 			<Scroller className="flex-1" contentClassName="px-2 pb-3" fadeColor="var(--color-shell)">
 				{error && (
-					<p className="mx-1 mt-2 rounded-[9px] border border-accent/35 bg-accent/8 px-3 py-2 text-[12px] leading-relaxed text-accent">
+					<p className="mx-1 mt-2 rounded-[9px] border border-accent/35 bg-accent/8 px-3 py-2 text-detail leading-relaxed text-accent">
 						{error}
 					</p>
 				)}
 
-				{empty && !error && (
-					<p className="px-3 py-16 text-center text-[12.5px] text-ink-faint">
-						{loading ? "正在读取…" : query ? "没有匹配的 Pull Request" : "没有和你有关的 Pull Request"}
+				{/*
+				 * The skeleton is only for a genuinely cold pane. With rows already on screen from
+				 * the cache, a refresh says so through the spinning arrow above and leaves the list
+				 * alone — replacing readable rows with grey blocks would be a downgrade, not
+				 * feedback.
+				 */}
+				{empty && !error && loading && <ListSkeleton />}
+
+				{empty && !error && !loading && (
+					<p className="px-3 py-16 text-center text-label text-ink-faint">
+						{query ? "没有匹配的 Pull Request" : "没有和你有关的 Pull Request"}
 					</p>
 				)}
 
 				{groups.map((group) => (
 					<section key={group.key} className="pt-3 first:pt-1">
-						<div className="px-2 pb-1 text-[11.5px] text-ink-faint">{group.label}</div>
+						<div className="px-2 pb-1 text-detail text-ink-faint">{group.label}</div>
 						{group.items.map((pr) => (
 							<Row
 								key={`${pr.repo}#${pr.number}`}
@@ -138,12 +147,12 @@ function Row({ pr, active, onSelect }: { pr: PullRequestSummary; active: boolean
 
 			<div className="min-w-0 flex-1">
 				<div className="flex items-baseline gap-2">
-					<ScrollText text={pr.title} className="min-w-0 flex-1 text-[12.5px] text-ink" />
+					<ScrollText text={pr.title} className="min-w-0 flex-1 text-label text-ink" />
 					<Text size="caption" tone="faint" numeric className="shrink-0">
 						{relativeTime(pr.updatedAt)}
 					</Text>
 				</div>
-				<div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
+				<div className="mt-0.5 flex items-center gap-1.5 text-detail text-ink-faint">
 					<ScrollText text={pr.repo} className="min-w-0 shrink truncate" />
 					<span className="shrink-0 font-mono">#{pr.number}</span>
 					{pr.isDraft && <span className="shrink-0 rounded bg-card px-1.5">草稿</span>}

@@ -22,8 +22,8 @@ export function PanelEmpty({
 	return (
 		<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-7 pb-6 text-center">
 			<Icon size={30} strokeWidth={1.35} className="text-ink-faint" />
-			<h2 className="mt-3.5 text-[15.5px] font-medium text-ink">{title}</h2>
-			<p className="mt-2 max-w-[290px] text-[12.5px] leading-relaxed text-ink-muted">{children}</p>
+			<h2 className="mt-3.5 text-title font-medium text-ink">{title}</h2>
+			<p className="mt-2 max-w-[290px] text-label leading-relaxed text-ink-muted">{children}</p>
 		</div>
 	);
 }

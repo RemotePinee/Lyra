@@ -57,8 +57,8 @@ export function ArchivedSettings() {
 		<div className="pt-8">
 			<header className="flex flex-wrap items-start justify-between gap-3 pb-6">
 				<div className="min-w-0">
-					<h1 className="text-[22px] leading-tight font-semibold tracking-tight text-ink">已归档的聊天</h1>
-					<p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
+					<h1 className="text-heading leading-tight font-semibold tracking-tight text-ink">已归档的聊天</h1>
+					<p className="mt-1.5 text-label leading-relaxed text-ink-muted">
 						归档只是把会话移出侧边栏，记录和用量都还在。取消归档即可放回原来的项目下。
 					</p>
 				</div>
@@ -69,7 +69,7 @@ export function ArchivedSettings() {
 							<button
 								type="button"
 								onClick={() => setConfirmingAll(false)}
-								className="h-8 rounded-lg px-3 text-[12.5px] text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+								className="h-8 rounded-lg px-3 text-label text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 							>
 								取消
 							</button>
@@ -79,7 +79,7 @@ export function ArchivedSettings() {
 									void deleteAll();
 									setConfirmingAll(false);
 								}}
-								className="flex h-8 items-center gap-1.5 rounded-lg bg-danger px-3 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90"
+								className="flex h-8 items-center gap-1.5 rounded-lg bg-danger px-3 text-label font-medium text-white transition-opacity hover:opacity-90"
 							>
 								<Trash2 size={13} strokeWidth={2} />
 								确认删除 {archived.length} 个
@@ -89,7 +89,7 @@ export function ArchivedSettings() {
 						<button
 							type="button"
 							onClick={() => setConfirmingAll(true)}
-							className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-danger/40 px-3 text-[12.5px] text-danger transition-colors hover:bg-danger/10"
+							className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-danger/40 px-3 text-label text-danger transition-colors hover:bg-danger/10"
 						>
 							<Trash2 size={13} strokeWidth={2} />
 							全部删除
@@ -100,8 +100,8 @@ export function ArchivedSettings() {
 			{archived.length === 0 ? (
 				<div className="flex flex-col items-center rounded-[12px] border border-dashed border-line py-14">
 					<Archive size={26} strokeWidth={1.5} className="text-ink-faint" />
-					<p className="mt-3 text-[13px] text-ink-muted">还没有归档的聊天</p>
-					<p className="mt-1 text-[12px] text-ink-faint">在侧边栏把鼠标移到某个会话上，点归档图标即可</p>
+					<p className="mt-3 text-label text-ink-muted">还没有归档的聊天</p>
+					<p className="mt-1 text-detail text-ink-faint">在侧边栏把鼠标移到某个会话上，点归档图标即可</p>
 				</div>
 			) : (
 				<>
@@ -125,15 +125,15 @@ export function ArchivedSettings() {
 					</div>
 
 					{groups.length === 0 && (
-						<p className="py-10 text-center text-[12.5px] text-ink-faint">没有匹配的聊天</p>
+						<p className="py-10 text-center text-label text-ink-faint">没有匹配的聊天</p>
 					)}
 
 					{groups.map((group) => (
 						<section key={group.path} className="mb-6">
 							<div className="flex items-center gap-2 pb-2">
 								<Folder size={14} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
-								<ScrollText text={group.name} className="min-w-0 text-[13px] text-ink" />
-								<span className="shrink-0 text-[12px] text-ink-faint">{group.sessions.length} 个聊天</span>
+								<ScrollText text={group.name} className="min-w-0 text-label text-ink" />
+								<span className="shrink-0 text-detail text-ink-faint">{group.sessions.length} 个聊天</span>
 							</div>
 
 							<div className="overflow-hidden rounded-[12px] border border-line">
@@ -184,8 +184,8 @@ function Row({
 			}`}
 		>
 			<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left" data-ly-tip="打开并取消归档">
-				<ScrollText text={session.title} className="text-[13px] text-ink" />
-				<span className="mt-0.5 block text-[11.5px] text-ink-faint">
+				<ScrollText text={session.title} className="text-label text-ink" />
+				<span className="mt-0.5 block text-detail text-ink-faint">
 					{formatDate(session.updatedAt)} · {session.messageCount} 条消息
 				</span>
 			</button>
@@ -195,14 +195,14 @@ function Row({
 					<button
 						type="button"
 						onClick={() => setConfirming(false)}
-						className="h-7 rounded-lg px-2.5 text-[12px] text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
+						className="h-7 rounded-lg px-2.5 text-detail text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
 					>
 						取消
 					</button>
 					<button
 						type="button"
 						onClick={onDelete}
-						className="h-7 rounded-lg bg-danger px-2.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90"
+						className="h-7 rounded-lg bg-danger px-2.5 text-detail font-medium text-white transition-opacity hover:opacity-90"
 					>
 						确认删除
 					</button>

@@ -74,10 +74,10 @@ export function HooksSettings() {
     <div className="pt-8">
       <header className="flex items-start justify-between pb-7">
         <div>
-          <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">
+          <h1 className="text-display leading-tight font-semibold tracking-tight text-ink">
             钩子
           </h1>
-          <p className="mt-2 max-w-[580px] text-[13px] leading-relaxed text-ink-muted">
+          <p className="mt-2 max-w-[580px] text-label leading-relaxed text-ink-muted">
             在工具调用前后运行一段命令。
           </p>
         </div>
@@ -123,8 +123,8 @@ export function HooksSettings() {
                   className="shrink-0 text-ink-muted"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-ink">{preset.label}</div>
-                  <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-faint">
+                  <div className="text-label text-ink">{preset.label}</div>
+                  <div className="mt-0.5 truncate font-mono text-detail text-ink-faint">
                     {preset.hook.command}
                   </div>
                 </div>
@@ -187,7 +187,7 @@ function HookCard({
         {hook.blocking && <Badge tone="accent">可阻断</Badge>}
         <ScrollText
           text={hook.command}
-          className="min-w-0 flex-1 font-mono text-[12px] text-ink-muted"
+          className="min-w-0 flex-1 font-mono text-detail text-ink-muted"
         />
         <Toggle
           checked={hook.enabled}
@@ -260,10 +260,10 @@ function HookCard({
         {hook.event === "before-tool" && (
           <label className="flex items-center justify-between rounded-[10px] border border-line px-3.5 py-2.5">
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] text-ink">
+              <span className="block text-label text-ink">
                 非零退出时阻断调用
               </span>
-              <span className="block text-[12px] text-ink-muted">
+              <span className="block text-detail text-ink-muted">
                 退出码不为 0
                 时，这次工具调用会变成一条错误结果交给模型，而不是直接执行
               </span>

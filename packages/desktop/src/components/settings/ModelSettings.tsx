@@ -27,10 +27,10 @@ export function ModelSettings() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-start justify-between pt-8 pb-6">
         <div>
-          <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">
+          <h1 className="text-display leading-tight font-semibold tracking-tight text-ink">
             模型设置
           </h1>
-          <p className="mt-2 text-[13px] text-ink-muted">
+          <p className="mt-2 text-label text-ink-muted">
             管理自定义模型供应商，配置后可在聊天时选择使用。
           </p>
         </div>
@@ -68,7 +68,7 @@ export function ModelSettings() {
             contentClassName="p-2.5"
             fadeColor="var(--color-shell)"
           >
-            <div className="px-2 pt-1.5 pb-1 text-[11.5px] text-ink-faint">
+            <div className="px-2 pt-1.5 pb-1 text-detail text-ink-faint">
               自定义供应商
             </div>
             {p.providers.map((provider) => (
@@ -89,7 +89,7 @@ export function ModelSettings() {
                 />
                 <ScrollText
                   text={provider.name}
-                  className="min-w-0 flex-1 text-[13px] text-ink"
+                  className="min-w-0 flex-1 text-label text-ink"
                 />
                 <span
                   className={`h-[6px] w-[6px] shrink-0 rounded-full ${provider.enabled ? "bg-ok" : "bg-ink-faint/60"}`}
@@ -100,7 +100,7 @@ export function ModelSettings() {
             <button
               type="button"
               onClick={() => void p.add()}
-              className="flex h-[38px] w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+              className="flex h-[38px] w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-label text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
             >
               <Plus size={15} strokeWidth={1.9} className="shrink-0" />
               添加供应商
@@ -114,7 +114,7 @@ export function ModelSettings() {
           >
             {!p.selected ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                <p className="text-[13px] text-ink-muted">
+                <p className="text-label text-ink-muted">
                   还没有配置任何供应商
                 </p>
                 <GhostButton onClick={() => void p.add()}>

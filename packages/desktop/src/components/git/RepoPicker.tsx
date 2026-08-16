@@ -60,7 +60,7 @@ export function RepoPicker({
         ) : (
           <Folder size={12.5} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
         )}
-        <ScrollText text={current?.label ?? "仓库"} className="ly-fade-tail min-w-0 flex-1 text-[12.5px]" />
+        <ScrollText text={current?.label ?? "仓库"} className="ly-fade-tail min-w-0 flex-1 text-label" />
         {/* A bare total says nothing about what it counts; the split does. */}
         <Text size="caption" tone="faint" className="shrink-0 tabular-nums">
           {repos.length}

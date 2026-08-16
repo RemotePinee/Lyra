@@ -230,6 +230,26 @@ export function tokenize(code: string, language: Language, style: HighlightStyle
 }
 
 /**
+ * The same runs, split at line breaks.
+ *
+ * A diff is rendered one row per line, so it needs its colours cut the same way — and a token
+ * can legitimately span lines (a block comment, a template literal), which is exactly the case
+ * that colouring each line on its own gets wrong. Parsing the whole passage and dividing the
+ * result afterwards keeps those spans intact.
+ */
+export function tokenizeLines(code: string, language: Language, style: HighlightStyle): Token[][] {
+	const lines: Token[][] = [[]];
+	for (const token of tokenize(code, language, style)) {
+		const parts = token.text.split("\n");
+		for (const [index, part] of parts.entries()) {
+			if (index > 0) lines.push([]);
+			if (part) lines[lines.length - 1].push({ text: part, className: token.className });
+		}
+	}
+	return lines;
+}
+
+/**
  * Put the generated class definitions in the document, once.
  *
  * `HighlightStyle` hands CodeMirror a style module that the editor mounts on its own root.
@@ -240,6 +260,28 @@ export function tokenize(code: string, language: Language, style: HighlightStyle
  * is CodeMirror's own transitive dependency, and reaching past a dependency into what it happens
  * to pull in is how a working build breaks on an unrelated upgrade.
  */
+let shared: HighlightStyle | null = null;
+
+/**
+ * The one style for the whole app, mounted the first time anything asks.
+ *
+ * `HighlightStyle.define` generates a fresh set of class names on every call, and
+ * `mountHighlightStyles` only ever puts one set of rules in the document. So a second caller
+ * building its own style gets class names that match nothing: spans come out marked up and
+ * completely uncoloured, which is exactly how the diff viewer looked — 187 tagged runs, all
+ * inheriting one colour from their parent.
+ *
+ * The singleton lived in CodeBlock, where it worked for as long as code blocks were the only
+ * thing colouring text outside an editor. It belongs here, next to what generates the names.
+ */
+export function sharedHighlightStyle(): HighlightStyle {
+	if (!shared) {
+		shared = highlightStyle();
+		mountHighlightStyles(shared);
+	}
+	return shared;
+}
+
 let mounted = false;
 export function mountHighlightStyles(style: HighlightStyle): void {
 	if (mounted) return;

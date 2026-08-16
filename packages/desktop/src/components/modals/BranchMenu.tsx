@@ -76,7 +76,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
 					placeholder="搜索分支"
-					className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-ink-faint"
+					className="h-full min-w-0 flex-1 bg-transparent text-label text-ink placeholder:text-ink-faint"
 				/>
 			</div>
 
@@ -101,7 +101,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					))}
 
 				{branches && local.length === 0 && remote.length === 0 && (
-					<p className="px-2.5 py-5 text-center text-[12px] text-ink-faint">
+					<p className="px-2.5 py-5 text-center text-detail text-ink-faint">
 						{branches.local.length === 0 ? "当前项目不是 Git 仓库" : "没有匹配的分支"}
 					</p>
 				)}
@@ -149,7 +149,7 @@ function Row({
 			trailing={current ? <Check size={13} strokeWidth={2.2} className="shrink-0 text-ink" /> : undefined}
 			onClick={onSelect}
 		>
-			<ScrollText text={name} className="font-mono text-[12px]" />
+			<ScrollText text={name} className="font-mono text-detail" />
 		</MenuItem>
 	);
 }

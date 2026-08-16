@@ -41,11 +41,11 @@ export function ProjectPicker({ anchor, onClose }: { anchor: Anchor; onClose: ()
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
 					placeholder="搜索项目"
-					className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-ink-faint"
+					className="h-full min-w-0 flex-1 bg-transparent text-label text-ink placeholder:text-ink-faint"
 				/>
 			</div>
 
-			<Scroller className="max-h-[min(280px,42vh)]" contentClassName="p-1" fadeColor="var(--color-float)">
+			<Scroller className="max-h-[min(280px,42vh)]" bottom="none" contentClassName="p-1" fadeColor="var(--color-float)">
 				{projects.map((project) => (
 					<MenuItem
 						key={project.path}
@@ -63,7 +63,7 @@ export function ProjectPicker({ anchor, onClose }: { anchor: Anchor; onClose: ()
 					</MenuItem>
 				))}
 
-				{projects.length === 0 && <p className="px-2.5 py-5 text-center text-[12px] text-ink-faint">还没有项目</p>}
+				{projects.length === 0 && <p className="px-2.5 py-5 text-center text-detail text-ink-faint">还没有项目</p>}
 			</Scroller>
 
 			<div className="border-t border-line">

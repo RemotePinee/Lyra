@@ -41,7 +41,7 @@ export function ProviderModels({
 	return (
 		<div className="pt-6">
 			<div className="mb-2 flex items-center justify-between">
-				<span className="text-[12.5px] text-ink-muted">模型列表</span>
+				<span className="text-label text-ink-muted">模型列表</span>
 				<GhostButton onClick={onTest} disabled={testing}>
 					{testing ? "测试中…" : "测试连接"}
 				</GhostButton>
@@ -62,7 +62,7 @@ export function ProviderModels({
 				<button
 					type="button"
 					onClick={() => onEdit(null)}
-					className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line px-3 text-[12.5px] text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+					className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line px-3 text-label text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
 				>
 					<Plus size={14} strokeWidth={1.9} />
 					添加模型
@@ -89,9 +89,9 @@ function ModelRow({
 }) {
 	return (
 		<div className="flex h-[46px] items-center gap-3 rounded-[10px] border border-line bg-input px-3.5">
-			<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-[13px] text-ink" />
+			<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-label text-ink" />
 			{isDefault && <Badge tone="accent">默认</Badge>}
-			<span className="rounded bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-ink-faint">
+			<span className="rounded bg-card px-1.5 py-0.5 font-mono text-caption text-ink-faint">
 				{formatWindow(model.contextWindow)}
 			</span>
 			<button
@@ -129,7 +129,7 @@ function ModelRow({
 function TestOutcome({ result }: { result: ProviderTestResult }) {
 	return (
 		<div
-			className={`mt-3 rounded-[10px] border px-3.5 py-2.5 text-[12.5px] ${
+			className={`mt-3 rounded-[10px] border px-3.5 py-2.5 text-label ${
 				result.ok ? "border-ok/35 bg-ok/8 text-ok" : "border-danger/35 bg-danger/8 text-danger"
 			}`}
 		>
@@ -140,7 +140,7 @@ function TestOutcome({ result }: { result: ProviderTestResult }) {
 					<summary className="cursor-pointer opacity-80">端点上报的模型（{result.models.length}）</summary>
 					<Scroller
 						className="mt-1 max-h-[160px]"
-						contentClassName="font-mono text-[11.5px] opacity-80"
+						contentClassName="font-mono text-detail opacity-80"
 						fadeColor="var(--color-card)"
 					>
 						{result.models.join("\n")}

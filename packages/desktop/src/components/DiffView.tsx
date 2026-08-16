@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { DiffHunk } from "@lyra/core";
+import { useDiffHighlight } from "./git/diff-highlight.ts";
 
 /**
- * Unified diff, rendered the way the reference review panel does it: a gutter of line numbers,
- * a green rail on additions and a red rail on removals, and no syntax highlighting competing
- * with the change colours.
+ * Unified diff: a gutter of line numbers, a green rail on additions and a red rail on removals,
+ * and the code itself syntax-coloured underneath both.
+ *
+ * The two colour systems answer different questions and do not compete — the row's tint and rail
+ * say whether a line changed, the glyphs say what the line is. This used to paint whole added
+ * lines green and whole removed lines red, which said "changed" a second time in the one channel
+ * that could have carried syntax, and left a review to be read as three colours of prose. The
+ * tint alone already marks the change; nothing is lost by letting the text mean something else.
  *
  * Long lines scroll sideways, and that is the whole reason for the layering here. The rows sit
  * on a layer as wide as the longest line, so a tint or a separator runs the full length of what
@@ -14,16 +20,41 @@ import type { DiffHunk } from "@lyra/core";
  * want to know which line you are on. Everything that is metadata rather than code — the hunk
  * headers, the truncation notice — is pinned as well, since scrolling it away helps nobody.
  */
-export function DiffView({ hunks, path, maxLines = 600 }: { hunks: DiffHunk[]; path?: string; maxLines?: number }) {
+export function DiffView({
+	hunks,
+	path,
+	showPath = false,
+	maxLines = 600,
+}: {
+	hunks: DiffHunk[];
+	/**
+	 * Which file this is, which is two separate things it is needed for.
+	 *
+	 * The grammar comes from its extension, so a diff without a path can only be plain text —
+	 * and this used to be passed only where the path was also being *displayed*, which is why
+	 * a review had no syntax colours while the same patch in a tool card did. Whether to draw
+	 * the header is `showPath`, and it is a question about layout, not about the file.
+	 */
+	path?: string;
+	/** Draw the path above the hunks. Off where the caller already shows it on its own row. */
+	showPath?: boolean;
+	maxLines?: number;
+}) {
 	let emitted = 0;
 	const scroller = useRef<HTMLDivElement>(null);
+	// Null until the grammar has loaded, and for anything there is no grammar for. Rows fall back
+	// to plain text in both cases, so a diff is never waiting on a parser to be readable.
+	const coloured = useDiffHighlight(hunks, path);
 
 	return (
 		<div className="ly-diff-host relative">
-			<div ref={scroller} className="ly-diff-scroll overflow-x-auto font-mono text-[11.5px] leading-[1.65]">
+			{/* `text-code`, not the UI scale: this is code, and it follows 代码字号 like every other
+			    place code is read. It used to be a UI step with a hand-written leading on top, so
+			    the same patch came out one size in a review and another in a chat transcript. */}
+			<div ref={scroller} className="ly-diff-scroll overflow-x-auto font-mono text-code">
 				<div className="w-max min-w-full">
-					{path && (
-						<div className="sticky left-0 w-max border-b border-line-soft px-3 py-1.5 text-[11px] text-ink-faint">
+					{showPath && path && (
+						<div className="sticky left-0 w-max border-b border-line-soft px-3 py-1.5 text-caption text-ink-faint">
 							{path}
 						</div>
 					)}
@@ -31,13 +62,16 @@ export function DiffView({ hunks, path, maxLines = 600 }: { hunks: DiffHunk[]; p
 					{hunks.map((hunk, hunkIndex) => (
 						<div key={hunkIndex} className="border-b border-line-soft last:border-b-0">
 							{hunkIndex > 0 && (
-								<div className="sticky left-0 w-max bg-panel/60 px-3 py-0.5 text-[10.5px] text-ink-faint">
+								<div className="sticky left-0 w-max bg-panel/60 px-3 py-0.5 text-caption text-ink-faint">
 									@@ -{hunk.oldStart} +{hunk.newStart} @@
 								</div>
 							)}
 
 							{hunk.lines.map((line, lineIndex) => {
 								if (emitted >= maxLines) return null;
+								// The colours are generated in the same order these rows are drawn, so
+								// the running count doubles as the index into them.
+								const tokens = coloured?.[emitted];
 								emitted += 1;
 								const added = line.type === "add";
 								const removed = line.type === "remove";
@@ -56,12 +90,23 @@ export function DiffView({ hunks, path, maxLines = 600 }: { hunks: DiffHunk[]; p
 												added ? "bg-ok/70" : removed ? "bg-danger/70" : "ly-diff-rail"
 											}`}
 										/>
+										{/*
+										 * Coloured by grammar when there is one, by change type when there
+										 * is not — an unparseable file still has to read as a diff.
+										 */}
 										<span
 											className={`shrink-0 px-2.5 whitespace-pre ${
-												added ? "text-ok" : removed ? "text-danger/90" : "text-ink-muted"
+												tokens ? "text-ink" : added ? "text-ok" : removed ? "text-danger/90" : "text-ink-muted"
 											}`}
 										>
-											{line.text || " "}
+											{tokens?.length
+												? tokens.map((token, index) => (
+														// biome-ignore lint/suspicious/noArrayIndexKey: runs are positional
+														<span key={index} className={token.className}>
+															{token.text}
+														</span>
+													))
+												: line.text || " "}
 										</span>
 									</div>
 								);
@@ -70,7 +115,7 @@ export function DiffView({ hunks, path, maxLines = 600 }: { hunks: DiffHunk[]; p
 					))}
 
 					{emitted >= maxLines && (
-						<div className="sticky left-0 w-max px-3 py-1.5 text-[11px] text-ink-faint">
+						<div className="sticky left-0 w-max px-3 py-1.5 text-caption text-ink-faint">
 							… 差异过长，已截断显示
 						</div>
 					)}

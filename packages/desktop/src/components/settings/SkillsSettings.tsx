@@ -48,12 +48,12 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 			{diagnostics.length > 0 && (
 				<Card className="mb-6 border-accent/35 bg-accent/6">
 					<div className="px-4 py-3">
-						<div className="mb-2 flex items-center gap-1.5 text-[12.5px] text-accent">
+						<div className="mb-2 flex items-center gap-1.5 text-label text-accent">
 							<TriangleAlert size={13} strokeWidth={1.9} />
 							{diagnostics.length} 个技能未能加载
 						</div>
 						{diagnostics.map((diagnostic) => (
-							<div key={diagnostic.path} className="py-0.5 text-[12px] text-accent/85">
+							<div key={diagnostic.path} className="py-0.5 text-detail text-accent/85">
 								<span className="font-mono">{diagnostic.path}</span> — {diagnostic.message}
 							</div>
 						))}
@@ -74,19 +74,19 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 						<div key={skill.path} className="border-b border-line-soft px-4 py-3.5 last:border-b-0">
 							<div className="flex items-center gap-2">
 								<PluginIcon name={skill.name} size={22} />
-								<span className="font-mono text-[13px] text-ink">{skill.name}</span>
+								<span className="font-mono text-label text-ink">{skill.name}</span>
 								<Badge tone="muted">{SOURCE_LABEL[skill.source] ?? skill.source}</Badge>
 								{skill.disableModelInvocation && <Badge tone="accent">仅手动调用</Badge>}
 								<div className="flex-1" />
 								<button
 									type="button"
 									onClick={() => void window.lyra.system.openPath(skill.path)}
-									className="text-[12px] text-ink-faint transition-colors hover:text-ink"
+									className="text-detail text-ink-faint transition-colors hover:text-ink"
 								>
 									打开
 								</button>
 							</div>
-							<p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{skill.description}</p>
+							<p className="mt-1 text-label leading-relaxed text-ink-muted">{skill.description}</p>
 						</div>
 					))
 				)}

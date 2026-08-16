@@ -57,7 +57,7 @@ export function SideComposer({
 				left={
 					<span
 						data-ly-tip={modelName ? `跟随主会话：${modelName}` : undefined}
-						className="h-7 min-w-0 truncate px-2 text-[12.5px] leading-7 text-ink-faint"
+						className="h-7 min-w-0 truncate px-2 text-label leading-7 text-ink-faint"
 					>
 						{modelName ?? "未配置模型"}
 					</span>

@@ -64,10 +64,10 @@ export function ModelEditor({
 	return (
 		<Overlay onClose={onCancel} width={520}>
 			<div className="border-b border-line px-5 py-3.5">
-				<h3 className="text-[14px] font-medium text-ink">{model ? "编辑模型" : "添加模型"}</h3>
+				<h3 className="text-body font-medium text-ink">{model ? "编辑模型" : "添加模型"}</h3>
 			</div>
 
-			<Scroller className="max-h-[60vh]" contentClassName="space-y-4 px-5 py-4" fadeColor="var(--color-elevated)">
+			<Scroller className="max-h-[60vh]" bottom="none" contentClassName="space-y-4 px-5 py-4" fadeColor="var(--color-elevated)">
 				<Field label="模型 ID" hint="发送给供应商的实际模型名，例如 deepseek-v4-flash">
 					<TextInput value={modelId} onChange={setModelId} placeholder="deepseek-v4-flash" mono spellCheck={false} />
 				</Field>
@@ -103,11 +103,11 @@ export function ModelEditor({
 
 				<div className="space-y-3 rounded-[10px] border border-line px-3.5 py-3">
 					<label className="flex items-center justify-between">
-						<span className="text-[13px] text-ink">支持思考 / 推理</span>
+						<span className="text-label text-ink">支持思考 / 推理</span>
 						<Toggle checked={supportsThinking} onChange={setSupportsThinking} />
 					</label>
 					<label className="flex items-center justify-between">
-						<span className="text-[13px] text-ink">支持图片输入</span>
+						<span className="text-label text-ink">支持图片输入</span>
 						<Toggle checked={supportsImages} onChange={setSupportsImages} />
 					</label>
 				</div>

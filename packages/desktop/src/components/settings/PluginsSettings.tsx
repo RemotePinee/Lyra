@@ -77,12 +77,12 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 			{diagnostics.length > 0 && (
 				<Card className="mb-6 border-accent/35 bg-accent/6">
 					<div className="px-4 py-3">
-						<div className="mb-2 flex items-center gap-1.5 text-[12.5px] text-accent">
+						<div className="mb-2 flex items-center gap-1.5 text-label text-accent">
 							<TriangleAlert size={13} strokeWidth={1.9} />
 							{diagnostics.length} 个插件问题
 						</div>
 						{diagnostics.map((diagnostic) => (
-							<div key={diagnostic.path} className="py-0.5 text-[12px] text-accent/85">
+							<div key={diagnostic.path} className="py-0.5 text-detail text-accent/85">
 								<span className="font-mono">{diagnostic.path}</span> — {diagnostic.message}
 							</div>
 						))}
@@ -95,7 +95,7 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 			{plugins.length === 0 ? (
 				<Card>
 					<div className="px-4 py-8 text-center">
-						<p className="text-[12.5px] leading-relaxed text-ink-muted">
+						<p className="text-label leading-relaxed text-ink-muted">
 							还没有插件。把插件目录放进上面的目录即可，或者装一个示例看看格式。
 						</p>
 						<button
@@ -110,11 +110,11 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 									setBusy(false);
 								}
 							}}
-							className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-[12.5px] font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-50"
+							className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-50"
 						>
 							{busy ? "安装中…" : "安装示例插件"}
 						</button>
-						<p className="mt-3 text-[11.5px] text-ink-faint">安装后需要新建会话才会生效</p>
+						<p className="mt-3 text-detail text-ink-faint">安装后需要新建会话才会生效</p>
 					</div>
 				</Card>
 			) : (
@@ -124,7 +124,7 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 					 * for no visible reason — indistinguishable from having switched each one off.
 					 */}
 					{allOff && (
-						<p className="rounded-[10px] border border-line-soft px-3 py-2 text-[12px] leading-relaxed text-ink-muted">
+						<p className="rounded-[10px] border border-line-soft px-3 py-2 text-detail leading-relaxed text-ink-muted">
 							设置里写着 <code className="font-mono">disabledPlugins: ["*"]</code>，所以下面所有插件都不生效。
 							把任意一个拨回「开」会解除这条总开关，其余插件保持当前状态。
 						</p>
@@ -152,19 +152,19 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 				/>
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
-						<span className="truncate text-[13.5px] text-ink">{ui?.displayName ?? plugin.manifest.name}</span>
+						<span className="truncate text-body text-ink">{ui?.displayName ?? plugin.manifest.name}</span>
 						{plugin.manifest.version && <Badge tone="muted">v{plugin.manifest.version}</Badge>}
 						<Badge tone="muted">{SOURCE_LABEL[plugin.source] ?? plugin.source}</Badge>
 						{ui?.category && <Badge tone="muted">{ui.category}</Badge>}
 					</div>
-					<p className="mt-0.5 truncate text-[12.5px] text-ink-muted">
+					<p className="mt-0.5 truncate text-label text-ink-muted">
 						{ui?.shortDescription ?? plugin.manifest.description ?? "（无描述）"}
 					</p>
 				</div>
 				<Toggle checked={plugin.enabled} onChange={onToggle} />
 			</div>
 
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-4 py-2.5 text-[12px] text-ink-muted">
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-4 py-2.5 text-detail text-ink-muted">
 				<span className="flex items-center gap-1.5">
 					<Sparkles size={12} strokeWidth={1.9} className="text-violet" />
 					{plugin.skills.length} 个技能
@@ -177,14 +177,14 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 				<button
 					type="button"
 					onClick={() => setOpen((v) => !v)}
-					className="text-[12px] text-ink-faint transition-colors hover:text-ink"
+					className="text-detail text-ink-faint transition-colors hover:text-ink"
 				>
 					{open ? "收起" : "详情"}
 				</button>
 				<button
 					type="button"
 					onClick={() => void window.lyra.system.openPath(plugin.dir)}
-					className="text-[12px] text-ink-faint transition-colors hover:text-ink"
+					className="text-detail text-ink-faint transition-colors hover:text-ink"
 				>
 					打开目录
 				</button>
@@ -193,14 +193,14 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 			{open && (
 				<div className="ly-enter space-y-3 border-t border-line-soft px-4 py-3">
 					{ui?.longDescription && (
-						<p className="text-[12.5px] leading-relaxed text-ink-muted">{ui.longDescription}</p>
+						<p className="text-label leading-relaxed text-ink-muted">{ui.longDescription}</p>
 					)}
 
 					{plugin.skills.length > 0 && (
 						<div>
-							<div className="mb-1.5 text-[11px] tracking-wide text-ink-faint uppercase">技能</div>
+							<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">技能</div>
 							{plugin.skills.map((skill) => (
-								<div key={skill.name} className="py-0.5 text-[12px]">
+								<div key={skill.name} className="py-0.5 text-detail">
 									<span className="font-mono text-ink">{skill.name}</span>
 									<span className="ml-2 text-ink-muted">{skill.description.slice(0, 90)}</span>
 								</div>
@@ -210,9 +210,9 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 
 					{plugin.mcpServers.length > 0 && (
 						<div>
-							<div className="mb-1.5 text-[11px] tracking-wide text-ink-faint uppercase">MCP 服务</div>
+							<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">MCP 服务</div>
 							{plugin.mcpServers.map((server) => (
-								<div key={server.id} className="py-0.5 font-mono text-[12px] text-ink-muted">
+								<div key={server.id} className="py-0.5 font-mono text-detail text-ink-muted">
 									{server.name} · {server.transport} ·{" "}
 									{server.transport === "stdio" ? `${server.command} ${(server.args ?? []).join(" ")}` : server.url}
 								</div>
@@ -222,9 +222,9 @@ function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: 
 
 					{ui?.defaultPrompt && ui.defaultPrompt.length > 0 && (
 						<div>
-							<div className="mb-1.5 text-[11px] tracking-wide text-ink-faint uppercase">示例提示</div>
+							<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">示例提示</div>
 							{ui.defaultPrompt.map((prompt) => (
-								<div key={prompt} className="py-0.5 text-[12px] text-ink-muted">
+								<div key={prompt} className="py-0.5 text-detail text-ink-muted">
 									· {prompt}
 								</div>
 							))}

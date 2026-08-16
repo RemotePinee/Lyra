@@ -185,7 +185,7 @@ function Tab({
 				onClick={onOpen}
 				data-ly-tip={def.label}
 				style={{ borderRadius: TAB_RADIUS }}
-				className={`flex h-full min-w-0 items-center gap-1.5 pl-2 text-[12px] ${
+				className={`flex h-full min-w-0 items-center gap-1.5 pl-2 text-detail ${
 					active ? "pr-1 text-ink" : "pr-2 text-ink-muted"
 				}`}
 			>

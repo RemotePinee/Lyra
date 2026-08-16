@@ -166,7 +166,7 @@ export function Conversation() {
             <button
               type="button"
               onClick={() => setWindowSize((n) => n + WINDOW_STEP)}
-              className="mb-4 flex h-7 w-full items-center justify-center rounded-md text-[12px] text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
+              className="mb-4 flex h-7 w-full items-center justify-center rounded-md text-detail text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
             >
               显示更早的 {Math.min(hidden, WINDOW_STEP)} 条（共 {hidden} 条）
             </button>
@@ -182,7 +182,7 @@ export function Conversation() {
                * boundary. Pinned to the bottom it said the opposite of what it meant: that the
                * work still arriving had already been summarised away.
                */
-              <div key={`compaction-${index}`} className="mb-2.5 flex items-center gap-2 text-[11px] text-ink-faint">
+              <div key={`compaction-${index}`} className="mb-2.5 flex items-center gap-2 text-caption text-ink-faint">
                 <span className="h-px flex-1 bg-line-soft" />
                 <span>以上内容已压缩为摘要</span>
                 <span className="h-px flex-1 bg-line-soft" />

@@ -53,7 +53,7 @@ export function Segmented<T extends string>({
 					key={option.value}
 					type="button"
 					onClick={() => onChange(option.value)}
-					className={`h-[26px] rounded-md px-3 text-[12.5px] transition-colors ${
+					className={`h-[26px] rounded-md px-3 text-label transition-colors ${
 						value === option.value ? "bg-elevated text-ink" : "text-ink-muted hover:text-ink"
 					}`}
 				>
@@ -72,7 +72,7 @@ export function Badge({ tone, children }: { tone: "ok" | "muted" | "danger" | "a
 		accent: "bg-accent/15 text-accent",
 	};
 	return (
-		<span className={`rounded-full px-2 py-0.5 text-[11.5px] leading-[18px] ${tones[tone]}`}>{children}</span>
+		<span className={`rounded-full px-2 py-0.5 text-detail leading-[18px] ${tones[tone]}`}>{children}</span>
 	);
 }
 
@@ -104,7 +104,7 @@ export function GhostButton({
 			disabled={disabled}
 			onClick={onClick}
 			data-ly-tip={title}
-			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12px] transition-colors duration-150 disabled:opacity-45 disabled: ${
+			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail transition-colors duration-150 disabled:opacity-45 disabled: ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"
 					: "text-ink-muted hover:border-ink-faint hover:text-ink"
@@ -130,7 +130,7 @@ export function PrimaryButton({
 			type="button"
 			disabled={disabled}
 			onClick={onClick}
-			className="h-[32px] rounded-lg bg-ink px-3.5 text-[12.5px] font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+			className="h-[32px] rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
 		>
 			{children}
 		</button>
@@ -138,5 +138,5 @@ export function PrimaryButton({
 }
 
 export function EmptyHint({ children }: { children: React.ReactNode }) {
-	return <p className="px-4 py-10 text-center text-[12.5px] leading-relaxed text-ink-faint">{children}</p>;
+	return <p className="px-4 py-10 text-center text-label leading-relaxed text-ink-faint">{children}</p>;
 }

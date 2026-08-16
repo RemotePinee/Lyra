@@ -90,7 +90,7 @@ export function EntryRow({
 						<button
 							type="button"
 							onClick={() => setWhole(true)}
-							className="ly-item mt-1.5 block rounded px-1 py-[2px] font-sans text-[11px] text-ink-faint"
+							className="ly-item mt-1.5 block rounded px-1 py-[2px] font-sans text-caption text-ink-faint"
 						>
 							…显示全部 {entry.detail.length} 字
 						</button>
@@ -105,7 +105,7 @@ export function EntryRow({
 				<button
 					type="button"
 					onClick={onFork}
-					className="ly-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11px] text-ink-muted"
+					className="ly-item flex items-center gap-1 rounded-md px-1.5 py-[3px] text-caption text-ink-muted"
 					data-ly-tip="用这一刻之前的历史开一个新会话，原会话不受影响"
 				>
 					<GitBranch size={11} strokeWidth={1.8} />

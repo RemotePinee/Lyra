@@ -58,7 +58,7 @@ export function MenuItem({
 			data-selected={selected ? "true" : undefined}
 			data-danger={danger ? "true" : undefined}
 			onClick={onClick}
-			className={`ly-scroll ly-item flex w-full gap-2.5 px-2 text-left text-[12.5px] ${
+			className={`ly-scroll ly-item flex w-full gap-2.5 px-2 text-left text-label ${
 				detail ? "items-start py-1.5" : "h-[28px] items-center"
 			}`}
 		>
@@ -68,11 +68,11 @@ export function MenuItem({
 				{/* One line. A detail that wraps makes its row taller than its neighbours, and a menu
 				 * of ragged rows is harder to scan than one where the odd path is cut short. */}
 				{detail && (
-					<span className="mt-0.5 block truncate text-[11px] leading-snug opacity-65">{detail}</span>
+					<span className="mt-0.5 block truncate text-caption leading-snug opacity-65">{detail}</span>
 				)}
 			</span>
 			{hint !== undefined && (
-				<span className={`shrink-0 font-mono text-[11px] text-ink-faint ${detail ? "mt-[3px]" : ""}`}>{hint}</span>
+				<span className={`shrink-0 font-mono text-caption text-ink-faint ${detail ? "mt-[3px]" : ""}`}>{hint}</span>
 			)}
 			{trailing}
 		</button>
@@ -86,7 +86,7 @@ export function MenuSeparator() {
 
 /** Small label above a group of items. */
 export function MenuLabel({ children }: { children: React.ReactNode }) {
-	return <div className="px-2 pt-1.5 pb-1 text-[11px] text-ink-faint">{children}</div>;
+	return <div className="px-2 pt-1.5 pb-1 text-caption text-ink-faint">{children}</div>;
 }
 
 /**

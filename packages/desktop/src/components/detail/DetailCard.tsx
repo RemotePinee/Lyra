@@ -65,8 +65,8 @@ export function DetailCard({
 						open ? "border-line-soft bg-card" : "border-transparent"
 					}`}
 				>
-					{label && <span className="shrink-0 text-[10.5px] text-ink-faint">{label}</span>}
-					<span className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">{summary}</span>
+					{label && <span className="shrink-0 text-caption text-ink-faint">{label}</span>}
+					<span className="min-w-0 flex-1 truncate text-detail text-ink-muted">{summary}</span>
 					{trailing}
 					<ChevronRight
 						size={12}

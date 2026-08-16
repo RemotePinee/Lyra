@@ -123,11 +123,11 @@ function ProviderHeading({
 						if (name.trim() && name !== provider.name) onChange({ name: name.trim() });
 					}}
 					onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-					className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-input px-2.5 text-[17px] font-semibold text-ink focus:border-ink-faint"
+					className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-input px-2.5 text-title font-semibold text-ink focus:border-ink-faint"
 				/>
 			) : (
 				<>
-					<h2 className="text-[17px] font-semibold tracking-tight text-ink">{provider.name}</h2>
+					<h2 className="text-title font-semibold tracking-tight text-ink">{provider.name}</h2>
 					<button
 						type="button"
 						data-ly-tip="重命名"

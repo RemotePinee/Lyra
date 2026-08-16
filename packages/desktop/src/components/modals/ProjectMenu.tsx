@@ -66,7 +66,7 @@ export function ProjectMenu({
 						}
 					}}
 				>
-					<label className="block pb-1.5 text-[11.5px] text-ink-faint">
+					<label className="block pb-1.5 text-detail text-ink-faint">
 						{worktree ? "新工作树的分支名" : "项目名称"}
 					</label>
 					<input
@@ -81,10 +81,10 @@ export function ProjectMenu({
 							}
 						}}
 						placeholder={worktree ? "feature/…" : name}
-						className="h-8 w-full rounded-lg border border-line bg-input px-2.5 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-ink-faint"
+						className="h-8 w-full rounded-lg border border-line bg-input px-2.5 text-label text-ink placeholder:text-ink-faint focus:border-ink-faint"
 					/>
 					{worktree && (
-						<p className="pt-1.5 text-[11px] leading-relaxed text-ink-faint">
+						<p className="pt-1.5 text-caption leading-relaxed text-ink-faint">
 							会在项目同级目录新建一个工作树，独立分支，不影响当前签出的内容。
 						</p>
 					)}
@@ -95,14 +95,14 @@ export function ProjectMenu({
 								setMode("menu");
 								setDraft(name);
 							}}
-							className="h-7 rounded-lg px-2.5 text-[12px] text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+							className="h-7 rounded-lg px-2.5 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 						>
 							取消
 						</button>
 						<button
 							type="submit"
 							disabled={busy || !draft.trim()}
-							className="h-7 rounded-lg bg-ink px-2.5 text-[12px] font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-45"
+							className="h-7 rounded-lg bg-ink px-2.5 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-45"
 						>
 							{busy ? "创建中…" : worktree ? "创建" : "保存"}
 						</button>

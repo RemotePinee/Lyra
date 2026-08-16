@@ -26,6 +26,8 @@ export function Sidebar() {
 	const setSessionArchived = useApp((s) => s.setSessionArchived);
 	const newSession = useApp((s) => s.newSession);
 	const setView = useApp((s) => s.setView);
+	const view = useApp((s) => s.view);
+	const settingsSection = useApp((s) => s.settingsSection);
 	/**
 	 * As a drawer this pane covers the thing it navigates to, so anything that changes what is
 	 * behind it also has to get out of the way. Pushed, `dismissNav` does nothing and the
@@ -65,7 +67,7 @@ export function Sidebar() {
 				 * same control in two places and read as a dropdown over the whole window. Switching
 				 * projects belongs on the composer's project chip, next to what it actually scopes.
 				 */}
-				<span className="text-[16px] font-semibold tracking-tight text-ink">Lyra</span>
+				<span className="text-title font-semibold tracking-tight text-ink">Lyra</span>
 				<div className="flex items-center gap-0.5">
 					<button
 						type="button"
@@ -100,7 +102,16 @@ export function Sidebar() {
 				</div>
 			)}
 
-			<nav className={`flex flex-col gap-[2px] pb-1 ${compact ? "px-3" : "px-2.5"}`}>
+			{/*
+			 * Only 新对话 is pinned. The other three scroll away with the list.
+			 *
+			 * All four used to be fixed, which spent four rows of a narrow column on things that
+			 * are visited a few times a day, and meant the sessions — the reason the pane exists —
+			 * started a third of the way down and never got that space back however far you
+			 * scrolled. Starting a conversation is the one action frequent enough to earn a
+			 * permanent row; the rest are destinations, and a destination can be scrolled to.
+			 */}
+			<nav className={`flex flex-col pb-1 ${compact ? "px-3" : "px-2.5"}`}>
 				<NavItem
 					icon={<SquarePen size={15} strokeWidth={1.8} />}
 					label="新对话"
@@ -109,39 +120,54 @@ export function Sidebar() {
 						dismissNav();
 					}}
 				/>
-				<NavItem
-					icon={<GitPullRequest size={15} strokeWidth={1.8} />}
-					label="拉取请求"
-					onClick={() => {
-						setView("pull-requests");
-						dismissNav();
-					}}
-				/>
-				<NavItem
-					icon={<Clock size={15} strokeWidth={1.8} />}
-					label="已安排"
-					onClick={() => {
-						setView("scheduled");
-						dismissNav();
-					}}
-				/>
-				<NavItem
-					icon={<AtSign size={15} strokeWidth={1.8} />}
-					label="插件"
-					onClick={() => {
-						setView("settings");
-						useApp.getState().setSettingsSection("plugins");
-						dismissNav();
-					}}
-				/>
 			</nav>
 
+			{/*
+			 * Solid above and solid below, so neither edge fades.
+			 *
+			 * The nav sits on top of this list and the settings row sits under it — both opaque,
+			 * both things the rows pass behind rather than dissolve into. A gradient at either end
+			 * leaves half-lit text hanging off an opaque block, and at the bottom it also lands
+			 * directly on the settings row's own border, so one boundary gets drawn twice.
+			 */}
 			<Scroller
 				className="flex-1"
-				divider
+				top="line"
+				bottom="none"
 				contentClassName={`pb-2 ${compact ? "px-3" : "px-2.5"}`}
 				fadeColor="var(--color-sidebar)"
 			>
+				<div className="flex flex-col gap-[2px] pb-1">
+					<NavItem
+						active={view === "pull-requests"}
+						icon={<GitPullRequest size={15} strokeWidth={1.8} />}
+						label="拉取请求"
+						onClick={() => {
+							setView("pull-requests");
+							dismissNav();
+						}}
+					/>
+					<NavItem
+						active={view === "scheduled"}
+						icon={<Clock size={15} strokeWidth={1.8} />}
+						label="已安排"
+						onClick={() => {
+							setView("scheduled");
+							dismissNav();
+						}}
+					/>
+					<NavItem
+						active={view === "settings" && settingsSection === "plugins"}
+						icon={<AtSign size={15} strokeWidth={1.8} />}
+						label="插件"
+						onClick={() => {
+							setView("settings");
+							useApp.getState().setSettingsSection("plugins");
+							dismissNav();
+						}}
+					/>
+				</div>
+
 				{groups.pinned.length > 0 && <SectionLabel>置顶</SectionLabel>}
 				{groups.pinned.map((group) => (
 					<ProjectGroup
@@ -163,7 +189,7 @@ export function Sidebar() {
 				))}
 
 				{groups.pinned.length === 0 && groups.recent.length === 0 && (
-					<p className="px-2 py-6 text-center text-[12px] leading-relaxed text-ink-faint">
+					<p className="px-2 py-6 text-center text-detail leading-relaxed text-ink-faint">
 						还没有会话。
 						<br />
 						点击「新对话」开始。
@@ -190,9 +216,9 @@ export function Sidebar() {
 					<SettingsIcon size={16} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
 					<ScrollText
 						text={activeProviderLabel(settings?.providers ?? [])}
-						className="min-w-0 flex-1 text-[12.5px] text-ink"
+						className="min-w-0 flex-1 text-label text-ink"
 					/>
-					<span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-[9px] text-ink-faint">
+					<span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-caption text-ink-faint">
 						?
 					</span>
 				</button>
@@ -202,22 +228,51 @@ export function Sidebar() {
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-	return <div className="px-2 pt-4 pb-1.5 text-[11.5px] font-medium text-ink-faint">{children}</div>;
+	return <div className="px-2 pt-4 pb-1.5 text-detail font-medium text-ink-faint">{children}</div>;
 }
 
-function NavItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
+/**
+ * A row in the nav, and — for the three that lead somewhere — whether you are there.
+ *
+ * Clicking these used to leave no trace: the view you had opened looked exactly like the one you
+ * had not, so the only way to know where you were was to read the pane beside it. `active` is the
+ * same treatment the settings nav already gives its own sections.
+ *
+ * Destinations sit in the muted tone and step up to full ink when current, which is what makes
+ * the highlight read as "you are here" rather than as a hover that got stuck. 新对话 is not one
+ * of them — it starts a conversation rather than leading anywhere, so it stays at full weight and
+ * has no state to be in. `undefined` rather than `false` says that: not inactive, inapplicable.
+ */
+function NavItem({
+	icon,
+	label,
+	onClick,
+	active,
+}: {
+	icon: React.ReactNode;
+	label: string;
+	onClick?: () => void;
+	active?: boolean;
+}) {
 	// A drawer is reached by pointing at it rather than by muscle memory, so its rows get the
 	// taller touch-style hit area the reference mobile layout uses.
 	const { compact } = useLayout();
+	const tone =
+		active === undefined
+			? "text-ink hover:bg-card-hover"
+			: active
+				? "bg-card-hover text-ink"
+				: "text-ink-muted hover:bg-card-hover/60 hover:text-ink";
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-ink transition-colors hover:bg-card-hover ${
-				compact ? "h-[40px] text-[13.5px]" : "h-[31px] text-[13px]"
+			aria-current={active ? "page" : undefined}
+			className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors ${tone} ${
+				compact ? "h-[40px] text-body" : "h-[31px] text-label"
 			}`}
 		>
-			<span className="shrink-0 text-ink-muted">{icon}</span>
+			<span className={`shrink-0 ${active ? "text-ink" : "text-ink-muted"}`}>{icon}</span>
 			{label}
 		</button>
 	);

@@ -159,7 +159,7 @@ function AssistantRow({
             type="button"
             disabled={running}
             onClick={() => void retryFrom(index)}
-            className="flex items-center gap-1 rounded text-[11px] text-ink-faint transition-colors duration-150 hover:text-ink disabled:opacity-40"
+            className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-150 hover:text-ink disabled:opacity-40"
           >
             <RotateCcw size={10.5} strokeWidth={1.9} />
             重试

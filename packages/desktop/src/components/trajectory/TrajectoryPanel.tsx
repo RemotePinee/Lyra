@@ -70,7 +70,7 @@ export function TrajectoryPanel() {
 					value={query}
 					onChange={(event) => setQuery(event.target.value)}
 					placeholder="搜索这条轨迹…"
-					className="ly-input min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-faint"
+					className="ly-input min-w-0 flex-1 bg-transparent text-detail text-ink outline-none placeholder:text-ink-faint"
 				/>
 				<Text size="caption" tone="faint" numeric className="shrink-0">
 					{entries.length}/{total}
@@ -88,7 +88,7 @@ export function TrajectoryPanel() {
 				onClear={() => setSources([])}
 			/>
 
-			<Scroller className="flex-1 pt-1.5" contentClassName="px-2 pb-3" fade={false}>
+			<Scroller className="flex-1 pt-1.5" contentClassName="px-2 pb-3" top="none" bottom="none">
 				{loading && entries.length === 0 && (
 					<Text size="caption" tone="faint" className="block px-1.5 py-2">
 						读取中…
@@ -118,7 +118,7 @@ export function TrajectoryPanel() {
 					<button
 						type="button"
 						onClick={() => setWindowSize((size) => size + WINDOW_STEP)}
-						className="ly-item mt-1 w-full rounded-md px-1.5 py-1.5 text-[11.5px] text-ink-faint"
+						className="ly-item mt-1 w-full rounded-md px-1.5 py-1.5 text-detail text-ink-faint"
 					>
 						还有 {hidden} 条，展开更多
 					</button>

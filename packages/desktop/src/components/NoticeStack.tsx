@@ -50,7 +50,7 @@ export function NoticeStack() {
 			{notices.slice(-4).map((notice) => (
 				<div
 					key={notice.id}
-					className={`pointer-events-auto flex items-start gap-2 rounded-[10px] border px-3 py-2 text-[12px] shadow-lg shadow-black/25 ${
+					className={`pointer-events-auto flex items-start gap-2 rounded-[10px] border px-3 py-2 text-detail shadow-lg shadow-black/25 ${
 						leaving.includes(notice.id) ? "ly-leave" : "ly-enter"
 					} ${TONE[notice.level]}`}
 				>

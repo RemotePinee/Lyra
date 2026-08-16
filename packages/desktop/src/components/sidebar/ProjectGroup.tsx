@@ -68,7 +68,7 @@ export function ProjectGroup({
 						void openWorkspace(group.path);
 						dismissNav();
 					}}
-					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-[13px] transition-colors duration-150 ${
+					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-label transition-colors duration-150 ${
 						compact ? "h-[40px]" : "h-[31px]"
 					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
 				>
@@ -106,7 +106,7 @@ export function ProjectGroup({
 				<button
 					type="button"
 					onClick={onToggleExpand}
-					className={`flex w-full items-center pl-9 text-left text-[12.5px] text-ink-faint transition-colors hover:text-ink-muted ${
+					className={`flex w-full items-center pl-9 text-left text-label text-ink-faint transition-colors hover:text-ink-muted ${
 						compact ? "h-[32px]" : "h-[26px]"
 					}`}
 				>

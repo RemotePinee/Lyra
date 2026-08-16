@@ -60,7 +60,7 @@ export function HistoryView({ cwd }: { cwd: string }) {
   }
 
   return (
-    <Scroller className="flex-1" contentClassName="px-1.5 pb-2" fade={false}>
+    <Scroller className="flex-1" contentClassName="px-1.5 pb-2" top="none" bottom="none">
       {rows.map((row) => {
         const commit = row.commit;
         const expanded = open === commit.sha;
@@ -88,7 +88,7 @@ export function HistoryView({ cwd }: { cwd: string }) {
                    * says what a commit was for, and the useful half is regularly past the ellipsis
                    * — the same reason session titles in the sidebar scroll instead of truncating.
                    */}
-                  <ScrollText text={commit.subject} className="ly-fade-tail block text-[12.5px]" />
+                  <ScrollText text={commit.subject} className="ly-fade-tail block text-label" />
                   <span className="flex items-center gap-1.5">
                     <Text size="caption" tone="faint" mono>
                       {commit.shortSha}

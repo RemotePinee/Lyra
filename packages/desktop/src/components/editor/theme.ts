@@ -20,11 +20,11 @@ export function editorTheme(): Extension {
 		"&": { backgroundColor: "transparent", color: "var(--color-ink)", height: "100%" },
 		".cm-content": {
 			fontFamily: "var(--ly-code-font)",
-			fontSize: "12px",
+			fontSize: "var(--text-code)",
 			padding: "6px 0 40px",
 			caretColor: "var(--color-ink)",
 		},
-		".cm-scroller": { overflow: "auto", lineHeight: "1.55" },
+		".cm-scroller": { overflow: "auto", lineHeight: "var(--text-code--line-height)" },
 		"&.cm-focused": { outline: "none" },
 		/*
 		 * Opaque, because the gutter is pinned while the code scrolls under it.
@@ -39,7 +39,7 @@ export function editorTheme(): Extension {
 			color: "var(--color-ink-faint)",
 			border: "none",
 			fontFamily: "var(--ly-code-font)",
-			fontSize: "11px",
+			fontSize: "calc(var(--text-code) - 1px)",
 		},
 		// Matches `.cm-activeLine` exactly, so the highlight reads as one band across both.
 		".cm-activeLineGutter": {
@@ -118,7 +118,7 @@ export function editorTheme(): Extension {
 			alignItems: "center",
 			gap: "3px",
 			fontFamily: "var(--ly-ui-font)",
-			fontSize: "12px",
+			fontSize: "var(--text-detail)",
 		},
 		/*
 		 * One zero-height full-width pseudo-element, used as a line break.
@@ -158,7 +158,7 @@ export function editorTheme(): Extension {
 			border: "none",
 			background: "transparent",
 			color: "var(--color-ink-faint)",
-			fontSize: "9px",
+			fontSize: "var(--text-caption)",
 			lineHeight: "22px",
 		},
 		".cm-panel.cm-search button[name=ly-replace-toggle]:hover": { color: "var(--color-ink)" },
@@ -184,7 +184,7 @@ export function editorTheme(): Extension {
 			borderRadius: "7px",
 			padding: "0 8px",
 			height: "24px",
-			fontSize: "12px",
+			fontSize: "var(--text-detail)",
 			fontFamily: "var(--ly-ui-font)",
 			outline: "none",
 		},
@@ -264,7 +264,7 @@ export function editorTheme(): Extension {
 			borderRadius: "7px",
 			padding: "0 9px",
 			height: "26px",
-			fontSize: "11.5px",
+			fontSize: "var(--text-detail)",
 			fontFamily: "var(--ly-ui-font)",
 		},
 		".cm-button:hover": { backgroundColor: "var(--color-card-hover)", color: "var(--color-ink)" },

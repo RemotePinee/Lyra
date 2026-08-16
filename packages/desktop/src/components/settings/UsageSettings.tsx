@@ -29,10 +29,10 @@ export function UsageSettings() {
 
   return (
     <div className="pt-8">
-      <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink">
+      <h1 className="text-display leading-tight font-semibold tracking-tight text-ink">
         使用统计
       </h1>
-      <p className="mt-2 pb-7 text-[13px] text-ink-muted">
+      <p className="mt-2 pb-7 text-label text-ink-muted">
         按会话记录的 token 与花费，全部来自本地会话日志。
       </p>
 
@@ -82,17 +82,17 @@ export function UsageSettings() {
               <div className="flex flex-col gap-1 @lg:flex-row @lg:items-center @lg:gap-3">
                 <ScrollText
                   text={session.title}
-                  className="min-w-0 flex-1 text-[13px] text-ink"
+                  className="min-w-0 flex-1 text-label text-ink"
                 />
                 <div className="flex min-w-0 items-center gap-3 @lg:contents">
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-faint @lg:flex-none @lg:shrink-0">
+                  <span className="min-w-0 flex-1 truncate text-detail text-ink-faint @lg:flex-none @lg:shrink-0">
                     {session.projectName}
                   </span>
-                  <span className="shrink-0 text-right font-mono text-[12px] text-ink-muted @lg:w-[130px]">
+                  <span className="shrink-0 text-right font-mono text-detail text-ink-muted @lg:w-[130px]">
                     {session.usage.input.toLocaleString()} /{" "}
                     {session.usage.output.toLocaleString()}
                   </span>
-                  <span className="shrink-0 text-right font-mono text-[12px] text-ink-muted @lg:w-[70px]">
+                  <span className="shrink-0 text-right font-mono text-detail text-ink-muted @lg:w-[70px]">
                     {session.usage.cost.total > 0
                       ? `$${session.usage.cost.total.toFixed(4)}`
                       : "—"}
@@ -118,17 +118,17 @@ function Stat({
 }) {
   return (
     <div className="@container rounded-[12px] border border-line bg-card/40 px-4 py-3.5">
-      <div className="truncate text-[12px] text-ink-muted">{label}</div>
+      <div className="truncate text-detail text-ink-muted">{label}</div>
       {/*
        * Smaller until there is room to be bigger.
        *
        * 43,913 set at 22px is wider than a tile that has half a narrow pane to live in, so it
        * used to hang out over the border. The number matters more than its size.
        */}
-      <div className="mt-1 truncate text-[18px] leading-tight font-semibold tracking-tight text-ink @xs:text-[22px]">
+      <div className="mt-1 truncate text-heading leading-tight font-semibold tracking-tight text-ink @xs:text-heading">
         {value}
       </div>
-      {sub && <div className="mt-0.5 text-[11.5px] text-ink-faint">{sub}</div>}
+      {sub && <div className="mt-0.5 text-detail text-ink-faint">{sub}</div>}
     </div>
   );
 }

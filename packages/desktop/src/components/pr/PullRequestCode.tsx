@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import type { WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 import { FileDiffList } from "../git/FileDiffList.tsx";
 import { Scroller } from "../Scroller.tsx";
+import { CodeSkeleton } from "./PullRequestSkeleton.tsx";
 
 export function PullRequestCode({ repo, number }: { repo: string; number: number }) {
 	const [files, setFiles] = useState<WorkspaceDiffFile[] | null>(null);
@@ -33,7 +34,7 @@ export function PullRequestCode({ repo, number }: { repo: string; number: number
 	}, [repo, number]);
 
 	if (error) return <Centered>{error}</Centered>;
-	if (!files) return <Centered>正在读取改动…</Centered>;
+	if (!files) return <CodeSkeleton />;
 	if (files.length === 0) return <Centered>这个 Pull Request 没有文件改动</Centered>;
 
 	const added = files.reduce((sum, file) => sum + file.added, 0);
@@ -41,10 +42,10 @@ export function PullRequestCode({ repo, number }: { repo: string; number: number
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<p className="shrink-0 px-4 pb-1.5 text-[11.5px] text-ink-faint">
+			<p className="shrink-0 px-4 pb-1.5 text-detail text-ink-faint">
 				{files.length} 个文件 · <span className="text-ok">+{added}</span> <span className="text-danger">−{removed}</span>
 			</p>
-			<Scroller className="flex-1" contentClassName="px-2 pb-4" fade="top" fadeColor="var(--color-shell)">
+			<Scroller className="flex-1" contentClassName="ly-fade-in px-2 pb-4" fadeColor="var(--color-shell)">
 				<FileDiffList files={files} emptyLabel="没有文件改动" />
 			</Scroller>
 		</div>
@@ -54,7 +55,7 @@ export function PullRequestCode({ repo, number }: { repo: string; number: number
 function Centered({ children }: { children: React.ReactNode }) {
 	return (
 		<div className="flex min-h-0 flex-1 items-center justify-center px-6">
-			<p className="text-center text-[12.5px] leading-relaxed text-ink-faint">{children}</p>
+			<p className="text-center text-label leading-relaxed text-ink-faint">{children}</p>
 		</div>
 	);
 }

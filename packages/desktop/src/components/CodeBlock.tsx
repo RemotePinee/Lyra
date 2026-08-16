@@ -1,8 +1,8 @@
-import type { HighlightStyle, Language } from "@codemirror/language";
+import type { Language } from "@codemirror/language";
 import { Check, Copy, Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { highlightStyle, loadFenceLanguage, mountHighlightStyles, tokenize } from "./highlight.ts";
+import { loadFenceLanguage, sharedHighlightStyle, tokenize } from "./highlight.ts";
 import { useSide } from "../sideStore.ts";
 
 /**
@@ -22,22 +22,6 @@ function commandFrom(code: string): string {
 		.filter((line) => line.trim() && !line.trim().startsWith("#"))
 		.join("\n")
 		.trim();
-}
-
-/**
- * One style for the whole app, not one per block.
- *
- * `HighlightStyle.define` generates a fresh set of class names on every call, so building it
- * per block would mean a `<style>` element per block — all defining the same colours under
- * different names.
- */
-let shared: HighlightStyle | null = null;
-function sharedStyle(): HighlightStyle {
-	if (!shared) {
-		shared = highlightStyle();
-		mountHighlightStyles(shared);
-	}
-	return shared;
 }
 
 export function CodeBlock({ lang, code }: { lang: string; code: string }) {
@@ -65,7 +49,7 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 	const tokens = useMemo(() => {
 		if (!language) return null;
 		try {
-			return tokenize(code, language, sharedStyle());
+			return tokenize(code, language, sharedHighlightStyle());
 		} catch {
 			// A half-written fence mid-stream is not a reason to lose the text.
 			return null;
@@ -75,7 +59,7 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 	return (
 		<div className="group relative">
 			{lang && (
-				<span className="absolute top-2.5 left-3.5 font-mono text-[10.5px] tracking-wide text-ink-faint select-none">
+				<span className="absolute top-2.5 left-3.5 font-mono text-caption tracking-wide text-ink-faint select-none">
 					{lang}
 				</span>
 			)}

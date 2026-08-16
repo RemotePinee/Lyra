@@ -25,16 +25,16 @@ export function PanelChooser({
 					disabled={Boolean(def.unavailable)}
 					data-ly-tip={def.unavailable}
 					onClick={() => onPick(def.kind)}
-					className="ly-item flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px]"
+					className="ly-item flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-label"
 				>
 					<def.icon size={16} strokeWidth={1.6} className="shrink-0 text-ink-muted" />
 					<span className="min-w-0 flex-1 truncate">{def.label}</span>
-					<span className="shrink-0 text-[11.5px] text-ink-faint">{def.shortcut}</span>
+					<span className="shrink-0 text-detail text-ink-faint">{def.shortcut}</span>
 				</button>
 			))}
 
 			{definitions.some((d) => d.unavailable) && (
-				<p className="px-3 pt-3 text-[11.5px] leading-relaxed text-ink-faint">
+				<p className="px-3 pt-3 text-detail leading-relaxed text-ink-faint">
 					{definitions.find((d) => d.unavailable)?.unavailable}后可用。
 				</p>
 			)}

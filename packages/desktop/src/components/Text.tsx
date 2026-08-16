@@ -3,28 +3,34 @@ import { createElement } from "react";
 /**
  * The app's type scale, as a component.
  *
- * Sizes were previously written at the call site — `text-[12.5px]`, `text-[11.5px]`, `text-[13px]`
- * — which is how a codebase ends up with twelve sizes where it meant to have six, and with the
- * same kind of text set two different ways on two different screens. The names below are the six
- * that survived a count of what was actually in use; anything that wants a seventh should be
- * asking whether it is really a new kind of text.
+ * The steps themselves live in `styles.css`, where each carries its own leading and tracking and
+ * is derived from the one size the user sets. This file only says which step goes with which
+ * weight — and that pairing is the part that was missing.
  *
- * `tone` and `weight` are here for the same reason: a caption is faint and a heading is not, and
- * that pairing should be decided once rather than remembered.
+ * Hierarchy here used to be carried by size alone, across steps half a pixel apart: 12.5 for a
+ * row, 12 for the line under it, 11.5 for the one under that. Half a pixel is not a difference
+ * anybody sees. It does not read as three levels; it reads as one level typeset carelessly.
+ *
+ * So each step is paired with a weight once, below. A heading is bigger *and* heavier, a caption
+ * smaller *and* fainter, and the levels separate on two axes at once instead of on a fraction of
+ * one. `weight` is still there to override, for the cases where a row needs emphasis without
+ * changing size — but the default should be right often enough that it is rarely reached for.
  */
 const SIZES = {
 	/** Page titles — one per screen. */
-	display: "text-[26px] leading-tight font-semibold tracking-tight",
+	display: "text-display",
+	/** The heading of a screen's major division. */
+	heading: "text-heading",
 	/** Section and card headings. */
-	title: "text-[15px] leading-snug",
+	title: "text-title",
 	/** Prose: messages, descriptions, anything read a sentence at a time. */
-	body: "text-[13px] leading-relaxed",
+	body: "text-body",
 	/** Controls, rows, table cells — the app's working size. */
-	label: "text-[12.5px] leading-normal",
+	label: "text-label",
 	/** Secondary detail sitting under a label. */
-	detail: "text-[11.5px] leading-relaxed",
+	detail: "text-detail",
 	/** Timestamps, counts, badges. */
-	caption: "text-[11px] leading-normal",
+	caption: "text-caption",
 } as const;
 
 const TONES = {
@@ -41,10 +47,26 @@ const WEIGHTS = {
 	semibold: "font-semibold",
 } as const;
 
+/**
+ * What each step weighs when nobody says otherwise.
+ *
+ * Headings take the weight because size alone stops separating things once the gaps are small;
+ * running text does not, because bold prose is harder to read, not more important.
+ */
+const DEFAULT_WEIGHT: Record<keyof typeof SIZES, keyof typeof WEIGHTS> = {
+	display: "semibold",
+	heading: "semibold",
+	title: "medium",
+	body: "normal",
+	label: "normal",
+	detail: "normal",
+	caption: "normal",
+};
+
 export function Text({
 	size = "label",
 	tone = "default",
-	weight = "normal",
+	weight,
 	as = "span",
 	mono = false,
 	numeric = false,
@@ -54,6 +76,7 @@ export function Text({
 }: {
 	size?: keyof typeof SIZES;
 	tone?: keyof typeof TONES;
+	/** Overrides the weight this step is normally set in. */
 	weight?: keyof typeof WEIGHTS;
 	/** The element to render. `span` by default so it can sit inside a sentence. */
 	as?: "span" | "p" | "div" | "h1" | "h2" | "h3" | "label" | "code";
@@ -76,7 +99,7 @@ export function Text({
 			className: [
 				SIZES[size],
 				TONES[tone],
-				WEIGHTS[weight],
+				WEIGHTS[weight ?? DEFAULT_WEIGHT[size]],
 				mono ? "font-mono" : "",
 				numeric ? "tabular-nums" : "",
 				className,

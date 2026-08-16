@@ -83,7 +83,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 			<div className="flex max-h-[80vh] flex-col">
 				<div className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3.5">
 					<Store size={16} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
-					<span className="text-[14px] font-medium text-ink">插件市场</span>
+					<span className="text-body font-medium text-ink">插件市场</span>
 					<div className="min-w-2 flex-1" />
 					<SearchField value={query} onChange={setQuery} placeholder="搜索" className="w-[180px]" />
 				</div>
@@ -94,7 +94,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 						{urls.map((url) => {
 							const failed = errors.find((e) => e.url === url);
 							return (
-								<div key={url} className="flex items-center gap-2 text-[11.5px]">
+								<div key={url} className="flex items-center gap-2 text-detail">
 									<span className={`min-w-0 flex-1 truncate font-mono ${failed ? "text-danger" : "text-ink-faint"}`}>
 										{url}
 									</span>
@@ -118,7 +118,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 								onKeyDown={(event) => event.key === "Enter" && addRegistry()}
 								placeholder="https://…/registry.json"
 								mono
-								className="h-[30px] flex-1 text-[12px]"
+								className="h-[30px] flex-1 text-detail"
 							/>
 							<GhostButton onClick={addRegistry} icon={<Plus size={12} strokeWidth={2} />}>
 								添加市场
@@ -127,12 +127,12 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 					</div>
 
 					{loading ? (
-						<p className="flex items-center justify-center gap-2 py-10 text-[12.5px] text-ink-faint">
+						<p className="flex items-center justify-center gap-2 py-10 text-label text-ink-faint">
 							<Loader2 size={13} strokeWidth={2} className="ly-spin" />
 							读取中…
 						</p>
 					) : entries.length === 0 ? (
-						<p className="py-10 text-center text-[12.5px] text-ink-faint">
+						<p className="py-10 text-center text-label text-ink-faint">
 							{urls.length === 0 ? "还没有添加任何市场" : "没有匹配的插件"}
 						</p>
 					) : (
@@ -142,16 +142,16 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 									<PluginIcon name={entry.name} logo={entry.logo} brandColor={entry.brandColor} />
 									<div className="min-w-0 flex-1">
 										<div className="flex items-center gap-2">
-											<span className="truncate text-[13px] text-ink">{entry.name}</span>
-											<span className="shrink-0 text-[11px] text-ink-faint">{from}</span>
+											<span className="truncate text-label text-ink">{entry.name}</span>
+											<span className="shrink-0 text-caption text-ink-faint">{from}</span>
 										</div>
 										{entry.description && (
-											<p className="truncate text-[12px] text-ink-muted">{entry.description}</p>
+											<p className="truncate text-detail text-ink-muted">{entry.description}</p>
 										)}
 									</div>
 
 									{installed.has(entry.id) ? (
-										<span className="flex shrink-0 items-center gap-1 text-[11.5px] text-ok">
+										<span className="flex shrink-0 items-center gap-1 text-detail text-ok">
 											<Check size={12} strokeWidth={2.2} />
 											已安装
 										</span>
@@ -176,7 +176,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 					)}
 
 					{installed.size > 0 && (
-						<p className="mt-4 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
+						<p className="mt-4 flex items-center gap-1.5 text-detail text-ink-faint">
 							<TriangleAlert size={12} strokeWidth={1.9} />
 							新建会话后生效；带来的 MCP 服务默认关闭，需要自己启用。
 						</p>
