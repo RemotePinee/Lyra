@@ -22,6 +22,7 @@ import { LayoutProvider, NavPane, SidePane, useLayout } from "./layout.tsx";
 import { useShortcuts } from "./shortcuts.ts";
 import { useSide } from "./sideStore.ts";
 import { useApp } from "./store.ts";
+import { useTrayCommands } from "./tray-commands.ts";
 import { applyAppearance, watchSystemTheme } from "./theme.ts";
 import { usePanelLayout } from "./usePanelLayout.ts";
 
@@ -38,6 +39,10 @@ export function App() {
 		if (appearance) applyAppearance(appearance);
 	}, [appearance]);
 	useEffect(() => watchSystemTheme(() => useApp.getState().settings?.appearance ?? appearance!), [appearance]);
+
+	// Before the `ready` gate below, so a command sent to a window that is still booting is not
+	// dropped for the one or two frames the boot screen is up.
+	useTrayCommands();
 
 	if (!ready) return <BootScreen />;
 

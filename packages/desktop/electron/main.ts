@@ -73,6 +73,7 @@ import { registerGitIpc } from "./ipc/git.ts";
 import { registerSideChatIpc } from "./ipc/side-chat.ts";
 import { registerTerminalIpc } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
+import { createTray, destroyTray, hasTray, type TrayCommand } from "./tray.ts";
 
 
 
@@ -272,16 +273,62 @@ app.whenReady().then(async () => {
 	});
 	scheduler.start();
 
+	/*
+	 * The status bar item, once there is something behind it worth opening.
+	 *
+	 * Created after the kernel and the window rather than first: every one of its menu items ends
+	 * up in the renderer, and an item that is clickable before anything can answer it is a menu
+	 * that silently does nothing.
+	 */
+	createTray({ window: getWindow, reveal, send: sendToRenderer });
+
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
 	});
 });
 
+/**
+ * Bring the window up, building it first if there is none, and run `then` when it can listen.
+ *
+ * The second part is what makes a menu item work from cold. A freshly created window has a
+ * `webContents` immediately but has not loaded the renderer yet, and anything sent in that gap is
+ * dropped without a trace — the app would open on the default screen and simply ignore which item
+ * had been clicked.
+ */
+function reveal(then?: () => void): void {
+	const existing = getWindow();
+	if (existing) {
+		if (existing.isMinimized()) existing.restore();
+		existing.show();
+		existing.focus();
+		then?.();
+		return;
+	}
+
+	createWindow();
+	const created = getWindow();
+	if (!created) return;
+	if (then) created.webContents.once("did-finish-load", then);
+}
+
+function sendToRenderer(command: TrayCommand): void {
+	reveal(() => getWindow()?.webContents.send("tray:command", command));
+}
+
 app.on("window-all-closed", () => {
-	if (process.platform !== "darwin") app.quit();
+	/*
+	 * With a status bar item, closing the window is not quitting.
+	 *
+	 * That is the whole point of having one: the agent goes on running, the schedule goes on
+	 * firing, and the way back is the icon. macOS works this way for every app; Windows and Linux
+	 * only should when there is something left on screen to return through — hence the check
+	 * rather than an unconditional change. Quitting is on the tray menu.
+	 */
+	if (process.platform !== "darwin" && !hasTray()) app.quit();
 });
 
 app.on("before-quit", async () => {
+	destroyTray();
 	scheduler?.stop();
 	for (const dispose of browsers.values()) dispose();
 	browsers.clear();

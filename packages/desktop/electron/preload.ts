@@ -165,6 +165,12 @@ const api: LyraApi = {
 		ipcRenderer.on("window:fullscreen", listener);
 		return () => ipcRenderer.removeListener("window:fullscreen", listener);
 	},
+	/** What the status bar menu was asked for. One channel, because the commands are one kind. */
+	onTrayCommand: (handler) => {
+		const listener = (_e: Electron.IpcRendererEvent, command: string) => handler(command);
+		ipcRenderer.on("tray:command", listener);
+		return () => ipcRenderer.removeListener("tray:command", listener);
+	},
 	system: {
 		openPath: (path) => ipcRenderer.invoke("system:openPath", path),
 		openExternal: (url) => ipcRenderer.invoke("system:openExternal", url),

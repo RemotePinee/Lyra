@@ -177,6 +177,13 @@ export interface LyraApi {
 	 * stop reserving that space. Fires on entry, on exit, and once after load.
 	 */
 	onFullScreenChange(handler: (fullScreen: boolean) => void): () => void;
+	/**
+	 * A menu item on the status bar icon was chosen.
+	 *
+	 * Sent only once the window can receive it, so a command given while the app was closed still
+	 * lands — the renderer never has to care whether it was already running.
+	 */
+	onTrayCommand(handler: (command: string) => void): () => void;
 	system: {
 		openPath(path: string): Promise<void>;
 		openExternal(url: string): Promise<void>;

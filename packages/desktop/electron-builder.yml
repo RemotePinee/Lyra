@@ -22,6 +22,19 @@ files:
 asarUnpack:
   - "**/node_modules/node-pty/**"
 
+# The status bar icons, which `Tray` loads by path at runtime and so cannot live in the asar.
+# `files` above covers only `out/`, so without this the tray comes up blank in a packaged build
+# while working perfectly in development — the icons are right there in the source tree.
+#
+# The two source drawings are excluded deliberately: they are 1.8MB of 1254px artwork that only
+# `pnpm tray:icons` ever reads.
+extraResources:
+  - from: build/tray
+    to: build/tray
+    filter:
+      - "*.png"
+      - "!source-*.png"
+
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
