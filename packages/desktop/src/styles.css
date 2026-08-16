@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 /*
+ * KaTeX's own stylesheet, which is not optional — its layout is achieved with the class names in
+ * here, so the markup it emits is meaningless without them. Its fonts are bundled by the build
+ * alongside ours rather than fetched, so a formula renders the same offline.
+ */
+@import "katex/dist/katex.min.css";
+
+/*
  * Two typefaces, shipped with the app rather than borrowed from the OS.
  *
  * A system stack renders differently on every machine, and on macOS its text weight shifts with
@@ -343,6 +350,34 @@
 }
 
 /*
+ * A region nobody can reach punches no hole.
+ *
+ * `-webkit-app-region` is composited from geometry and nothing else. Electron walks the document
+ * in order, adds every `drag` rectangle and subtracts every `no-drag` one, and never asks whether
+ * the element is visible, interactive, or even inside the window. So a pane that has slid out
+ * still cuts its buttons out of the title bar — at whatever coordinates it happens to be parked
+ * at. The pull request list is the case that found this: expanded, it sits at x=-16 with
+ * `opacity: 0`, and its filter row went on holding a 178px hole open right beside the traffic
+ * lights, where the window could then neither be dragged nor double-clicked to zoom.
+ *
+ * `inert` already says exactly the thing that makes a hole pointless: nothing in here can be
+ * interacted with. Saying it once, here, beats teaching every pane that slides away to also
+ * withdraw its own controls — and the panes that already do this correctly are the ones that
+ * happened to park outside the window rather than the ones that got it right.
+ *
+ * `initial`, not `none`. Chromium's parser takes only `drag` and `no-drag` for this property, so
+ * the obvious spelling is dropped as invalid and the region survives — silently, and only
+ * observable by reading the computed value back. The CSS-wide keyword is honoured because that
+ * is handled before the property's own grammar ever runs.
+ */
+[inert] .drag-region,
+[inert] .no-drag,
+[inert].drag-region,
+[inert].no-drag {
+  -webkit-app-region: initial;
+}
+
+/*
  * Assistant markdown rendering.
  *
  * On the scale like everything else. These were six absolute pixel values — 13.5 for the body,
@@ -413,6 +448,24 @@
   }
 
   /*
+   * A block that lives inside a bullet.
+   *
+   * The spacing rule above only reaches direct children of `.prose-dw`, so a table or a fence
+   * written under a bullet had none at all and sat flush against the sentence introducing it.
+   */
+  .prose-dw li > .ly-table,
+  .prose-dw li > pre,
+  .prose-dw li > blockquote,
+  .prose-dw li > p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+  }
+
+  .prose-dw li > *:last-child {
+    margin-bottom: 0;
+  }
+
+  /*
    * Derived, not fixed.
    *
    * These were hard-coded dark hexes, so on a light theme every inline snippet turned into a
@@ -476,28 +529,235 @@
     color: var(--color-ink-muted);
   }
 
+  /*
+   * A table is rows of facts, not graph paper.
+   *
+   * Every cell used to be boxed in on all four sides, which draws sixty lines to separate twelve
+   * numbers and makes the grid louder than anything in it. Horizontal rules only: the eye already
+   * tracks columns by alignment, so the vertical lines were paying for nothing.
+   *
+   * The wrapper carries the frame because it is the element that scrolls — a border on the table
+   * would slide out of view with the content and leave the right edge open.
+   */
+  /*
+   * Wide enough for its contents and no wider.
+   *
+   * Stretched to the column, a three-column table hands every spare pixel to its last column and
+   * opens a gap the eye has to jump — the columns stop looking related. Sized to fit, the frame
+   * lands where the data ends, and the table reads as one object instead of a full-width band.
+   */
+  .prose-dw .ly-table {
+    overflow-x: auto;
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid var(--color-line-soft);
+    border-radius: 10px;
+  }
+
   .prose-dw table {
-    width: 100%;
     border-collapse: collapse;
     font-size: var(--text-label);
+    line-height: 1.55;
   }
 
   .prose-dw th,
   .prose-dw td {
-    border: 1px solid var(--color-line);
-    padding: 6px 10px;
+    padding: 7px 12px;
     text-align: left;
+    vertical-align: top;
+    /* Wrapping a cell mid-word is worse than a little scrolling. */
+    white-space: nowrap;
   }
 
-  .prose-dw th {
-    background: var(--color-card-hover);
-    font-weight: 600;
+  .prose-dw thead th {
+    background: var(--color-card);
+    font-weight: 550;
+    color: var(--color-ink-muted);
+    /* The header's rule is the one line worth keeping: it separates labels from data. */
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .prose-dw tbody tr + tr td {
+    border-top: 1px solid var(--color-line-soft);
+  }
+
+  /* Figures line up when their digits are one width. */
+  .prose-dw td {
+    font-variant-numeric: tabular-nums;
   }
 
   .prose-dw hr {
     border: 0;
     border-top: 1px solid var(--color-line);
     margin: 1.5em 0;
+  }
+
+  /*
+   * A checklist.
+   *
+   * The bullet goes: a box already says "this is an item", and a disc beside it says it twice. The
+   * box sits on the first line's optical centre rather than its box centre, so it lines up with
+   * the x-height of the text instead of floating above it.
+   */
+  /*
+   * The marker is dropped per item, not per list.
+   *
+   * A checklist routinely has an ordinary bullet in the middle of it — a note between two boxes —
+   * and turning off markers for the whole list leaves that line with nothing at all, floating at a
+   * different indent from its neighbours. Only the rows that have a box give theirs up, and the
+   * negative margin puts the box exactly where the disc would have been, so the text of every row
+   * still starts on the same vertical.
+   */
+  .prose-dw .ly-task {
+    list-style: none;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+    margin-left: -1.35em;
+  }
+
+  .ly-task-box {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    margin-top: calc((1.75em - 13px) / 2);
+    border: 1px solid var(--color-line);
+    border-radius: 4px;
+    color: transparent;
+    transition:
+      background-color var(--ly-t-quick) var(--ly-e-soft),
+      border-color var(--ly-t-quick) var(--ly-e-soft);
+  }
+
+  .ly-task[data-done="true"] .ly-task-box {
+    background: var(--color-ok);
+    border-color: var(--color-ok);
+    color: #fff;
+  }
+
+  /* Done text stays readable — struck through it becomes a puzzle rather than a record. */
+  .ly-task[data-done="true"] > span:last-child {
+    color: var(--color-ink-muted);
+  }
+
+  /*
+   * A folded section.
+   *
+   * Borrowed motion from the app's own disclosures rather than the browser's `<details>`, which
+   * snaps open with no transition and draws a system triangle we do not use anywhere else.
+   */
+  .prose-dw .ly-details {
+    border: 1px solid var(--color-line-soft);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .ly-details-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 11px;
+    text-align: left;
+    color: var(--color-ink-muted);
+    transition: color var(--ly-t-quick) var(--ly-e-soft);
+  }
+
+  .ly-details-summary:hover {
+    color: var(--color-ink);
+  }
+
+  .ly-details-chevron {
+    flex: none;
+    transition: transform var(--ly-t-base) var(--ly-e-out);
+  }
+
+  .ly-details[data-open="true"] .ly-details-chevron {
+    transform: rotate(90deg);
+  }
+
+  .ly-details-body {
+    padding: 2px 11px 11px;
+  }
+
+  /*
+   * A key, drawn as one.
+   *
+   * `<kbd>Cmd</kbd>` is an instruction to press something, and the browser's default — italic
+   * monospace, indistinguishable from a code span — loses that. A cap with a bottom edge reads as
+   * a physical key at a glance, which is the whole point of the element.
+   */
+  .prose-dw kbd {
+    display: inline-block;
+    min-width: 1.5em;
+    padding: 1px 5px;
+    border: 1px solid var(--color-line);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    background: var(--color-card);
+    font-family: var(--font-sans);
+    font-size: 0.86em;
+    line-height: 1.5;
+    text-align: center;
+    /* Keys sit on the text baseline; without this the cap's border pushes the line apart. */
+    vertical-align: 1px;
+  }
+
+  .prose-dw sub,
+  .prose-dw sup {
+    font-size: 0.75em;
+    line-height: 0;
+  }
+
+  .prose-dw mark {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: color-mix(in oklab, var(--color-accent) 26%, transparent);
+    color: inherit;
+  }
+
+  /*
+   * Formulas.
+   *
+   * KaTeX sizes itself in `em`, so it inherits the surrounding text size and needs no scale of its
+   * own. A display formula gets room and a horizontal scroll: a wide equation should extend past
+   * the column rather than be broken across lines, which changes what it means.
+   */
+  .prose-dw .ly-math-block {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 0;
+  }
+
+  .prose-dw .ly-math-raw {
+    font-family: var(--font-mono);
+    font-size: var(--text-code);
+    color: var(--color-ink-muted);
+    white-space: pre-wrap;
+  }
+
+  /* KaTeX ships a `\text` colour of its own; ours is the one that matches the page. */
+  .prose-dw .katex {
+    color: inherit;
+    font-size: 1.06em;
+  }
+
+  /*
+   * A picture we cannot draw, named rather than dropped.
+   *
+   * `img-src` does not admit remote hosts, so this is the reference — the reader still learns a
+   * screenshot exists and can open it.
+   */
+  .ly-md-image-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    vertical-align: baseline;
+  }
+
+  .prose-dw .ly-md-image {
+    max-width: 100%;
+    border-radius: 8px;
   }
 }
 

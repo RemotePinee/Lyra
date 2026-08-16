@@ -55,12 +55,15 @@ export function PullRequestList({
 			 * Sits in the strip the shell reserves for the window controls, so it lines up with the
 			 * sidebar's collapse button rather than starting a second row 44px below it.
 			 *
-			 * `no-drag` because that strip is what moves the window: without it these are decoration
-			 * you cannot click. `relative z-50` to come out from under the drag band, which covers
-			 * the full width at z-40.
+			 * `no-drag` goes on the controls, never on this row. That strip is what moves the window,
+			 * and a `no-drag` region is a hole punched in it — one on a full-width container is a
+			 * hole the width of the column, which is how this view ended up with a title bar you
+			 * could neither drag nor double-click to zoom. The row stays draggable; each control
+			 * takes back only its own few pixels. `relative z-50` to come out from under the drag
+			 * band, which covers the full width at z-40.
 			 */}
 			<div
-				className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-0.5 px-3"
+				className="relative z-50 flex h-11 shrink-0 items-center px-3"
 				/*
 				 * Clear of the window's own controls when the sidebar is not covering them.
 				 *
@@ -70,6 +73,7 @@ export function PullRequestList({
 				 */
 				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
 			>
+				<div className="no-drag flex items-center gap-0.5">
 					{FILTERS.map((option) => (
 						<button
 							key={option.key}
@@ -82,17 +86,18 @@ export function PullRequestList({
 							{option.label}
 						</button>
 					))}
+				</div>
 
-					<div className="flex-1" />
-					<button
-						type="button"
-						data-ly-tip="刷新"
-						aria-label="刷新"
-						onClick={onRefresh}
-						className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
-					>
-						<RefreshCw size={13} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
-					</button>
+				<div className="flex-1" />
+				<button
+					type="button"
+					data-ly-tip="刷新"
+					aria-label="刷新"
+					onClick={onRefresh}
+					className="no-drag flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+				>
+					<RefreshCw size={13} strokeWidth={1.8} className={loading ? "ly-spin" : undefined} />
+				</button>
 			</div>
 
 			<div className="shrink-0 px-3 pt-1 pb-2">

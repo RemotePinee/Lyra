@@ -28,7 +28,6 @@ export function Sidebar() {
 	const newSession = useApp((s) => s.newSession);
 	const setView = useApp((s) => s.setView);
 	const view = useApp((s) => s.view);
-	const settingsSection = useApp((s) => s.settingsSection);
 	/**
 	 * As a drawer this pane covers the thing it navigates to, so anything that changes what is
 	 * behind it also has to get out of the way. Pushed, `dismissNav` does nothing and the
@@ -159,13 +158,20 @@ export function Sidebar() {
 							dismissNav();
 						}}
 					/>
+					{/*
+					 * The catalogue, not the settings pane it used to open.
+					 *
+					 * Clicking 插件 landed in 设置 › 插件, which is where you manage what you already
+					 * have — so the one thing the sidebar entry could not do was show you what you
+					 * could add. The two now split along that line: here to browse and install,
+					 * settings to configure. The gear in this view's header is the way across.
+					 */}
 					<NavItem
-						active={view === "settings" && settingsSection === "plugins"}
+						active={view === "plugins"}
 						icon={<AtSign size={15} strokeWidth={1.8} />}
 						label="插件"
 						onClick={() => {
-							setView("settings");
-							useApp.getState().setSettingsSection("plugins");
+							setView("plugins");
 							dismissNav();
 						}}
 					/>

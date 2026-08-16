@@ -20,7 +20,17 @@ import type {
 } from "../electron/ipc-types.ts";
 import { useSide } from "./sideStore.ts";
 
-export type View = "chat" | "settings" | "pull-requests" | "scheduled";
+/**
+ * `plugins` is the catalogue, not the plugin *settings*.
+ *
+ * The two are deliberately separate places for the same subject, because they answer different
+ * questions. This one is where you go to find something you do not have yet — it browses, it is
+ * mostly other people's work, and the unit is a bundle with a name and a picture. The settings
+ * section is where you go to deal with what you already installed: toggles, versions, which MCP
+ * servers a bundle brought with it, where its directory is. Sending the sidebar's 插件 straight
+ * to a settings pane made the first question unanswerable from anywhere.
+ */
+export type View = "chat" | "settings" | "pull-requests" | "scheduled" | "plugins";
 
 export type SettingsSection =
   | "general"

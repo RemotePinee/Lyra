@@ -7,7 +7,6 @@ import { useApp } from "../../store.ts";
 import { McpSettings } from "./McpSettings.tsx";
 import { PluginsSettings } from "./PluginsSettings.tsx";
 import { SkillsSettings } from "./SkillsSettings.tsx";
-import { RegistryBrowser } from "./RegistryBrowser.tsx";
 
 type Tab = "plugins" | "skills" | "mcp";
 
@@ -25,11 +24,21 @@ type Tab = "plugins" | "skills" | "mcp";
 export function ExtensionsSettings() {
 	const workspace = useApp((s) => s.workspace);
 	const settings = useApp((s) => s.settings);
+	const setView = useApp((s) => s.setView);
 	const [tab, setTab] = useState<Tab>("plugins");
 	const [query, setQuery] = useState("");
-	const [browsing, setBrowsing] = useState(false);
 	const [counts, setCounts] = useState({ plugins: 0, skills: 0 });
 	const add = usePopover();
+
+	/*
+	 * Browsing is a different place now, not a dialog over this one.
+	 *
+	 * This page is for what is already installed — which bundle is on, what it brought with it,
+	 * where its directory is. Finding something new is the catalogue's job, and it had been a
+	 * 620px modal launched from here, which is a strange place to keep a shop. Leaving means
+	 * leaving; the catalogue's own header has a gear pointing back.
+	 */
+	const browse = () => setView("plugins");
 
 	useEffect(() => {
 		void window.lyra.plugins.list(workspace?.path ?? "").then((scan) => {
@@ -51,7 +60,7 @@ export function ExtensionsSettings() {
 				<div className="flex shrink-0 items-center gap-2">
 					<button
 						type="button"
-						onClick={() => setBrowsing(true)}
+						onClick={browse}
 						className="flex h-[30px] items-center gap-1.5 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
 					>
 						<Store size={13} strokeWidth={1.8} />
@@ -77,7 +86,7 @@ export function ExtensionsSettings() {
 							icon={<Store size={14} strokeWidth={1.8} />}
 							onClick={() => {
 								add.close();
-								setBrowsing(true);
+								browse();
 							}}
 						>
 							添加插件市场
@@ -139,7 +148,6 @@ export function ExtensionsSettings() {
 				{tab === "mcp" && <McpSettings filter={query} />}
 			</div>
 
-			{browsing && <RegistryBrowser onClose={() => setBrowsing(false)} />}
 		</div>
 	);
 }

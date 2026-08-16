@@ -11,6 +11,7 @@ import { BootScreen } from "./components/BootScreen.tsx";
 import { Conversation, ConversationSkeleton } from "./components/Conversation.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
 import { NoticeStack } from "./components/NoticeStack.tsx";
+import { PluginsView } from "./components/PluginsView.tsx";
 import { PullRequestsView } from "./components/PullRequestsView.tsx";
 import { ResizeHandle } from "./components/ResizeHandle.tsx";
 import { ScheduledView } from "./components/ScheduledView.tsx";
@@ -152,6 +153,8 @@ function ChatShell() {
 					<div className="flex min-w-0 flex-1 flex-col">
 						{view === "pull-requests" ? (
 							<PullRequestsView />
+						) : view === "plugins" ? (
+							<PluginsView />
 						) : view === "scheduled" ? (
 							<ScheduledView />
 						) : messages.length > 0 ? (
