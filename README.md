@@ -1,6 +1,6 @@
 # Lyra
 
-[![CI](https://github.com/kittors/lyra/actions/workflows/ci.yml/badge.svg)](https://github.com/kittors/lyra/actions/workflows/ci.yml)
+[![CI](https://github.com/kittors/Lyra/actions/workflows/ci.yml/badge.svg)](https://github.com/kittors/Lyra/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg)](.nvmrc)
 
