@@ -324,7 +324,9 @@ export function PluginDetail({
 					{!installed && item.entry && (
 						<p className="pt-8 text-detail leading-relaxed text-ink-faint">
 							安装会把这个仓库克隆到本地插件目录。市场只是一份索引，不做审核——装之前请自己看一眼它的仓库。
-							它带来的 MCP 服务默认关闭，要自己在设置里打开。
+							{plugin === null && item.entry.path
+								? "它声明的 MCP 服务会随插件一起启用，那条命令会在你的机器上以你的权限运行。"
+								: ""}
 						</p>
 					)}
 				</div>
