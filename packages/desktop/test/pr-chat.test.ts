@@ -1,0 +1,54 @@
+/**
+ * Turning a repository name into a directory name.
+ *
+ * The input comes from the GitHub API, and the output is a path component under the user's home.
+ * That is the whole reason this is a function worth testing rather than a template string: a name
+ * is remote input, and `..` is a perfectly ordinary sequence of characters right up until it is
+ * pasted into a path.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { prChatSlug } from "../electron/pr-chat.ts";
+
+test("owner/name becomes one path component", () => {
+	const slug = prChatSlug("kittors/lyra", 42);
+	assert.equal(slug, "kittors-lyra-42");
+	assert.ok(!slug.includes("/"), "a slash would make this two directories");
+});
+
+test("traversal cannot survive", () => {
+	for (const hostile of ["../../etc", "..", "a/../../b", "./.."]) {
+		const slug = prChatSlug(hostile, 1);
+		assert.ok(!slug.includes("/"), `${hostile} kept a separator`);
+		assert.ok(!/(^|-)\.\.(-|$)/.test(slug), `${hostile} kept a traversal segment: ${slug}`);
+		// `..` alone reduces to nothing, and a slug still has to name something.
+		assert.notEqual(slug, "");
+	}
+});
+
+test("a name that is only unsafe characters still names something", () => {
+	assert.equal(prChatSlug("///", 7), "repo-7");
+	assert.equal(prChatSlug("", 7), "repo-7");
+});
+
+test("length is bounded, and the number survives the truncation", () => {
+	const slug = prChatSlug("o".repeat(300), 1234);
+	assert.ok(slug.length <= 70, `too long: ${slug.length}`);
+	assert.ok(slug.endsWith("-1234"), "the number is what keeps two truncated names apart");
+});
+
+test("two pull requests in one repository get different directories", () => {
+	assert.notEqual(prChatSlug("kittors/lyra", 1), prChatSlug("kittors/lyra", 2));
+});
+
+test("the same pull request always gets the same directory", () => {
+	// This is what makes a conversation reopen months later: nothing is recorded, it is derived.
+	assert.equal(prChatSlug("kittors/lyra", 9), prChatSlug("kittors/lyra", 9));
+});
+
+test("unicode and spaces are replaced rather than passed through", () => {
+	const slug = prChatSlug("用户/我的 项目", 3);
+	assert.match(slug, /^[a-zA-Z0-9._-]+$/);
+	assert.ok(slug.endsWith("-3"));
+});

@@ -84,6 +84,19 @@ function ChatShell() {
 
 	const { panelWidth, panelMax, fullScreen, panelHostsControls, openPanel } = usePanelLayout();
 
+	/*
+	 * The right-hand panel belongs to the workspace, not to the window.
+	 *
+	 * Everything in it — the repository, the terminal, the file tree — is about the project you are
+	 * working in. Pull requests and the schedule are not in a project at all: a review is of someone
+	 * else's branch, in a repository this machine may never have cloned. So the panel is not merely
+	 * empty on those screens, it is meaningless, and its toggle should not be offered.
+	 *
+	 * Hidden rather than closed. A panel the user had open is theirs; leaving `panelOpen` untouched
+	 * means it comes back exactly as it was when they return to the conversation.
+	 */
+	const panelApplies = view === "chat";
+
 	// The side chat reads the session it is attached to, so it follows whichever one is open.
 	useEffect(() => {
 		void attach(activeSessionId);
@@ -146,20 +159,27 @@ function ChatShell() {
 			 * toolbar, which is why its buttons could not be clicked at all.
 			 */}
 			<DragBand />
-			<PanelControls
-				compact={compact}
-				navOpen={navOpen}
-				panelOpen={panelOpen}
-				expanded={expanded}
-				onToggleExpanded={toggleExpanded}
-				onTogglePanel={() => (panelOpen ? closePanel() : openPanel(() => reopenPanel()))}
-			/>
+			{panelApplies && (
+				<PanelControls
+					compact={compact}
+					navOpen={navOpen}
+					panelOpen={panelOpen}
+					expanded={expanded}
+					onToggleExpanded={toggleExpanded}
+					onTogglePanel={() => (panelOpen ? closePanel() : openPanel(() => reopenPanel()))}
+				/>
+			)}
 
 			{/*
 			 * Being last in the DOM costs nothing in the wide layout: the toolbar is absolute and
 			 * takes no part in the flex row, so this is still the third and rightmost item.
 			 */}
-			<SidePane width={panelWidth} open={panelOpen} fullScreen={fullScreen} offset={navOpen ? sidebarWidth : 0}>
+			<SidePane
+				width={panelWidth}
+				open={panelOpen && panelApplies}
+				fullScreen={fullScreen}
+				offset={navOpen ? sidebarWidth : 0}
+			>
 				<SidePanel />
 
 				{/*
@@ -168,7 +188,7 @@ function ChatShell() {
 				 * the pane is still mounted then, and an edge with nothing on one side of it is
 				 * not an edge.
 				 */}
-				{panelOpen && !compact && !fullScreen && (
+				{panelOpen && panelApplies && !compact && !fullScreen && (
 					<ResizeHandle
 						edge="start"
 						width={panelWidth}
@@ -181,7 +201,7 @@ function ChatShell() {
 				)}
 			</SidePane>
 
-			{!panelHostsControls && (
+			{(!panelHostsControls || !panelApplies) && (
 				<WindowButtons
 					nativeFullScreen={nativeFullScreen}
 					navOpen={navOpen}

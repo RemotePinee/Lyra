@@ -64,8 +64,37 @@ export function groupSessions(
  * The active session is exempt, because the conversation you are in the middle of starting has to
  * stay visible and selected while its first message is still in flight.
  */
-export function listableSessions(sessions: SessionMeta[], activeSessionId: string | null): SessionMeta[] {
-	return sessions.filter((s) => !s.archived && (s.messageCount > 0 || s.id === activeSessionId));
+export function listableSessions(
+	sessions: SessionMeta[],
+	activeSessionId: string | null,
+	/**
+	 * Where pull request conversations live, so they can be left out.
+	 *
+	 * Those are real sessions in a real directory — which is what makes one reopen months later —
+	 * but the directory is a scratch folder, not a project. Left in, this pane grows a project
+	 * called `owner-repo-6381` for every review anyone has ever had a question about, sitting
+	 * between the things the user actually works on. They are reached from the pull request they
+	 * are about, which is the only place they mean anything.
+	 *
+	 * Empty until the main process has answered, which only means the first render of a fresh
+	 * launch may briefly include them.
+	 */
+	prChatRoot: string,
+): SessionMeta[] {
+	/*
+	 * A separator, not a bare prefix.
+	 *
+	 * The root arrives as `…/.lyra/pr` with no trailing slash, and `startsWith` on that alone also
+	 * matches `…/.lyra/prototypes` — a real project, silently missing from the sidebar with nothing
+	 * to suggest why. Comparing against `…/.lyra/pr/` makes it a directory test rather than a
+	 * string test.
+	 */
+	const inside = prChatRoot ? (prChatRoot.endsWith("/") ? prChatRoot : `${prChatRoot}/`) : "";
+
+	return sessions.filter(
+		(s) =>
+			!s.archived && (s.messageCount > 0 || s.id === activeSessionId) && !(inside && s.cwd.startsWith(inside)),
+	);
 }
 
 /** What the settings row says it will take you to. */

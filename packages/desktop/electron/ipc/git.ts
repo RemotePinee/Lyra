@@ -7,6 +7,7 @@
  */
 
 import { ipcMain } from "electron";
+import { type PrBrief, prChatDir, prChatRoot, writePrBrief } from "../pr-chat.ts";
 import {
 	collectWorkspaceDiff,
 	commitAll,
@@ -135,4 +136,22 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	});
 
 	ipcMain.handle("diff:workspace", async (_event, cwd: string) => collectWorkspaceDiff(cwd));
+
+	/*
+	 * The scratch directory a pull request's conversation lives in.
+	 *
+	 * Here rather than in the renderer because it has to exist on disk before a session can be
+	 * created in it, and because the app's home is the main process's to know. Returning the path
+	 * lets the renderer use the ordinary session IPC for everything after this — a review chat is
+	 * a normal session that simply is not in a project.
+	 */
+	ipcMain.handle("prchat:root", async () => prChatRoot());
+
+	ipcMain.handle("prchat:open", async (_event, pr: PrBrief) => {
+		const dir = await prChatDir(pr.repo, pr.number);
+		// Refreshed every time it is opened: a description edited on GitHub should not go on being
+		// answered from a copy taken weeks ago.
+		await writePrBrief(dir, pr).catch(() => {});
+		return dir;
+	});
 }

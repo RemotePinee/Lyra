@@ -212,6 +212,27 @@ export interface LyraApi {
 		myPullRequests(): Promise<{ pullRequests: PullRequestSummary[]; error?: string }>;
 		pullRequest(repo: string, number: number): Promise<{ detail?: PullRequestDetail; error?: string }>;
 		pullRequestDiff(repo: string, number: number): Promise<{ files: WorkspaceDiffFile[]; error?: string }>;
+		/**
+		 * Prepare the scratch directory this pull request's conversation runs in, and return it.
+		 *
+		 * A review is not in a project — the repository may never have been cloned here — so the
+		 * session gets a directory of its own under the app's home. Stable across launches, which is
+		 * what makes the same pull request reopen the same conversation. A `PR.md` of the facts is
+		 * written there each time, so the agent has somewhere to look that is not the transcript.
+		 */
+		openPrChat(pr: {
+			repo: string;
+			number: number;
+			title: string;
+			author: string;
+			url: string;
+			headRefName: string;
+			baseRefName: string;
+			state: string;
+			body: string;
+		}): Promise<string>;
+		/** Where those conversations live, so the sidebar can tell them from real projects. */
+		prChatRoot(): Promise<string>;
 		commentOnPullRequest(repo: string, number: number, body: string): Promise<{ error?: string }>;
 		reviewPullRequest(
 			repo: string,

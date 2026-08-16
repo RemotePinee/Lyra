@@ -10,10 +10,11 @@
  */
 
 import { ArrowLeft } from "lucide-react";
+import { useState } from "react";
 import type { PullRequestDetail as Detail } from "../../electron/ipc-types.ts";
 import { useLayout } from "../layout.tsx";
-import { useApp } from "../store.ts";
-import { PullRequestDetail } from "./pr/PullRequestDetail.tsx";
+import { usePrChat } from "../prChatStore.ts";
+import { PullRequestDetail, type PrTab } from "./pr/PullRequestDetail.tsx";
 import { PullRequestList } from "./pr/PullRequestList.tsx";
 import { ReviewBar } from "./pr/ReviewBar.tsx";
 import { usePullRequests } from "./pr/usePullRequests.ts";
@@ -23,18 +24,36 @@ const LIST_WIDTH = 300;
 
 export function PullRequestsView() {
 	const { compact } = useLayout();
-	const send = useApp((s) => s.send);
-	const setView = useApp((s) => s.setView);
+	/*
+	 * Reviewing happens in two postures, and the list is only wanted in one of them.
+	 *
+	 * Choosing what to review needs the list; reading a diff needs the width — a 300px column of
+	 * titles is dead space beside code that is wrapping because of it. Per-visit rather than a
+	 * saved setting: which posture you want follows what you are doing right now, and it is one
+	 * click either way.
+	 */
+	const [expanded, setExpanded] = useState(false);
+	/* Held here rather than in the detail, because the review bar below it depends on which tab is
+	 * open — 聊天 brings its own field. */
+	const [tab, setTab] = useState<PrTab>("summary");
 	const pr = usePullRequests();
 
+	/*
+	 * Asked in the pull request's own conversation, not the workspace's.
+	 *
+	 * This used to switch to the chat view and prompt the project session, which was wrong twice:
+	 * it interrupted whatever was being worked on, and it asked an agent rooted in one repository
+	 * to reason about a branch in another — usually one not on this machine at all.
+	 *
+	 * Queued rather than sent, because the conversation may still be opening. The panel sends it
+	 * the moment there is a session, which is also the click that first opens the tab.
+	 */
 	const askAgent = (detail: Detail) => {
-		setView("chat");
-		void send([
-			{
-				type: "text",
-				text: `审查 ${detail.repo} 的 PR #${detail.number}「${detail.title}」（${detail.headRefName} → ${detail.baseRefName}）。用 gh pr diff ${detail.number} --repo ${detail.repo} 拿到改动，指出其中的缺陷和风险，按严重程度排序。不要切换分支。`,
-			},
-		]);
+		usePrChat
+			.getState()
+			.queueAsk(
+				`审查这个 Pull Request：先用 gh pr diff ${detail.number} --repo ${detail.repo} 拿到改动，再指出其中的缺陷和风险，按严重程度排序。只读，不要改动任何仓库。`,
+			);
 	};
 
 	const submit = async (verdict: "approve" | "request-changes" | "comment", body: string): Promise<string | null> => {
@@ -80,8 +99,12 @@ export function PullRequestsView() {
 				error={pr.detailError}
 				onRefresh={pr.refreshDetail}
 				onAskAgent={askAgent}
+				expanded={expanded}
+				onToggleExpanded={() => setExpanded((open) => !open)}
+				tab={tab}
+				onTab={setTab}
 			/>
-			<ReviewBar onSubmit={submit} disabled={!pr.detail} />
+			{tab !== "chat" && <ReviewBar onSubmit={submit} disabled={!pr.detail} />}
 		</div>
 	);
 
@@ -120,12 +143,14 @@ export function PullRequestsView() {
 	 */
 	return (
 		<div className="-mt-11 flex min-h-0 flex-1">
-			<div
-				style={{ width: LIST_WIDTH }}
-				className="flex min-h-0 shrink-0 flex-col border-r border-line-soft pt-11"
-			>
-				{list}
-			</div>
+			{!expanded && (
+				<div
+					style={{ width: LIST_WIDTH }}
+					className="flex min-h-0 shrink-0 flex-col border-r border-line-soft pt-11"
+				>
+					{list}
+				</div>
+			)}
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col pt-11">{detail}</div>
 		</div>
 	);

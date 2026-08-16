@@ -22,6 +22,7 @@ export function Sidebar() {
 	const sessions = useApp((s) => s.sessions);
 	const workspace = useApp((s) => s.workspace);
 	const activeSessionId = useApp((s) => s.activeSessionId);
+	const prChatRoot = useApp((s) => s.prChatRoot);
 	const openSession = useApp((s) => s.openSession);
 	const setSessionArchived = useApp((s) => s.setSessionArchived);
 	const newSession = useApp((s) => s.newSession);
@@ -40,8 +41,8 @@ export function Sidebar() {
 	const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
 	const groups = useMemo(
-		() => groupSessions(listableSessions(sessions, activeSessionId), settings?.projects ?? [], query),
-		[sessions, settings, query, activeSessionId],
+		() => groupSessions(listableSessions(sessions, activeSessionId, prChatRoot), settings?.projects ?? [], query),
+		[sessions, settings, query, activeSessionId, prChatRoot],
 	);
 
 	const groupProps = (path: string) => ({

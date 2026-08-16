@@ -18,6 +18,7 @@ import type {
   SyncStatus,
   WorkspaceInfo,
 } from "../electron/ipc-types.ts";
+import { usePrChat } from "./prChatStore.ts";
 import { useSide } from "./sideStore.ts";
 
 export type View = "chat" | "settings" | "pull-requests" | "scheduled";
@@ -64,6 +65,8 @@ export interface AppState {
   settings: Settings | null;
   sessions: SessionMeta[];
   workspace: WorkspaceInfo | null;
+  /** Where pull request conversations are stored, so the sidebar can exclude them. */
+  prChatRoot: string;
 
   activeSessionId: string | null;
   meta: SessionMeta | null;
@@ -186,6 +189,7 @@ export const useApp = create<AppState>((set, get) => ({
   settings: null,
   sessions: [],
   workspace: null,
+  prChatRoot: "",
   activeSessionId: null,
   meta: null,
   messages: [],
@@ -229,11 +233,17 @@ export const useApp = create<AppState>((set, get) => ({
     const workspace = lastProject
       ? await window.lyra.workspace.info(lastProject.path)
       : null;
-    set({ settings, sessions, workspace, ready: true });
+    // Where pull request conversations live, so the sidebar can leave them out. One call, at
+    // boot: it is derived from the app's home and cannot change while running.
+    const prChatRoot = await window.lyra.git.prChatRoot().catch(() => "");
+    set({ settings, sessions, workspace, prChatRoot, ready: true });
 
-    window.lyra.agent.onEvent(({ sessionId, event }) =>
-      get().applyEvent(sessionId, event),
-    );
+    window.lyra.agent.onEvent(({ sessionId, event }) => {
+      get().applyEvent(sessionId, event);
+      // A pull request's conversation is an ordinary session, so it arrives on this channel too.
+      // Both stores filter by session id, so exactly one of them ever draws a given event.
+      usePrChat.getState().applyEvent(sessionId, event);
+    });
     // The side chat is a separate conversation on a separate channel, for the same reason
     // it is a separate store: its replies must never land in the main transcript.
     window.lyra.sideChat.onEvent(({ sessionId, event }) =>
