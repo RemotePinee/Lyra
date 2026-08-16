@@ -137,7 +137,7 @@ export function IndexSettings() {
 										: "还没有索引，先点上面的「建立索引」"}
 							</EmptyHint>
 						) : (
-							<Scroller className="max-h-[340px]" fadeColor="var(--color-card)">
+							<Scroller className="max-h-[340px]">
 								{hits.map((hit) => (
 									<button
 										key={`${hit.file}:${hit.line}`}

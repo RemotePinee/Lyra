@@ -68,7 +68,7 @@ export function ProjectGroup({
 			{/* Same hover-owner arrangement as the session rows: the fill belongs to the row so
 			    reaching for the menu button does not drop it. */}
 			<div
-				className="ly-scroll group/project relative rounded-lg transition-colors duration-150 hover:bg-card-hover active:bg-elevated"
+				className="ly-scroll group/project relative rounded-lg transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover active:bg-elevated"
 				onContextMenu={(event) => {
 					event.preventDefault();
 					// At the cursor: right-click acts on the row as a whole, so there is no one
@@ -82,7 +82,7 @@ export function ProjectGroup({
 						void openWorkspace(group.path);
 						dismissNav();
 					}}
-					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-label transition-colors duration-150 ${
+					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
 						compact ? "h-[40px]" : "h-[31px]"
 					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
 				>
@@ -90,14 +90,14 @@ export function ProjectGroup({
 					<ScrollText text={group.name} className="ly-fade-tail min-w-0 flex-1" />
 				</button>
 
-				<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/project:opacity-100 focus-within:opacity-100">
+				<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-100 focus-within:opacity-100">
 					<button
 						type="button"
 						data-ly-tip="项目操作"
 						aria-label={`「${group.name}」的项目操作`}
 						aria-haspopup="menu"
 						onClick={menu.toggle}
-						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
+						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 					>
 						<SquarePen size={12.5} strokeWidth={1.8} />
 					</button>

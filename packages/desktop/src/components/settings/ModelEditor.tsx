@@ -67,7 +67,7 @@ export function ModelEditor({
 				<h3 className="text-body font-medium text-ink">{model ? "编辑模型" : "添加模型"}</h3>
 			</div>
 
-			<Scroller className="max-h-[60vh]" bottom="none" contentClassName="space-y-4 px-5 py-4" fadeColor="var(--color-elevated)">
+			<Scroller className="max-h-[60vh]" bottom="none" contentClassName="space-y-4 px-5 py-4">
 				<Field label="模型 ID" hint="发送给供应商的实际模型名，例如 deepseek-v4-flash">
 					<TextInput value={modelId} onChange={setModelId} placeholder="deepseek-v4-flash" mono spellCheck={false} />
 				</Field>

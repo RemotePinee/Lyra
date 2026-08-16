@@ -179,7 +179,7 @@ function Row({
 
 	return (
 		<div
-			className={`ly-scroll group/row flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-150 hover:bg-card-hover ${
+			className={`ly-scroll group/row flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover ${
 				first ? "" : "border-t border-line-soft"
 			}`}
 		>
@@ -214,7 +214,7 @@ function Row({
 						data-ly-tip="删除"
 						aria-label={`删除「${session.title}」`}
 						onClick={() => setConfirming(true)}
-						className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-danger/10 hover:text-danger"
+						className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-danger/10 hover:text-danger"
 					>
 						<Trash2 size={13.5} strokeWidth={1.8} />
 					</button>

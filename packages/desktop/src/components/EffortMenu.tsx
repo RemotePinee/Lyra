@@ -52,7 +52,16 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 			<div className="px-3 py-2.5">
 				<div className="flex items-center gap-1.5">
 					<span className="text-label text-ink-muted">推理强度</span>
-					<span className="text-label font-medium" style={{ color: "var(--color-info)" }}>
+					{/*
+					 * Keyed on the value, so React remounts it and the roll replays. The colour turns
+					 * violet at the top level along with the track — the name and the bar are saying
+					 * the same thing, and only one of them changing looked like a bug.
+					 */}
+					<span
+						key={current.value}
+						className="ly-roll text-label font-medium"
+						style={{ color: atMax ? "var(--color-violet)" : "var(--color-info)" }}
+					>
 						{current.label}
 					</span>
 					<div className="flex-1" />
@@ -73,21 +82,36 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 
 				<DotSlider value={index} max={EFFORT_LEVELS.length - 1} disabled={!supported} atMax={atMax} onChange={set} />
 
-				<p className="mt-2 text-detail leading-relaxed text-ink-faint">
-					{supported ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
+				{/*
+				 * Fixed height, so a one-line description replacing a two-line one does not resize the
+				 * popover mid-drag — the control you are dragging would move out from under the pointer.
+				 */}
+				<p className="mt-2 h-[34px] text-detail leading-relaxed text-ink-faint">
+					<span key={supported ? current.value : "unsupported"} className="ly-roll block">
+						{supported ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
+					</span>
 				</p>
 
-				{showHelp && (
-					<div className="ly-enter mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-caption leading-relaxed text-ink-faint">
-						{EFFORT_LEVELS.map((entry) => (
-							<div key={entry.value} className="flex gap-2">
-								<span className={`w-7 shrink-0 ${entry.value === level ? "text-ink" : ""}`}>{entry.label}</span>
-								<span className="flex-1">{entry.detail}</span>
-							</div>
-						))}
-						<p className="pt-1">供应商对中间档位的处理不一，有的只区分开与关；「关闭」始终显式要求不要推理。</p>
+				{/*
+				 * Kept mounted and unfolded, so it closes the same way it opens. Rendered
+				 * conditionally it could only ever animate in — closing was a cut, which on a panel
+				 * that changes height reads as the popover having been redrawn.
+				 */}
+				<div className="ly-reveal" data-open={showHelp} aria-hidden={!showHelp}>
+					<div>
+						<div className="mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-caption leading-relaxed text-ink-faint">
+							{EFFORT_LEVELS.map((entry) => (
+								<div key={entry.value} className="flex gap-2">
+									<span className={`w-7 shrink-0 transition-colors ${entry.value === level ? "text-ink" : ""}`}>
+										{entry.label}
+									</span>
+									<span className="flex-1">{entry.detail}</span>
+								</div>
+							))}
+							<p className="pt-1">供应商对中间档位的处理不一，有的只区分开与关；「关闭」始终显式要求不要推理。</p>
+						</div>
 					</div>
-				)}
+				</div>
 			</div>
 		</Popover>
 	);
@@ -132,13 +156,21 @@ function DotSlider({
 							{Array.from({ length: ROWS }, (_, row) => (
 								<span
 									key={row}
-									className={`h-[3px] w-[3px] rounded-[0.5px] transition-[background-color,opacity] duration-200 ${
-										lit && atMax ? "ly-matrix" : ""
+									className={`h-[3px] w-[3px] rounded-[0.5px] transition-[background-color,opacity] ${
+										lit && atMax ? "ly-thrust" : ""
 									}`}
 									style={{
-										background: lit ? "var(--color-info)" : "var(--color-ink-faint)",
+										background: lit ? (atMax ? "var(--color-violet)" : "var(--color-info)") : "var(--color-ink-faint)",
 										opacity: lit ? intensity : 0.3,
-										animationDelay: lit && atMax ? `${column * 30 + row * 90}ms` : undefined,
+										transitionDuration: "var(--ly-t-base)",
+										transitionTimingFunction: "var(--ly-e-out)",
+										/*
+										 * Delayed by distance from the handle, so the pulse starts there and runs
+										 * backwards. Left to right it read as the bar filling up — a progress bar,
+										 * which is the opposite of what this is.
+										 */
+										animationDelay: lit && atMax ? `${(COLUMNS - 1 - column) * 34 + row * 60}ms` : undefined,
+										["--ly-matrix-low" as string]: lit ? String(intensity) : undefined,
 									}}
 								/>
 							))}
@@ -149,8 +181,11 @@ function DotSlider({
 
 			{/* Handle sits on the boundary between lit and unlit columns. */}
 			<div
-				className="ly-knob pointer-events-none absolute top-1/2 h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 rounded-[5px] border transition-[left] duration-200"
-				style={{ left: `calc(8px + ${ratio} * (100% - 16px))` }}
+				className="ly-knob pointer-events-none absolute top-1/2 h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 rounded-[5px] border"
+				style={{
+					left: `calc(8px + ${ratio} * (100% - 16px))`,
+					transition: "left var(--ly-t-base) var(--ly-e-out)",
+				}}
 			/>
 
 			<input

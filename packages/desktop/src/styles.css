@@ -99,6 +99,36 @@
   --color-violet: #b18cf5;
   --color-danger: #f2555a;
 
+  /* -------------------------------------------------------------------------
+   * Motion
+   *
+   * Three durations and three curves, because the alternative — and what this app had — is a
+   * number typed at each call site. Twenty of those drift: 150 here, 160 there, 200 somewhere
+   * else, none of them different on purpose, and no way to change the feel of the app without
+   * finding all of them.
+   *
+   * The durations are a scale of *what is moving*, not of how important it is:
+   *
+   *   quick   a state, not a position — hover, press, a colour changing under your finger.
+   *           Long enough to be a transition rather than a jump, short enough to feel immediate.
+   *           150 because that is what fifty-one call sites had already converged on by hand.
+   *   base    something moving or resizing: a pane, a slider handle, a column giving up its
+   *           width. The one most things want.
+   *   slow    something arriving that was not there — a section unfolding. Longer because there
+   *           is more distance and more to read.
+   *
+   * The curves say which direction the thing is going. `out` decelerates into place, which is
+   * what makes an arrival look like it settled rather than stopped; `in` is its mirror, for
+   * things leaving, where the eye should not be asked to track the last few pixels.
+   * ---------------------------------------------------------------------- */
+  --ly-t-quick: 150ms;
+  --ly-t-base: 220ms;
+  --ly-t-slow: 340ms;
+
+  --ly-e-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ly-e-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ly-e-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
   --radius-panel: 12px;
   --radius-field: 10px;
 
@@ -538,13 +568,23 @@
  * surface, so a still window shows no chrome at all.
  * ------------------------------------------------------------------------- */
 
+/*
+ * Nothing to grab until there is something to see.
+ *
+ * The thumb sits above the pane's resize handle, which is the only way it can be dragged at all —
+ * they share the same strip of edge. That trade is only honest while the thumb is visible: an
+ * invisible six pixels that silently refuse to resize the sidebar is a dead spot nobody can
+ * explain. Out of sight, it takes no clicks and the whole edge drags.
+ */
 .ly-thumb {
   opacity: 0;
+  pointer-events: none;
   transition: opacity 200ms ease-out;
 }
 
 .ly-scroll-host:hover .ly-thumb {
   opacity: 0.5;
+  pointer-events: auto;
 }
 
 .ly-scroll-host .ly-thumb:hover,
@@ -581,6 +621,70 @@
 .ly-hthumb:hover,
 .ly-hthumb.ly-hthumb-active {
   opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------------
+ * The soft edge of a scrolling list
+ *
+ * A mask on the content, not a wash of colour over it — and that is the whole difference between
+ * this working and this being the reason the sidebar had no fade at all.
+ *
+ * The old fade was a strip painted in the pane's own colour, handed in by every caller. That is
+ * only ever right where the pane is opaque, and the sidebar's is not: under vibrancy its fill is
+ * `color-mix(--color-shell, transparent)` over the desktop, so a band of solid `--color-sidebar`
+ * laid across the top of the list was a grey film with a boundary of its own. It read as a
+ * rendering fault, which is what it was, and the conclusion drawn at the time was that the
+ * sidebar wanted a hairline instead of a fade. The conclusion was wrong; the paint was.
+ *
+ * Taking the content's own alpha down has no colour in it to be wrong. It is correct over glass,
+ * over a card, over whatever the desktop happens to be showing through, and it needs nothing
+ * passed in from the caller.
+ *
+ * The stops trace an ease-out curve rather than a straight ramp. A linear ramp in alpha does not
+ * look linear — the eye is far more sensitive at the sparse end, so the fade appears to hold and
+ * then stop, and where it stops reads as a faint rule somebody drew. That "虚线" above the
+ * composer was never a border; it was the end of a two-stop gradient.
+ *
+ * Both depths default to zero, which collapses every stop onto one of the two ends and leaves a
+ * mask that is opaque throughout — so "no fade" is the same declaration with different numbers,
+ * and appearing is a length interpolating rather than a second layer fading in over the first.
+ * ------------------------------------------------------------------------- */
+
+@property --ly-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --ly-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.ly-fade-y {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgb(0 0 0 / 0.06) calc(var(--ly-fade-top) * 0.12),
+    rgb(0 0 0 / 0.19) calc(var(--ly-fade-top) * 0.26),
+    rgb(0 0 0 / 0.38) calc(var(--ly-fade-top) * 0.41),
+    rgb(0 0 0 / 0.6) calc(var(--ly-fade-top) * 0.57),
+    rgb(0 0 0 / 0.8) calc(var(--ly-fade-top) * 0.72),
+    rgb(0 0 0 / 0.94) calc(var(--ly-fade-top) * 0.86),
+    #000 var(--ly-fade-top),
+    #000 calc(100% - var(--ly-fade-bottom)),
+    rgb(0 0 0 / 0.94) calc(100% - var(--ly-fade-bottom) * 0.86),
+    rgb(0 0 0 / 0.8) calc(100% - var(--ly-fade-bottom) * 0.72),
+    rgb(0 0 0 / 0.6) calc(100% - var(--ly-fade-bottom) * 0.57),
+    rgb(0 0 0 / 0.38) calc(100% - var(--ly-fade-bottom) * 0.41),
+    rgb(0 0 0 / 0.19) calc(100% - var(--ly-fade-bottom) * 0.26),
+    rgb(0 0 0 / 0.06) calc(100% - var(--ly-fade-bottom) * 0.12),
+    transparent 100%
+  );
+  transition:
+    --ly-fade-top var(--ly-t-base) var(--ly-e-out),
+    --ly-fade-bottom var(--ly-t-base) var(--ly-e-out);
 }
 
 /* ---------------------------------------------------------------------------
@@ -667,7 +771,66 @@
 }
 
 .ly-enter {
-  animation: ly-fade-up 160ms ease-out;
+  animation: ly-fade-up var(--ly-t-quick) var(--ly-e-out);
+}
+
+/*
+ * A value replacing a value.
+ *
+ * For text that changes in place — a level's name, the sentence describing it. Swapped outright,
+ * the eye gets no signal that anything happened beyond the glyphs being different, and on a
+ * control you are actively dragging that reads as a rendering artefact rather than as feedback.
+ *
+ * Downward, always: the new value arrives from above and pushes into place, so a run of changes
+ * reads as one thing being turned rather than as text flickering. The distance is in `em`, so it
+ * scales with whatever it is applied to.
+ *
+ * Driven by React's `key` rather than by a class toggle — give the element `key={value}` and it
+ * remounts, which restarts the animation. No state, no timers, no cleanup.
+ */
+@keyframes ly-roll-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ly-roll {
+  animation: ly-roll-in var(--ly-t-base) var(--ly-e-out);
+}
+
+/*
+ * A section unfolding, rather than appearing.
+ *
+ * `grid-template-rows` from 0fr to 1fr is the one way to animate to a height nobody measured:
+ * the content keeps its natural size and the row it sits in is what grows. `max-height` guesses,
+ * and a guess that is too small clips while one that is too large spends most of the animation
+ * doing nothing visible.
+ *
+ * The child needs `overflow: hidden`, or its content spills out of a row shorter than itself
+ * during the first half of the animation.
+ */
+.ly-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--ly-t-slow) var(--ly-e-out),
+    opacity var(--ly-t-base) var(--ly-e-out);
+}
+
+.ly-reveal > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.ly-reveal[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
 }
 
 /*
@@ -1437,13 +1600,42 @@
 /* ---------------------------------------------------------------------------
  * Overflowing single-line labels
  *
- * Registered so it can be transitioned; a plain custom property would jump between the two
- * mask shapes instead of easing into the left-hand fade as the scroll starts.
+ * Two separate things soften the ends of a title, and for a while they did it by each writing
+ * their own `mask-image`: `ly-fade-edge` for text too long for its box, `ly-fade-tail` for text
+ * about to have a hover control land on top of it. A session row has both, so on hover the
+ * second simply replaced the first — and the left-hand fade that catches the line as it starts
+ * scrolling vanished exactly when it was needed, leaving the text emerging from a hard edge.
+ *
+ * One mask now, two lengths. Neither rule owns the shape; each says how deep its own side goes,
+ * and they compose because a length is not a declaration to be overridden. Registered so they
+ * interpolate — an unregistered custom property would jump between shapes rather than ease.
  * ------------------------------------------------------------------------- */
 @property --ly-fade-left {
   syntax: "<length>";
   inherits: false;
   initial-value: 0px;
+}
+
+@property --ly-fade-right {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.ly-fade-edge,
+.ly-fade-tail {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--ly-fade-left),
+    #000 calc(100% - var(--ly-fade-right)),
+    transparent 100%
+  );
+  /* Order matches the properties: the left fade waits for the scroll, the right one tracks the
+     control appearing over it. No delay on the way out — the line snaps back to its start. */
+  transition:
+    --ly-fade-left 140ms ease-out,
+    --ly-fade-right 150ms ease-out;
 }
 
 /*
@@ -1452,16 +1644,7 @@
  * too, so a matching fade appears to catch it.
  */
 .ly-fade-edge {
-  --ly-fade-left: 0px;
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 var(--ly-fade-left),
-    #000 calc(100% - 22px),
-    transparent 100%
-  );
-  /* No delay on the way out: the moment the pointer leaves, the line snaps back to its start. */
-  transition: --ly-fade-left 140ms ease-out;
+  --ly-fade-right: 22px;
 }
 
 /*
@@ -1493,14 +1676,21 @@
   animation: ly-marquee var(--ly-scroll, 8s) linear 300ms infinite;
 }
 
+/*
+ * The left fade waits for the marquee it exists to catch; the right one must not.
+ *
+ * Two delays, in the order the properties are declared. A single value would delay both, and the
+ * right-hand side is answering the archive button appearing over the text — a control that is
+ * already there while the title is still deciding whether to move.
+ */
 .ly-scroll:hover .ly-fade-edge {
   --ly-fade-left: 13px;
-  transition-delay: 320ms;
+  transition-delay: 320ms, 0ms;
 }
 
 .ly-scroll:has(:focus-visible) .ly-fade-edge {
   --ly-fade-left: 13px;
-  transition-delay: 320ms;
+  transition-delay: 320ms, 0ms;
 }
 
 /* One cycle carries the first copy off the left, leaving the second exactly where it began. */
@@ -1522,40 +1712,56 @@
 }
 
 /* Lit columns breathe at the top effort level — the one setting worth flagging as costly. */
-@keyframes ly-matrix {
-  0%,
+/*
+ * The lit track at full effort: a wave running backwards from the handle.
+ *
+ * Every column carries the same pulse with a delay set by its distance from the handle, so what
+ * you see is a single front travelling away from it rather than the whole bar breathing at once.
+ * Which is the difference between "this is on" and "this is spending something" — and full effort
+ * is the one setting worth saying that about.
+ *
+ * Brightness overshoots to 1 well before the midpoint and falls off slowly, so the leading edge
+ * is sharp and the tail drags: an exhaust plume, not a sine wave.
+ */
+@keyframes ly-thrust {
+  0% {
+    opacity: var(--ly-matrix-low, 0.35);
+    transform: scale(1);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+  70% {
+    opacity: var(--ly-matrix-low, 0.35);
+    transform: scale(1);
+  }
   100% {
     opacity: var(--ly-matrix-low, 0.35);
-  }
-  50% {
-    opacity: 1;
+    transform: scale(1);
   }
 }
 
-.ly-matrix {
-  animation: ly-matrix 1.6s ease-in-out infinite;
+.ly-thrust {
+  animation: ly-thrust 1.5s var(--ly-e-soft) infinite;
 }
 
 /*
- * Text that fades out where a control is about to appear.
+ * Text that gets out of the way where a control is about to appear.
  *
  * The hover controls in the sidebar used to sit on a gradient of `--color-card-hover`, painted
  * over the end of the title. That worked while the token was an opaque grey; once it became a
  * translucent veil — so that hover would read on the translucent sidebar — the gradient stopped
  * covering anything and the archive icon landed on top of the last characters.
  *
- * A mask fades the text itself, so it needs no fill of its own and works over glass, over a
- * card, and over whatever the desktop happens to be showing through.
+ * The mask that replaced it is shared with `ly-fade-edge` above; all this does is deepen the
+ * right-hand side, which is why the two can now be on the same title at once.
  */
-.ly-fade-tail {
-  transition: mask-image 150ms ease-out;
-}
-
 .group\/session:hover .ly-fade-tail,
 .group\/session:focus-within .ly-fade-tail,
 .group\/project:hover .ly-fade-tail,
 .group\/project:focus-within .ly-fade-tail {
-  mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent calc(100% - 6px));
+  --ly-fade-right: 30px;
 }
 
 /*

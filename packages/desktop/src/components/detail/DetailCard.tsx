@@ -61,7 +61,7 @@ export function DetailCard({
 					type="button"
 					onClick={onToggle}
 					style={{ borderRadius: open ? `${RADIUS} ${RADIUS} 0 0` : RADIUS }}
-					className={`ly-scroll flex w-full items-center gap-2 border px-2 py-[6px] text-left transition-colors duration-150 hover:bg-card-hover/50 ${
+					className={`ly-scroll flex w-full items-center gap-2 border px-2 py-[6px] text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/50 ${
 						open ? "border-line-soft bg-card" : "border-transparent"
 					}`}
 				>
@@ -71,7 +71,7 @@ export function DetailCard({
 					<ChevronRight
 						size={12}
 						strokeWidth={2}
-						className="shrink-0 text-ink-faint transition-transform duration-200"
+						className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-base)]"
 						style={open ? { transform: "rotate(90deg)" } : undefined}
 					/>
 				</button>

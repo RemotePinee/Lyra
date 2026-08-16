@@ -244,7 +244,7 @@ export function GitPanel() {
             key={entry.id}
             type="button"
             onClick={() => setView(entry.id)}
-            className={`flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-detail transition-colors duration-150 ${
+            className={`flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-detail transition-colors duration-[var(--ly-t-quick)] ${
               view === entry.id
                 ? "bg-card-hover text-ink"
                 : "text-ink-muted hover:bg-card-hover/60"

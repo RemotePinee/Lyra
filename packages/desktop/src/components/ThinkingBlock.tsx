@@ -30,7 +30,7 @@ export function ThinkingBlock({ text, redacted, live }: { text: string; redacted
 				<ChevronRight
 					size={12}
 					strokeWidth={2}
-					className="transition-transform duration-200"
+					className="transition-transform duration-[var(--ly-t-base)]"
 					style={open ? { transform: "rotate(90deg)" } : undefined}
 				/>
 			</button>

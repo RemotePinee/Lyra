@@ -3,12 +3,11 @@ import { useEffect, useRef, useState } from "react";
 /**
  * How far the pointer can wander from the edge and still be grabbing it.
  *
- * Exported because a scroller inside a resizable pane has to keep out of this strip. Both used to
- * sit on the same 9 pixels of edge with the handle on top, so the scrollbar was drawn, could be
- * seen, and could never be grabbed — every press within reach of it started a resize instead.
+ * A scroller in the same pane puts its thumb on this strip too, and the two share it rather than
+ * one moving aside: the thumb sits above and takes back the few pixels it occupies, but only
+ * while it is visible. See `.ly-thumb` in styles.css.
  */
-export const RESIZE_HIT_WIDTH = 9;
-const HIT_WIDTH = RESIZE_HIT_WIDTH;
+const HIT_WIDTH = 9;
 /** Keyboard resizing, per press. Shift multiplies it, the way nudging does everywhere else. */
 const STEP = 16;
 /** Long enough to read as a grab handle, short enough not to read as a border. */
@@ -150,7 +149,7 @@ export function ResizeHandle({
 				<span
 					aria-hidden
 					style={{ top: `clamp(${GRIP_HEIGHT / 2 + 8}px, ${grip}px, calc(100% - ${GRIP_HEIGHT / 2 + 8}px))` }}
-					className={`absolute h-[var(--ly-grip)] w-[3px] -translate-y-1/2 rounded-full transition-colors duration-150 ${
+					className={`absolute h-[var(--ly-grip)] w-[3px] -translate-y-1/2 rounded-full transition-colors duration-[var(--ly-t-quick)] ${
 						edge === "end" ? "right-[1px]" : "left-[1px]"
 					} ${active ? "bg-accent" : "bg-ink-faint/45"}`}
 				/>

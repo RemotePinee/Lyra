@@ -108,7 +108,7 @@ export function PullRequestList({
 				</label>
 			</div>
 
-			<Scroller className="flex-1" contentClassName="px-2 pb-3" fadeColor="var(--color-shell)">
+			<Scroller className="flex-1" contentClassName="px-2 pb-3">
 				{error && (
 					<p className="mx-1 mt-2 rounded-[9px] border border-accent/35 bg-accent/8 px-3 py-2 text-detail leading-relaxed text-accent">
 						{error}
@@ -152,7 +152,7 @@ function Row({ pr, active, onSelect }: { pr: PullRequestSummary; active: boolean
 		<button
 			type="button"
 			onClick={onSelect}
-			className={`ly-scroll flex w-full gap-2.5 rounded-[9px] px-2 py-2 text-left transition-colors duration-150 ${
+			className={`ly-scroll flex w-full gap-2.5 rounded-[9px] px-2 py-2 text-left transition-colors duration-[var(--ly-t-quick)] ${
 				active ? "bg-card-hover" : "hover:bg-card-hover/60"
 			}`}
 		>

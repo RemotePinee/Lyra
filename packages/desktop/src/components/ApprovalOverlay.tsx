@@ -67,7 +67,6 @@ export function ApprovalOverlay() {
           className="max-h-[min(280px,30vh)] bg-shell/60"
           bottom="none"
           contentClassName="px-4 py-3"
-          fadeColor="var(--color-shell)"
         >
           {/* The command itself is code being read before it runs, so it takes 代码字号. */}
           <pre className="font-mono text-code whitespace-pre-wrap text-ink-muted">

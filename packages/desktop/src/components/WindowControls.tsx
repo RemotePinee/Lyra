@@ -48,7 +48,7 @@ export function ToolbarButton({
 			aria-label={label}
 			aria-pressed={active}
 			onClick={onClick}
-			className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ${
+			className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-[var(--ly-t-quick)] ${
 				active ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 			}`}
 		>
@@ -71,7 +71,7 @@ function SidebarIcon({ open }: { open: boolean }) {
 				rx="2.5"
 				fill="currentColor"
 				stroke="none"
-				className="transition-opacity duration-200"
+				className="transition-opacity duration-[var(--ly-t-base)]"
 				opacity={open ? 0.5 : 0}
 			/>
 		</svg>

@@ -103,7 +103,7 @@ export function UserMessage({
                 setEditing(false);
                 setDraft(text);
               }}
-              className="h-7 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink"
+              className="h-7 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
             >
               取消
             </button>
@@ -111,7 +111,7 @@ export function UserMessage({
               type="button"
               disabled={!draft.trim()}
               onClick={submit}
-              className="h-7 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-45"
+              className="h-7 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-45"
             >
               发送
             </button>
@@ -168,7 +168,7 @@ export function UserMessage({
             setDraft(text);
             setEditing(true);
           }}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <Pencil size={12.5} strokeWidth={1.8} />
         </button>

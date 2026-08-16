@@ -141,7 +141,6 @@ function TestOutcome({ result }: { result: ProviderTestResult }) {
 					<Scroller
 						className="mt-1 max-h-[160px]"
 						contentClassName="font-mono text-detail opacity-80"
-						fadeColor="var(--color-card)"
 					>
 						{result.models.join("\n")}
 					</Scroller>

@@ -71,7 +71,7 @@ export function PullRequestDetail({
 		<div className="flex min-h-0 flex-1 flex-col">
 			{/* In the toolbar strip, level with the sidebar's collapse button — see PullRequestList. */}
 			<header
-				className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-1 px-3 transition-[padding-left] duration-[220ms] ease-out"
+				className="no-drag relative z-50 flex h-11 shrink-0 items-center gap-1 px-3 transition-[padding-left] duration-[var(--ly-t-base)] ease-out"
 				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
 			>
 				{/*
@@ -158,7 +158,6 @@ export function PullRequestDetail({
 					key={`${detail.repo}#${detail.number}`}
 					className="flex-1"
 					contentClassName="ly-fade-in px-5 pt-1 pb-6"
-					fadeColor="var(--color-shell)"
 				>
 					<h1 className="text-heading leading-snug font-semibold tracking-tight text-ink">{detail.title}</h1>
 					<p className="pt-1.5 pb-4 text-detail text-ink-faint">

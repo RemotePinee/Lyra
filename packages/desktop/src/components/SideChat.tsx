@@ -55,7 +55,6 @@ export function SideChat() {
 					className="flex-1"
 					scrollRef={scrollRef}
 					contentClassName="px-3"
-					fadeColor="var(--color-shell)"
 					onScroll={(el) => {
 						pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_SLACK;
 					}}

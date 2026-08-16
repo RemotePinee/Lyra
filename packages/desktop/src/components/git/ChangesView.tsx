@@ -191,7 +191,7 @@ export function ChangesView({
             type="button"
             disabled={busy || stagedPaths.length === 0 || !message.trim()}
             onClick={() => void commit()}
-            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-detail font-medium text-shell transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
+            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-detail font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-40"
           >
             <Check size={12} strokeWidth={2.2} />
             提交

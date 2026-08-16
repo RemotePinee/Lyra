@@ -41,7 +41,7 @@ export function IconButton({
 			aria-pressed={active}
 			disabled={disabled}
 			onClick={onClick}
-			className={`flex shrink-0 items-center justify-center rounded-md transition-colors duration-150 disabled:opacity-40 ${
+			className={`flex shrink-0 items-center justify-center rounded-md transition-colors duration-[var(--ly-t-quick)] disabled:opacity-40 ${
 				size === "sm" ? "h-[22px] w-[22px]" : "h-[26px] w-[26px]"
 			} ${
 				tone === "danger"

@@ -211,7 +211,7 @@ export function PullRequestsView() {
 					marginLeft: expanded ? -listWidth : 0,
 					opacity: expanded ? 0 : 1,
 				}}
-				className="flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-line-soft transition-[margin-left,opacity] duration-[220ms] ease-out"
+				className="flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-line-soft transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out"
 			>
 				{list}
 			</div>

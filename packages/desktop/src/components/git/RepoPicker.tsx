@@ -79,7 +79,7 @@ export function RepoPicker({
            * pixels away from menus that had all three settled long ago. `Scroller` brings the
            * hidden bar and the faded edge; `MenuItem` brings the two-line row this needs anyway.
            */}
-          <Scroller className="max-h-[min(320px,44vh)]" contentClassName="p-1" fadeColor="var(--color-float)">
+          <Scroller className="max-h-[min(320px,44vh)]" contentClassName="p-1">
             {repos.map((repo) => (
               <div key={repo.path}>
                 <MenuItem

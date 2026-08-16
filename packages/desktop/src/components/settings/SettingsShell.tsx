@@ -122,7 +122,7 @@ export function SettingsShell() {
 								setView("chat");
 								dismissNav();
 							}}
-							className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink active:bg-elevated ${
+							className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink active:bg-elevated ${
 								compact ? "h-[40px]" : "h-[32px]"
 							}`}
 						>
@@ -137,7 +137,6 @@ export function SettingsShell() {
 						top="line"
 						bottom="none"
 						contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}
-						fadeColor="var(--color-sidebar)"
 					>
 						{GROUPS.map((group) => (
 							// Spaced for the same reason as the session list: adjacent filled rows
@@ -177,7 +176,7 @@ export function SettingsShell() {
 								setSection("models");
 								dismissNav();
 							}}
-							className="flex h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink active:bg-elevated"
+							className="flex h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink active:bg-elevated"
 						>
 							<Rocket size={14} strokeWidth={1.8} />
 							引导
@@ -199,7 +198,7 @@ export function SettingsShell() {
 						<SectionBody section={section} />
 					</div>
 				) : (
-				<Scroller className="flex-1" fadeColor="var(--color-shell)">
+				<Scroller className="flex-1">
 					<div className={`mx-auto w-full max-w-[900px] pb-16 ${compact ? "px-4" : "px-9"}`}>
 						<SectionBody section={section} />
 					</div>
@@ -221,7 +220,7 @@ export function SettingsShell() {
 						aria-label={navOpen ? "隐藏设置导航" : "显示设置导航"}
 						aria-pressed={compact && navOpen}
 						onClick={toggleNav}
-						className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ${
+						className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-[var(--ly-t-quick)] ${
 							compact && navOpen ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 						}`}
 					>
@@ -236,7 +235,7 @@ export function SettingsShell() {
 								rx="2.5"
 								fill="currentColor"
 								stroke="none"
-								className="transition-opacity duration-200"
+								className="transition-opacity duration-[var(--ly-t-base)]"
 								opacity={navOpen ? 0.5 : 0}
 							/>
 						</svg>
@@ -246,7 +245,7 @@ export function SettingsShell() {
 						data-ly-tip="返回工作区"
 						aria-label="返回工作区"
 						onClick={() => setView("chat")}
-						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-150 hover:bg-card-hover hover:text-ink"
+						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
 					>
 						<ArrowLeft size={15} strokeWidth={1.9} />
 					</button>

@@ -39,14 +39,14 @@ export function SessionRow({
 
 	return (
 		<div
-			className={`ly-scroll group/session relative rounded-lg transition-colors duration-150 active:bg-elevated ${
+			className={`ly-scroll group/session relative rounded-lg transition-colors duration-[var(--ly-t-quick)] active:bg-elevated ${
 				active ? "bg-card-hover" : "hover:bg-card-hover"
 			}`}
 		>
 			<button
 				type="button"
 				onClick={onOpen}
-				className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-3.5 text-left text-label transition-colors duration-150 ${
+				className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-3.5 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
 					compact ? "h-[34px]" : "h-[27px]"
 				} ${active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
 			>
@@ -57,13 +57,13 @@ export function SessionRow({
 
 			{/* The strip never takes pointer events; only the button does. Anything wider would
 			    shadow the row button and cost it its hover. */}
-			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-150 group-hover/session:opacity-100 focus-within:opacity-100">
+			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-100 focus-within:opacity-100">
 				<button
 					type="button"
 					data-ly-tip="归档会话"
 					aria-label={`归档会话「${session.title}」`}
 					onClick={onArchive}
-					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
+					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 				>
 					<Archive size={12.5} strokeWidth={1.8} />
 				</button>

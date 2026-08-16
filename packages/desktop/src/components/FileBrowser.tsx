@@ -200,7 +200,7 @@ export function FileBrowser() {
 								: "flex-1"
 					}`}
 				>
-					<Scroller className="flex-1" contentClassName="px-1 py-1" fadeColor="transparent">
+					<Scroller className="flex-1" contentClassName="px-1 py-1">
 						{rows.map(({ entry, depth }) => (
 							<button
 								key={entry.path}
@@ -218,7 +218,7 @@ export function FileBrowser() {
 									<ChevronRight
 										size={11}
 										strokeWidth={2.2}
-										className="shrink-0 text-ink-faint transition-transform duration-150"
+										className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-quick)]"
 										style={expanded.has(entry.path) ? { transform: "rotate(90deg)" } : undefined}
 									/>
 								) : (

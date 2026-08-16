@@ -45,7 +45,7 @@ export function ProjectPicker({ anchor, onClose }: { anchor: Anchor; onClose: ()
 				/>
 			</div>
 
-			<Scroller className="max-h-[min(280px,42vh)]" bottom="none" contentClassName="p-1" fadeColor="var(--color-float)">
+			<Scroller className="max-h-[min(280px,42vh)]" bottom="none" contentClassName="p-1">
 				{projects.map((project) => (
 					<MenuItem
 						key={project.path}

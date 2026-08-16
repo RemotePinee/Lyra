@@ -177,7 +177,7 @@ export function FileViewer({
 			)}
 
 			{kind === "image" ? (
-				<Scroller className="flex-1" fadeColor="var(--color-shell)">
+				<Scroller className="flex-1">
 					{/* Checkerboard, so transparent images do not read as white ones. */}
 					<div className="ly-checker flex min-h-full items-center justify-center p-3">
 						<img src={media} alt={name} className="max-w-full rounded-md object-contain" />
@@ -200,7 +200,7 @@ export function FileViewer({
 					<p className="text-detail text-ink-faint">{formatBytes(contents.bytes)}</p>
 				</div>
 			) : kind === "markdown" && !showSource ? (
-				<Scroller className="flex-1" contentClassName="px-3" fadeColor="var(--color-shell)">
+				<Scroller className="flex-1" contentClassName="px-3">
 					<div className="py-3">
 						<Markdown text={text} />
 					</div>

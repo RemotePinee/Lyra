@@ -80,7 +80,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 				/>
 			</div>
 
-			<Scroller className="max-h-[min(300px,44vh)]" contentClassName="p-1" fadeColor="var(--color-float)">
+			<Scroller className="max-h-[min(300px,44vh)]" contentClassName="p-1">
 				{/*
 				 * Rows, not a line of text.
 				 *

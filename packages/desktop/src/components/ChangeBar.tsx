@@ -56,7 +56,7 @@ export function ChangeBar() {
         type="button"
         data-ly-tip={`${stat.files} 个文件有未提交的改动 · 点击查看`}
         onClick={() => openTab("review")}
-        className="ly-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail transition-colors duration-150 hover:bg-card-hover"
+        className="ly-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
       >
         <span className="font-mono text-detail text-ok">
           +{stat.added.toLocaleString()}
@@ -70,7 +70,7 @@ export function ChangeBar() {
         type="button"
         data-ly-tip="在 Git 面板中查看并提交"
         onClick={() => openTab("review")}
-        className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink"
+        className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
       >
         <GitCommitVertical size={13} strokeWidth={1.8} className="shrink-0" />
         提交

@@ -100,7 +100,7 @@ export function FileDiffList({
                   <ChevronRight
                     size={11}
                     strokeWidth={2.2}
-                    className="shrink-0 text-ink-faint transition-transform duration-150"
+                    className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-quick)]"
                     style={expanded ? { transform: "rotate(90deg)" } : undefined}
                   />
                   <look.Icon

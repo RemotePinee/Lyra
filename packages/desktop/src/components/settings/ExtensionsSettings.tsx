@@ -52,7 +52,7 @@ export function ExtensionsSettings() {
 					<button
 						type="button"
 						onClick={() => setBrowsing(true)}
-						className="flex h-[30px] items-center gap-1.5 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-150 hover:border-ink-faint hover:text-ink"
+						className="flex h-[30px] items-center gap-1.5 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
 					>
 						<Store size={13} strokeWidth={1.8} />
 						浏览市场
@@ -62,7 +62,7 @@ export function ExtensionsSettings() {
 						onClick={add.toggle}
 						aria-haspopup="menu"
 						aria-expanded={add.open}
-						className="flex h-[30px] items-center gap-1.5 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-150 hover:opacity-90"
+						className="flex h-[30px] items-center gap-1.5 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90"
 					>
 						添加
 						<ChevronDown size={13} strokeWidth={2} />
@@ -112,7 +112,7 @@ export function ExtensionsSettings() {
 							key={entry.id}
 							type="button"
 							onClick={() => setTab(entry.id)}
-							className={`flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-label transition-colors duration-150 ${
+							className={`flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-label transition-colors duration-[var(--ly-t-quick)] ${
 								tab === entry.id ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover/60"
 							}`}
 						>

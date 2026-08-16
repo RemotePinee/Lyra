@@ -66,7 +66,6 @@ export function ModelSettings() {
           <Scroller
             className="max-h-[168px] shrink-0 border-b border-line @2xl:max-h-none @2xl:w-[268px] @2xl:border-r @2xl:border-b-0"
             contentClassName="p-2.5"
-            fadeColor="var(--color-shell)"
           >
             <div className="px-2 pt-1.5 pb-1 text-detail text-ink-faint">
               自定义供应商
@@ -110,7 +109,6 @@ export function ModelSettings() {
           <Scroller
             className="min-w-0 flex-1"
             contentClassName="p-4 @2xl:p-6"
-            fadeColor="var(--color-shell)"
           >
             {!p.selected ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">

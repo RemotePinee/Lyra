@@ -140,7 +140,7 @@ export function TabStrip({
 					aria-haspopup="menu"
 					aria-expanded={adderOpen}
 					onClick={onToggleAdder}
-					className={`no-drag ml-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+					className={`no-drag ml-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition-colors duration-[var(--ly-t-quick)] ${
 						adderOpen ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 					}`}
 				>
@@ -176,7 +176,7 @@ function Tab({
 	return (
 		<div
 			style={{ height: TAB_HEIGHT, borderRadius: TAB_RADIUS }}
-			className={`no-drag group/tab flex min-w-0 shrink-0 items-center transition-colors duration-150 ${
+			className={`no-drag group/tab flex min-w-0 shrink-0 items-center transition-colors duration-[var(--ly-t-quick)] ${
 				active ? "bg-card-hover" : "hover:bg-card-hover/50"
 			}`}
 		>
@@ -203,7 +203,7 @@ function Tab({
 					data-ly-tip={`关闭${def.label}`}
 					aria-label={`关闭${def.label}`}
 					onClick={onClose}
-					className="mr-1 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded text-ink-faint transition-colors duration-150 hover:bg-elevated hover:text-ink"
+					className="mr-1 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-elevated hover:text-ink"
 				>
 					<X size={10.5} strokeWidth={2.2} />
 				</button>

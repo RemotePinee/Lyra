@@ -67,7 +67,7 @@ export function EmptyState() {
 									key={card.label}
 									type="button"
 									onClick={() => void send([{ type: "text", text: card.prompt }])}
-									className="group flex min-h-[72px] flex-col justify-between gap-2 rounded-[11px] border border-line bg-transparent p-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-ink-faint/60 hover:bg-card/60 active:translate-y-0"
+									className="group flex min-h-[72px] flex-col justify-between gap-2 rounded-[11px] border border-line bg-transparent p-3 text-left transition-all duration-[var(--ly-t-base)] hover:-translate-y-0.5 hover:border-ink-faint/60 hover:bg-card/60 active:translate-y-0"
 								>
 									<card.icon size={17} strokeWidth={1.7} className={`shrink-0 ${card.tint}`} />
 									<span className="text-label leading-snug text-ink">{card.label}</span>

@@ -25,12 +25,12 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (che
 			role="switch"
 			aria-checked={checked}
 			onClick={() => onChange(!checked)}
-			className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors duration-200 ${
+			className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors duration-[var(--ly-t-base)] ${
 				checked ? "bg-accent" : "bg-line"
 			}`}
 		>
 			<span
-				className="ly-knob absolute top-[3px] h-4 w-4 rounded-full border transition-[left] duration-200"
+				className="ly-knob absolute top-[3px] h-4 w-4 rounded-full border transition-[left] duration-[var(--ly-t-base)]"
 				style={{ left: checked ? 19 : 3 }}
 			/>
 		</button>
@@ -104,7 +104,7 @@ export function GhostButton({
 			disabled={disabled}
 			onClick={onClick}
 			data-ly-tip={title}
-			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail transition-colors duration-150 disabled:opacity-45 disabled: ${
+			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail transition-colors duration-[var(--ly-t-quick)] disabled:opacity-45 disabled: ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"
 					: "text-ink-muted hover:border-ink-faint hover:text-ink"

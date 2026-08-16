@@ -199,7 +199,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 			 * mid-transition and reported the height it happened to see, which was the old one.
 			 */
 			className={`ly-enter relative my-2.5 overflow-hidden rounded-[12px] border border-line-soft ${
-				measured === null ? "" : "transition-[height] duration-300"
+				measured === null ? "" : "transition-[height] duration-[var(--ly-t-slow)]"
 			}`}
 		>
 			{/*
@@ -222,7 +222,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					title={preview.title}
 					sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals"
 					onLoad={() => setReady(true)}
-					className={`block h-full w-full transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}
+					className={`block h-full w-full transition-opacity duration-[var(--ly-t-base)] ${visible ? "opacity-100" : "opacity-0"}`}
 				/>
 			</div>
 
@@ -259,7 +259,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 				</button>
 			)}
 
-			<div className="ly-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
+			<div className="ly-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-[var(--ly-t-quick)] hover:opacity-100 focus-within:opacity-100">
 				{/*
 				 * Taller, because the frame cannot ask for a size.
 				 *

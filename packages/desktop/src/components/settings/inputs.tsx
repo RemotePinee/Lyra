@@ -118,7 +118,7 @@ function Dropdown<T extends string>({
 				<ChevronDown
 					size={field ? 15 : 13}
 					strokeWidth={1.9}
-					className="shrink-0 text-ink-faint transition-transform duration-150"
+					className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-quick)]"
 					style={menu.open ? { transform: "rotate(180deg)" } : undefined}
 				/>
 			</button>

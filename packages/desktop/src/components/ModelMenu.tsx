@@ -94,7 +94,7 @@ export function ModelMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => 
 								<ChevronRight
 									size={13}
 									strokeWidth={2}
-									className="shrink-0 text-ink-faint transition-transform duration-200"
+									className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-base)]"
 									style={showAll ? { transform: "rotate(90deg)" } : undefined}
 								/>
 							}
@@ -116,12 +116,12 @@ export function ModelMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => 
 						 */
 						<span
 							aria-hidden
-							className={`mt-[3px] relative h-[20px] w-[34px] shrink-0 rounded-full transition-colors duration-200 ${
+							className={`mt-[3px] relative h-[20px] w-[34px] shrink-0 rounded-full transition-colors duration-[var(--ly-t-base)] ${
 								fastMode ? "bg-info" : "bg-line"
 							}`}
 						>
 							<span
-								className="absolute top-[3px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-[left] duration-200"
+								className="absolute top-[3px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-[left] duration-[var(--ly-t-base)]"
 								style={{ left: fastMode ? 17 : 3 }}
 							/>
 						</span>

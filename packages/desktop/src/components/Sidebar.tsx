@@ -126,20 +126,20 @@ export function Sidebar() {
 			</nav>
 
 			{/*
-			 * Solid above and solid below, so neither edge fades.
+			 * Both ends soften.
 			 *
-			 * The nav sits on top of this list and the settings row sits under it — both opaque,
-			 * both things the rows pass behind rather than dissolve into. A gradient at either end
-			 * leaves half-lit text hanging off an opaque block, and at the bottom it also lands
-			 * directly on the settings row's own border, so one boundary gets drawn twice.
+			 * This was a hairline on top and nothing at the bottom, on the reasoning that the nav
+			 * above and the settings row below are solid — content passes behind them rather than
+			 * dissolving into them, so a fade would leave half-lit rows hanging off an opaque block.
+			 * That was true of the fade we had, which painted a strip of `--color-sidebar` over the
+			 * list; on a pane whose fill is translucent that strip is a grey film with an edge of its
+			 * own, and the half-lit rows were it.
+			 *
+			 * A mask has no such problem — the rows genuinely thin out to nothing — and once they
+			 * really do, the argument turns around: a hard rule at the top of a list that runs on
+			 * says the list ended there. See `.ly-fade-y`.
 			 */}
-			<Scroller
-				className="flex-1"
-				top="line"
-				bottom="none"
-				contentClassName={`pb-2 ${compact ? "px-3" : "px-2.5"}`}
-				fadeColor="var(--color-sidebar)"
-			>
+			<Scroller className="flex-1" contentClassName={`pb-2 ${compact ? "px-3" : "px-2.5"}`}>
 				<div className="flex flex-col gap-[2px] pb-1">
 					<NavItem
 						active={view === "pull-requests"}
@@ -212,7 +212,7 @@ export function Sidebar() {
 						setView("settings");
 						dismissNav();
 					}}
-					className={`ly-scroll flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-150 hover:bg-card-hover active:bg-elevated ${
+					className={`ly-scroll flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover active:bg-elevated ${
 						compact ? "h-[40px]" : "h-[34px]"
 					}`}
 				>

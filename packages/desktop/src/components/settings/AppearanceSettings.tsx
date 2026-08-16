@@ -58,7 +58,7 @@ export function AppearanceSettings() {
 						key={theme}
 						type="button"
 						onClick={() => patch({ theme })}
-						className={`rounded-[12px] border p-1.5 text-center transition-all duration-200 ${
+						className={`rounded-[12px] border p-1.5 text-center transition-all duration-[var(--ly-t-base)] ${
 							appearance.theme === theme
 								? "border-ink ring-1 ring-ink"
 								: "border-line hover:border-ink-faint"
@@ -83,7 +83,7 @@ export function AppearanceSettings() {
 								type="button"
 								data-ly-tip={preset.label}
 								onClick={() => patch(preset.patch)}
-								className="h-6 w-6 rounded-full border border-line transition-transform duration-150 hover:scale-110"
+								className="h-6 w-6 rounded-full border border-line transition-transform duration-[var(--ly-t-quick)] hover:scale-110"
 								style={{ background: preset.patch.accent }}
 							/>
 						))}

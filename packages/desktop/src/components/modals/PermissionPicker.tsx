@@ -167,7 +167,7 @@ export function PermissionPicker({
               <button
                 type="button"
                 onClick={() => setConfirming(false)}
-                className="h-[30px] rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-150 hover:bg-card-hover hover:text-ink"
+                className="h-[30px] rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
               >
                 取消
               </button>
@@ -177,7 +177,7 @@ export function PermissionPicker({
                   setConfirming(false);
                   choose("full");
                 }}
-                className="h-[30px] rounded-lg bg-danger px-3 text-label font-medium text-shell transition-opacity duration-150 hover:opacity-90"
+                className="h-[30px] rounded-lg bg-danger px-3 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90"
               >
                 开启完全访问权限
               </button>

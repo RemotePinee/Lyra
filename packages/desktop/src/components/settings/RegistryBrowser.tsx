@@ -88,7 +88,7 @@ export function RegistryBrowser({ onClose }: { onClose: () => void }) {
 					<SearchField value={query} onChange={setQuery} placeholder="搜索" className="w-[180px]" />
 				</div>
 
-				<Scroller className="min-h-0 flex-1" contentClassName="px-5 py-4" fadeColor="var(--color-elevated)">
+				<Scroller className="min-h-0 flex-1" contentClassName="px-5 py-4">
 					{/* The sources themselves, so a bad one can be removed rather than just failing. */}
 					<div className="mb-4 flex flex-col gap-1.5">
 						{urls.map((url) => {

@@ -67,7 +67,7 @@ export function ComposerShell({
        * of room rather than when the window does. The two are not the same question: at
        * 1100px wide with a sidebar and a panel open, this field is 350px.
        */
-      className="ly-composer @container rounded-[18px] border border-line-soft bg-input transition-[border-color,box-shadow] duration-200"
+      className="ly-composer @container rounded-[18px] border border-line-soft bg-input transition-[border-color,box-shadow] duration-[var(--ly-t-base)]"
       onDragOver={onFiles ? (e) => e.preventDefault() : undefined}
       onDrop={
         onFiles
@@ -149,7 +149,7 @@ export function ComposerSend({
         data-ly-tip="停止"
         aria-label="停止"
         onClick={onStop}
-        className="ly-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-150 hover:opacity-85"
+        className="ly-pop flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ink text-shell transition-all duration-[var(--ly-t-quick)] hover:opacity-85"
       >
         <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
           <rect width="11" height="11" rx="1.5" fill="currentColor" />
@@ -164,7 +164,7 @@ export function ComposerSend({
       aria-label="发送"
       disabled={disabled}
       onClick={onSend}
-      className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-elevated text-ink transition-all duration-150 enabled:hover:bg-ink enabled:hover:text-shell enabled: disabled:opacity-45"
+      className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-elevated text-ink transition-all duration-[var(--ly-t-quick)] enabled:hover:bg-ink enabled:hover:text-shell enabled: disabled:opacity-45"
     >
       <svg
         width="15"

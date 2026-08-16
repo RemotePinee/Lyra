@@ -157,7 +157,7 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 				<ChevronDown
 					size={12.5}
 					strokeWidth={1.9}
-					className={`shrink-0 text-ink-faint transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+					className={`shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-base)] ${open ? "rotate-180" : ""}`}
 				/>
 			</button>
 
@@ -169,10 +169,10 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 			 */}
 			<div
 				style={{ height: open ? height : 0 }}
-				className="overflow-hidden transition-[height] duration-200 ease-out"
+				className="overflow-hidden transition-[height] duration-[var(--ly-t-base)] ease-out"
 			>
 				<div ref={body} className="border-t border-line-soft">
-					<Scroller className="max-h-[min(280px,38vh)]" contentClassName="px-1.5 py-1.5" fadeColor="var(--color-shell)">
+					<Scroller className="max-h-[min(280px,38vh)]" contentClassName="px-1.5 py-1.5">
 						{todos.map((todo, index) => (
 							<Row
 								key={`${index}-${todo.content}`}

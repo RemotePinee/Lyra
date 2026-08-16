@@ -25,7 +25,7 @@ export function RightPanelIcon({ active }: { active: boolean }) {
         rx="2.5"
         fill="currentColor"
         stroke="none"
-        className="transition-opacity duration-200"
+        className="transition-opacity duration-[var(--ly-t-base)]"
         opacity={active ? 0.5 : 0}
       />
     </svg>

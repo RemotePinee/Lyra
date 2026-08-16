@@ -89,12 +89,12 @@ export function ToolGroup({
 				<ChevronRight
 					size={12}
 					strokeWidth={2}
-					className="shrink-0 opacity-0 transition-all duration-200 group-hover/run:opacity-100"
+					className="shrink-0 opacity-0 transition-all duration-[var(--ly-t-base)] group-hover/run:opacity-100"
 					style={open ? { transform: "rotate(90deg)", opacity: 1 } : undefined}
 				/>
 			</button>
 
-			<div style={{ height: open ? height : 0 }} className="overflow-hidden transition-[height] duration-200 ease-out">
+			<div style={{ height: open ? height : 0 }} className="overflow-hidden transition-[height] duration-[var(--ly-t-base)] ease-out">
 				<div ref={body} className="pt-1">
 					{children}
 				</div>

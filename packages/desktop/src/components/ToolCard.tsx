@@ -63,22 +63,22 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 
 	return (
 		<div
-			className={`ly-enter mb-2 overflow-hidden rounded-[10px] border transition-colors duration-200 ${
+			className={`ly-enter mb-2 overflow-hidden rounded-[10px] border transition-colors duration-[var(--ly-t-base)] ${
 				running ? "ly-rail border-info/30 bg-card/60" : "border-line-soft bg-card/45"
 			}`}
 		>
 			<button
 				type="button"
 				onClick={() => setOpen((v) => !v)}
-				className="ly-scroll flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors duration-150 hover:bg-card-hover/50"
+				className="ly-scroll flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/50"
 			>
 				<Icon
 					size={14}
 					strokeWidth={1.8}
-					className={`shrink-0 transition-colors duration-200 ${running ? "ly-pulse text-info" : "text-ink-faint"}`}
+					className={`shrink-0 transition-colors duration-[var(--ly-t-base)] ${running ? "ly-pulse text-info" : "text-ink-faint"}`}
 				/>
 				<span
-					className={`min-w-0 flex-1 truncate text-label transition-colors duration-200 ${
+					className={`min-w-0 flex-1 truncate text-label transition-colors duration-[var(--ly-t-base)] ${
 						running ? "text-ink" : "text-ink-muted"
 					}`}
 				>
@@ -104,7 +104,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				<ChevronRight
 					size={13}
 					strokeWidth={2}
-					className="shrink-0 text-ink-faint transition-transform duration-200"
+					className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-base)]"
 					style={open ? { transform: "rotate(90deg)" } : undefined}
 				/>
 			</button>
@@ -152,7 +152,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 									mono
 									tone={status === "error" ? "danger" : "muted"}
 								>
-									<Scroller className="max-h-[420px]" fadeColor="var(--color-shell)">
+									<Scroller className="max-h-[420px]">
 										{resultText(result)}
 									</Scroller>
 								</Section>

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { RESIZE_HIT_WIDTH, ResizeHandle } from "./components/ResizeHandle.tsx";
+import { ResizeHandle } from "./components/ResizeHandle.tsx";
 import { useFocusTrap, useLayout } from "./layout.tsx";
 
 /**
@@ -64,24 +64,13 @@ export function NavPane({
 			 */
 			data-pane={compact ? "drawer" : "beside"}
 			className={`${compact ? "fixed inset-0 z-30 shadow-2xl shadow-black/60" : "relative shrink-0 overflow-hidden"} ${
-				snap ? "transition-none" : "transition-[margin-left,opacity,transform] duration-[220ms] ease-out"
+				snap ? "transition-none" : "transition-[margin-left,opacity,transform] duration-[var(--ly-t-base)] ease-out"
 			}`}
-			style={{
-				/*
-				 * The last few pixels of this edge belong to the drag handle below, so any scroller
-				 * inside keeps its thumb clear of them. Without it the two occupy the same strip
-				 * with the handle on top, and the scrollbar becomes something you can see and can
-				 * never grab.
-				 *
-				 * Declared even as a drawer, where there is no handle: a variable that appears and
-				 * disappears with the layout would move the thumb sideways every time the window
-				 * crosses a breakpoint.
-				 */
-				["--ly-scroll-inset" as string]: `${RESIZE_HIT_WIDTH}px`,
-				...(compact
+			style={
+				compact
 					? { transform: navOpen ? "none" : "translateX(-100%)", opacity: navOpen ? 1 : 0 }
-					: { width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }),
-			}}
+					: { width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }
+			}
 		>
 			{children}
 
@@ -160,7 +149,7 @@ export function SidePane({
 				covering
 					? `ly-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
 					: "ly-opaque relative z-50 shrink-0 overflow-hidden"
-			} ${snap ? "transition-none" : "transition-[margin-right,transform] duration-[220ms] ease-out"}`}
+			} ${snap ? "transition-none" : "transition-[margin-right,transform] duration-[var(--ly-t-base)] ease-out"}`}
 			/*
 			 * Moved, never faded.
 			 *

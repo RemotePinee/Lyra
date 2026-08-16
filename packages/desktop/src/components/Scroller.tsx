@@ -1,36 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-/**
- * A fade that has no edge in it.
- *
- * Two colour stops give a linear ramp in alpha, and a linear ramp in alpha does not look linear:
- * the eye is far more sensitive to change in the sparse end, so the gradient appears to hold its
- * colour and then stop, and where it stops reads as a faint rule somebody drew. That "虚线" above
- * the composer was never a border — it was this, the end of a two-stop gradient.
- *
- * These stops trace an ease-out curve instead, so the alpha falls fastest where the fade is
- * densest and trails off to nothing. There is no point along it where the rate of change jumps,
- * which is what it takes for a fade to read as a fade rather than as a band with a boundary.
- *
- * `color-mix` rather than baking in an rgba: the colour arrives as `--ly-fade-color` and is a
- * different surface on every pane it is used in.
- */
-function fadeTo(direction: "top" | "bottom"): string {
-	const base = "var(--ly-fade-color, var(--color-shell))";
-	const at = (percent: number, position: number) =>
-		`color-mix(in srgb, ${base} ${percent}%, transparent) ${position}%`;
-	return [
-		`linear-gradient(to ${direction}`,
-		`${base} 0%`,
-		at(94, 14),
-		at(80, 28),
-		at(60, 43),
-		at(38, 59),
-		at(19, 74),
-		at(6, 88),
-		"transparent 100%)",
-	].join(", ");
-}
+/** How far the softening reaches. Deeper at the bottom, where the eye is leaving rather than
+ *  arriving and a shallow fade reads as a cut. */
+const FADE_TOP = 36;
+const FADE_BOTTOM = 48;
 
 /**
  * The app's only scrolling surface.
@@ -54,48 +27,33 @@ export function Scroller({
 	bottom = "fade",
 	onScroll,
 	scrollRef,
-	fadeColor,
 }: {
 	children: React.ReactNode;
 	className?: string;
 	contentClassName?: string;
 	/**
-	 * How the top edge ends — and these are two different physical situations, not two styles.
+	 * How the top edge ends.
 	 *
-	 * `"fade"` is content dissolving into nothing: what sits above the scroller is the same empty
-	 * surface the gradient fades to, so the softness reads as "there is more this way".
+	 * `"fade"` softens the last rows away, which says "there is more this way" without drawing
+	 * anything. It works whatever is above — empty pane or opaque nav — because it takes the
+	 * content's own alpha down rather than painting over it; see `.ly-fade-y` in styles.css for
+	 * why that distinction is the whole story.
 	 *
-	 * `"line"` is content passing *under* something solid — a nav, a header, a toolbar. There the
-	 * gradient is wrong twice over. It leaves half-lit rows hanging below an opaque block, which
-	 * looks like a rendering fault rather than a hint, and it contradicts the boundary: a hairline
-	 * says "this is an edge" while a fade says "this dissolves". The sidebar had both switched on
-	 * at once, which is exactly what that ghosted row under the nav was. Solid things clip; only
-	 * emptiness fades.
+	 * `"line"` is a hairline instead: the boundary stated rather than the content softened. For
+	 * places where the edge itself is the point — a toolbar you should read as a fixed rail.
 	 *
-	 * The hairline appears only once something has actually gone under, so a short list has no
-	 * rule at all — the boundary is only worth drawing when it is doing something.
+	 * Either only appears once something has actually gone under, so a short list has no edge
+	 * treatment at all: a boundary is worth drawing when it is doing something.
 	 */
 	top?: "fade" | "line" | "none";
-	/**
-	 * Same question at the bottom, minus the hairline: nothing is ever pinned below the content.
-	 *
-	 * The test is whether what follows reaches the edge. A composer or a comment box is a rounded
-	 * card with the pane's own colour all around it, so content really is scrolling away into
-	 * empty space and should fade. A settings row with a `border-t` across the full width is a
-	 * wall — content passes behind it, and a gradient stacked on its border draws one boundary
-	 * twice.
-	 */
+	/** Same question at the bottom, minus the hairline: nothing is ever pinned below the content. */
 	bottom?: "fade" | "none";
-	/** The surface behind the content, so the edge gradients dissolve into it rather than
-	 *  into the default shell colour. */
-	fadeColor?: string;
 	onScroll?: (element: HTMLDivElement) => void;
 	/** Exposed for callers that drive the scroll position themselves, like the transcript. */
 	scrollRef?: React.RefObject<HTMLDivElement | null>;
 }) {
 	const own = useRef<HTMLDivElement>(null);
 	const viewport = scrollRef ?? own;
-	const track = useRef<HTMLDivElement>(null);
 	const drag = useRef<{ startY: number; startTop: number } | null>(null);
 
 	const [metrics, setMetrics] = useState({ thumbTop: 0, thumbHeight: 0, overflow: false, atTop: true, atBottom: true });
@@ -169,12 +127,10 @@ export function Scroller({
 	const showTopFade = top === "fade" && hiddenAbove;
 	const showTopLine = top === "line" && hiddenAbove;
 	const showBottomFade = bottom === "fade" && metrics.overflow && !metrics.atBottom;
+	const fades = top === "fade" || bottom === "fade";
 
 	return (
-		<div
-			style={fadeColor ? ({ "--ly-fade-color": fadeColor } as React.CSSProperties) : undefined}
-			className={`ly-scroll-host relative flex min-h-0 flex-col ${className}`}
-		>
+		<div className={`ly-scroll-host relative flex min-h-0 flex-col ${className}`}>
 			<div
 				ref={viewport}
 				onScroll={(event) => {
@@ -192,7 +148,24 @@ export function Scroller({
 				 * item hands the sizing to the flex algorithm, which honours both a fixed height
 				 * and a `max-height` — so one Scroller works in a pane and in a popover.
 				 */
-				className={`ly-scroll-view min-h-0 flex-auto overflow-y-auto overscroll-contain ${contentClassName}`}
+				/*
+				 * The fade is a mask on this element, and the depths are the whole of its state —
+				 * zero means no fade, so the same declaration covers both ends and both directions
+				 * and the transition between them is one interpolating length. Only mounted with the
+				 * class where a fade is possible: a mask promotes the scroller to its own composited
+				 * layer, and there is no reason to pay that on a scroller that will never soften.
+				 */
+				className={`ly-scroll-view min-h-0 flex-auto overflow-y-auto overscroll-contain ${
+					fades ? "ly-fade-y" : ""
+				} ${contentClassName}`}
+				style={
+					fades
+						? ({
+								"--ly-fade-top": showTopFade ? `${FADE_TOP}px` : "0px",
+								"--ly-fade-bottom": showBottomFade ? `${FADE_BOTTOM}px` : "0px",
+							} as React.CSSProperties)
+						: undefined
+				}
 			>
 				{children}
 			</div>
@@ -200,52 +173,33 @@ export function Scroller({
 			{top === "line" && (
 				<div
 					aria-hidden
-					className="pointer-events-none absolute inset-x-0 top-0 h-px bg-line transition-opacity duration-200"
+					className="pointer-events-none absolute inset-x-0 top-0 h-px bg-line transition-opacity duration-[var(--ly-t-base)]"
 					style={{ opacity: showTopLine ? 1 : 0 }}
 				/>
 			)}
 
-			<div
-				aria-hidden
-				className="pointer-events-none absolute inset-x-0 top-0 h-9 transition-opacity duration-200"
-				style={{ opacity: showTopFade ? 1 : 0, background: fadeTo("bottom") }}
-			/>
-			<div
-				aria-hidden
-				className="pointer-events-none absolute inset-x-0 bottom-0 h-12 transition-opacity duration-200"
-				style={{ opacity: showBottomFade ? 1 : 0, background: fadeTo("top") }}
-			/>
-
 			{metrics.overflow && (
 				<div
-					ref={track}
 					/*
-					 * Above anything the content pins.
+					 * On the edge, above everything on it, and taking no clicks of its own.
 					 *
-					 * A sticky header inside the viewport sits in the same stacking context as this
-					 * track, so without a higher layer the header slid over the thumb and the one
-					 * control that tells you where you are in a long list disappeared.
-					 */
-					/*
-					 * Inset by `--ly-scroll-inset` where something else owns the edge.
+					 * Two things want this strip: the thumb, and — in a resizable pane — the drag handle
+					 * that widens it. They used to be at the same depth with the handle on top, so the
+					 * thumb was drawn, could be seen, and could never be grabbed. Insetting the track
+					 * past the handle did fix that and cost more than it was worth: a scrollbar floating
+					 * nine pixels off the edge it belongs to, in every pane in the app.
 					 *
-					 * A resizable pane puts a drag handle on its last 9 pixels, at a higher layer than
-					 * this. Sharing them means the thumb is visible and permanently unusable: the press
-					 * that should have grabbed it starts a resize. The pane declares how much edge is
-					 * spoken for and the track steps inside it.
+					 * They are not really competing, though, because the track is not a control. It has
+					 * no fill and nothing to hit — only the thumb inside it does. So the track goes above
+					 * the handle to keep the thumb visible over sticky headers and hands every press
+					 * straight through; the thumb takes its own back. What is left is a thumb-shaped
+					 * hole in the resize strip, at a spot the pointer can see, rather than a scrollbar
+					 * moved out of position everywhere to make room for a handle in one pane.
+					 *
+					 * Clicking the track to jump goes with it. It was never discoverable on a 10px strip
+					 * with no visible track, and it is not worth an edge you cannot drag.
 					 */
-					style={{ right: "var(--ly-scroll-inset, 0px)" }}
-					className="absolute top-0 bottom-0 z-20 w-[10px]"
-					onMouseDown={(event) => {
-						// Clicking the track jumps to that spot, then hands over to the drag.
-						if (event.target !== track.current) return;
-						const el = viewport.current;
-						if (!el) return;
-						const rect = track.current.getBoundingClientRect();
-						const travel = el.clientHeight - metrics.thumbHeight;
-						const ratio = (event.clientY - rect.top - metrics.thumbHeight / 2) / Math.max(1, travel);
-						el.scrollTop = Math.min(1, Math.max(0, ratio)) * (el.scrollHeight - el.clientHeight);
-					}}
+					className="pointer-events-none absolute top-0 right-0 bottom-0 z-40 w-[10px]"
 				>
 					{/* Hidden from assistive technology: the viewport underneath is what scrolls. */}
 					<div

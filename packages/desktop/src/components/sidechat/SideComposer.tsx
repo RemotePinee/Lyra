@@ -70,7 +70,7 @@ export function SideComposer({
 								data-ly-tip="新的侧边聊天"
 								aria-label="新的侧边聊天"
 								onClick={onReset}
-								className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-card-hover hover:text-ink"
+								className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
 							>
 								<RotateCcw size={13.5} strokeWidth={1.9} />
 							</button>
