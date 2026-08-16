@@ -128,6 +128,22 @@ function ChatShell() {
 				<Sidebar />
 			</NavPane>
 
+			{/*
+			 * The draggable top edge, declared before anything that cuts a hole in it.
+			 *
+			 * Electron composites drag regions by walking the document in order, so a `drag` element
+			 * after a `no-drag` one fills that hole straight back in. This used to sit after `main`,
+			 * which was fine for as long as nothing inside `main` put controls in the top 44px — and
+			 * then the pull request header did. Its buttons were drawn, were on top, passed every
+			 * hit test the page can run, and did nothing at all: the press was going to the window
+			 * manager as a drag.
+			 *
+			 * First, therefore. Everything after it — this view's own header, the panel controls,
+			 * the window buttons — is a `no-drag` hole, and holes only stay open if nothing
+			 * re-covers them.
+			 */}
+			<DragBand />
+
 			<main className="ly-opaque relative flex min-w-0 flex-1 flex-col">
 				{/* Space for the window toolbar, which is rendered last so its no-drag holes stick. */}
 				<div className="h-[44px] shrink-0" />
@@ -151,14 +167,6 @@ function ChatShell() {
 				<NoticeStack />
 			</main>
 
-			{/*
-			 * The top edge, and then the panel, in this order and last.
-			 *
-			 * Electron composites drag regions by DOM order, so a `drag` element after a `no-drag`
-			 * one fills the hole back in. The sidebar's own drag strip used to come later than this
-			 * toolbar, which is why its buttons could not be clicked at all.
-			 */}
-			<DragBand />
 			{panelApplies && (
 				<PanelControls
 					compact={compact}
