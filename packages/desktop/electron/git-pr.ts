@@ -13,7 +13,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { parseUnifiedDiff } from "./diff-parse.ts";
-import type { PullRequestDetail, PullRequestSummary, WorkspaceDiffFile } from "./ipc-shapes.ts";
+import type {
+	PullRequestCheck, PullRequestDetail, PullRequestSummary, WorkspaceDiffFile } from "./ipc-shapes.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -152,7 +153,7 @@ interface RawDetail extends RawSearchItem {
 	comments?: { author?: { login?: string }; body?: string; createdAt?: string }[];
 	reviews?: { author?: { login?: string }; state?: string; body?: string; submittedAt?: string }[];
 	reviewRequests?: { login?: string }[];
-	statusCheckRollup?: { name?: string; state?: string; conclusion?: string; status?: string }[];
+	statusCheckRollup?: { name?: string; state?: string; conclusion?: string; status?: string; detailsUrl?: string }[];
 	mergeable?: string;
 	labels?: { name?: string }[];
 }
@@ -197,23 +198,37 @@ function toDetail(repo: string, raw: RawDetail): PullRequestDetail {
 }
 
 /**
- * The CI answer as a count, not a list.
+ * The CI answer, as a count and as the list behind it.
  *
- * What a reviewer needs from twenty checks is whether any of them failed; the twenty names are a
- * click away on the web, where there is room to read them.
+ * The count is what a header needs: whether anything failed, in four words. The list is what you
+ * need the moment the answer is "yes" — which check, and a way to go read it. Sending someone to
+ * the web page to find out the name of the one red check is the sort of small errand that makes a
+ * review tool something you leave.
+ *
+ * Three outcomes, not GitHub's dozen. `NEUTRAL` and `SKIPPED` count as passing because neither
+ * blocks anything, and a reviewer scanning for red does not want them drawing the eye.
  */
 export function summariseChecks(rollup: RawDetail["statusCheckRollup"]): PullRequestDetail["checks"] {
 	if (!rollup || rollup.length === 0) return null;
-	let passed = 0;
-	let failed = 0;
-	let pending = 0;
-	for (const check of rollup) {
-		const state = (check.conclusion || check.state || check.status || "").toUpperCase();
-		if (state === "SUCCESS" || state === "NEUTRAL" || state === "SKIPPED") passed++;
-		else if (state === "FAILURE" || state === "ERROR" || state === "TIMED_OUT" || state === "CANCELLED") failed++;
-		else pending++;
-	}
-	return { total: rollup.length, passed, failed, pending };
+
+	const items = rollup.map((check) => {
+		const raw = (check.conclusion || check.state || check.status || "").toUpperCase();
+		const state: PullRequestCheck["state"] =
+			raw === "SUCCESS" || raw === "NEUTRAL" || raw === "SKIPPED"
+				? "pass"
+				: raw === "FAILURE" || raw === "ERROR" || raw === "TIMED_OUT" || raw === "CANCELLED"
+					? "fail"
+					: "pending";
+		return { name: check.name?.trim() || "检查", state, url: check.detailsUrl };
+	});
+
+	return {
+		total: items.length,
+		passed: items.filter((c) => c.state === "pass").length,
+		failed: items.filter((c) => c.state === "fail").length,
+		pending: items.filter((c) => c.state === "pending").length,
+		items,
+	};
 }
 
 export async function pullRequestDiff(

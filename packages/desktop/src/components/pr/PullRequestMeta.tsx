@@ -9,6 +9,7 @@
 
 import { GitBranch, MessageSquare, Users, CircleCheck, CircleAlert, Circle, GitPullRequest } from "lucide-react";
 import type { PullRequestDetail } from "../../../electron/ipc-types.ts";
+import { verdictLabel } from "./activity.ts";
 
 export function PullRequestMeta({ detail }: { detail: PullRequestDetail }) {
 	return (
@@ -124,14 +125,6 @@ export function stateLabel(detail: PullRequestDetail): string {
 	if (detail.isDraft) return "草稿";
 	if (detail.mergeable === "CONFLICTING") return "有冲突，不能合并";
 	return "可供审查";
-}
-
-export function verdictLabel(state: string): string {
-	if (state === "APPROVED") return "已批准";
-	if (state === "CHANGES_REQUESTED") return "请求修改";
-	if (state === "REQUESTED") return "待审查";
-	if (state === "DISMISSED") return "已忽略";
-	return "已评论";
 }
 
 function verdictTone(state: string): string {

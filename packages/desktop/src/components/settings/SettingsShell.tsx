@@ -131,13 +131,8 @@ export function SettingsShell() {
 						</button>
 					</div>
 
-					{/* Same as the workspace sidebar: a solid control at each end, so neither fades. */}
-					<Scroller
-						className="flex-1"
-						top="line"
-						bottom="none"
-						contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}
-					>
+					{/* Same as the workspace sidebar: both ends soften. */}
+					<Scroller className="flex-1" contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}>
 						{GROUPS.map((group) => (
 							// Spaced for the same reason as the session list: adjacent filled rows
 							// would otherwise merge into one block on hover.

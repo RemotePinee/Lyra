@@ -158,7 +158,7 @@ export interface PullRequestDetail extends PullRequestSummary {
 	reviews: PullRequestReview[];
 	reviewers: { login: string; state: string }[];
 	/** Null when the repository runs no checks at all, which is different from "none passed". */
-	checks: { total: number; passed: number; failed: number; pending: number } | null;
+	checks: { total: number; passed: number; failed: number; pending: number; items: PullRequestCheck[] } | null;
 	mergeable: string;
 	labels: string[];
 }
@@ -169,4 +169,12 @@ export interface WorkspaceDiffFile {
 	added: number;
 	removed: number;
 	hunks: import("@lyra/core").DiffHunk[];
+}
+
+/** One CI check, reduced to the three outcomes a reviewer acts on. */
+export interface PullRequestCheck {
+	name: string;
+	state: "pass" | "fail" | "pending";
+	/** Where to go read it. Absent for checks GitHub reports without a details page. */
+	url?: string;
 }

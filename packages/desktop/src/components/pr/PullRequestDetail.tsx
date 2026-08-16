@@ -7,14 +7,18 @@
  */
 
 import { ExternalLink, GitPullRequest, Maximize2, MessagesSquare, Minimize2, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PullRequestDetail as Detail } from "../../../electron/ipc-types.ts";
 import { relativeTime } from "../git/relative-time.ts";
+import { Disclosure } from "../Disclosure.tsx";
 import { Markdown } from "../Markdown.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Scroller } from "../Scroller.tsx";
+import { activityOf } from "./activity.ts";
+import { ActivityLink, PullRequestActivity } from "./PullRequestActivity.tsx";
+import { PullRequestChecks } from "./PullRequestChecks.tsx";
 import { PullRequestCode } from "./PullRequestCode.tsx";
-import { PullRequestMeta, verdictLabel } from "./PullRequestMeta.tsx";
+import { PullRequestMeta } from "./PullRequestMeta.tsx";
 import { DetailSkeleton } from "./PullRequestSkeleton.tsx";
 
 export type PrTab = "summary" | "code";
@@ -56,7 +60,21 @@ export function PullRequestDetail({
 	tab: PrTab;
 	onTab: (tab: PrTab) => void;
 }) {
-	const [descriptionOpen, setDescriptionOpen] = useState(true);
+	/*
+	 * Which sections are open, as one object rather than three booleans.
+	 *
+	 * Failing checks open 检查 on arrival: that is the one state where the page has something to
+	 * say before being asked, and burying it behind a fold to be consistent would be consistency
+	 * at the reader's expense.
+	 */
+	const [open, setOpen] = useState({ body: true, checks: false, activity: false });
+	const toggle = (key: keyof typeof open) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+	const activity = detail ? activityOf(detail) : [];
+
+	useEffect(() => {
+		if (!detail?.checks) return;
+		if (detail.checks.failed > 0) setOpen((prev) => ({ ...prev, checks: true }));
+	}, [detail?.checks]);
 
 	if (error) {
 		return <Centered>{error}</Centered>;
@@ -166,72 +184,53 @@ export function PullRequestDetail({
 
 					<PullRequestMeta detail={detail} />
 
-					<section className="pt-5">
-						<button
-							type="button"
-							onClick={() => setDescriptionOpen((open) => !open)}
-							aria-expanded={descriptionOpen}
-							className="ly-item flex h-7 items-center gap-1.5 rounded-md px-1.5 text-label text-ink"
-						>
-							描述
-							<span className="text-ink-faint">{descriptionOpen ? "▾" : "▸"}</span>
-						</button>
-
-						{descriptionOpen &&
-							(detail.body.trim() ? (
-								<div className="pt-1 pl-1.5">
-									<Markdown text={detail.body} className="text-label" />
-								</div>
+					{/*
+					 * Three sections, each folding away.
+					 *
+					 * A pull request is not one page of prose — it is a claim (描述), a verdict (检查)
+					 * and a conversation (活动), and which of the three you came for changes every
+					 * visit. Flat, the description pushed the checks below the fold on any change with
+					 * a real write-up, and the checks are what decides whether the description is even
+					 * worth reading yet.
+					 *
+					 * 描述 opens by default and the others do not: it is the only one that is always
+					 * about *this* change rather than about its state.
+					 */}
+					<div className="mt-4">
+						<Disclosure title="描述" open={open.body} onToggle={() => toggle("body")}>
+							{detail.body.trim() ? (
+								<Markdown text={detail.body} className="text-label" />
 							) : (
-								<p className="px-1.5 pt-1 text-label text-ink-faint">作者没有写描述。</p>
-							))}
-					</section>
+								<p className="text-label text-ink-faint">作者没有写描述。</p>
+							)}
+						</Disclosure>
 
-					{detail.reviews.length > 0 && (
-						<section className="pt-5">
-							<h2 className="pb-2 text-label text-ink">审查意见</h2>
-							{detail.reviews.map((review, index) => (
-								<Entry
-									key={`${review.author}-${index}`}
-									who={review.author}
-									when={review.submittedAt}
-									tag={verdictLabel(review.state)}
-									body={review.body}
-								/>
-							))}
-						</section>
-					)}
+						{detail.checks && (
+							<Disclosure
+								title="检查"
+								count={detail.checks.total}
+								open={open.checks}
+								onToggle={() => toggle("checks")}
+							>
+								<PullRequestChecks checks={detail.checks.items} />
+							</Disclosure>
+						)}
 
-					{detail.threads.length > 0 && (
-						<section className="pt-5">
-							<h2 className="pb-2 text-label text-ink">评论</h2>
-							{detail.threads.map((comment, index) => (
-								<Entry key={`${comment.author}-${index}`} who={comment.author} when={comment.createdAt} body={comment.body} />
-							))}
-						</section>
-					)}
+						{activity.length > 0 && (
+							<Disclosure
+								title="活动"
+								count={activity.length}
+								open={open.activity}
+								onToggle={() => toggle("activity")}
+								trailing={<ActivityLink url={detail.url} />}
+							>
+								<PullRequestActivity entries={activity} />
+							</Disclosure>
+						)}
+					</div>
 				</Scroller>
 			)}
 		</div>
-	);
-}
-
-/** One person's say, whether it came with a verdict or not. */
-function Entry({ who, when, tag, body }: { who: string; when: string; tag?: string; body: string }) {
-	return (
-		<article className="mb-2 rounded-[10px] border border-line-soft px-3 py-2.5">
-			<div className="flex items-baseline gap-2 pb-1">
-				<span className="text-detail text-ink">{who}</span>
-				{tag && <span className="text-detail text-ink-faint">{tag}</span>}
-				<div className="flex-1" />
-				<span className="text-detail text-ink-faint">{relativeTime(when)}</span>
-			</div>
-			{body.trim() ? (
-				<Markdown text={body} className="text-label" />
-			) : (
-				<p className="text-label text-ink-faint">（没有留下文字）</p>
-			)}
-		</article>
 	);
 }
 

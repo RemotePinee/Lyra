@@ -106,10 +106,7 @@ export function ModelSettings() {
             </button>
           </Scroller>
 
-          <Scroller
-            className="min-w-0 flex-1"
-            contentClassName="p-4 @2xl:p-6"
-          >
+          <Scroller className="min-w-0 flex-1" contentClassName="p-4 @2xl:p-6">
             {!p.selected ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                 <p className="text-label text-ink-muted">

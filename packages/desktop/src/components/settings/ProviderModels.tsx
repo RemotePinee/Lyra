@@ -138,10 +138,7 @@ function TestOutcome({ result }: { result: ProviderTestResult }) {
 			{result.models && result.models.length > 0 && (
 				<details className="mt-1.5">
 					<summary className="cursor-pointer opacity-80">端点上报的模型（{result.models.length}）</summary>
-					<Scroller
-						className="mt-1 max-h-[160px]"
-						contentClassName="font-mono text-detail opacity-80"
-					>
+					<Scroller className="mt-1 max-h-[160px]" contentClassName="font-mono text-detail opacity-80">
 						{result.models.join("\n")}
 					</Scroller>
 				</details>

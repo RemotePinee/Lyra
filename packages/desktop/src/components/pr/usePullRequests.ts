@@ -78,7 +78,20 @@ function writeCache(items: PullRequestSummary[]): void {
  * order: the twenty-four most recently *fetched*, which for a list this size is everything
  * anybody is switching between.
  */
-const DETAIL_KEY = "lyra.pull-request-details.v1";
+/*
+ * Bumped whenever the shape changes.
+ *
+ * v1 → v2: checks gained the per-check list. A cache entry written before that has a `checks`
+ * object with no `items`, and the section that renders them iterated it — a stored value from
+ * yesterday crashed the whole pane today, and it would have kept crashing until someone cleared
+ * their storage.
+ *
+ * That is the standing hazard with any cache of a structure that is still moving: the reader is
+ * always newer than the thing it is reading. The version is one half of the answer and the
+ * validation on the way out is the other, because a bump only protects against changes somebody
+ * remembered to bump for.
+ */
+const DETAIL_KEY = "lyra.pull-request-details.v2";
 const DETAIL_LIMIT = 24;
 
 const detailId = (repo: string, number: number) => `${repo}#${number}`;
