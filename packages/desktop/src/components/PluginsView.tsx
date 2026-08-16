@@ -15,7 +15,7 @@
 
 import type { Skill } from "@lyra/core";
 import { Blocks, Cable, ChevronDown, Plus, RefreshCw, Settings as SettingsIcon, Sparkles, Store } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
@@ -24,8 +24,9 @@ import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
 import { PluginIcon } from "./settings/PluginIcon.tsx";
 import { CatalogCard } from "./plugins/CatalogCard.tsx";
+import { PluginDetail } from "./plugins/PluginDetail.tsx";
 import { RegistrySources } from "./plugins/RegistrySources.tsx";
-import { groupByCategory, UNFILED, useCatalog, type CatalogItem } from "./plugins/useCatalog.ts";
+import { groupByCategory, UNFILED, useCatalog } from "./plugins/useCatalog.ts";
 import { toolbarContentLeft } from "./WindowToolbar.tsx";
 
 type Tab = "plugins" | "skills";
@@ -44,6 +45,8 @@ export function PluginsView() {
 	const toolbarLeft = toolbarContentLeft(navOpen, nativeFullScreen);
 	const setView = useApp((s) => s.setView);
 	const setSettingsSection = useApp((s) => s.setSettingsSection);
+	const setComposerDraft = useApp((s) => s.setComposerDraft);
+	const newSession = useApp((s) => s.newSession);
 	const workspace = useApp((s) => s.workspace);
 
 	const catalog = useCatalog();
@@ -52,6 +55,14 @@ export function PluginsView() {
 	const [scope, setScope] = useState<Scope | null>(null);
 	const [sourcesOpen, setSourcesOpen] = useState(false);
 	const [failure, setFailure] = useState<string | null>(null);
+	/**
+	 * Which bundle is open, by key rather than by value.
+	 *
+	 * Holding the object would freeze it at the moment it was clicked: install something from its
+	 * own page and the page would go on describing the version that had no directory yet. The key
+	 * is looked up against the live catalogue on every render, so a refresh flows through.
+	 */
+	const [openKey, setOpenKey] = useState<string | null>(null);
 	const add = usePopover();
 
 	const openSettings = () => {
@@ -85,25 +96,28 @@ export function PluginsView() {
 	const installed = catalog.items.filter((item) => item.installed !== null);
 
 	/*
-	 * Clicking a mark in 已安装 scrolls to its card, which first requires the card to exist: it may
-	 * be filtered out, or on the other side of 公开/个人. Clearing both and scrolling on the next
-	 * commit is the whole of it — anything less makes the row a strip of pictures that sometimes
-	 * does nothing when clicked, which is worse than a strip that never does.
+	 * Looked up rather than remembered — see `openKey`. Falls back to the grid if the key stops
+	 * resolving, which is what uninstalling from the detail page does to it.
 	 */
-	const [reveal, setReveal] = useState<string | null>(null);
-	const body = useRef<HTMLDivElement>(null);
-	useEffect(() => {
-		if (!reveal) return;
-		body.current?.querySelector(`[data-item="${CSS.escape(reveal)}"]`)?.scrollIntoView({ block: "center" });
-		setReveal(null);
-	}, [reveal]);
-
-	const revealItem = (item: CatalogItem) => {
-		setQuery("");
-		setScope(item.entry ? "public" : "personal");
-		setTab("plugins");
-		setReveal(item.key);
-	};
+	const open = openKey ? (catalog.items.find((entry) => entry.key === openKey) ?? null) : null;
+	if (open) {
+		return (
+			<PluginDetail
+				item={open}
+				onBack={() => setOpenKey(null)}
+				onChanged={() => {
+					setFailure(null);
+					catalog.refresh();
+				}}
+				onError={setFailure}
+				onTry={(prompt) => {
+					void newSession();
+					setComposerDraft(prompt);
+					setView("chat");
+				}}
+			/>
+		);
+	}
 
 	return (
 		<div className="-mt-11 flex min-h-0 flex-1 flex-col">
@@ -193,7 +207,7 @@ export function PluginsView() {
 			<Scroller className="flex-1" contentClassName="px-6 pb-16">
 				{/* `@container`, so the grid answers to this column's width rather than the window's —
 				    the sidebar and the panel both take from it. */}
-				<div ref={body} className="@container mx-auto w-full max-w-[860px]">
+				<div className="@container mx-auto w-full max-w-[860px]">
 					<h1 className="pt-6 text-display leading-tight font-semibold tracking-tight text-ink">
 						{tab === "plugins" ? "插件" : "技能"}
 					</h1>
@@ -236,7 +250,7 @@ export function PluginsView() {
 												type="button"
 												data-ly-tip={item.installed?.enabled ? item.name : `${item.name}（已停用）`}
 												aria-label={item.name}
-												onClick={() => revealItem(item)}
+												onClick={() => setOpenKey(item.key)}
 												className={`flex h-[52px] w-[52px] items-center justify-center rounded-xl transition-[background-color,opacity] duration-[var(--ly-t-quick)] hover:bg-card-hover/60 ${
 													item.installed?.enabled ? "" : "opacity-40"
 												}`}
@@ -297,6 +311,7 @@ export function PluginsView() {
 												<div key={item.key} data-item={item.key}>
 													<CatalogCard
 														item={item}
+														onOpen={() => setOpenKey(item.key)}
 														onChanged={() => {
 															setFailure(null);
 															catalog.refresh();
@@ -472,7 +487,7 @@ function SkillList({ skills, needle }: { skills: Skill[]; needle: string }) {
 					onClick={() => void window.lyra.system.openPath(skill.dir)}
 					className="flex items-start gap-3 rounded-xl p-3 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/60"
 				>
-					<PluginIcon name={skill.name} size={36} />
+					<PluginIcon name={skill.name} id={skill.pluginId} category="skill" size={36} />
 					<div className="min-w-0 flex-1 pt-0.5">
 						<div className="flex items-center gap-2">
 							<span className="truncate text-label font-medium text-ink">{skill.name}</span>

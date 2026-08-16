@@ -2,27 +2,104 @@
  * A plugin's mark.
  *
  * Uses the logo from the manifest when there is one. When there is not — which is most loose
- * skills and every MCP server — it draws a lettered tile instead of falling back to one grey
- * generic icon repeated down the list. A list where every row looks identical is a list you
- * have to read word by word; a stable colour per name means you start recognising entries by
- * their tile before you have read anything.
+ * skills and every MCP server — it draws a glyph that says what the thing *does*, on a tile
+ * coloured from its name.
  *
- * The colour is derived from the name rather than stored, so it survives a rename of the
- * display label and needs nothing written to disk. Hues are spaced around the wheel and kept
- * at one saturation and lightness, so no entry shouts louder than its neighbours and the whole
- * column still reads as one set.
+ * It used to draw the first letter instead. A wall of lettered tiles is a wall of squares you
+ * have to read: `A` tells you nothing about AgentFlow that the word "AgentFlow" sitting beside
+ * it did not already tell you, and a page of them looks like a page of placeholders, because
+ * that is what they are. A globe on a browser plugin and a terminal on a shell one are legible
+ * before the eye reaches the label, which is the entire job of an icon in a grid.
+ *
+ * The glyph is guessed from the name, the category and what the bundle actually contains — see
+ * `glyphFor`. Guessing wrong costs a slightly-off picture; the fallback is a puzzle piece, which
+ * is at least honest about being a plugin of unknown shape.
+ *
+ * The colour is derived from the name rather than stored, so it survives a rename of the display
+ * label and needs nothing written to disk. Hues are spaced around the wheel at one saturation and
+ * lightness, so no entry shouts louder than its neighbours and the column still reads as one set.
  */
+
+import {
+	Blocks,
+	Bot,
+	Braces,
+	Brain,
+	Calendar,
+	ChartNoAxesColumn,
+	Cloud,
+	Code,
+	Container,
+	Database,
+	FileText,
+	FolderOpen,
+	GitBranch,
+	Globe,
+	Image,
+	Mail,
+	MessageSquare,
+	Monitor,
+	Music,
+	Palette,
+	Search,
+	Server,
+	ShieldCheck,
+	Sparkles,
+	Terminal,
+	Wrench,
+} from "lucide-react";
+
+/**
+ * Name or category fragment → glyph, first match wins.
+ *
+ * Ordered most specific first: `github` has to be tested before `git`, and `screenshot` before
+ * `shot`, or the broader pattern swallows the narrower one. Matched against the lowercased name,
+ * id and category joined together, so a bundle called "Chrome" and one categorised "Browser"
+ * both land on the globe.
+ */
+const GLYPHS: [RegExp, typeof Globe][] = [
+	[/browser|chrome|firefox|safari|webdriver|playwright|puppeteer|scrape|crawl/, Globe],
+	[/computer.?use|desktop|screen|gui|automation|applescript|macos|windows/, Monitor],
+	[/terminal|shell|bash|zsh|command.?line|\bcli\b|tmux|ssh/, Terminal],
+	[/github|gitlab|pull.?request/, GitBranch],
+	[/\bgit\b|version.?control|commit/, GitBranch],
+	[/postgres|sqlite|mysql|mongo|redis|database|\bsql\b|query/, Database],
+	[/file|filesystem|\bfs\b|directory|folder|storage|disk/, FolderOpen],
+	[/docker|kubernetes|k8s|container|podman/, Container],
+	[/aws|gcp|azure|cloud|s3|lambda|vercel|cloudflare/, Cloud],
+	[/search|grep|find|index|retriev|rag\b/, Search],
+	[/figma|design|palette|colou?r|theme|css|tailwind/, Palette],
+	[/image|photo|picture|screenshot|png|jpe?g|vision|diagram/, Image],
+	[/audio|music|sound|speech|voice|whisper|tts/, Music],
+	[/mail|email|smtp|imap|gmail|inbox/, Mail],
+	[/slack|discord|telegram|chat|message|notif/, MessageSquare],
+	[/calendar|schedule|cron|reminder|meeting/, Calendar],
+	[/chart|graph|metric|analytic|dashboard|stat/, ChartNoAxesColumn],
+	[/doc|markdown|note|write|text|pdf|obsidian|notion/, FileText],
+	[/security|auth|secret|vault|credential|encrypt|scan/, ShieldCheck],
+	[/\bapi\b|http|rest|graphql|webhook|json|schema/, Braces],
+	[/server|mcp|proxy|relay|gateway|daemon/, Server],
+	[/agent|assistant|\bbot\b/, Bot],
+	[/memory|knowledge|brain|context|embed/, Brain],
+	[/model|\bllm\b|prompt|\bai\b|inference/, Sparkles],
+	[/code|lint|compile|test|debug|refactor|review/, Code],
+	[/tool|util|helper|kit/, Wrench],
+];
+
 export function PluginIcon({
 	name,
 	logo,
 	brandColor,
+	category,
+	/** The bundle's own id, which is often more descriptive than its display name. */
+	id,
 	size = 32,
 }: {
 	name: string;
-	/** Absolute path or data URL from the manifest, if the plugin ships one. */
 	logo?: string;
-	/** Manifest-declared colour, which wins over the derived one. */
 	brandColor?: string;
+	category?: string;
+	id?: string;
 	size?: number;
 }) {
 	const radius = Math.round(size * 0.28);
@@ -42,26 +119,26 @@ export function PluginIcon({
 
 	const hue = brandColor ? null : hueFor(name);
 	const background = brandColor
-		? `linear-gradient(145deg, ${brandColor}, color-mix(in srgb, ${brandColor} 72%, #000))`
-		: `linear-gradient(145deg, hsl(${hue} 62% 58%), hsl(${(hue! + 26) % 360} 60% 48%))`;
+		? `linear-gradient(145deg, ${brandColor}, color-mix(in srgb, ${brandColor} 68%, #000))`
+		: `linear-gradient(145deg, hsl(${hue} 58% 56%), hsl(${(hue! + 32) % 360} 56% 44%))`;
+
+	const Glyph = glyphFor(`${name} ${id ?? ""} ${category ?? ""}`);
 
 	return (
 		<span
 			aria-hidden
-			style={{ width: size, height: size, borderRadius: radius, background, fontSize: Math.round(size * 0.42) }}
-			className="flex shrink-0 items-center justify-center font-semibold text-white select-none"
+			style={{ width: size, height: size, borderRadius: radius, background }}
+			className="flex shrink-0 items-center justify-center text-white select-none"
 		>
-			{initial(name)}
+			<Glyph size={Math.round(size * 0.5)} strokeWidth={1.9} />
 		</span>
 	);
 }
 
-/** First letter for latin names, first character otherwise — CJK has no useful "initial". */
-function initial(name: string): string {
-	const trimmed = name.trim();
-	if (!trimmed) return "?";
-	const letter = /[a-z]/i.exec(trimmed);
-	return (letter ? letter[0] : trimmed[0]).toUpperCase();
+function glyphFor(haystack: string): typeof Globe {
+	const text = haystack.toLowerCase();
+	for (const [pattern, glyph] of GLYPHS) if (pattern.test(text)) return glyph;
+	return Blocks;
 }
 
 /**

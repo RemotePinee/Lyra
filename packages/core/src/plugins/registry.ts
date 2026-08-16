@@ -12,7 +12,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -90,6 +90,13 @@ export async function fetchRegistry(url: string, signal?: AbortSignal): Promise<
  * `git` rather than a tarball fetch: every one of these lives in a repository already, a shallow
  * clone is one command, and it leaves the user something they can `git pull` later without any
  * update mechanism of ours.
+ *
+ * `path` is what makes a collection possible. Without it every bundle needs a repository of its
+ * own, which is a lot of ceremony for a manifest and one markdown file — and the field was in the
+ * format from the start, declared and then quietly ignored, so an index that used it installed a
+ * directory with no plugin in it. The clone lands somewhere temporary and the named subdirectory
+ * is what gets kept; the rest, including the `.git` that would otherwise make a subdirectory look
+ * like a checkout of the whole collection, is thrown away.
  */
 export async function installEntry(entry: RegistryEntry): Promise<string> {
 	const root = join(lyraHome(), "plugins");
@@ -100,14 +107,47 @@ export async function installEntry(entry: RegistryEntry): Promise<string> {
 		throw new Error(`已经装过 ${entry.id} 了`);
 	}
 
+	if (!entry.path) {
+		try {
+			await run("git", ["clone", "--depth", "1", entry.repository, target], { timeout: 60_000 });
+		} catch (cause) {
+			// A half-written directory would be picked up by the loader as a broken plugin.
+			await rm(target, { recursive: true, force: true });
+			throw new Error(`克隆失败：${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+		}
+		return target;
+	}
+
+	const inner = subPath(entry.path);
+	if (!inner) throw new Error(`插件路径不合法：${entry.path}`);
+
+	// Beside the target rather than in the OS temp dir: same filesystem, so the move is a rename
+	// rather than a copy, and a crash leaves the debris somewhere we already clean up.
+	const staging = join(root, `.${entry.id}.staging`);
+	await rm(staging, { recursive: true, force: true });
 	try {
-		await run("git", ["clone", "--depth", "1", entry.repository, target], { timeout: 60_000 });
+		await run("git", ["clone", "--depth", "1", entry.repository, staging], { timeout: 60_000 });
+		const source = join(staging, inner);
+		if (!(await stat(source).catch(() => null))?.isDirectory()) {
+			throw new Error(`仓库里没有 ${entry.path} 这个目录`);
+		}
+		await rename(source, target);
 	} catch (cause) {
-		// A half-written directory would be picked up by the loader as a broken plugin.
 		await rm(target, { recursive: true, force: true });
-		throw new Error(`克隆失败：${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+		throw new Error(`安装失败：${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+	} finally {
+		await rm(staging, { recursive: true, force: true });
 	}
 	return target;
+}
+
+/** A repo-relative directory, or null for anything absolute or climbing out of the checkout. */
+function subPath(raw: string): string | null {
+	const trimmed = raw.replace(/^\/+|\/+$/g, "");
+	if (!trimmed) return null;
+	const parts = trimmed.split("/");
+	if (parts.some((part) => part === ".." || part === "." || part === "")) return null;
+	return parts.join("/");
 }
 
 /** Drop an installed bundle from the user's plugin directory. */

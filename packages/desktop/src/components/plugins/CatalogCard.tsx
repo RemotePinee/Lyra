@@ -2,10 +2,15 @@
  * One bundle in the catalogue.
  *
  * A card, not a settings row: a mark, a name, one line about what it does, and nothing else on
- * the surface. Everything that could be done to it lives behind the ⋯, which is what keeps a
- * grid of twenty of these readable — a row with a toggle, a version, a source badge and two links
- * on it is a form, and a page of forms cannot be skimmed. What you already have is said once, in
- * the corner, because that is the only fact you are scanning for.
+ * the surface. Everything that could be done to it lives behind the ⋯, which is what keeps a grid
+ * of twenty of these readable — a row with a toggle, a version, a source badge and two links on
+ * it is a form, and a page of forms cannot be skimmed. What you already have is said once, in the
+ * corner, because that is the only fact you are scanning for.
+ *
+ * The card body is a button and the actions are its siblings laid over its right-hand end. A
+ * button inside a button is not a thing the platform has, and wrapping the whole card in one
+ * would mean stopping propagation on every control inside it — which works right up until the
+ * one that gets added later and does not.
  */
 
 import { Check, Download, ExternalLink, FolderOpen, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
@@ -17,10 +22,12 @@ import type { CatalogItem } from "./useCatalog.ts";
 
 export function CatalogCard({
 	item,
+	onOpen,
 	onChanged,
 	onError,
 }: {
 	item: CatalogItem;
+	onOpen: () => void;
 	/** Something on disk moved; the catalogue has to be re-read. */
 	onChanged: () => void;
 	onError: (message: string) => void;
@@ -47,41 +54,56 @@ export function CatalogCard({
 	};
 
 	return (
-		<div className="group/card relative flex items-start gap-3 rounded-xl p-3 transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/60">
-			<PluginIcon name={item.name} logo={item.logo} brandColor={item.brandColor} size={36} />
+		<div className="group/card relative">
+			<button
+				type="button"
+				onClick={onOpen}
+				className="flex w-full items-start gap-3 rounded-xl p-3 pr-20 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/60"
+			>
+				<PluginIcon
+					name={item.name}
+					id={item.id}
+					logo={item.logo}
+					brandColor={item.brandColor}
+					category={item.category}
+					size={36}
+				/>
 
-			<div className="min-w-0 flex-1 pt-0.5">
-				<div className="flex items-center gap-2">
-					<span className="truncate text-label font-medium text-ink">{item.name}</span>
-					{installed && (
-						<span
-							data-ly-tip={item.installed?.enabled ? undefined : "已安装，但在设置里被停用了"}
-							className={`flex shrink-0 items-center gap-1 text-caption ${
-								item.installed?.enabled ? "text-ok" : "text-ink-faint"
-							}`}
-						>
-							<Check size={11} strokeWidth={2.4} />
-							{item.installed?.enabled ? "已安装" : "已停用"}
-						</span>
-					)}
+				<div className="min-w-0 flex-1 pt-0.5">
+					<div className="flex items-center gap-2">
+						<span className="truncate text-label font-medium text-ink">{item.name}</span>
+						{installed && (
+							<span
+								className={`flex shrink-0 items-center gap-1 text-caption ${
+									item.installed?.enabled ? "text-ok" : "text-ink-faint"
+								}`}
+							>
+								<Check size={11} strokeWidth={2.4} />
+								{item.installed?.enabled ? "已安装" : "已停用"}
+							</span>
+						)}
+					</div>
+					<p className="mt-0.5 line-clamp-2 text-detail leading-relaxed text-ink-muted">
+						{item.description || "（没有描述）"}
+					</p>
 				</div>
-				<p className="mt-0.5 line-clamp-2 text-detail leading-relaxed text-ink-muted">
-					{item.description || "（没有描述）"}
-				</p>
-			</div>
+			</button>
 
 			{/*
 			 * Install is the one action worth a button of its own — it is why the page exists, and
 			 * burying the only thing a visitor came to do inside a ⋯ would be a puzzle. Once it is
 			 * installed there is no primary action left, so the space goes back to the description.
+			 *
+			 * The strip takes no pointer events; only the buttons on it do. Anything wider would
+			 * shadow the card button underneath and cost it both its click and its hover.
 			 */}
-			<div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+			<div className="pointer-events-none absolute top-3 right-3 flex items-center gap-0.5">
 				{!installed && item.entry && (
 					<button
 						type="button"
 						disabled={busy !== null}
 						onClick={() => void install()}
-						className="flex h-[26px] items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail text-ink-muted opacity-0 transition-[color,border-color,opacity] duration-[var(--ly-t-quick)] group-hover/card:opacity-100 hover:border-ink-faint hover:text-ink focus-visible:opacity-100 disabled:opacity-50"
+						className="pointer-events-auto flex h-[26px] items-center gap-1.5 rounded-lg border border-line bg-shell/80 px-2.5 text-detail text-ink-muted opacity-0 transition-[color,border-color,opacity] duration-[var(--ly-t-quick)] group-hover/card:opacity-100 hover:border-ink-faint hover:text-ink focus-visible:opacity-100 disabled:opacity-50"
 					>
 						{busy === "install" ? (
 							<Loader2 size={11.5} strokeWidth={2} className="ly-spin" />
@@ -98,7 +120,7 @@ export function CatalogCard({
 					aria-haspopup="menu"
 					aria-expanded={menu.open}
 					onClick={menu.toggle}
-					className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-ink-faint opacity-0 transition-[color,background-color,opacity] duration-[var(--ly-t-quick)] group-hover/card:opacity-100 hover:bg-card-hover hover:text-ink focus-visible:opacity-100 aria-expanded:opacity-100"
+					className="pointer-events-auto flex h-[26px] w-[26px] items-center justify-center rounded-md text-ink-faint opacity-0 transition-[color,background-color,opacity] duration-[var(--ly-t-quick)] group-hover/card:opacity-100 hover:bg-card-hover hover:text-ink focus-visible:opacity-100 aria-expanded:opacity-100"
 				>
 					<MoreHorizontal size={15} strokeWidth={1.9} />
 				</button>
@@ -145,9 +167,7 @@ export function CatalogCard({
 								danger
 								icon={<Trash2 size={14} strokeWidth={1.8} />}
 								disabled={busy !== null || item.installed?.source === "workspace"}
-								title={
-									item.installed?.source === "workspace" ? "项目里的插件，从项目目录里删" : undefined
-								}
+								title={item.installed?.source === "workspace" ? "项目里的插件，从项目目录里删" : undefined}
 								onClick={() => {
 									menu.close();
 									void uninstall();
