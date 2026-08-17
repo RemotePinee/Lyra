@@ -76,10 +76,11 @@ export function ArchivedSettings() {
 								onConfirm: () => void deleteAll(),
 							})
 						}
-						className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-danger/40 px-3 text-label text-danger transition-colors hover:bg-danger/10"
+						data-ly-tip={`删除全部 ${archived.length} 个归档会话`}
+						aria-label={`删除全部 ${archived.length} 个归档会话`}
+						className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-danger/40 text-danger transition-colors hover:bg-danger/10"
 					>
 						<Trash2 size={13} strokeWidth={2} />
-						全部删除
 					</button>
 				)}
 			</header>
@@ -203,9 +204,7 @@ function Row({
 				>
 					<Trash2 size={13.5} strokeWidth={1.8} />
 				</button>
-				<GhostButton onClick={onRestore} icon={<ArchiveRestore size={13} strokeWidth={1.8} />}>
-					取消归档
-				</GhostButton>
+				<GhostButton onClick={onRestore} icon={<ArchiveRestore size={13} strokeWidth={1.8} />} title="取消归档" />
 			</div>
 
 			{confirm.element}

@@ -30,7 +30,6 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	const extensionsNonce = useApp((s) => s.extensionsNonce);
 	const bumpExtensions = useApp((s) => s.bumpExtensions);
 	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
-	const [busy, setBusy] = useState(false);
 
 	const refresh = async () => setScan(await window.lyra.plugins.list(workspace?.path ?? ""));
 
@@ -112,30 +111,9 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 				{plugins.length === 0 ? (
 					<div className="px-4 py-8 text-center">
 						<p className="text-label leading-relaxed text-ink-muted">
-							{needle ? "没有匹配的插件。" : "还没有插件。装一个示例看看这个格式长什么样。"}
+							{needle ? "没有匹配的插件。" : "还没有插件。去插件市场装一个，或把插件目录放进 ~/.lyra/plugins。"}
 						</p>
-						{!needle && (
-							<>
-								<button
-									type="button"
-									disabled={busy}
-									onClick={async () => {
-										setBusy(true);
-										try {
-											await window.lyra.plugins.installExample(workspace ? "workspace" : "user", workspace?.path ?? "");
-											await refresh();
-											bumpExtensions();
-										} finally {
-											setBusy(false);
-										}
-									}}
-									className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-50"
-								>
-									{busy ? "安装中…" : "安装示例插件"}
-								</button>
-								<p className="mt-3 text-detail text-ink-faint">安装后需要新建会话才会生效</p>
-							</>
-						)}
+
 					</div>
 				) : (
 					plugins.map((plugin) => (
@@ -167,9 +145,9 @@ function PluginRow({
 	onManage: () => void;
 	onRemoved: () => void;
 }) {
+	const [busy, setBusy] = useState(false);
 	const menu = usePopover();
 	const [confirming, setConfirming] = useState(false);
-	const [busy, setBusy] = useState(false);
 	const ui = plugin.manifest.interface;
 	const name = ui?.displayName ?? plugin.manifest.name ?? plugin.id;
 	/** A bundle inside the project's own directory is removed by deleting it there. */

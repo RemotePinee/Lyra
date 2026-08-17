@@ -11,11 +11,14 @@
  */
 
 const DELAY_MS = 420;
+/** Long enough to be seen leaving, short enough not to trail the pointer. Matches `ly-tip-out`. */
+const EXIT_MS = 110;
 const GAP = 6;
 const MARGIN = 6;
 
 let host: HTMLElement | null = null;
 let timer = 0;
+let leaving = 0;
 let current: HTMLElement | null = null;
 
 function ensureHost(): HTMLElement {
@@ -74,6 +77,9 @@ export function tipPlacement(
 
 function place(el: HTMLElement) {
 	const tip = ensureHost();
+	// Cancel a departure in progress, or the bubble would vanish mid-arrival.
+	window.clearTimeout(leaving);
+	delete tip.dataset.leaving;
 	tip.textContent = el.dataset.lyTip ?? "";
 	tip.hidden = false;
 
@@ -87,10 +93,27 @@ function place(el: HTMLElement) {
 	tip.style.top = `${Math.round(at.top)}px`;
 }
 
+/**
+ * Fade out rather than disappear.
+ *
+ * A bubble that is removed on the frame the pointer leaves reads as a glitch — it was there and then
+ * it was not, with nothing in between. It also makes moving along a row of buttons flicker, because
+ * each tip is torn down instantly before the next fades in.
+ *
+ * The element stays in the document for the length of the exit and is only hidden afterwards, so a
+ * pointer that comes back mid-fade finds it still there and simply cancels the departure.
+ */
 function hide() {
 	window.clearTimeout(timer);
 	current = null;
-	if (host) host.hidden = true;
+	if (!host || host.hidden || host.dataset.leaving !== undefined) return;
+	host.dataset.leaving = "";
+	window.clearTimeout(leaving);
+	leaving = window.setTimeout(() => {
+		if (!host) return;
+		host.hidden = true;
+		delete host.dataset.leaving;
+	}, EXIT_MS);
 }
 
 /**

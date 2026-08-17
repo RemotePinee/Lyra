@@ -74,7 +74,7 @@ export function SessionRow({
 			<button
 				type="button"
 				onClick={onOpen}
-				className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-3.5 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
+				className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
 					compact ? "h-[34px]" : "h-[27px]"
 				} ${active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
 			>

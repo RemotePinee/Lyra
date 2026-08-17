@@ -1083,6 +1083,71 @@
   }
 }
 
+/*
+ * Dialogs, coming and going.
+ *
+ * The scrim and the card are animated separately: the scrim only fades, because a dimming that also
+ * moves reads as the window itself shifting, while the card rises a little and settles. Leaving is
+ * faster than arriving and does not overshoot — an exit that bounces is asking to be watched.
+ */
+.ly-scrim-in {
+  background: rgb(0 0 0 / 0.35);
+  animation: ly-scrim-in 160ms ease-out;
+}
+
+.ly-scrim-out {
+  background: rgb(0 0 0 / 0.35);
+  animation: ly-scrim-out 130ms ease-in forwards;
+}
+
+.ly-dialog-in {
+  animation: ly-dialog-in 190ms cubic-bezier(0.2, 0.9, 0.3, 1.08);
+}
+
+.ly-dialog-out {
+  animation: ly-dialog-out 130ms ease-in forwards;
+}
+
+@keyframes ly-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ly-scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ly-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ly-dialog-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
 .ly-enter {
   animation: ly-fade-up var(--ly-t-quick) var(--ly-e-out);
 }
@@ -1896,17 +1961,42 @@
   background: color-mix(in srgb, var(--color-ink) 92%, transparent);
   color: var(--color-shell);
   box-shadow: 0 4px 14px -4px rgb(0 0 0 / 0.3);
-  animation: ly-tip-in 120ms ease-out;
+  /*
+   * Two animations, because leaving is not entering played backwards.
+   *
+   * Arriving overshoots very slightly out of nothing and settles — the easing is the one used for
+   * things that appear under the pointer elsewhere in the app. Leaving is quicker and does not
+   * scale: a bubble that shrinks on the way out draws attention to itself at the exact moment it
+   * has stopped being relevant.
+   */
+  animation: ly-tip-in 150ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  will-change: opacity, transform;
+}
+
+.ly-tooltip[data-leaving] {
+  animation: ly-tip-out 110ms ease-in forwards;
+  pointer-events: none;
 }
 
 @keyframes ly-tip-in {
   from {
     opacity: 0;
-    transform: translateY(-2px);
+    transform: translateY(-3px) scale(0.94);
   }
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes ly-tip-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-2px);
   }
 }
 

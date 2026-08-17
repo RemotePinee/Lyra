@@ -9,7 +9,7 @@
  */
 
 import { ipcMain, shell } from "electron";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { McpBundle, Settings } from "@lyra/core";
 import { lyraHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uninstallEntry } from "@lyra/core";
@@ -169,87 +169,8 @@ export function registerPluginsIpc({ settings, saveSettings }: PluginsIpcDeps): 
 		return dir;
 	});
 
-	ipcMain.handle("plugins:installExample", async (_event, scope: "workspace" | "user", cwd: string) => {
-		const dir = join(pluginsDir(scope, cwd), "hello-lyra");
-		await writeExamplePlugin(dir);
-		await shell.openPath(dir);
-		return dir;
-	});
 }
 
 function pluginsDir(scope: "workspace" | "user", cwd: string): string {
 	return scope === "workspace" ? join(cwd, ".lyra", "plugins") : join(lyraHome(), "plugins");
-}
-
-/**
- * Write a working example bundle.
- *
- * The format is only obvious once you have seen one, so this ships a manifest and a skill with a
- * real script — which is the whole of what a plugin is.
- *
- * It used to also drop a `.mcp.json` pointing at Context7, on the grounds that a bundle could
- * carry both. That is the shape the split removed, and shipping it as *the example* would have
- * taught every new plugin to be the thing the loader now warns about. An MCP server is installed
- * from the catalogue's MCP tab, or added by hand in 设置 › MCP.
- */
-async function writeExamplePlugin(dir: string): Promise<void> {
-	await mkdir(join(dir, ".lyra-plugin"), { recursive: true });
-	await mkdir(join(dir, "skills", "changelog", "scripts"), { recursive: true });
-
-	await writeFile(
-		join(dir, ".lyra-plugin", "plugin.json"),
-		`${JSON.stringify(
-			{
-				name: "hello-lyra",
-				version: "0.1.0",
-				description: "示例插件：一个技能加一份配套脚本。",
-				author: { name: "You" },
-				skills: "./skills/",
-				interface: {
-					displayName: "Hello Lyra",
-					shortDescription: "示例插件，演示技能与脚本的打包方式",
-					category: "Developer Tools",
-					capabilities: ["Read", "Write"],
-					brandColor: "#339CFF",
-					defaultPrompt: ["用 changelog 技能整理最近的提交"],
-				},
-			},
-			null,
-			2,
-		)}\n`,
-		"utf8",
-	);
-
-	await writeFile(
-		join(dir, "skills", "changelog", "SKILL.md"),
-		[
-			"---",
-			"name: changelog",
-			"description: 整理 git 提交为分类变更日志。当用户要求写 changelog、发布说明、版本变更时使用。",
-			"---",
-			"",
-			"# 整理变更日志",
-			"",
-			"1. 运行本技能自带的脚本拿到结构化提交：",
-			"   `bash scripts/collect.sh 30`",
-			"2. 按 Added / Changed / Fixed 归类",
-			"3. 每条一句话，写清楚对用户的影响，不要写实现细节",
-			"",
-			"脚本路径相对于本技能目录，调用时请使用系统提示里给出的绝对路径。",
-			"",
-		].join("\n"),
-		"utf8",
-	);
-
-	await writeFile(
-		join(dir, "skills", "changelog", "scripts", "collect.sh"),
-		[
-			"#!/usr/bin/env bash",
-			"# Print the last N commits as `hash\\tsubject`, newest first.",
-			"set -euo pipefail",
-			'git log --oneline --no-merges -n "${1:-20}" --pretty=format:"%h%x09%s"',
-			"",
-		].join("\n"),
-		{ encoding: "utf8", mode: 0o755 },
-	);
 }

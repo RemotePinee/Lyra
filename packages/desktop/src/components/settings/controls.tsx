@@ -91,20 +91,39 @@ export function GhostButton({
 	disabled,
 	title,
 }: {
-	children: React.ReactNode;
+	/**
+	 * Omit it for an icon-only button.
+	 *
+	 * A label beside an icon says the same thing twice, and a row of them turns a toolbar into a
+	 * sentence. Where the icon carries the meaning the label is dropped and `title` becomes both the
+	 * tooltip and the accessible name — so nothing is lost to a screen reader, only to the eye.
+	 */
+	children?: React.ReactNode;
 	icon?: React.ReactNode;
 	onClick: () => void;
 	tone?: "default" | "danger";
 	disabled?: boolean;
 	title?: string;
 }) {
+	// Square when there is nothing to read, so a row of them is a row of equal squares.
+	const bare = children === undefined || children === null || children === false;
 	return (
 		<button
 			type="button"
 			disabled={disabled}
 			onClick={onClick}
 			data-ly-tip={title}
-			className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-detail transition-colors duration-[var(--ly-t-quick)] disabled:opacity-45 disabled: ${
+			aria-label={bare ? title : undefined}
+			/*
+			 * 32px, the same as `PrimaryButton`.
+			 *
+			 * These two stand side by side at the foot of every dialog, and they were 26 and 32 — near
+			 * enough to look like a mistake rather than a distinction. A row of buttons that do not
+			 * share a baseline reads as two different toolbars pushed together.
+			 */
+			className={`flex h-[32px] shrink-0 items-center rounded-lg border border-line text-label transition-colors duration-[var(--ly-t-quick)] disabled:opacity-45 ${
+				bare ? "w-[32px] justify-center" : "gap-1.5 px-3"
+			} ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"
 					: "text-ink-muted hover:border-ink-faint hover:text-ink"

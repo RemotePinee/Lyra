@@ -20,7 +20,7 @@
  */
 
 import type { BundleKind, Skill } from "@lyra/core";
-import { Blocks, Cable, ChevronDown, Plus, RefreshCw, Settings as SettingsIcon, Sparkles, Store } from "lucide-react";
+import { Blocks, Cable, ChevronDown, RefreshCw, Settings as SettingsIcon, Sparkles, Store } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useLayout } from "../layout.tsx";
@@ -62,7 +62,6 @@ export function PluginsView() {
 	const setSettingsSection = useApp((s) => s.setSettingsSection);
 	const setComposerDraft = useApp((s) => s.setComposerDraft);
 	const newSession = useApp((s) => s.newSession);
-	const workspace = useApp((s) => s.workspace);
 
 	const catalog = useCatalog();
 	const [tab, setTab] = useState<Tab>("plugins");
@@ -232,17 +231,7 @@ export function PluginsView() {
 						>
 							添加 MCP 服务器
 						</MenuItem>
-						<MenuItem
-							icon={<Plus size={14} strokeWidth={1.8} />}
-							onClick={async () => {
-								add.close();
-								await window.lyra.plugins.installExample("user", workspace?.path ?? "");
-								catalog.refresh();
-							}}
-						>
-							安装示例插件
-						</MenuItem>
-					</MenuBody>
+						</MenuBody>
 				</Popover>
 			)}
 
@@ -514,7 +503,7 @@ function Empty({
 					<>
 						这台机器上没有自己放的插件。
 						<br />
-						从「添加 › 安装示例插件」装一个，可以看看这个格式长什么样。
+						去插件市场装一个，或者把自己的插件目录放进 ~/.lyra/plugins。
 					</>
 				)}
 			</p>

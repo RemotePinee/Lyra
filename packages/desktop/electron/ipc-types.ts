@@ -168,7 +168,6 @@ export interface LyraApi {
 		/** Absolute path to the plugins directory, created if missing. */
 		revealDir(scope: "workspace" | "user", cwd: string): Promise<string>;
 		/** Write a runnable example bundle so the format is discoverable. */
-		installExample(scope: "workspace" | "user", cwd: string): Promise<string>;
 		/** Read a registry index. Failures come back as data — a bad URL is routine, not exceptional. */
 		fetchRegistry(url: string): Promise<{ ok: true; registry: Registry } | { ok: false; message: string }>;
 		/**

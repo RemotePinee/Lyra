@@ -94,7 +94,7 @@ export function ProjectGroup({
 					type="button"
 					aria-expanded={!collapsed}
 					onClick={onToggleCollapsed}
-					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-6 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
+					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
 						compact ? "h-[40px]" : "h-[31px]"
 					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
 				>

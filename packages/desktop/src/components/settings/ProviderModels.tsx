@@ -17,7 +17,6 @@ import { useConfirmer } from "../Confirm.tsx";
 import { ModelIcon } from "../ModelIcon.tsx";
 import { formatWindow } from "../ModelMenu.tsx";
 import { RollingText } from "../RollingText.tsx";
-import { Scroller } from "../Scroller.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Badge, GhostButton } from "./controls.tsx";
 
@@ -144,7 +143,17 @@ function ModelRow({
 	);
 }
 
-/** What the endpoint said, kept as it was said — including the model list it reports. */
+/**
+ * The verdict, and only the verdict.
+ *
+ * It used to hang the endpoint's whole model list off the result behind a disclosure — 47 names
+ * nobody asked for, in answer to "does this work". A connection test has one useful answer and one
+ * useful number: whether it went through, and how long it took. The names of models the endpoint
+ * happens to serve are a different question, and the model list above is where it is asked.
+ *
+ * Failure is the exception: then the message *is* the answer, because something has to be fixed and
+ * only the endpoint knows what.
+ */
 function TestOutcome({ result }: { result: ProviderTestResult }) {
 	return (
 		<div
@@ -154,14 +163,6 @@ function TestOutcome({ result }: { result: ProviderTestResult }) {
 		>
 			{result.message}
 			{result.latencyMs > 0 && <span className="opacity-70"> · {result.latencyMs} ms</span>}
-			{result.models && result.models.length > 0 && (
-				<details className="mt-1.5">
-					<summary className="cursor-pointer opacity-80">端点上报的模型（{result.models.length}）</summary>
-					<Scroller className="mt-1 max-h-[160px]" contentClassName="font-mono text-detail opacity-80">
-						{result.models.join("\n")}
-					</Scroller>
-				</details>
-			)}
 		</div>
 	);
 }

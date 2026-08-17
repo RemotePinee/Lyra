@@ -32,7 +32,12 @@ export function ShowMore({
 	if (hidden <= 0 && !canCollapse) return null;
 
 	return (
-		<div className={`flex items-center gap-3 pl-9 ${compact ? "h-[32px]" : "h-[26px]"}`}>
+		<div /*
+			 * 30px, not a Tailwind step: it lines this row's text up with the session titles above it,
+			 * which sit at the dot's left edge plus the dot's own 14px plus the 8px gap. Every one of
+			 * those is fixed, so the sum is too.
+			 */
+			className={`flex items-center gap-3 pl-[30px] ${compact ? "h-[32px]" : "h-[26px]"}`}>
 			{hidden > 0 && (
 				<button
 					type="button"

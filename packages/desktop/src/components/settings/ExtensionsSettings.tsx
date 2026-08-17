@@ -32,7 +32,6 @@ export function ExtensionsSettings() {
 	const add = usePopover();
 	const more = usePopover();
 	const extensionsNonce = useApp((s) => s.extensionsNonce);
-	const bumpExtensions = useApp((s) => s.bumpExtensions);
 
 	/** Whichever directory this tab is about — the two tabs that have one ask the same question. */
 	const revealDir = (scope: "user" | "workspace") => {
@@ -125,18 +124,6 @@ export function ExtensionsSettings() {
 							}}
 						>
 							添加 MCP 服务器
-						</MenuItem>
-						<MenuItem
-							icon={<Plus size={14} strokeWidth={1.8} />}
-							onClick={() => {
-								add.close();
-								// Writes a directory three other lists read; none of them would notice on their own.
-								void window.lyra.plugins
-									.installExample("user", workspace?.path ?? "")
-									.then(() => bumpExtensions());
-							}}
-						>
-							安装示例插件
 						</MenuItem>
 					</MenuBody>
 				</Popover>
