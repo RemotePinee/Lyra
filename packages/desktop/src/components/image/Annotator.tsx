@@ -20,7 +20,6 @@
 
 import {
 	ArrowUpRight,
-	MousePointer2,
 	Circle,
 	Grid2x2,
 	ListOrdered,
@@ -241,9 +240,9 @@ export function useAnnotator(src: string): Annotator {
 	return {
 		tool,
 		setTool: useCallback((next: Tool) => {
-			// A selection belongs to the selecting tool; keeping it while a pen is chosen would leave
-			// a box around something the next click is not going to affect.
-			if (next !== "select") setSelected(null);
+			// Changing tool is changing subject: the mark that was selected is no longer the thing
+			// being worked on, and a box left around it would outlive its meaning.
+			setSelected(null);
 			setTool(next);
 		}, []),
 		colour,
@@ -288,7 +287,6 @@ export function useAnnotator(src: string): Annotator {
 export const STAGE_FIT = "max-h-[86vh] max-w-[86vw]";
 
 const CURSOR: Partial<Record<Tool, string>> = {
-	select: "cursor-default",
 	text: "cursor-text",
 	step: "cursor-copy",
 	mosaic: "cursor-cell",
@@ -501,7 +499,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		 * The selected mark is grabbable under *every* tool, not only under the selecting one.
 		 *
 		 * This is the whole point of the arrangement. Drawing a rectangle and then wanting it two
-		 * centimetres to the left used to mean: switch to the selecting tool, drag, switch back. Three
+		 * centimetres to the left used to mean: switch to a pointer tool, drag, switch back. Three
 		 * actions for one adjustment, every time, and the same again for the next rectangle. Here the
 		 * mark you just drew is still live: press on it to move it, press on a grip to resize it,
 		 * press anywhere else and you are drawing the next one. Nothing has to be switched.
@@ -522,27 +520,31 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		/*
 		 * What this press has taken hold of, if anything.
 		 *
-		 * Three ways to take hold of an existing mark, and they are deliberately not the same:
+		 * Any existing mark, under any tool that *places* something — which is every tool except the
+		 * two that smear. Placing a rectangle, an arrow, a badge or a caption starts from a point you
+		 * chose deliberately, and choosing a point that happens to be on another mark's outline is
+		 * rare; wanting to nudge that other mark is not. Restricting this to the selected one, which
+		 * is where it started, meant drawing a box, drawing an arrow, and then finding the box
+		 * untouchable — the arrow had taken the selection with it, and pressing on the box drew a
+		 * second arrow.
 		 *
-		 *  - it is the selected one, under any tool — the arrangement that makes drawing and adjusting
-		 *    one continuous activity rather than two modes;
-		 *  - the selecting tool is in hand, so any mark is fair game;
-		 *  - the text tool is in hand and the mark is a caption. A caption is the one thing the text
-		 *    tool could sensibly mean other than "start a new one", and pressing on one used to lay a
-		 *    second caption directly on top of the first — two overlapping texts, no way to tell.
-		 *    Pressing anywhere else with that tool still starts a new one, including on top of a
-		 *    rectangle, because writing over a box is a real thing to want.
+		 * The pen and the mosaic are excluded, and that is the whole of the trade-off. They are
+		 * smeared rather than placed: the stroke begins wherever the hand happens to be, often
+		 * directly over something already on the picture, and a brush that grabbed what it was
+		 * supposed to draw across would be useless. With those two the tool always wins.
+		 *
+		 * What is left is narrow and self-correcting: an outline is only hit within a few points of
+		 * its stroke, so the inside of a box is still free to draw in and write in, and a rectangle
+		 * can always be started from a different corner.
 		 */
+		const smears = tool === "pen" || tool === "mosaic";
 		let target = -1;
 		let held = false;
 		if (chosen && selected !== null && hitShape([chosen], point, tolerance) === 0) {
 			target = selected;
 			held = true;
-		} else if (tool === "select") {
+		} else if (!smears) {
 			target = hitShape(shapes, point, tolerance);
-		} else if (tool === "text") {
-			const hit = hitShape(shapes, point, tolerance);
-			if (hit >= 0 && shapes[hit]?.tool === "text") target = hit;
 		}
 
 		if (target >= 0) {
@@ -555,12 +557,8 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 			return;
 		}
 
-		// Nothing under the pointer: the selecting tool has nothing to do, everything else draws.
+		// Nothing under the pointer, so this is the start of a new mark.
 		if (selected !== null) setSelected(null);
-		if (tool === "select") {
-			if (typing) commitText();
-			return;
-		}
 
 		if (tool === "text") {
 			/*
@@ -593,7 +591,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		}
 
 		event.currentTarget.setPointerCapture(event.pointerId);
-		setDrawing({ tool: tool as Exclude<Tool, "select" | "text" | "step">, colour, points: [point] });
+		setDrawing({ tool: tool as Exclude<Tool, "text" | "step">, colour, points: [point] });
 	};
 
 	const move = (event: React.PointerEvent) => {
@@ -615,7 +613,8 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				if (grip) over = grip.index === WIDTH_HANDLE ? "width" : "point";
 				else if (hitShape([chosen], point, tol) === 0) over = "move";
 			}
-			if (!over && tool === "select" && hitShape(shapes, point, tol) >= 0) over = "move";
+			// Same rule as the press: everything is grabbable except under the two smearing tools.
+			if (!over && tool !== "pen" && tool !== "mosaic" && hitShape(shapes, point, tol) >= 0) over = "move";
 			setHovering((was) => (was === over ? was : over));
 		}
 
@@ -910,7 +909,6 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 // ---------------------------------------------------------------------------
 
 const TOOLS: [Tool, typeof Pencil, string][] = [
-	["select", MousePointer2, "选择 / 移动"],
 	["pen", Pencil, "画笔"],
 	["arrow", ArrowUpRight, "箭头"],
 	["line", Minus, "直线"],

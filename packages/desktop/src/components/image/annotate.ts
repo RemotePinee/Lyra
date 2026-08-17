@@ -13,10 +13,16 @@
  * screenshot when it is saved.
  */
 
-export type Tool = "select" | "pen" | "arrow" | "line" | "rect" | "ellipse" | "step" | "text" | "mosaic";
-
-/** The tools that leave something behind. Selecting is a tool but not a kind of mark. */
-export type ShapeTool = Exclude<Tool, "select">;
+/**
+ * Every tool draws something.
+ *
+ * There is no pointer tool, and that is deliberate. Selecting used to need one, and then every mark
+ * became grabbable under every tool that places rather than smears — at which point a tool whose
+ * only remaining ability was "press on nothing without drawing" was not just redundant but
+ * misleading: it implied that touching an existing mark required switching to it first, which is the
+ * opposite of what happens.
+ */
+export type Tool = "pen" | "arrow" | "line" | "rect" | "ellipse" | "step" | "text" | "mosaic";
 
 export interface Point {
 	x: number;
@@ -24,7 +30,7 @@ export interface Point {
 }
 
 export interface Shape {
-	tool: ShapeTool;
+	tool: Tool;
 	colour: string;
 	/** Pen and mosaic keep every point; the rest are defined by where the drag started and ended. */
 	points: Point[];
@@ -52,7 +58,7 @@ export function moveShape(shape: Shape, dx: number, dy: number): Shape {
 export const WIDTH_HANDLE = -1;
 
 /** Marks defined by where the drag started and ended, and therefore resizable by either end. */
-const TWO_POINT = new Set<ShapeTool>(["rect", "ellipse", "line", "arrow"]);
+const TWO_POINT = new Set<Tool>(["rect", "ellipse", "line", "arrow"]);
 
 /**
  * The grips on a selected mark, in natural pixels.
