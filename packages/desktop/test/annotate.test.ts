@@ -15,6 +15,7 @@ import {
 	commit,
 	current,
 	emptyHistory,
+	handlesOf,
 	hitShape,
 	HISTORY_LIMIT,
 	mosaicBlock,
@@ -23,12 +24,14 @@ import {
 	moveShape,
 	pickTolerance,
 	redo,
+	resizeShape,
 	shapeBounds,
 	stepNumber,
 	wrapText,
 	undo,
 	ZOOM_MAX,
 	ZOOM_MIN,
+	WIDTH_HANDLE,
 	zoomAt,
 	type Point,
 	type Shape,
@@ -249,6 +252,57 @@ test("picking is forgiving by a constant number of screen pixels, however far in
 	assert.ok(pickTolerance(3, 0.25) > pickTolerance(3, 1), "zoomed out, one screen pixel is more image pixels");
 	assert.ok(pickTolerance(3, 4) < pickTolerance(3, 1));
 	assert.ok(pickTolerance(12, 8) >= 12, "never tighter than the mark's own width");
+});
+
+test("a mark drawn as a drag gets a grip at each end, and dragging one moves only that end", () => {
+	const rect: Shape = { tool: "rect", colour: "#000", points: [{ x: 10, y: 10 }, { x: 110, y: 60 }] };
+	const grips = handlesOf(rect);
+	assert.equal(grips.length, 2);
+	assert.deepEqual(grips.map((g) => g.at), [{ x: 10, y: 10 }, { x: 110, y: 60 }]);
+
+	const pulled = resizeShape(rect, 1, { x: 200, y: 200 });
+	assert.deepEqual(pulled.points[0], { x: 10, y: 10 }, "the other end stays put");
+	assert.deepEqual(pulled.points[1], { x: 200, y: 200 });
+
+	const other = resizeShape(rect, 0, { x: 0, y: 0 });
+	assert.deepEqual(other.points, [{ x: 0, y: 0 }, { x: 110, y: 60 }]);
+});
+
+test("lines and arrows resize the same way; ellipses too", () => {
+	for (const tool of ["line", "arrow", "ellipse"] as const) {
+		const shape: Shape = { tool, colour: "#000", points: [{ x: 0, y: 0 }, { x: 50, y: 50 }] };
+		assert.equal(handlesOf(shape).length, 2, tool);
+		assert.deepEqual(resizeShape(shape, 1, { x: 80, y: 20 }).points[1], { x: 80, y: 20 }, tool);
+	}
+});
+
+test("marks with no two points that stand for them offer no grips", () => {
+	// A pen stroke and a mosaic are paths; a badge is a fixed size. All three move rather than resize,
+	// and a grip that does nothing is worse than no grip.
+	assert.deepEqual(handlesOf(pen([0, 0], [5, 5], [9, 2])), []);
+	assert.deepEqual(handlesOf({ tool: "mosaic", colour: "#000", points: [{ x: 0, y: 0 }] }), []);
+	assert.deepEqual(handlesOf(step(4, 4)), []);
+});
+
+test("a caption's grip is its column edge, and dragging it sets the width", () => {
+	const label: Shape = {
+		tool: "text", colour: "#000", points: [{ x: 20, y: 40 }],
+		text: "hi", size: 20, width: 160, height: 60,
+	};
+	const grips = handlesOf(label);
+	assert.equal(grips.length, 1);
+	assert.equal(grips[0]?.index, WIDTH_HANDLE);
+	assert.deepEqual(grips[0]?.at, { x: 180, y: 70 }, "right edge, vertically centred");
+
+	assert.equal(resizeShape(label, WIDTH_HANDLE, { x: 300, y: 0 }).width, 280, "measured from its left edge");
+	// And never so narrow that nothing can be laid out in it.
+	assert.ok((resizeShape(label, WIDTH_HANDLE, { x: 21, y: 0 }).width ?? 0) >= 40);
+});
+
+test("resizing leaves the original alone", () => {
+	const shape: Shape = { tool: "rect", colour: "#000", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }] };
+	resizeShape(shape, 1, { x: 99, y: 99 });
+	assert.deepEqual(shape.points[1], { x: 10, y: 10 });
 });
 
 // ---------------------------------------------------------------------------

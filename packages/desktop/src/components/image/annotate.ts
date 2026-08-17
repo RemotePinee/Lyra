@@ -48,6 +48,59 @@ export function moveShape(shape: Shape, dx: number, dy: number): Shape {
 	return { ...shape, points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
 }
 
+/** The width handle on a caption, which is not one of its points. */
+export const WIDTH_HANDLE = -1;
+
+/** Marks defined by where the drag started and ended, and therefore resizable by either end. */
+const TWO_POINT = new Set<ShapeTool>(["rect", "ellipse", "line", "arrow"]);
+
+/**
+ * The grips on a selected mark, in natural pixels.
+ *
+ * Only where dragging means something: the two ends of a shape that was drawn as a drag, or the
+ * column edge of a caption. A pen stroke has no two points that stand for it and a step badge is a
+ * fixed size, so both are moved rather than resized — offering a grip that does nothing would be
+ * worse than offering none.
+ */
+export function handlesOf(shape: Shape): { at: Point; index: number }[] {
+	const first = shape.points[0];
+	if (!first) return [];
+
+	if (shape.tool === "text") {
+		const width = shape.width ?? 0;
+		const height = shape.height ?? (shape.size ?? 16) * 1.5;
+		return [{ at: { x: first.x + width, y: first.y + height / 2 }, index: WIDTH_HANDLE }];
+	}
+
+	if (TWO_POINT.has(shape.tool)) {
+		const last = shape.points[shape.points.length - 1];
+		if (!last) return [];
+		return [
+			{ at: first, index: 0 },
+			{ at: last, index: 1 },
+		];
+	}
+
+	return [];
+}
+
+/** Drag one grip to a new place. The rest of the mark stays where it is. */
+export function resizeShape(shape: Shape, index: number, to: Point): Shape {
+	const first = shape.points[0];
+	if (!first) return shape;
+
+	if (index === WIDTH_HANDLE) {
+		// A column narrower than a couple of characters cannot lay anything out.
+		const min = (shape.size ?? 16) * 2;
+		return { ...shape, width: Math.max(min, to.x - first.x) };
+	}
+
+	const points = [...shape.points];
+	if (index === 0) points[0] = to;
+	else points[points.length - 1] = to;
+	return { ...shape, points };
+}
+
 /**
  * The box around a mark, for drawing the selection and for nothing else.
  *

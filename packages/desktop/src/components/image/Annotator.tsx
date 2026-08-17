@@ -41,6 +41,7 @@ import {
 	commit,
 	current,
 	emptyHistory,
+	handlesOf,
 	hitShape,
 	mosaicBlock,
 	mosaicBrush,
@@ -48,9 +49,11 @@ import {
 	moveShape,
 	pickTolerance,
 	redo,
+	resizeShape,
 	shapeBounds,
 	stepNumber,
 	undo,
+	WIDTH_HANDLE,
 	wrapText,
 	type History,
 	type Point,
@@ -82,6 +85,8 @@ interface Dragging {
 	index: number;
 	from: Point;
 	moving: Shape;
+	/** Which grip is being pulled, or null when the whole mark is being moved. */
+	handle: number | null;
 	/**
 	 * Whether it has actually gone anywhere.
 	 *
@@ -90,6 +95,16 @@ interface Dragging {
 	 */
 	moved: boolean;
 }
+
+/**
+ * Marks that are worth selecting the moment they are drawn.
+ *
+ * Everything except the two free strokes. A rectangle is almost never the right rectangle first
+ * time, so handing it back with grips on saves the round trip through the selection tool that this
+ * whole arrangement exists to remove. A pen stroke, on the other hand, is usually one of several in
+ * a row, and selecting each one would put a box around every scribble as it is made.
+ */
+const SELECT_ON_DRAW = new Set<Tool>(["rect", "ellipse", "line", "arrow", "step"]);
 
 /** Line spacing and padding, shared by the field and the paint so the two agree exactly. */
 const LINE = 1.35;
@@ -278,9 +293,10 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	const [drawing, setDrawing] = useState<Shape | null>(null);
 	const [typing, setTyping] = useState<Typing | null>(null);
 	const [dragging, setDragging] = useState<Dragging | null>(null);
-	const [hovering, setHovering] = useState(false);
+	const [hovering, setHovering] = useState<"move" | "point" | "width" | null>(null);
 	const field = useRef<HTMLTextAreaElement>(null);
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
+	const carrying = useRef<{ x: number; y: number; from: Point; scale: number } | null>(null);
 
 	const stroke = Math.max(STROKE_BASE, Math.round(width / 500));
 	const typeSize = stroke * TEXT_SCALE;
@@ -325,6 +341,10 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 			.filter((_, index) => index !== typing?.replacing);
 		return drawing ? [...list, drawing] : list;
 	}, [shapes, drawing, dragging, typing?.replacing]);
+
+	/** The selected mark as it currently looks, which during a drag is not what is committed. */
+	const chosen = selected === null ? null : (dragging?.index === selected ? dragging.moving : shapes[selected]) ?? null;
+	const grips = chosen ? handlesOf(chosen) : [];
 
 	/*
 	 * The canvas carries only what will be saved.
@@ -446,6 +466,35 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		if (event.button !== 0) return;
 		const point = at(event);
 
+		const tolerance = pickTolerance(stroke, zoom);
+
+		/*
+		 * The selected mark is grabbable under *every* tool, not only under the selecting one.
+		 *
+		 * This is the whole point of the arrangement. Drawing a rectangle and then wanting it two
+		 * centimetres to the left used to mean: switch to the selecting tool, drag, switch back. Three
+		 * actions for one adjustment, every time, and the same again for the next rectangle. Here the
+		 * mark you just drew is still live: press on it to move it, press on a grip to resize it,
+		 * press anywhere else and you are drawing the next one. Nothing has to be switched.
+		 *
+		 * Only the *selected* mark, deliberately. If every mark were grabbable, a pen stroke across
+		 * one already on the picture would move it instead of drawing, and the tool in your hand
+		 * would stop meaning what it says.
+		 */
+		if (chosen && selected !== null) {
+			const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= tolerance * 1.8);
+			if (grip) {
+				event.currentTarget.setPointerCapture(event.pointerId);
+				setDragging({ index: selected, from: point, moving: chosen, handle: grip.index, moved: false });
+				return;
+			}
+			if (hitShape([chosen], point, tolerance) === 0) {
+				event.currentTarget.setPointerCapture(event.pointerId);
+				setDragging({ index: selected, from: point, moving: chosen, handle: null, moved: false });
+				return;
+			}
+		}
+
 		/*
 		 * Selecting and moving are one gesture.
 		 *
@@ -455,14 +504,17 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		 */
 		if (tool === "select") {
 			if (typing) commitText();
-			const index = hitShape(shapes, point, pickTolerance(stroke, zoom));
+			const index = hitShape(shapes, point, tolerance);
 			setSelected(index < 0 ? null : index);
 			if (index >= 0) {
 				event.currentTarget.setPointerCapture(event.pointerId);
-				setDragging({ index, from: point, moving: shapes[index]!, moved: false });
+				setDragging({ index, from: point, moving: shapes[index]!, handle: null, moved: false });
 			}
 			return;
 		}
+
+		// Drawing somewhere else means that mark is finished with.
+		if (selected !== null) setSelected(null);
 
 		if (tool === "text") {
 			/*
@@ -490,6 +542,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		// A badge is placed, not dragged; there is nothing to preview between press and release.
 		if (tool === "step") {
 			setHistory((h) => commit(h, [...current(h), { tool: "step", colour, points: [point] }]));
+			setSelected(shapes.length);
 			return;
 		}
 
@@ -508,8 +561,15 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		 * on its edge and not in its middle. Only written when it changes, so moving across empty
 		 * space does not re-render on every pointer event.
 		 */
-		if (tool === "select" && !dragging) {
-			const over = hitShape(shapes, point, pickTolerance(stroke, zoom)) >= 0;
+		if (!dragging) {
+			const tol = pickTolerance(stroke, zoom);
+			let over: "move" | "point" | "width" | null = null;
+			if (chosen && selected !== null) {
+				const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= tol * 1.8);
+				if (grip) over = grip.index === WIDTH_HANDLE ? "width" : "point";
+				else if (hitShape([chosen], point, tol) === 0) over = "move";
+			}
+			if (!over && tool === "select" && hitShape(shapes, point, tol) >= 0) over = "move";
 			setHovering((was) => (was === over ? was : over));
 		}
 
@@ -521,7 +581,8 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				const origin = shapes[held.index];
 				if (!origin) return held;
 				// Always from the original, so the drag does not accumulate rounding as it goes.
-				return { ...held, moving: moveShape(origin, dx, dy), moved: held.moved || Math.hypot(dx, dy) > 0.5 };
+				const moving = held.handle === null ? moveShape(origin, dx, dy) : resizeShape(origin, held.handle, point);
+				return { ...held, moving, moved: held.moved || Math.hypot(dx, dy) > 0.5 };
 			});
 			return;
 		}
@@ -554,7 +615,12 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		// A click with no drag leaves a one-point shape, which paints as nothing — drop it, except
 		// for the pen and the mosaic, where a single dab is a legitimate mark.
 		const keeps = drawing.tool === "pen" || drawing.tool === "mosaic";
-		if (drawing.points.length > 1 || keeps) setHistory((h) => commit(h, [...current(h), drawing]));
+		if (drawing.points.length > 1 || keeps) {
+			setHistory((h) => commit(h, [...current(h), drawing]));
+			// Handed back with its grips on, so the next thing you do to it is the adjustment rather
+			// than the hunt for the tool that allows the adjustment.
+			if (SELECT_ON_DRAW.has(drawing.tool)) setSelected(shapes.length);
+		}
 		setDrawing(null);
 	};
 
@@ -565,22 +631,16 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	 */
 	const cursor = dragging
 		? "cursor-grabbing"
-		: tool === "select" && hovering
-			? "cursor-move"
-			: (CURSOR[tool] ?? "cursor-crosshair");
+		: hovering === "width"
+			? "cursor-ew-resize"
+			: hovering === "point"
+				? "cursor-nwse-resize"
+				: hovering === "move"
+					? "cursor-move"
+					: (CURSOR[tool] ?? "cursor-crosshair");
 
-	/*
-	 * Where the selection box goes, in display pixels.
-	 *
-	 * Read from `shapes` rather than from `live`: `selected` is an index into the committed list, and
-	 * `live` has the caption being re-edited filtered out of it, so the two do not line up whenever
-	 * both are in play. Taken from the drag when there is one, so the box travels with the mark
-	 * rather than staying where it was picked up.
-	 */
-	const chosen =
-		tool === "select" && selected !== null
-			? (dragging?.index === selected ? dragging.moving : shapes[selected]) ?? null
-			: null;
+	// In display pixels. `chosen` already follows the drag, so the box travels with the mark rather
+	// than staying where it was picked up.
 	const box = chosen ? shapeBounds(chosen, stroke) : null;
 
 	return (
@@ -591,7 +651,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				onPointerMove={move}
 				onPointerUp={end}
 				onPointerCancel={end}
-				onPointerLeave={() => setHovering(false)}
+				onPointerLeave={() => setHovering(null)}
 				onDoubleClick={(event) => {
 					// Zooming is the double-click on the stage below; this one belongs to the mark.
 					event.stopPropagation();
@@ -634,6 +694,25 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				</div>
 			)}
 
+			{/*
+			 * The grips, drawn but not clickable.
+			 *
+			 * Hit testing for them happens on the canvas, against the same coordinates the drag will
+			 * use. Making them real targets would mean a second copy of that logic living in the DOM,
+			 * and two copies of a hit test is one more than can be kept in agreement.
+			 */}
+			{chosen &&
+				grips.map((grip) => (
+					<span
+						key={grip.index}
+						className="pointer-events-none absolute h-2.5 w-2.5 rounded-full border-2 border-white bg-sky-500 shadow-sm"
+						style={{
+							left: grip.at.x * display - 5,
+							top: grip.at.y * display - 5,
+						}}
+					/>
+				))}
+
 			{typing && (
 				/*
 				 * The field is the preview.
@@ -649,6 +728,43 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 					style={{ left: typing.at.x * display, top: typing.at.y * display, width: typing.width * display }}
 					onPointerDown={(event) => event.stopPropagation()}
 				>
+					{/*
+					 * A border you can pick the caption up by, while still typing in it.
+					 *
+					 * It sits under the field and eight points wider on every side, so the only part of
+					 * it that can be pressed is the margin outside the text — the middle still puts the
+					 * caret where you clicked. Without it, moving a caption you were part-way through
+					 * writing meant committing it, switching tools, dragging, and double-clicking back
+					 * in, which is four actions to answer "not there, here".
+					 */}
+					<span
+						aria-hidden
+						onPointerDown={(event) => {
+							event.preventDefault();
+							event.stopPropagation();
+							event.currentTarget.setPointerCapture(event.pointerId);
+							carrying.current = { x: event.clientX, y: event.clientY, from: typing.at, scale: display || 1 };
+						}}
+						onPointerMove={(event) => {
+							const held = carrying.current;
+							if (!held) return;
+							setTyping((entry) =>
+								entry
+									? {
+											...entry,
+											at: {
+												x: held.from.x + (event.clientX - held.x) / held.scale,
+												y: held.from.y + (event.clientY - held.y) / held.scale,
+											},
+										}
+									: entry,
+							);
+						}}
+						onPointerUp={() => {
+							carrying.current = null;
+						}}
+						className="-inset-2 absolute cursor-move rounded-lg"
+					/>
 					<textarea
 						ref={field}
 						value={typing.value}
@@ -668,7 +784,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 						placeholder="输入文字"
 						rows={1}
 						spellCheck={false}
-						className="block w-full resize-none overflow-hidden border-0 bg-transparent outline-none placeholder:text-current placeholder:opacity-40"
+						className="relative block w-full resize-none overflow-hidden border-0 bg-transparent outline-none placeholder:text-current placeholder:opacity-40"
 						style={{
 							font: fontOf(typeSize * display),
 							lineHeight: LINE,
