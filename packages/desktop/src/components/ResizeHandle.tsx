@@ -87,7 +87,16 @@ export function ResizeHandle({
 			const box = track.current?.getBoundingClientRect();
 			if (box) setGrip(Math.min(box.height, Math.max(0, event.clientY - box.top)));
 		};
-		const stop = () => setActive(false);
+		/*
+		 * Let go of the grip too, unless the pointer came to rest back on the edge.
+		 *
+		 * A drag almost always ends somewhere else — that is the point of it — and `mouseleave`
+		 * cannot report that, because the pointer left this element long before the button came up.
+		 */
+		const stop = (event: MouseEvent) => {
+			setActive(false);
+			if (!over(track.current, event)) setGrip(null);
+		};
 
 		window.addEventListener("mousemove", onMove);
 		window.addEventListener("mouseup", stop);
@@ -112,6 +121,39 @@ export function ResizeHandle({
 			delete document.documentElement.dataset.resizing;
 		};
 	}, [active, edge, min, max, onResize]);
+
+	/*
+	 * `mouseleave` is not enough to know the pointer has gone.
+	 *
+	 * It is not delivered when the pointer crosses the whole element between two frames — a quick
+	 * flick past a nine-pixel strip does exactly that — and it is not delivered at all when the
+	 * pointer leaves the window, which is the case somebody notices: the grip stays lit on an edge
+	 * nothing is near, and nothing will ever come along to put it out.
+	 *
+	 * So the question is asked the other way round. While a grip is showing, every pointer move
+	 * anywhere re-checks whether it is still over this strip, and leaving the document or the
+	 * window at all settles it immediately. Only while not dragging — during a drag the pointer is
+	 * meant to be far away and the grip is meant to follow it.
+	 */
+	useEffect(() => {
+		if (grip === null || active) return;
+		const check = (event: MouseEvent) => {
+			if (!over(track.current, event)) setGrip(null);
+		};
+		const gone = () => setGrip(null);
+		// `mouseout` with no relatedTarget is the pointer crossing the window's own boundary.
+		const out = (event: MouseEvent) => {
+			if (!event.relatedTarget) gone();
+		};
+		window.addEventListener("mousemove", check);
+		document.addEventListener("mouseout", out);
+		window.addEventListener("blur", gone);
+		return () => {
+			window.removeEventListener("mousemove", check);
+			document.removeEventListener("mouseout", out);
+			window.removeEventListener("blur", gone);
+		};
+	}, [grip, active]);
 
 	return (
 		<div
@@ -177,5 +219,14 @@ export function ResizeHandle({
 				/>
 			)}
 		</div>
+	);
+}
+
+/** Whether a pointer event landed within an element's box. Null element counts as "no". */
+function over(element: HTMLElement | null, event: MouseEvent): boolean {
+	if (!element) return false;
+	const box = element.getBoundingClientRect();
+	return (
+		event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom
 	);
 }
