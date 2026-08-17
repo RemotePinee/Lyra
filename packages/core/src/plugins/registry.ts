@@ -183,6 +183,27 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 			throw new Error(`仓库里没有 ${entry.path} 这个目录`);
 		}
 
+		/*
+		 * A skill collection is checked differently, because it is not a bundle.
+		 *
+		 * `inspectBundle` looks for a manifest and then for what the manifest points at — the right
+		 * question for a plugin, and the wrong one here: a collection is a directory of `SKILL.md`
+		 * folders and nothing else. It has no manifest and needs none, which is exactly why it goes
+		 * straight into the skills directory rather than being wrapped in one.
+		 *
+		 * So the check is the honest version of the same question: does this directory actually hold
+		 * skills? An index that pointed at the wrong sub-path would otherwise install an empty folder
+		 * and report success.
+		 */
+		if (entry.kind === "skill") {
+			const skills = await countSkills(source);
+			if (skills === 0) throw new Error("这个目录里没有技能（应当是一层含 SKILL.md 的子目录）");
+			const root = bundleRoot("skill");
+			await moveInto(source, root, entry.id);
+			// `dir` is the directory the skills went into; a collection has no directory of its own.
+			return { dir: root, kind: "skill", servers: [], name: `${entry.name}（${skills} 个技能）` };
+		}
+
 		const found = await inspectBundle(source);
 		if (found.kind === "none") {
 			throw new Error(found.error ?? "这个仓库里没有可安装的技能或 MCP 服务");
@@ -314,5 +335,37 @@ function hostOf(url: string): string {
 		return new URL(url).host;
 	} catch {
 		return url;
+	}
+}
+
+/** How many `SKILL.md` folders a directory holds, one level down. */
+async function countSkills(dir: string): Promise<number> {
+	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+	let found = 0;
+	for (const item of entries) {
+		if (!item.isDirectory()) continue;
+		const marker = await stat(join(dir, item.name, "SKILL.md")).catch(() => null);
+		if (marker?.isFile()) found += 1;
+	}
+	return found;
+}
+
+/**
+ * Put each skill directly among the loose skills, prefixed with where it came from.
+ *
+ * Not nested under a folder named after the collection: `loadSkills` reads one level, so a
+ * collection dropped in whole would be invisible. The prefix is what keeps two collections that
+ * both ship a `review` from overwriting each other, and it is also the only trace of provenance a
+ * flat directory can carry.
+ */
+async function moveInto(source: string, root: string, collection: string): Promise<void> {
+	await mkdir(root, { recursive: true });
+	for (const item of await readdir(source, { withFileTypes: true })) {
+		if (!item.isDirectory()) continue;
+		const marker = await stat(join(source, item.name, "SKILL.md")).catch(() => null);
+		if (!marker?.isFile()) continue;
+		const target = join(root, `${collection}-${item.name}`);
+		await rm(target, { recursive: true, force: true });
+		await rename(join(source, item.name), target);
 	}
 }
