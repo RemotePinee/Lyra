@@ -4,6 +4,10 @@
  * Not an empty state and not a fallback — this is where the panel starts, and it stays until a
  * choice is made. Opening straight onto a guessed tab means guessing wrong often enough that the
  * first thing you do is close something you never asked for.
+ *
+ * It says so, and it starts at the top. Centred in the pane with nothing above it, a list of seven
+ * items reads as a panel whose contents failed to arrive rather than as a menu — the layout has to
+ * make the difference, because the items themselves look the same either way.
  */
 
 import type { PanelKind } from "../../sideStore.ts";
@@ -17,7 +21,8 @@ export function PanelChooser({
 	onPick: (kind: PanelKind) => void;
 }) {
 	return (
-		<div className="flex min-h-0 flex-1 flex-col justify-center gap-0.5 px-2 pb-6">
+		<div className="flex min-h-0 flex-1 flex-col gap-0.5 px-2 pt-2 pb-6">
+			<p className="px-3 pt-1 pb-2 text-detail text-ink-faint">在这里打开：</p>
 			{definitions.map((def) => (
 				<button
 					key={def.kind}
@@ -33,9 +38,10 @@ export function PanelChooser({
 				</button>
 			))}
 
+			{/* Which of them are greyed, and why. Only when something actually is. */}
 			{definitions.some((d) => d.unavailable) && (
 				<p className="px-3 pt-3 text-detail leading-relaxed text-ink-faint">
-					{definitions.find((d) => d.unavailable)?.unavailable}后可用。
+					变灰的几项{definitions.find((d) => d.unavailable)?.unavailable}后可用。
 				</p>
 			)}
 		</div>
