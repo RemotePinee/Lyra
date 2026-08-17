@@ -12,6 +12,7 @@
  */
 
 import { execFile } from "node:child_process";
+import type { Dirent } from "node:fs";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -168,6 +169,17 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 			throw new Error(`已经装过 ${entry.id} 了`);
 		}
 	}
+	/*
+	 * And a collection, which has no directory to look for — only its prefix among the loose skills.
+	 *
+	 * Without this the same collection could be installed twice: the second run overwrites every
+	 * skill it still ships and silently leaves behind the ones it has since dropped, which is a
+	 * worse state than either version.
+	 */
+	if (entry.kind === "skill") {
+		const loose = await readdir(bundleRoot("skill")).catch((): string[] => []);
+		if (loose.some((name) => name.startsWith(`${entry.id}-`))) throw new Error(`已经装过 ${entry.id} 了`);
+	}
 
 	// Beside the eventual target rather than in the OS temp dir: same filesystem, so the move is a
 	// rename rather than a copy, and a crash leaves the debris somewhere we already clean up.
@@ -255,6 +267,23 @@ export async function uninstallEntry(id: string): Promise<void> {
 	if (!id || id.includes("/") || id.includes("..")) throw new Error("非法的插件 id");
 	await rm(join(bundleRoot("plugin"), id), { recursive: true, force: true });
 	await rm(join(bundleRoot("mcp"), id), { recursive: true, force: true });
+
+	/*
+	 * And the skills a collection scattered, which have no directory of their own to remove.
+	 *
+	 * `moveInto` flattened them in among the loose skills with an `<id>-` prefix, so this is the
+	 * same rename read backwards. Removing only the two bundle roots left a collection uninstalled
+	 * everywhere except in the agent, which went on loading all of its skills.
+	 *
+	 * The prefix has to be followed by something: a skill genuinely named `waza` is not one of
+	 * Waza's, and dropping it would be deleting a directory the user put there themselves.
+	 */
+	const skills = bundleRoot("skill");
+	for (const entry of await readdir(skills, { withFileTypes: true }).catch((): Dirent[] => [])) {
+		if (entry.isDirectory() && entry.name.startsWith(`${id}-`)) {
+			await rm(join(skills, entry.name), { recursive: true, force: true });
+		}
+	}
 }
 
 /**

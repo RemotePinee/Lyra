@@ -13,6 +13,7 @@ import { mkdir, rename } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { McpBundle, Settings } from "@lyra/core";
 import { lyraHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uninstallEntry } from "@lyra/core";
+import { remoteImage } from "../avatars.ts";
 import type { RegistryEntry } from "../ipc-types.ts";
 
 export interface PluginsIpcDeps {
@@ -161,6 +162,15 @@ export function registerPluginsIpc({ settings, saveSettings }: PluginsIpcDeps): 
 			skillDiagnostics: skills.diagnostics,
 		};
 	});
+
+	/*
+	 * Icons, fetched here so the page's Content-Security-Policy does not have to open up.
+	 *
+	 * A registry entry's logo is a URL from a file we did not write. `img-src` is narrow on purpose,
+	 * and widening it to the whole web so a 36px tile can render would trade a real boundary for a
+	 * decoration. Cached, so a list of twenty entries is twenty requests once and none after.
+	 */
+	ipcMain.handle("registry:icon", async (_event, url: string) => remoteImage(url));
 
 	ipcMain.handle("plugins:revealDir", async (_event, scope: "workspace" | "user", cwd: string) => {
 		const dir = pluginsDir(scope, cwd);

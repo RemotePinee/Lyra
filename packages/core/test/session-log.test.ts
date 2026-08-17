@@ -62,6 +62,17 @@ function reply(text: string): AssistantMessage {
 
 async function harness(script?: (turn: number) => AssistantMessage) {
 	const root = await mkdtemp(join(tmpdir(), "ly-log-"));
+	/*
+	 * A home of its own, so the assertions are about this test and not about this machine.
+	 *
+	 * A session loads the user's global skills as well as the workspace's, so `~/.lyra/skills`
+	 * was part of every context these tests measured. Installing a skill collection therefore
+	 * broke the suite — and `pnpm test` is in the pre-push hook, so using the app as intended
+	 * stopped you pushing to it.
+	 */
+	const home = join(root, "home");
+	await mkdir(home, { recursive: true });
+	process.env.LYRA_HOME = home;
 	let turn = 0;
 	const store = new SessionStore(join(root, "sessions"));
 	const session = new AgentSession({
@@ -82,7 +93,10 @@ async function harness(script?: (turn: number) => AssistantMessage) {
 			for await (const record of store.read(session.meta.projectId, session.meta.id)) out.push(record);
 			return out;
 		},
-		cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 }),
+		cleanup: async () => {
+			delete process.env.LYRA_HOME;
+			await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+		},
 	};
 }
 

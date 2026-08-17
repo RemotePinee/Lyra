@@ -167,3 +167,55 @@ test("a disabled plugin is still listed; disabling is not hiding", async () => {
 		assert.equal(plugins[0].enabled, false);
 	});
 });
+
+test("a marketplace file names the plugin, not the marketplace", async () => {
+	await withRoot(async (root) => {
+		/*
+		 * The shape real repositories ship.
+		 *
+		 * The top level of `marketplace.json` describes the marketplace — for a repository that
+		 * publishes one plugin that is usually the owner's handle (`agenticnotetaking`) or
+		 * `<x>-marketplace`. Reading it put the publishing account's name in the installed list where
+		 * the plugin's name belongs, which is unrecognisable to whoever installed it.
+		 */
+		const dir = join(root, "arscontexta");
+		await mkdir(join(dir, ".claude-plugin"), { recursive: true });
+		await mkdir(join(dir, "skills", "capture"), { recursive: true });
+		await writeFile(
+			join(dir, "skills", "capture", "SKILL.md"),
+			"---\nname: capture\ndescription: 记录时用。\n---\n\n# capture\n",
+		);
+		await writeFile(
+			join(dir, ".claude-plugin", "marketplace.json"),
+			JSON.stringify({
+				name: "agenticnotetaking",
+				description: "A marketplace",
+				owner: { name: "Heinrich" },
+				plugins: [{ name: "arscontexta", description: "A second brain", version: "2.1.0" }],
+			}),
+		);
+
+		const found = await inspectBundle(dir);
+		assert.equal(found.kind, "plugin");
+		assert.equal(found.kind !== "none" && found.manifest.name, "arscontexta");
+		assert.equal(found.kind !== "none" && found.manifest.description, "A second brain");
+		// The owner is still the author — that part of the top level really is about the publisher.
+		assert.equal(found.kind !== "none" && found.manifest.author?.name, "Heinrich");
+	});
+});
+
+test("without an entry inside, the marketplace's own name is still better than the directory", async () => {
+	await withRoot(async (root) => {
+		const dir = join(root, "cloned-at-a-weird-path");
+		await mkdir(join(dir, ".claude-plugin"), { recursive: true });
+		await mkdir(join(dir, "skills", "review"), { recursive: true });
+		await writeFile(
+			join(dir, "skills", "review", "SKILL.md"),
+			"---\nname: review\ndescription: 审代码时用。\n---\n\n# review\n",
+		);
+		await writeFile(join(dir, ".claude-plugin", "marketplace.json"), JSON.stringify({ name: "ponytail" }));
+
+		const found = await inspectBundle(dir);
+		assert.equal(found.kind !== "none" && found.manifest.name, "ponytail");
+	});
+});

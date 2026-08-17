@@ -18,7 +18,7 @@
  * registry says it is.
  */
 
-import type { BundleKind, McpBundle, McpServerConfig, Plugin, RegistryEntry } from "@lyra/core";
+import type { BundleKind, McpBundle, McpServerConfig, Plugin, RegistryEntry, Skill } from "@lyra/core";
 
 /** Bundles with nothing to file them under. Not a category anyone chose — see `groupByCategory`. */
 export const UNFILED = " unfiled";
@@ -39,6 +39,18 @@ export interface CatalogItem {
 	 * a registry it is the index's claim, which installing corrects if the clone disagrees.
 	 */
 	kind: BundleKind;
+	/**
+	 * How many of this collection's skills are on disk. Zero for anything that is not a collection.
+	 *
+	 * A collection has no directory of its own — its skills are flattened in among the loose ones,
+	 * which is what makes `loadSkills` see them at all. So there is nothing to point `installed` at,
+	 * and the card went on offering 安装 after a successful install, forever. The `<id>-` prefix
+	 * each skill was renamed with is the only trace the flat directory keeps, and counting it is
+	 * exactly as reliable as the rename that put it there.
+	 */
+	collected: number;
+	/** The directory those skills went into, for "打开目录". Null when there are none. */
+	collectedIn: string | null;
 	/** On disk as a plugin, with its skills and enabled state. */
 	installed: Plugin | null;
 	/** On disk as an MCP bundle, with what its `.mcp.json` declares. */
@@ -51,9 +63,9 @@ export interface CatalogItem {
 	from: string | null;
 }
 
-/** On disk, either kind — the question every "do I have this" check is really asking. */
+/** On disk, in whichever way this kind arrives — the question every "do I have this" check asks. */
 export function isInstalled(item: CatalogItem): boolean {
-	return item.installed !== null || item.bundle !== null;
+	return item.installed !== null || item.bundle !== null || item.collected > 0;
 }
 
 /**
@@ -85,6 +97,7 @@ export function merge(
 	bundles: McpBundle[],
 	configured: McpServerConfig[],
 	remote: { from: string; entry: RegistryEntry }[],
+	skills: Skill[] = [],
 ): CatalogItem[] {
 	/*
 	 * Every list is defaulted, because three of the four crossed a process boundary to get here.
@@ -99,6 +112,25 @@ export function merge(
 	bundles = bundles ?? [];
 	configured = configured ?? [];
 	remote = remote ?? [];
+	skills = skills ?? [];
+
+	/*
+	 * Loose skills only — a plugin's skills are the plugin's, and are already accounted for.
+	 *
+	 * Without this a collection named `waza` would count the eight skills the Waza *plugin* brought,
+	 * and claim to be installed on the strength of a different thing having been.
+	 */
+	/*
+	 * The directory name, not the skill's own name.
+	 *
+	 * `moveInto` renames the *directory* to `<collection>-<skill>`; the name inside the frontmatter
+	 * is untouched and still reads `agent-browser`. Matching on the name found nothing, so a
+	 * collection with 29 skills on disk went on offering 安装 — which is precisely the state this
+	 * count exists to rule out.
+	 */
+	const loose = skills
+		.filter((skill) => !skill.pluginId)
+		.map((skill) => ({ dir: skill.dir, name: skill.dir.split(/[/\\]/).pop() ?? "" }));
 
 	const byId = new Map<string, CatalogItem>();
 
@@ -113,6 +145,8 @@ export function merge(
 			brandColor: ui?.brandColor,
 			category: ui?.category ?? UNFILED,
 			kind: "plugin",
+			collected: 0,
+			collectedIn: null,
 			installed: plugin,
 			bundle: null,
 			servers: [],
@@ -132,6 +166,8 @@ export function merge(
 			brandColor: ui?.brandColor,
 			category: ui?.category ?? UNFILED,
 			kind: "mcp",
+			collected: 0,
+			collectedIn: null,
 			installed: null,
 			bundle,
 			// Matched on the directory name, which is what install stamped into every row it wrote.
@@ -152,6 +188,8 @@ export function merge(
 			if (existing.category === UNFILED && entry.category) existing.category = entry.category;
 			continue;
 		}
+		// Which of the loose skills this collection put there — none, unless it is a collection.
+		const mine = entry.kind === "skill" ? loose.filter((skill) => skill.name.startsWith(`${entry.id}-`)) : [];
 		byId.set(entry.id, {
 			key: `${from}:${entry.id}`,
 			id: entry.id,
@@ -161,6 +199,8 @@ export function merge(
 			brandColor: entry.brandColor,
 			category: entry.category ?? UNFILED,
 			kind: entry.kind,
+			collected: mine.length,
+			collectedIn: mine[0] ? mine[0].dir.slice(0, mine[0].dir.length - mine[0].name.length - 1) : null,
 			installed: null,
 			bundle: null,
 			servers: [],

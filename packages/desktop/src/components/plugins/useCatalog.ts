@@ -128,10 +128,10 @@ export function useCatalog(): Catalog {
 	 * on disk is only the starting point it was installed from.
 	 */
 	const items = useMemo(
-		() => merge(local.plugins, local.mcpBundles, settings?.mcpServers ?? [], remote),
+		() => merge(local.plugins, local.mcpBundles, settings?.mcpServers ?? [], remote, local.skills),
 		// `settings` rather than `settings.mcpServers`: the list is a fresh array on every render,
 		// the object it hangs off is not — it is only replaced when something is actually saved.
-		[local.plugins, local.mcpBundles, settings, remote],
+		[local.plugins, local.mcpBundles, settings, remote, local.skills],
 	);
 
 	/** Re-read here, and tell every other list that reads the same directories to do the same. */

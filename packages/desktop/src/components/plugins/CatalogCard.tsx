@@ -62,7 +62,15 @@ export function CatalogCard({
 	const bundle = item.bundle;
 	const installed = isInstalled(item);
 	/** Where the directory is, whichever kind it turned out to be. */
-	const dir = plugin?.dir ?? bundle?.dir ?? null;
+	/*
+	 * Where "打开目录" goes, and the thing whose absence used to hide the whole menu.
+	 *
+	 * A skill collection has no directory of its own — its skills sit among the loose ones. That
+	 * left `dir` null, and the menu is gated on it, so an installed collection had no way to be
+	 * uninstalled at all: no 安装 button any more, and no ⋯ menu either. The folder its skills went
+	 * into is the honest answer to "show me this", even though it holds more than this.
+	 */
+	const dir = plugin?.dir ?? bundle?.dir ?? item.collectedIn;
 	/*
 	 * Trying it means running one of its own example prompts, so it takes both a prompt to run and
 	 * something that is actually live — offering it while the bundle is switched off would open a
@@ -139,13 +147,26 @@ export function CatalogCard({
 						{installed && (
 							<span
 								className={`flex shrink-0 items-center gap-1 text-caption ${
-									isEnabled(item) ? "text-ok" : "text-ink-faint"
+									isEnabled(item) || item.collected > 0 ? "text-ok" : "text-ink-faint"
 								}`}
 							>
 								<Check size={11} strokeWidth={2.4} />
-								{/* An MCP bundle starts with every server off, and "已停用" would read as
-								    something the user did rather than as where it begins. */}
-								{isEnabled(item) ? "已安装" : item.kind === "mcp" ? "未启用" : "已停用"}
+								{/*
+								 * An MCP bundle starts with every server off, and "已停用" would read as
+								 * something the user did rather than as where it begins.
+								 *
+								 * A skill collection has no switch at all — its skills are simply among the
+								 * loose ones once it is installed. It reported 已停用, naming a state that
+								 * does not exist and cannot be changed. The count is the useful fact and the
+								 * one thing worth checking: it is what the card promised before installing.
+								 */}
+								{item.collected > 0
+									? `${item.collected} 个技能`
+									: isEnabled(item)
+										? "已安装"
+										: item.kind === "mcp"
+											? "未启用"
+											: "已停用"}
 							</span>
 						)}
 					</div>
@@ -159,7 +180,15 @@ export function CatalogCard({
 			 * The strip takes no pointer events; only the button on it does. Anything wider would
 			 * shadow the card button underneath and cost it both its click and its hover.
 			 */}
-			<div className="pointer-events-none absolute top-3 right-3 flex items-center gap-0.5">
+			{/*
+			 * Centred against the card, not pinned to its top.
+			 *
+			 * `top-3` put it level with the first line of the title, which is right only when the card
+			 * is exactly one line tall. A two-line description makes the card taller and leaves the
+			 * button sitting up in a corner, which reads as though it belongs to the title rather than
+			 * to the entry.
+			 */}
+			<div className="pointer-events-none absolute inset-y-0 right-3 flex items-center gap-0.5">
 				{installed ? (
 					<button
 						type="button"
@@ -212,7 +241,9 @@ export function CatalogCard({
 							detail={
 								item.kind === "mcp"
 									? `它的目录会被删除，它在设置 › MCP 里的 ${item.servers.length} 条配置也一起清掉——包括你在那里改过的参数。`
-									: "它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
+									: item.collected > 0
+										? `它带来的 ${item.collected} 个技能会从技能目录里删掉，你自己放的技能不受影响。重新安装可以拿回来。`
+										: "它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
 							}
 							confirmLabel="卸载"
 							onCancel={close}

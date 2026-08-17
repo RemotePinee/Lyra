@@ -137,6 +137,25 @@ export function PluginsView() {
 	const groups = useMemo(() => groupByCategory(filtered), [filtered]);
 
 	const installed = ofKind.filter(isInstalled);
+	/*
+	 * The collections the skills tab can offer, searched by the same box as everything else.
+	 *
+	 * Not grouped by category: three or four collections do not need shelves, and a heading over a
+	 * single card says less than the card does.
+	 */
+	const collections = tab === "skills" ? filtered : [];
+
+	/* Whichever sources failed, shown on every tab — a tab that hides it reads as "nothing here". */
+	const sourceErrors =
+		catalog.errors.length > 0 ? (
+			<div className="mt-3 rounded-[10px] border border-accent/35 bg-accent/6 px-3 py-2">
+				{catalog.errors.map((error) => (
+					<p key={error.url} className="py-0.5 text-detail leading-relaxed text-accent">
+						<span className="font-mono">{error.url}</span> — {error.message}
+					</p>
+				))}
+			</div>
+		) : null;
 
 	/*
 	 * Looked up rather than remembered — see `openKey`. Falls back to the grid if the key stops
@@ -336,15 +355,7 @@ export function PluginsView() {
 							 * The page then read as "there is nothing here", which is a different problem
 							 * with a different fix.
 							 */}
-							{catalog.errors.length > 0 && (
-								<div className="mt-3 rounded-[10px] border border-accent/35 bg-accent/6 px-3 py-2">
-									{catalog.errors.map((error) => (
-										<p key={error.url} className="py-0.5 text-detail leading-relaxed text-accent">
-											<span className="font-mono">{error.url}</span> — {error.message}
-										</p>
-									))}
-								</div>
-							)}
+							{sourceErrors}
 
 							{groups.length === 0 ? (
 								<Empty
@@ -388,7 +399,51 @@ export function PluginsView() {
 							)}
 						</>
 					) : (
-						<SkillList skills={catalog.skills} needle={needle} />
+						/*
+						 * Two things, in the order you need them.
+						 *
+						 * This tab used to be the second list alone, which made the skill market unreachable:
+						 * the sources were configured, the collections were fetched, and nothing on screen
+						 * ever drew them. A market you cannot see is not a market.
+						 *
+						 * Collections come first because they are what the page can act on, and the skills
+						 * below are partly the result of having acted. There are no 公开 / 个人 scopes here:
+						 * a personal skill is a directory, not a collection, and it is already in the list
+						 * underneath rather than being a second kind of card.
+						 */
+						<>
+							{sourceErrors}
+
+							{collections.length > 0 && (
+								<section className="pt-6">
+									<h2 className="pb-1 text-body font-medium text-ink">技能集合</h2>
+									<div className="grid grid-cols-1 gap-x-4 @2xl:grid-cols-2">
+										{collections.map((item) => (
+											<div key={item.key} data-item={item.key}>
+												<CatalogCard
+													item={item}
+													onOpen={() => setOpenKey(item.key)}
+													onChanged={() => {
+														setFailure(null);
+														catalog.refresh();
+													}}
+													onError={setFailure}
+													onTry={startWith}
+												/>
+											</div>
+										))}
+									</div>
+								</section>
+							)}
+
+							<section className="pt-8">
+								<div className="flex items-baseline gap-2 pb-1">
+									<h2 className="text-body font-medium text-ink">这台机器上的技能</h2>
+									<span className="text-detail text-ink-faint tabular-nums">{catalog.skills.length}</span>
+								</div>
+								<SkillList skills={catalog.skills} needle={needle} />
+							</section>
+						</>
 					)}
 
 					{catalog.diagnostics.length > 0 && (

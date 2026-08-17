@@ -304,13 +304,24 @@ async function inferManifest(pluginDir: string): Promise<ManifestResult | null> 
 				name?: string;
 				description?: string;
 				owner?: { name?: string };
-				plugins?: { version?: string; category?: string; homepage?: string }[];
+				plugins?: { name?: string; description?: string; version?: string; category?: string; homepage?: string }[];
 			};
-			if (typeof parsed.name === "string" && parsed.name) manifest.name = parsed.name;
-			if (typeof parsed.description === "string") manifest.description = parsed.description;
-			if (typeof parsed.owner?.name === "string") manifest.author = { name: parsed.owner.name };
 			// The collection's own entry is the one whose source is the root; in practice, the first.
 			const head = parsed.plugins?.[0];
+			/*
+			 * The plugin's own name, not the file's.
+			 *
+			 * The top level of a `marketplace.json` describes the *marketplace* — which for a
+			 * repository that publishes one thing is usually the owner's handle or `<x>-marketplace`.
+			 * Taking it named a plugin "agenticnotetaking" in the installed list, which is the account
+			 * that publishes it and not a thing anyone can recognise. The entry inside is what the
+			 * plugin calls itself.
+			 */
+			const named = [head?.name, parsed.name].find((value) => typeof value === "string" && value);
+			if (named) manifest.name = named;
+			const described = [head?.description, parsed.description].find((value) => typeof value === "string" && value);
+			if (described) manifest.description = described;
+			if (typeof parsed.owner?.name === "string") manifest.author = { name: parsed.owner.name };
 			if (head) {
 				if (typeof head.version === "string") manifest.version = head.version;
 				if (typeof head.homepage === "string") manifest.homepage = head.homepage;
