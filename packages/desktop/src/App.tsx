@@ -83,7 +83,8 @@ function ChatShell() {
 	const toggleExpanded = useSide((s) => s.toggleExpanded);
 	const attach = useSide((s) => s.attach);
 
-	const { panelWidth, panelMax, sidebarWidth, sidebarMax, fullScreen, panelHostsControls, openPanel } = usePanelLayout();
+	const { panelWidth, panelLayoutWidth, panelMax, sidebarWidth, sidebarMax, fullScreen, panelHostsControls, openPanel } =
+		usePanelLayout();
 
 	/*
 	 * The right-hand panel belongs to the workspace, not to the window.
@@ -187,6 +188,7 @@ function ChatShell() {
 			 */}
 			<SidePane
 				width={panelWidth}
+				layoutWidth={panelLayoutWidth}
 				open={panelOpen && panelApplies}
 				fullScreen={fullScreen}
 				offset={navOpen ? sidebarWidth : 0}

@@ -23,6 +23,15 @@ import { useSide } from "./sideStore.ts";
 
 /** What the conversation keeps for itself before the panel is allowed any more. */
 const CONTENT_MIN = 420;
+/**
+ * How much of the conversation stays uncovered once the panel starts overlapping it.
+ *
+ * Past `CONTENT_MIN` the panel stops taking the column's width and starts lying over it instead.
+ * The sliver that remains is not there to be read — it is there so the conversation never becomes
+ * a thing you have to remember is behind something. A panel that could close over it completely
+ * would be indistinguishable from full screen, which is a separate mode reached deliberately.
+ */
+const CHAT_PEEK = 120;
 
 export function usePanelLayout() {
 	const {
@@ -74,7 +83,24 @@ export function usePanelLayout() {
 			: 0;
 
 	const available = width - sidebarActual;
-	const panelWidth = Math.max(bounds.panel.min, Math.min(preferred, available - CONTENT_MIN));
+
+	/**
+	 * Two widths, because past a point the panel stops taking room and starts covering it.
+	 *
+	 * `panelWidth` is what you see. `panelLayoutWidth` is what the flex row is told, and it stops
+	 * growing at the point where the conversation would drop below its floor. Beyond that the panel
+	 * keeps widening leftwards over the column instead of pushing it.
+	 *
+	 * Splitting them is what makes the transition free of any jump. At the moment they part company
+	 * the panel's left edge is exactly on the conversation's right edge, so the first covered pixel
+	 * is the first pixel past the boundary — nothing moves, nothing reflows, and the column keeps
+	 * the same layout width from there on. Squeezing it further instead would re-wrap every message
+	 * in the transcript on every frame of the drag, and re-wrap them back on the way out.
+	 */
+	const squeezeCap = available - CONTENT_MIN;
+	const overlayCap = available - CHAT_PEEK;
+	const panelWidth = Math.max(bounds.panel.min, Math.min(preferred, bounds.panel.max, overlayCap));
+	const panelLayoutWidth = Math.max(bounds.panel.min, Math.min(panelWidth, squeezeCap));
 
 	/**
 	 * Who draws the window's three buttons.
@@ -94,7 +120,7 @@ export function usePanelLayout() {
 	const openPanel = (open: () => void) => {
 		open();
 		dismissNav();
-		if (!compact && navOpen && width - sidebarActual - panelWidth < CONTENT_MIN) collapseNav();
+		if (!compact && navOpen && width - sidebarActual - panelLayoutWidth < CONTENT_MIN) collapseNav();
 	};
 
 	/*
@@ -119,10 +145,19 @@ export function usePanelLayout() {
 
 	return {
 		panelWidth,
+		/** What the flex row reserves for it, which stops short once it starts overlapping. */
+		panelLayoutWidth,
+		/** Whether it is currently lying over the conversation rather than beside it. */
+		panelOverlays: panelWidth > panelLayoutWidth,
 		/** The clamped width to render the sidebar at — see `sidebarActual`. */
 		sidebarWidth: sidebarActual,
-		/** The most the resize handle may give it, with the conversation's floor honoured. */
-		panelMax: Math.max(bounds.panel.min, Math.min(bounds.panel.max, available - CONTENT_MIN)),
+		/**
+		 * The most the resize handle may give it.
+		 *
+		 * The overlay cap, not the squeeze one: the handle has to be able to drag past the point
+		 * where covering begins, or the mode would exist and be unreachable.
+		 */
+		panelMax: Math.max(bounds.panel.min, Math.min(bounds.panel.max, overlayCap)),
 		/**
 		 * The same floor, enforced from the other side.
 		 *

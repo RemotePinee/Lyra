@@ -143,6 +143,7 @@ export function NavPane({
  */
 export function SidePane({
 	width,
+	layoutWidth,
 	open,
 	fullScreen,
 	offset,
@@ -150,6 +151,17 @@ export function SidePane({
 	children,
 }: {
 	width: number;
+	/**
+	 * What the row reserves for it, which is less than `width` once it starts covering.
+	 *
+	 * The two are equal while the panel sits beside the conversation. Past the point where the
+	 * conversation would go below its floor this one stops growing and `width` keeps going, and the
+	 * difference is exactly how far the panel reaches over the column. Doing it this way is what
+	 * makes the crossover invisible: the reserved width is what the conversation is laid out
+	 * against, so it stops changing at precisely the moment covering begins — no reflow on the
+	 * frame the mode switches, and none on any frame after it.
+	 */
+	layoutWidth?: number;
 	open: boolean;
 	/** Covering the content column rather than sharing the row with it. */
 	fullScreen: boolean;
@@ -193,8 +205,8 @@ export function SidePane({
 			className={`${
 				covering
 					? `ly-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
-					: "ly-opaque h-full w-full overflow-hidden"
-			} ${snap ? "transition-none" : "transition-transform duration-[var(--ly-t-base)] ease-out"}`}
+					: "ly-opaque absolute inset-y-0 right-0 overflow-hidden"
+			} ${snap ? "transition-none" : "transition-[width,transform] duration-[var(--ly-t-base)] ease-out"}`}
 			/*
 			 * Moved, never faded.
 			 *
@@ -206,9 +218,10 @@ export function SidePane({
 			 * Sliding alone is also simply the truer gesture: the panel arrives from the edge.
 			 *
 			 * Beside the content the sliding belongs to the frame below, which is what carries the
-			 * width — two boxes both applying it would be twice as wide as either meant.
+			 * reserved width. This one carries its *drawn* width and hangs off the frame's right
+			 * edge, so the two differ by exactly how far it reaches over the conversation.
 			 */
-			style={covering ? { left: compact ? 0 : offset, transform: open ? "none" : "translateX(100%)" } : undefined}
+			style={covering ? { left: compact ? 0 : offset, transform: open ? "none" : "translateX(100%)" } : { width }}
 		>
 			{children}
 		</aside>
@@ -220,15 +233,39 @@ export function SidePane({
 	 */
 	if (covering) return pane;
 
+	const reserved = layoutWidth ?? width;
+	/** How far the pane's left edge sits beyond the frame's, which is where the handle belongs. */
+	const overhang = width - reserved;
+
 	return (
 		<div
 			className={`relative z-50 shrink-0 ${
-				snap ? "transition-none" : "transition-[margin-right] duration-[var(--ly-t-base)] ease-out"
+				snap ? "transition-none" : "transition-[margin-right,width] duration-[var(--ly-t-base)] ease-out"
 			}`}
-			style={{ width, marginRight: open ? 0 : -width }}
+			style={{ width: reserved, marginRight: open ? 0 : -reserved }}
 		>
 			{pane}
-			{handle}
+
+			{/*
+			 * A zero-width rail on the pane's left edge, for the handle to be positioned against.
+			 *
+			 * The handle knows how to straddle the edge of whatever contains it, and while the panel
+			 * is beside the conversation that edge is the frame's. Once it overlaps, the two part
+			 * company — the frame stops where the conversation's floor is, the pane carries on past
+			 * it — and a handle still pinned to the frame would sit in the middle of the panel it is
+			 * supposed to be the boundary of. Pinning it to a rail that tracks the overhang keeps it
+			 * on the seam in both modes, with no second set of rules for the second mode.
+			 */}
+			{handle && (
+				<div
+					className={`absolute inset-y-0 w-0 ${
+						snap ? "transition-none" : "transition-[left] duration-[var(--ly-t-base)] ease-out"
+					}`}
+					style={{ left: -overhang }}
+				>
+					{handle}
+				</div>
+			)}
 		</div>
 	);
 }
