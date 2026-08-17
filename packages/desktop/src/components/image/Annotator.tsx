@@ -1011,23 +1011,33 @@ export function AnnotateToolbar({
 
 			<Divider />
 
-			{COLOURS.map((value) => (
-				<button
-					key={value}
-					type="button"
-					data-ly-tip={COLOUR_NAMES[value] ?? value}
-					data-ly-tip-side="top"
-					aria-label={COLOUR_NAMES[value] ?? value}
-					aria-pressed={annotator.colour === value}
-					onClick={() => annotator.setColour(value)}
-					style={{ background: value }}
-					className={`h-[18px] w-[18px] rounded-full transition-transform duration-[var(--ly-t-quick)] ${
-						annotator.colour === value
-							? "scale-115 ring-2 ring-white/80 ring-offset-2 ring-offset-[#1c1c1e]"
-							: "opacity-80 hover:scale-110 hover:opacity-100"
-					}`}
-				/>
-			))}
+			{/*
+			 * A group with its own spacing.
+			 *
+			 * The swatches are 18pt where the tool buttons are 28pt, and the selected one wears a 2pt
+			 * ring 2pt clear of itself — four points of growth on every side. At the row's own `gap-1`
+			 * that ring lands exactly on its neighbours, which is what made this stretch of the bar
+			 * look jammed together. Smaller controls need proportionally more air, not the same.
+			 */}
+			<div className="flex items-center gap-2">
+				{COLOURS.map((value) => (
+					<button
+						key={value}
+						type="button"
+						data-ly-tip={COLOUR_NAMES[value] ?? value}
+						data-ly-tip-side="top"
+						aria-label={COLOUR_NAMES[value] ?? value}
+						aria-pressed={annotator.colour === value}
+						onClick={() => annotator.setColour(value)}
+						style={{ background: value }}
+						className={`h-[18px] w-[18px] shrink-0 rounded-full transition-transform duration-[var(--ly-t-quick)] ${
+							annotator.colour === value
+								? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]"
+								: "opacity-80 hover:scale-110 hover:opacity-100"
+						}`}
+					/>
+				))}
+			</div>
 
 			{/*
 			 * Only while the text tool is up.
@@ -1039,7 +1049,7 @@ export function AnnotateToolbar({
 			{annotator.tool === "text" && (
 				<>
 					<Divider />
-					<div className="flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] items-center gap-1">
+					<div className="flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] items-center gap-2">
 						{BACKDROPS.map(([value, label]) => (
 							<button
 								key={label}
@@ -1050,11 +1060,11 @@ export function AnnotateToolbar({
 								aria-pressed={annotator.backdrop === value}
 								onClick={() => annotator.setBackdrop(value)}
 								style={value ? { background: value } : undefined}
-								className={`h-[18px] w-[18px] rounded-[5px] transition-transform duration-[var(--ly-t-quick)] ${
+								className={`h-[18px] w-[18px] shrink-0 rounded-[5px] transition-transform duration-[var(--ly-t-quick)] ${
 									value ? "" : "ly-checker-xs"
 								} ${
 									annotator.backdrop === value
-										? "scale-115 ring-2 ring-white/80 ring-offset-2 ring-offset-[#1c1c1e]"
+										? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]"
 										: "opacity-80 hover:scale-110 hover:opacity-100"
 								}`}
 							/>
@@ -1118,7 +1128,8 @@ export function AnnotateToolbar({
 	);
 }
 
-const Divider = () => <span className="mx-1 h-4 w-px bg-white/15" />;
+/** `mx-1.5` rather than `mx-1`: the swatch next to a divider carries a ring that needs the room. */
+const Divider = () => <span className="mx-1.5 h-4 w-px shrink-0 bg-white/15" />;
 
 function ToolButton({
 	label,
