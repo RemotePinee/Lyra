@@ -158,6 +158,21 @@ export function hitShape(shapes: Shape[], at: Point, tolerance: number): number 
 	return -1;
 }
 
+/**
+ * Every mark under the point, topmost first.
+ *
+ * What makes a stack of overlapping marks navigable: `hitShape` always answers with the one on top,
+ * so without this the ones beneath it could never be reached at all.
+ */
+export function hitShapes(shapes: Shape[], at: Point, tolerance: number): number[] {
+	const found: number[] = [];
+	for (let i = shapes.length - 1; i >= 0; i--) {
+		const shape = shapes[i];
+		if (shape && hits(shape, at, tolerance)) found.push(i);
+	}
+	return found;
+}
+
 function hits(shape: Shape, at: Point, tolerance: number): boolean {
 	const first = shape.points[0];
 	if (!first) return false;

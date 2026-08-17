@@ -20,6 +20,7 @@
 
 import {
 	ArrowUpRight,
+	Delete,
 	Circle,
 	Grid2x2,
 	ListOrdered,
@@ -42,6 +43,7 @@ import {
 	emptyHistory,
 	handlesOf,
 	hitShape,
+	hitShapes,
 	mosaicBlock,
 	mosaicBrush,
 	mosaicCells,
@@ -663,7 +665,28 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				 * as consequential as entering an editor.
 				 */
 				const shape = shapes[index];
-				if (shape?.tool === "text" && (tool === "text" || wasSelected)) editText(index);
+				if (shape?.tool === "text" && (tool === "text" || wasSelected)) {
+					editText(index);
+				} else if (wasSelected) {
+					/*
+					 * Clicking again on something already selected steps down through whatever is
+					 * stacked under the pointer.
+					 *
+					 * Marks pile up — an arrow that ends inside a box, a badge on a line — and the hit
+					 * test always answers with the topmost, so without this the ones underneath could
+					 * be seen and never touched. Cycling means the second click reaches the second
+					 * mark, and the last one wraps back to the top.
+					 *
+					 * Captions are excluded above because for them a second click already means "open
+					 * the words", which is the more common thing to want from one.
+					 */
+					// `from` is where the press landed, and it did not move, so it is still the point.
+					const stack = hitShapes(shapes, dragging.from, pickTolerance(stroke, zoom));
+					if (stack.length > 1) {
+						const here = stack.indexOf(index);
+						setSelected(stack[(here + 1) % stack.length] ?? index);
+					}
+				}
 			}
 			setDragging(null);
 			return;
@@ -726,33 +749,27 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 
 			{box && (
 				/*
-				 * A box around what is selected, and a button to remove it.
+				 * Just a frame. The delete button lives on the toolbar.
 				 *
-				 * `pointer-events-none` on the frame: it lies over the mark, and a frame that swallowed
-				 * the press would make the thing it is pointing at the one thing you cannot grab.
+				 * It used to float at this box's corner, which put a fixed 24pt control wherever the
+				 * mark happened to be: over the neighbouring text when two marks sat close together,
+				 * off the top of the picture when one was near the edge, and larger than the mark
+				 * itself when the mark was small. A control whose position is decided by the thing it
+				 * acts on cannot avoid any of that. On the toolbar it is always in the same place,
+				 * always the same size, and never on top of the picture.
+				 *
+				 * `pointer-events-none`, because this lies over the mark and a frame that swallowed the
+				 * press would make the thing it points at the one thing you cannot grab.
 				 */
-				<div
-					className="pointer-events-none absolute"
+				<span
+					className="pointer-events-none absolute rounded-[3px] border border-sky-400 border-dashed bg-sky-400/10"
 					style={{
 						left: box.x * display,
 						top: box.y * display,
 						width: box.w * display,
 						height: box.h * display,
 					}}
-				>
-					<span className="absolute inset-0 rounded-[3px] border border-sky-400 border-dashed bg-sky-400/10" />
-					<button
-						type="button"
-						data-ly-tip="删除这个标注 ⌫"
-						data-ly-tip-side="top"
-						aria-label="删除选中的标注"
-						onPointerDown={(event) => event.stopPropagation()}
-						onClick={annotator.removeSelected}
-						className="pointer-events-auto -top-3 -right-3 absolute flex h-6 w-6 items-center justify-center rounded-full bg-[#1c1c1e] text-white/90 shadow-md transition-[transform,background-color] duration-[var(--ly-t-quick)] hover:scale-110 hover:bg-red-500 hover:text-white"
-					>
-						<Trash2 size={12} strokeWidth={2} />
-					</button>
-				</div>
+				/>
 			)}
 
 			{/*
@@ -1054,6 +1071,20 @@ export function AnnotateToolbar({
 			<ToolButton label="重做 ⇧⌘Z" disabled={!annotator.canRedo} onClick={annotator.redo}>
 				<Redo2 size={14} strokeWidth={1.9} />
 			</ToolButton>
+			{/*
+			 * Deleting the selected mark, where the selected mark is not.
+			 *
+			 * Present only while something is selected, next to the other things that act on the
+			 * drawing as a whole. It appears rather than greying out, so the row does not carry a dead
+			 * control most of the time.
+			 */}
+			{annotator.selected !== null && (
+				<span className="flex animate-[ly-tool-in_var(--ly-t-base)_ease-out]">
+					<ToolButton label="删除选中 ⌫" onClick={annotator.removeSelected}>
+						<Delete size={14} strokeWidth={1.9} />
+					</ToolButton>
+				</span>
+			)}
 			<ToolButton label="清空" disabled={!annotator.dirty} onClick={annotator.clear}>
 				<Trash2 size={14} strokeWidth={1.9} />
 			</ToolButton>

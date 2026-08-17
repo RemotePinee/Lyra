@@ -17,6 +17,7 @@ import {
 	emptyHistory,
 	handlesOf,
 	hitShape,
+	hitShapes,
 	HISTORY_LIMIT,
 	mosaicBlock,
 	mosaicBrush,
@@ -208,6 +209,25 @@ test("a wide mosaic stroke is easier to hit than a thin pen stroke", () => {
 	const path = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
 	assert.equal(hitShape([{ tool: "pen", colour: "#000", points: path }], at, 5), -1);
 	assert.equal(hitShape([{ tool: "mosaic", colour: "#000", points: path }], at, 5), 0);
+});
+
+test("everything under the point can be listed, topmost first, so a stack is navigable", () => {
+	const path = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+	const under: Shape = { tool: "line", colour: "#a", points: path };
+	const middle: Shape = { tool: "line", colour: "#b", points: path };
+	const over: Shape = { tool: "line", colour: "#c", points: path };
+
+	const stack = hitShapes([under, middle, over], { x: 50, y: 0 }, 5);
+	assert.deepEqual(stack, [2, 1, 0], "newest first");
+	assert.equal(stack[0], hitShape([under, middle, over], { x: 50, y: 0 }, 5), "and it agrees with the single answer");
+
+	// Stepping through it wraps, which is what makes the bottom one reachable and then the top again.
+	const next = (i: number) => stack[(stack.indexOf(i) + 1) % stack.length];
+	assert.equal(next(2), 1);
+	assert.equal(next(1), 0);
+	assert.equal(next(0), 2, "wraps back to the top");
+
+	assert.deepEqual(hitShapes([under], { x: 50, y: 400 }, 5), [], "nothing under the point");
 });
 
 test("the topmost mark wins, because that is the one being pointed at", () => {
