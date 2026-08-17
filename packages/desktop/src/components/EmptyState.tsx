@@ -1,4 +1,5 @@
 import { Bug, Hammer, RefreshCw, Telescope } from "lucide-react";
+import mark from "../assets/empty-mark.png?inline";
 import { Scroller } from "./Scroller.tsx";
 import { Composer } from "./Composer.tsx";
 import { useLayout } from "../layout.tsx";
@@ -33,7 +34,7 @@ export function EmptyState() {
 				 * parent gets clipped at the top with no way to scroll back up to it.
 				 */}
 				<div className="m-auto flex w-full flex-col items-center">
-					<TerminalMark compact={compact} />
+					<EmptyMark compact={compact} />
 
 					<h1
 						className={`mt-6 shrink-0 text-center leading-tight font-semibold tracking-tight text-balance text-ink ${
@@ -100,29 +101,28 @@ export function EmptyState() {
 	);
 }
 
-/** The rounded-square terminal glyph from the reference empty state. */
-function TerminalMark({ compact }: { compact: boolean }) {
-	const size = compact ? 46 : 56;
+/**
+ * The mark above the question.
+ *
+ * Larger than the outlined terminal glyph it replaces, because it is a picture rather than an icon:
+ * at 56px the drawing reads as a smudge, and an illustration nobody can make out is worse than the
+ * plain shape it was brought in to replace. Sized in points and shipped at 384px so it stays sharp
+ * on a 3× display without carrying a 1254px original into the bundle.
+ *
+ * `aria-hidden` and an empty `alt`: the heading underneath already says what this screen is for, and
+ * a screen reader announcing the decoration first would put an ornament ahead of the sentence.
+ */
+function EmptyMark({ compact }: { compact: boolean }) {
+	const size = compact ? 104 : 132;
 	return (
-		<svg width={size} height={size} viewBox="0 0 64 64" fill="none" className="shrink-0" aria-hidden>
-			<rect
-				x="6"
-				y="10"
-				width="52"
-				height="44"
-				rx="15"
-				stroke="var(--color-ink-faint)"
-				strokeWidth="2.4"
-				opacity="0.75"
-			/>
-			<path
-				d="M22 26l7 6-7 6"
-				stroke="var(--color-ink-muted)"
-				strokeWidth="2.6"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
-			<path d="M34 39h10" stroke="var(--color-ink-muted)" strokeWidth="2.6" strokeLinecap="round" />
-		</svg>
+		<img
+			src={mark}
+			alt=""
+			aria-hidden
+			draggable={false}
+			width={size}
+			height={size}
+			className="shrink-0 select-none"
+		/>
 	);
 }
