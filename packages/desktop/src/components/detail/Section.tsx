@@ -13,7 +13,13 @@
  * card's edges. It is the difference between a card that contains a command and a card that has a
  * command spilled across it: the block gives the text a margin to breathe in and says where it
  * starts and stops without needing a rule to do it.
+ *
+ * The heading rolls when it changes, which is here rather than at the call sites because only one
+ * of them ever changes — a call finishing turns 输出（进行中） into 结果 under the text it labels —
+ * and a heading that never changes never animates.
  */
+
+import { RollingText } from "../RollingText.tsx";
 
 export function Section({
 	title,
@@ -29,7 +35,9 @@ export function Section({
 	const colour = tone === "danger" ? "text-danger/90" : tone === "ink" ? "text-ink" : "text-ink-muted";
 	return (
 		<div className="px-3 py-2.5">
-			<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">{title}</div>
+			<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">
+				<RollingText>{title}</RollingText>
+			</div>
 			<div
 				className={`text-detail leading-relaxed break-words whitespace-pre-wrap ${colour} ${
 					mono ? "rounded-lg bg-shell/70 px-2.5 py-2 font-mono" : ""

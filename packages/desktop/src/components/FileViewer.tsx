@@ -5,6 +5,7 @@ import { CodeEditor } from "./CodeEditor.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { useApp } from "../store.ts";
+import { RollingText } from "./RollingText.tsx";
 
 const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "svg"]);
 const VIDEO = new Set(["mp4", "webm", "mov", "mkv", "m4v"]);
@@ -164,7 +165,7 @@ export function FileViewer({
 							className="ly-item flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-detail"
 						>
 							<Save size={11.5} strokeWidth={1.9} />
-							{saving ? "保存中…" : "未保存"}
+							<RollingText>{saving ? "保存中…" : "未保存"}</RollingText>
 						</button>
 					)}
 					{justSaved && !dirty && (

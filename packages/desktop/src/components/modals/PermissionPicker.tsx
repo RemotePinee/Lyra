@@ -80,7 +80,8 @@ export function PermissionPicker({
           onClose={onClose}
           placement="top"
           align="start"
-          width={276}
+          width="wide"
+          label="权限模式"
         >
           <MenuBody>
             <MenuLabel>应如何批准 Lyra 操作？</MenuLabel>

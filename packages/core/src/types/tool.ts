@@ -6,6 +6,7 @@
  * one context object rather than through imports, which is what lets a host substitute any of it.
  */
 
+import type { SandboxMode } from "../sandbox/policy.ts";
 import type { UserContent } from "./message.ts";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,16 @@ export interface ToolContext {
 	onProgress?: (partial: ToolResult) => void;
 	/** Ask the user to approve a side-effecting operation. */
 	requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+	/**
+	 * How much of the filesystem this turn's commands may change.
+	 *
+	 * Set by the host from the permission mode. Absent means the host composed no sandbox, and a
+	 * tool that would have been confined runs the way it always did — which is what keeps the CLI
+	 * and the tests working without building one.
+	 */
+	sandboxMode?: SandboxMode;
+	/** Internal hosts the user allowed by name; see `Settings.allowedHosts`. */
+	allowedHosts?: readonly string[];
 	/** Run a nested agent (used by the `task` tool). */
 	spawnSubAgent?: (input: SubAgentInput) => Promise<string>;
 	/** Shared per-session scratch space (todo list, file read cache, ...). */
@@ -73,6 +84,14 @@ export interface ApprovalRequest {
 	kind: "bash" | "write" | "edit" | "mcp" | "network";
 	title: string;
 	detail: string;
+	/**
+	 * Why this is being asked, in the asker's own words.
+	 *
+	 * The difference between a prompt somebody can answer and one they can only guess at. A path
+	 * and a mode describe what would happen; this says what it is for — and when the asker is the
+	 * model requesting an escalation, it is the model's own sentence, shown verbatim.
+	 */
+	reason?: string;
 	/** Command / path the approval applies to, used for "always allow" rules. */
 	subject: string;
 }

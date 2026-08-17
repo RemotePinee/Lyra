@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { GitStatus, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 import type { BranchList, RepoRef } from "../../../electron/git.ts";
 
+import { useConfirmer } from "../Confirm.tsx";
 import { Scroller } from "../Scroller.tsx";
 
 import { Text } from "../Text.tsx";
@@ -56,6 +57,7 @@ export function BranchesView({
   } | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const confirm = useConfirmer();
   /** Repositories and their worktrees, flattened in display order. */
   const checkouts = repos.flatMap((repo) => [repo, ...(trees[repo.path] ?? [])]);
 
@@ -220,16 +222,27 @@ export function BranchesView({
                   ? () => setCompare({ base: branch, head: current })
                   : undefined
               }
+              /*
+               * The app's own confirmation, not the browser's.
+               *
+               * `window.confirm` draws a Chromium dialog: system fonts, an OS-blue button, the
+               * word "localhost" across the top, and it freezes the renderer while it is up. It
+               * was the one place in the app that asked a question in someone else's voice.
+               */
               onDelete={
                 branch === current
                   ? undefined
-                  : () => {
-                      if (window.confirm(`删除分支 ${branch}？`)) {
-                        void act(() =>
-                          window.lyra.git.deleteBranch(cwd, branch),
-                        ).then(load);
-                      }
-                    }
+                  : (event) =>
+                      confirm.ask(event, {
+                        title: `删除分支 ${branch}？`,
+                        detail:
+                          "只删本地这一份。没有合并进别的分支的提交会跟着消失，除非你还记得它们的哈希。",
+                        confirmLabel: "删除",
+                        onConfirm: () =>
+                          void act(() =>
+                            window.lyra.git.deleteBranch(cwd, branch),
+                          ).then(load),
+                      })
               }
             />
           ))}
@@ -262,6 +275,8 @@ export function BranchesView({
           ))}
         </>
       )}
+
+      {confirm.element}
     </Scroller>
   );
 }

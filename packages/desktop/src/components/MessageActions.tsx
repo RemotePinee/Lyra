@@ -14,6 +14,14 @@ import { Text } from "./Text.tsx";
  * Whoever renders this owns the `group/msg` that reveals it, because the hover target is the
  * whole message, not this row. Height is held whether or not it is showing, so the transcript
  * does not reflow as the pointer travels down it.
+ *
+ * The row is as tall as the buttons in it, and stands off the message above.
+ *
+ * It used to be 18px — the height of the timestamp — with 24px buttons centred in it, so each
+ * button's hover fill hung 3px out of the row at both ends. With nothing between the row and the
+ * bubble, that fill landed *on* the bubble: pointing at 复制 drew a grey rectangle overlapping
+ * the message it belongs to. Sizing the row to its tallest child is what keeps the fill inside
+ * it; the 4px above is what keeps it off the bubble.
  */
 export function MessageActions({
 	timestamp,
@@ -38,7 +46,7 @@ export function MessageActions({
 
 	return (
 		<div
-			className={`flex h-[18px] items-center gap-1 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
+			className={`mt-1 flex h-6 items-center gap-1 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
 		>
 			<Text size="caption" tone="faint" numeric>
 				{formatSentAt(timestamp)}

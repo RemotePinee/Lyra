@@ -14,7 +14,7 @@
 import { Check } from "lucide-react";
 import { useLayout } from "../layout.tsx";
 import { useSide } from "../sideStore.ts";
-import { MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
+import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
 import { renderPanel, usePanelDefinitions } from "./panel/definitions.tsx";
 import { CARD_RADIUS, PANEL_INSET } from "./panel/geometry.ts";
 import { PanelChooser } from "./panel/PanelChooser.tsx";
@@ -86,7 +86,10 @@ export function SidePanel() {
 			</div>
 
 			{adder.open && (
-				<Popover anchor={adder.anchor} onClose={adder.close} placement="bottom" align="start" width={216}>
+				<Popover anchor={adder.anchor} onClose={adder.close} placement="bottom" align="start" width="default">
+					{/* Through `MenuBody`, so the rows get the margin they are rounded for — without it
+					    they sat flush against the glass edge, which no other menu in the app does. */}
+					<MenuBody>
 					<MenuLabel>打开</MenuLabel>
 					{definitions.map((def) => (
 						<MenuItem
@@ -106,6 +109,7 @@ export function SidePanel() {
 							{def.label}
 						</MenuItem>
 					))}
+					</MenuBody>
 				</Popover>
 			)}
 

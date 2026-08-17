@@ -16,9 +16,21 @@ import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import type { McpServerConfig } from "../mcp/client.ts";
 import { lyraHome } from "../session/store.ts";
+import { inspectBundle } from "./loader.ts";
 
 const run = promisify(execFile);
+
+/**
+ * Which of the two things an entry is.
+ *
+ * A registry may declare it, and the catalogue shows what it declared — but the word is only ever
+ * a claim until the bundle is on disk, so `installEntry` reads the clone and files it by what it
+ * found. An index that says "plugin" about a directory holding one `.mcp.json` is wrong, and
+ * seven of the nine entries in the collection this was built against said exactly that.
+ */
+export type BundleKind = "plugin" | "mcp";
 
 /** How long a registry has to answer before we give up on it. */
 const FETCH_TIMEOUT_MS = 10_000;
@@ -40,6 +52,16 @@ export interface RegistryEntry {
 	logo?: string;
 	brandColor?: string;
 	category?: string;
+	/**
+	 * What the index says this is; corrected against the clone at install time.
+	 *
+	 * Inferred where it is absent, because no existing index declares it: an entry naming an npm
+	 * `package` is how an MCP server is distributed, and nothing else in the format implies one.
+	 */
+	kind: BundleKind;
+	/** The npm package an MCP server is published as, when the bundle wraps one. */
+	package?: string;
+	version?: string;
 }
 
 export interface Registry {
@@ -84,61 +106,91 @@ export async function fetchRegistry(url: string, signal?: AbortSignal): Promise<
 	};
 }
 
+/** Where each kind of bundle lives once installed. */
+export function bundleRoot(kind: BundleKind): string {
+	return join(lyraHome(), kind === "mcp" ? "mcp" : "plugins");
+}
+
+export interface Installed {
+	dir: string;
+	/** Decided by reading the clone, not by what the index claimed. */
+	kind: BundleKind;
+	/** For an MCP bundle: what it declares, stamped with where it came from. */
+	servers: McpServerConfig[];
+	name: string;
+}
+
 /**
- * Install an entry by cloning it into the user's plugin directory.
+ * Install an entry by cloning it, then filing it by what it turned out to be.
  *
  * `git` rather than a tarball fetch: every one of these lives in a repository already, a shallow
  * clone is one command, and it leaves the user something they can `git pull` later without any
  * update mechanism of ours.
  *
+ * Everything lands in staging first — including the case with no `path`, which used to clone
+ * straight to its destination. It cannot go straight there any more, because where it belongs is
+ * a question about its contents: a directory holding nothing but a `.mcp.json` is an MCP server,
+ * and putting it among the plugins is how the catalogue ended up advertising seven MCP servers as
+ * plugins. `kind` on the entry is only what the index *claims*; this is what it is.
+ *
  * `path` is what makes a collection possible. Without it every bundle needs a repository of its
- * own, which is a lot of ceremony for a manifest and one markdown file — and the field was in the
- * format from the start, declared and then quietly ignored, so an index that used it installed a
- * directory with no plugin in it. The clone lands somewhere temporary and the named subdirectory
- * is what gets kept; the rest, including the `.git` that would otherwise make a subdirectory look
+ * own, which is a lot of ceremony for a manifest and one markdown file. The named subdirectory is
+ * what gets kept; the rest, including the `.git` that would otherwise make a subdirectory look
  * like a checkout of the whole collection, is thrown away.
  */
-export async function installEntry(entry: RegistryEntry): Promise<string> {
-	const root = join(lyraHome(), "plugins");
-	await mkdir(root, { recursive: true });
+export async function installEntry(entry: RegistryEntry, registryName?: string): Promise<Installed> {
+	const inner = entry.path ? subPath(entry.path) : "";
+	if (inner === null) throw new Error(`插件路径不合法：${entry.path}`);
 
-	const target = join(root, entry.id);
-	if ((await readdir(root).catch((): string[] => [])).includes(entry.id)) {
-		throw new Error(`已经装过 ${entry.id} 了`);
-	}
-
-	if (!entry.path) {
-		try {
-			await run("git", ["clone", "--depth", "1", entry.repository, target], { timeout: 60_000 });
-		} catch (cause) {
-			// A half-written directory would be picked up by the loader as a broken plugin.
-			await rm(target, { recursive: true, force: true });
-			throw new Error(`克隆失败：${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+	for (const kind of ["plugin", "mcp"] as const) {
+		const root = bundleRoot(kind);
+		if ((await readdir(root).catch((): string[] => [])).includes(entry.id)) {
+			throw new Error(`已经装过 ${entry.id} 了`);
 		}
-		return target;
 	}
 
-	const inner = subPath(entry.path);
-	if (!inner) throw new Error(`插件路径不合法：${entry.path}`);
-
-	// Beside the target rather than in the OS temp dir: same filesystem, so the move is a rename
-	// rather than a copy, and a crash leaves the debris somewhere we already clean up.
-	const staging = join(root, `.${entry.id}.staging`);
+	// Beside the eventual target rather than in the OS temp dir: same filesystem, so the move is a
+	// rename rather than a copy, and a crash leaves the debris somewhere we already clean up.
+	const staging = join(lyraHome(), "plugins", `.${entry.id}.staging`);
+	await mkdir(join(lyraHome(), "plugins"), { recursive: true });
 	await rm(staging, { recursive: true, force: true });
+
 	try {
 		await run("git", ["clone", "--depth", "1", entry.repository, staging], { timeout: 60_000 });
-		const source = join(staging, inner);
-		if (!(await stat(source).catch(() => null))?.isDirectory()) {
+
+		const source = inner ? join(staging, inner) : staging;
+		if (inner && !(await stat(source).catch(() => null))?.isDirectory()) {
 			throw new Error(`仓库里没有 ${entry.path} 这个目录`);
 		}
-		await rename(source, target);
-	} catch (cause) {
+
+		const found = await inspectBundle(source);
+		if (found.kind === "none") {
+			throw new Error(found.error ?? "这个仓库里没有可安装的技能或 MCP 服务");
+		}
+
+		const root = bundleRoot(found.kind);
+		await mkdir(root, { recursive: true });
+		const target = join(root, entry.id);
 		await rm(target, { recursive: true, force: true });
+		await rename(source, target);
+
+		return {
+			dir: target,
+			kind: found.kind,
+			name: found.manifest.interface?.displayName ?? found.manifest.name ?? entry.name,
+			servers:
+				found.kind === "mcp"
+					? found.servers.map((server) => ({
+							...server,
+							origin: { bundle: entry.id, registry: registryName, version: found.manifest.version },
+						}))
+					: [],
+		};
+	} catch (cause) {
 		throw new Error(`安装失败：${cause instanceof Error ? cause.message : String(cause)}`, { cause });
 	} finally {
 		await rm(staging, { recursive: true, force: true });
 	}
-	return target;
 }
 
 /** A repo-relative directory, or null for anything absolute or climbing out of the checkout. */
@@ -150,10 +202,18 @@ function subPath(raw: string): string | null {
 	return parts.join("/");
 }
 
-/** Drop an installed bundle from the user's plugin directory. */
+/**
+ * Drop an installed bundle, whichever of the two directories it lives in.
+ *
+ * Both are cleared rather than asking the caller which kind it was: an id is unique across the
+ * pair (installing checks both), and a bundle that predates the split may still be filed under
+ * the other one. Removing what its servers left in settings is the caller's half — see
+ * `McpOrigin`.
+ */
 export async function uninstallEntry(id: string): Promise<void> {
 	if (!id || id.includes("/") || id.includes("..")) throw new Error("非法的插件 id");
-	await rm(join(lyraHome(), "plugins", id), { recursive: true, force: true });
+	await rm(join(bundleRoot("plugin"), id), { recursive: true, force: true });
+	await rm(join(bundleRoot("mcp"), id), { recursive: true, force: true });
 }
 
 function normalise(item: unknown): RegistryEntry | null {
@@ -170,6 +230,8 @@ function normalise(item: unknown): RegistryEntry | null {
 	if (!/^[a-z0-9._-]+$/i.test(id)) return null;
 
 	const logo = pick(raw, "logo", "icon", "iconUrl");
+	const declared = pick(raw, "kind", "type");
+	const packageName = pick(raw, "package", "npm");
 	return {
 		id,
 		name,
@@ -182,6 +244,16 @@ function normalise(item: unknown): RegistryEntry | null {
 		logo: logo && /^https?:\/\//i.test(logo) ? logo : undefined,
 		brandColor: pick(raw, "brandColor", "color"),
 		category: pick(raw, "category"),
+		/*
+		 * Declared if the index bothered to; otherwise inferred from the npm package.
+		 *
+		 * Publishing an MCP server means publishing an npm package and naming it in a `.mcp.json`
+		 * — a plugin, which is markdown in a directory, has no package to name. The guess is only
+		 * for the browsing view; the clone settles it.
+		 */
+		kind: declared === "mcp" || declared === "plugin" ? declared : packageName ? "mcp" : "plugin",
+		package: packageName,
+		version: pick(raw, "version"),
 	};
 }
 

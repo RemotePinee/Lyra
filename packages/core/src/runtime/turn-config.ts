@@ -28,6 +28,7 @@ import { compactWith } from "./compaction.ts";
 import { writePreview } from "./previews.ts";
 import { runSubAgent } from "./sub-agent.ts";
 import type { TurnContext } from "./turn.ts";
+import { sandboxModeFor } from "../sandbox/mode-for.ts";
 
 export interface TurnConfigDeps {
 	sessionId: string;
@@ -79,6 +80,15 @@ export function buildTurnConfig(
 			writePreview: (input) =>
 				writePreview(lyraHome(), { ...input, sessionId: deps.sessionId }),
 			requestApproval: (request) => deps.requestApproval(request),
+			/*
+			 * What this turn's commands may change, derived from the permission mode.
+			 *
+			 * Derived here rather than read from settings by each tool, because it is one decision
+			 * per turn: the mode cannot change halfway through a command, and a tool that looked it
+			 * up itself could disagree with the one running beside it.
+			 */
+			sandboxMode: sandboxModeFor(deps.settings.permissionMode),
+			allowedHosts: deps.settings.allowedHosts,
 			spawnSubAgent: (input) =>
 				runSubAgent(
 					{

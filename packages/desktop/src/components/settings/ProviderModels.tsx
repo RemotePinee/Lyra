@@ -13,7 +13,10 @@
 import { Link2, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ModelConfig } from "@lyra/core";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
+import { useConfirmer } from "../Confirm.tsx";
+import { ModelIcon } from "../ModelIcon.tsx";
 import { formatWindow } from "../ModelMenu.tsx";
+import { RollingText } from "../RollingText.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Badge, GhostButton } from "./controls.tsx";
@@ -43,7 +46,7 @@ export function ProviderModels({
 			<div className="mb-2 flex items-center justify-between">
 				<span className="text-label text-ink-muted">模型列表</span>
 				<GhostButton onClick={onTest} disabled={testing}>
-					{testing ? "测试中…" : "测试连接"}
+					<RollingText>{testing ? "测试中…" : "测试连接"}</RollingText>
 				</GhostButton>
 			</div>
 
@@ -87,9 +90,16 @@ function ModelRow({
 	onRemove: () => void;
 	onSetDefault: () => void;
 }) {
+	const confirm = useConfirmer();
+
 	return (
 		<div className="flex h-[46px] items-center gap-3 rounded-[10px] border border-line bg-input px-3.5">
-			<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-label text-ink" />
+			{/* Tighter than the row's own spacing: the mark belongs to the id beside it, and at the
+			    row's 12px it read as a separate column. */}
+			<span className="flex min-w-0 flex-1 items-center gap-2">
+				<ModelIcon model={model.modelId} name={model.name} size={15} />
+				<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-label text-ink" />
+			</span>
 			{isDefault && <Badge tone="accent">默认</Badge>}
 			<span className="rounded bg-card px-1.5 py-0.5 font-mono text-caption text-ink-faint">
 				{formatWindow(model.contextWindow)}
@@ -116,11 +126,20 @@ function ModelRow({
 				type="button"
 				data-ly-tip="删除"
 				aria-label="删除模型"
-				onClick={onRemove}
+				onClick={(event) =>
+					confirm.ask(event, {
+						title: `删除 ${model.modelId}？`,
+						detail: isDefault ? "它是当前的默认模型，删掉之后要另选一个。" : undefined,
+						confirmLabel: "删除",
+						onConfirm: onRemove,
+					})
+				}
 				className="text-ink-faint transition-colors hover:text-danger"
 			>
 				<Trash2 size={14} strokeWidth={1.8} />
 			</button>
+
+			{confirm.element}
 		</div>
 	);
 }

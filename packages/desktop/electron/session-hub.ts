@@ -13,6 +13,7 @@ import { AgentSession, type AgentEvent, type SessionStorage, type Settings, type
 import type { BrowserWindow } from "electron";
 import { createBrowserTools } from "./browser-tools.ts";
 import type { SessionSnapshot } from "./ipc-types.ts";
+import { ensureSessionWorkspace } from "./scratch.ts";
 
 export interface HubDeps {
 	store(): SessionStorage;
@@ -59,6 +60,10 @@ export function broadcastSideChat(sessionId: string, event: AgentEvent): void {
 }
 
 export async function getOrCreateSession(cwd: string, _modelId: string): Promise<AgentSession> {
+	// A project-less conversation runs in a directory under the app's home, and that directory can
+	// be gone — swept by a version of this app that used to, or removed by hand. Put it back before
+	// a session is built around a working directory that is not there.
+	await ensureSessionWorkspace(cwd).catch(() => false);
 	const browser = createBrowserTools();
 	// `emit` closes over `session`, which is only ever invoked after `initialize()` has
 	// assigned `meta`, so the self-reference is safe — but it needs an explicit type.
@@ -127,6 +132,8 @@ export async function activateSession(projectId: string, sessionId: string): Pro
 
 	const loaded = await deps.store().load(projectId, sessionId);
 	if (!loaded) return null;
+	// Same as `getOrCreateSession`: a stored conversation's directory may not have survived.
+	await ensureSessionWorkspace(loaded.meta.cwd).catch(() => false);
 	const browser = createBrowserTools();
 	const session = new AgentSession({
 		cwd: loaded.meta.cwd,

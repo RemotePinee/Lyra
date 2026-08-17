@@ -253,13 +253,17 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					}}
 					className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-2"
 				>
-					<span className="ly-glass rounded-full px-2.5 py-1 text-detail text-ink-muted transition-colors hover:text-ink">
+					{/* Solid, not frosted: this card scrolls inside the transcript, and a masked scroller
+					    is a backdrop root — the blur would never arrive. See `.ly-glass-solid`. */}
+					<span className="ly-glass-solid rounded-full px-2.5 py-1 text-detail text-ink-muted transition-colors hover:text-ink">
 						内容更长 · 在侧栏中查看
 					</span>
 				</button>
 			)}
 
-			<div className="ly-glass absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-[var(--ly-t-quick)] hover:opacity-100 focus-within:opacity-100">
+			{/* Solid for the same reason as above — and this one sits over an arbitrary rendered page,
+			    where a translucent strip with nothing blurred behind it is the least readable of all. */}
+			<div className="ly-glass-solid absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-[var(--ly-t-quick)] hover:opacity-100 focus-within:opacity-100">
 				{/*
 				 * Taller, because the frame cannot ask for a size.
 				 *

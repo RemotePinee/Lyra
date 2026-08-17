@@ -14,7 +14,9 @@ import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
 import type {
 	AgentEvent,
 	ApprovalDecision,
+	BundleKind,
 	ContextBreakdown,
+	McpBundle,
 	Registry,
 	RegistryEntry,
 	Plugin,
@@ -46,6 +48,16 @@ export interface LyraApi {
 	settings: {
 		get(): Promise<Settings>;
 		save(settings: Settings): Promise<Settings>;
+		/**
+		 * Settings changed on the other side of the boundary.
+		 *
+		 * The renderer is not the only thing that writes them: installing an MCP bundle adds its
+		 * servers, uninstalling takes them away, sync rotates its token, an approval appends to
+		 * `alwaysAllow`. The main process has always broadcast this and nothing has ever listened,
+		 * so the window went on showing the settings it last saved itself — install a server from
+		 * the catalogue and the MCP page did not have it until the app was restarted.
+		 */
+		onChanged(handler: (settings: Settings) => void): () => void;
 	};
 	workspace: {
 		/** Show the project directory in the OS file manager. */
@@ -147,6 +159,8 @@ export interface LyraApi {
 		/** Scan plugin and skill directories without needing an open session. */
 		list(cwd: string): Promise<{
 			plugins: Plugin[];
+			/** Directories that turned out to be MCP servers rather than plugins. */
+			mcpBundles: McpBundle[];
 			pluginDiagnostics: { path: string; message: string }[];
 			skills: Skill[];
 			skillDiagnostics: { path: string; message: string }[];
@@ -157,7 +171,17 @@ export interface LyraApi {
 		installExample(scope: "workspace" | "user", cwd: string): Promise<string>;
 		/** Read a registry index. Failures come back as data — a bad URL is routine, not exceptional. */
 		fetchRegistry(url: string): Promise<{ ok: true; registry: Registry } | { ok: false; message: string }>;
-		installFromRegistry(entry: RegistryEntry): Promise<{ ok: true; dir: string } | { ok: false; message: string }>;
+		/**
+		 * Clone an entry and file it by what it turns out to be.
+		 *
+		 * `kind` comes back because the index's claim is only a claim: install something listed as
+		 * a plugin that holds nothing but a `.mcp.json` and what you have installed is an MCP
+		 * server, whose servers are now in settings switched off, waiting to be turned on.
+		 */
+		installFromRegistry(
+			entry: RegistryEntry,
+			registryName?: string,
+		): Promise<{ ok: true; dir: string; kind: BundleKind; servers: number } | { ok: false; message: string }>;
 		uninstall(id: string): Promise<void>;
 	};
 	/**

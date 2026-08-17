@@ -1,16 +1,34 @@
-import type { Plugin } from "@lyra/core";
-import { Cable, FolderOpen, Sparkles, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useApp } from "../../store.ts";
-import { Badge, Card, GhostButton, SectionTitle, Toggle } from "./controls.tsx";
-import { PluginIcon } from "./PluginIcon.tsx";
+/**
+ * What is installed, and whether it is on.
+ *
+ * That is the whole page. Every plugin used to arrive here as a card with three badges, two
+ * counts, a 详情 disclosure and a 打开目录 link — nine pieces of information for a question with
+ * two possible answers, repeated down the page until nothing on it could be found at a glance.
+ *
+ * Everything that was taken off is still reachable, one click further away and somewhere it makes
+ * more sense: the version, the licence, the skills it carries and the servers it declares are the
+ * bundle's own page, which exists and says all of it at length. 管理 goes there. The directory is
+ * behind the ⋯, where you look for it when you already know you want it.
+ */
 
-const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用户" };
+import type { Plugin } from "@lyra/core";
+import { FolderOpen, MoreHorizontal, Settings2, TriangleAlert, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { ConfirmBody } from "../Confirm.tsx";
+import { MenuBody, MenuItem, MenuSeparator, Popover, usePopover } from "../Popover.tsx";
+import { useApp } from "../../store.ts";
+import { Card, ListRow, SectionTitle, Toggle } from "./controls.tsx";
+import { PluginIcon } from "./PluginIcon.tsx";
 
 export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	const workspace = useApp((s) => s.workspace);
+	const setView = useApp((s) => s.setView);
+	const setPluginFocus = useApp((s) => s.setPluginFocus);
+	const extensionsNonce = useApp((s) => s.extensionsNonce);
+	const bumpExtensions = useApp((s) => s.bumpExtensions);
 	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
 	const [busy, setBusy] = useState(false);
 
@@ -19,7 +37,7 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	useEffect(() => {
 		void refresh();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [workspace?.path, settings?.disabledPlugins.length]);
+	}, [workspace?.path, settings?.disabledPlugins.length, extensionsNonce]);
 
 	if (!settings) return null;
 	const needle = filter.trim().toLowerCase();
@@ -53,27 +71,14 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 		void saveSettings({ ...settings, disabledPlugins: [...disabled] });
 	};
 
+	/** The bundle's own page, in the catalogue — which is a different view, not a panel in here. */
+	const manage = (plugin: Plugin) => {
+		setPluginFocus(plugin.id);
+		setView("plugins");
+	};
+
 	return (
 		<div>
-			<header className="flex items-start justify-end pb-4">
-				<div className="flex shrink-0 gap-2">
-					<GhostButton onClick={() => void window.lyra.plugins.revealDir("user", workspace?.path ?? "")}>
-						<span className="flex items-center gap-1.5">
-							<FolderOpen size={12} strokeWidth={1.9} />
-							用户目录
-						</span>
-					</GhostButton>
-					{workspace && (
-						<GhostButton onClick={() => void window.lyra.plugins.revealDir("workspace", workspace.path)}>
-							<span className="flex items-center gap-1.5">
-								<FolderOpen size={12} strokeWidth={1.9} />
-								项目目录
-							</span>
-						</GhostButton>
-					)}
-				</div>
-			</header>
-
 			{diagnostics.length > 0 && (
 				<Card className="mb-6 border-accent/35 bg-accent/6">
 					<div className="px-4 py-3">
@@ -90,148 +95,178 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 				</Card>
 			)}
 
+			{/*
+			 * Said out loud, because otherwise the page is a list of plugins that are all off for no
+			 * visible reason — indistinguishable from having switched each one off.
+			 */}
+			{allOff && plugins.length > 0 && (
+				<p className="mb-3 rounded-[10px] border border-line-soft px-3 py-2 text-detail leading-relaxed text-ink-muted">
+					设置里写着 <code className="font-mono">disabledPlugins: ["*"]</code>，所以下面所有插件都不生效。
+					把任意一个拨回「开」会解除这条总开关，其余插件保持当前状态。
+				</p>
+			)}
+
 			<SectionTitle>已安装（{plugins.length}）</SectionTitle>
 
-			{plugins.length === 0 ? (
-				<Card>
+			<Card>
+				{plugins.length === 0 ? (
 					<div className="px-4 py-8 text-center">
 						<p className="text-label leading-relaxed text-ink-muted">
-							还没有插件。把插件目录放进上面的目录即可，或者装一个示例看看格式。
+							{needle ? "没有匹配的插件。" : "还没有插件。装一个示例看看这个格式长什么样。"}
 						</p>
-						<button
-							type="button"
-							disabled={busy}
-							onClick={async () => {
-								setBusy(true);
-								try {
-									await window.lyra.plugins.installExample(workspace ? "workspace" : "user", workspace?.path ?? "");
-									await refresh();
-								} finally {
-									setBusy(false);
-								}
-							}}
-							className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-50"
-						>
-							{busy ? "安装中…" : "安装示例插件"}
-						</button>
-						<p className="mt-3 text-detail text-ink-faint">安装后需要新建会话才会生效</p>
+						{!needle && (
+							<>
+								<button
+									type="button"
+									disabled={busy}
+									onClick={async () => {
+										setBusy(true);
+										try {
+											await window.lyra.plugins.installExample(workspace ? "workspace" : "user", workspace?.path ?? "");
+											await refresh();
+											bumpExtensions();
+										} finally {
+											setBusy(false);
+										}
+									}}
+									className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-50"
+								>
+									{busy ? "安装中…" : "安装示例插件"}
+								</button>
+								<p className="mt-3 text-detail text-ink-faint">安装后需要新建会话才会生效</p>
+							</>
+						)}
 					</div>
-				</Card>
-			) : (
-				<div className="space-y-3">
-					{/*
-					 * Said out loud, because otherwise the page is a list of plugins that are all off
-					 * for no visible reason — indistinguishable from having switched each one off.
-					 */}
-					{allOff && (
-						<p className="rounded-[10px] border border-line-soft px-3 py-2 text-detail leading-relaxed text-ink-muted">
-							设置里写着 <code className="font-mono">disabledPlugins: ["*"]</code>，所以下面所有插件都不生效。
-							把任意一个拨回「开」会解除这条总开关，其余插件保持当前状态。
-						</p>
-					)}
-					{plugins.map((plugin) => (
-						<PluginCard key={plugin.id} plugin={plugin} onToggle={(enabled) => toggle(plugin, enabled)} />
-					))}
-				</div>
-			)}
+				) : (
+					plugins.map((plugin) => (
+						<PluginRow
+							key={plugin.id}
+							plugin={plugin}
+							onToggle={(enabled) => toggle(plugin, enabled)}
+							onManage={() => manage(plugin)}
+							onRemoved={() => {
+								void refresh();
+								bumpExtensions();
+							}}
+						/>
+					))
+				)}
+			</Card>
 		</div>
 	);
 }
 
-function PluginCard({ plugin, onToggle }: { plugin: Plugin; onToggle: (enabled: boolean) => void }) {
+function PluginRow({
+	plugin,
+	onToggle,
+	onManage,
+	onRemoved,
+}: {
+	plugin: Plugin;
+	onToggle: (enabled: boolean) => void;
+	onManage: () => void;
+	onRemoved: () => void;
+}) {
+	const menu = usePopover();
+	const [confirming, setConfirming] = useState(false);
+	const [busy, setBusy] = useState(false);
 	const ui = plugin.manifest.interface;
-	const [open, setOpen] = useState(false);
+	const name = ui?.displayName ?? plugin.manifest.name ?? plugin.id;
+	/** A bundle inside the project's own directory is removed by deleting it there. */
+	const removable = plugin.source !== "workspace";
+
+	const close = () => {
+		menu.close();
+		setConfirming(false);
+	};
+
+	const uninstall = async () => {
+		setBusy(true);
+		await window.lyra.plugins.uninstall(plugin.id);
+		setBusy(false);
+		onRemoved();
+	};
 
 	return (
-		<Card>
-			<div className="flex items-center gap-3 px-4 py-3">
-				<PluginIcon
-					name={ui?.displayName ?? plugin.manifest.name ?? plugin.id}
-					logo={ui?.logo}
-					brandColor={ui?.brandColor}
-				/>
-				<div className="min-w-0 flex-1">
-					<div className="flex items-center gap-2">
-						<span className="truncate text-body text-ink">{ui?.displayName ?? plugin.manifest.name}</span>
-						{plugin.manifest.version && <Badge tone="muted">v{plugin.manifest.version}</Badge>}
-						<Badge tone="muted">{SOURCE_LABEL[plugin.source] ?? plugin.source}</Badge>
-						{ui?.category && <Badge tone="muted">{ui.category}</Badge>}
-					</div>
-					<p className="mt-0.5 truncate text-label text-ink-muted">
-						{ui?.shortDescription ?? plugin.manifest.description ?? "（无描述）"}
-					</p>
-				</div>
-				<Toggle checked={plugin.enabled} onChange={onToggle} />
-			</div>
+		<>
+			<ListRow
+				icon={<PluginIcon name={name} logo={ui?.logo} brandColor={ui?.brandColor} size={28} />}
+				title={name}
+				detail={ui?.shortDescription ?? plugin.manifest.description ?? "（无描述）"}
+				onOpen={onManage}
+				openLabel={`打开 ${name}`}
+				actions={
+					<button
+						type="button"
+						aria-label={`${name} 的更多操作`}
+						aria-haspopup="menu"
+						aria-expanded={menu.open}
+						onClick={menu.toggle}
+						className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-ink-faint opacity-0 transition-[color,background-color,opacity] duration-[var(--ly-t-quick)] group-hover/row:opacity-100 hover:bg-card-hover hover:text-ink focus-visible:opacity-100 aria-expanded:opacity-100"
+					>
+						<MoreHorizontal size={15} strokeWidth={1.9} />
+					</button>
+				}
+				control={<Toggle checked={plugin.enabled} onChange={onToggle} />}
+			/>
 
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-4 py-2.5 text-detail text-ink-muted">
-				<span className="flex items-center gap-1.5">
-					<Sparkles size={12} strokeWidth={1.9} className="text-violet" />
-					{plugin.skills.length} 个技能
-				</span>
-				<span className="flex items-center gap-1.5">
-					<Cable size={12} strokeWidth={1.9} className="text-info" />
-					{plugin.mcpServers.length} 个 MCP 服务
-				</span>
-				<div className="flex-1" />
-				<button
-					type="button"
-					onClick={() => setOpen((v) => !v)}
-					className="text-detail text-ink-faint transition-colors hover:text-ink"
+			{menu.open && (
+				<Popover
+					anchor={menu.anchor}
+					onClose={close}
+					placement="bottom"
+					align="end"
+					width={confirming ? "panel" : "compact"}
+					role={confirming ? "dialog" : "menu"}
+					label={name}
 				>
-					{open ? "收起" : "详情"}
-				</button>
-				<button
-					type="button"
-					onClick={() => void window.lyra.system.openPath(plugin.dir)}
-					className="text-detail text-ink-faint transition-colors hover:text-ink"
-				>
-					打开目录
-				</button>
-			</div>
+					{confirming ? (
+						<ConfirmBody
+							title={`卸载 ${name}？`}
+							detail="它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
+							confirmLabel="卸载"
+							onCancel={close}
+							onConfirm={() => {
+								close();
+								void uninstall();
+							}}
+						/>
+					) : (
+						<MenuBody>
+							<MenuItem
+								icon={<Settings2 size={13} strokeWidth={1.8} />}
+								onClick={() => {
+									close();
+									onManage();
+								}}
+							>
+								管理
+							</MenuItem>
+							<MenuItem
+								icon={<FolderOpen size={13} strokeWidth={1.8} />}
+								onClick={() => {
+									close();
+									void window.lyra.system.openPath(plugin.dir);
+								}}
+							>
+								打开目录
+							</MenuItem>
 
-			{open && (
-				<div className="ly-enter space-y-3 border-t border-line-soft px-4 py-3">
-					{ui?.longDescription && (
-						<p className="text-label leading-relaxed text-ink-muted">{ui.longDescription}</p>
-					)}
+							<MenuSeparator />
 
-					{plugin.skills.length > 0 && (
-						<div>
-							<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">技能</div>
-							{plugin.skills.map((skill) => (
-								<div key={skill.name} className="py-0.5 text-detail">
-									<span className="font-mono text-ink">{skill.name}</span>
-									<span className="ml-2 text-ink-muted">{skill.description.slice(0, 90)}</span>
-								</div>
-							))}
-						</div>
+							<MenuItem
+								danger
+								icon={<Trash2 size={13} strokeWidth={1.8} />}
+								disabled={busy || !removable}
+								title={removable ? undefined : "项目里的插件，从项目目录里删"}
+								onClick={() => setConfirming(true)}
+							>
+								卸载
+							</MenuItem>
+						</MenuBody>
 					)}
-
-					{plugin.mcpServers.length > 0 && (
-						<div>
-							<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">MCP 服务</div>
-							{plugin.mcpServers.map((server) => (
-								<div key={server.id} className="py-0.5 font-mono text-detail text-ink-muted">
-									{server.name} · {server.transport} ·{" "}
-									{server.transport === "stdio" ? `${server.command} ${(server.args ?? []).join(" ")}` : server.url}
-								</div>
-							))}
-						</div>
-					)}
-
-					{ui?.defaultPrompt && ui.defaultPrompt.length > 0 && (
-						<div>
-							<div className="mb-1.5 text-caption tracking-wide text-ink-faint uppercase">示例提示</div>
-							{ui.defaultPrompt.map((prompt) => (
-								<div key={prompt} className="py-0.5 text-detail text-ink-muted">
-									· {prompt}
-								</div>
-							))}
-						</div>
-					)}
-				</div>
+				</Popover>
 			)}
-		</Card>
+		</>
 	);
 }

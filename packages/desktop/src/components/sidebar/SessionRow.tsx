@@ -16,10 +16,23 @@
 import type { SessionMeta } from "@lyra/core";
 import { visibleActivity } from "@lyra/core/activity";
 import { Archive } from "lucide-react";
+import { useState } from "react";
 import { useLayout } from "../../layout.tsx";
+import { sessionTitle } from "../../sessionTitle.ts";
 import { useApp } from "../../store.ts";
 import { ScrollText } from "../ScrollText.tsx";
 import { SessionStatus } from "../SessionStatus.tsx";
+import { useTypedText } from "../TypedText.tsx";
+
+/**
+ * How recently a conversation must have been created for its row to drop in.
+ *
+ * The row appears the instant the first message is sent, so in the case this is for the gap is
+ * a few milliseconds. The allowance is for the other way a row can be new — a turn started on
+ * the phone, arriving with the next session list — and it has to stay short, or scrolling a
+ * long sidebar would replay the entrance for whatever happens to have been made a minute ago.
+ */
+const JUST_CREATED_MS = 1500;
 
 export function SessionRow({
 	session,
@@ -37,11 +50,26 @@ export function SessionRow({
 	const activity = useApp((s) => s.activity);
 	const { compact } = useLayout();
 
+	/*
+	 * Two motions, for the two things that happen to a new conversation's name.
+	 *
+	 * It arrives as 「新对话」 — the row drops in from above, because a row appearing out of
+	 * nowhere in a list you are looking at is the sort of change the eye reports as "something
+	 * moved" without being able to say what. Then, a moment later, the runtime derives the real
+	 * title from the first message, and that one is a rewrite rather than an arrival: the row is
+	 * already yours and only its name is being corrected.
+	 *
+	 * Decided once, at mount. Re-reading the clock on every render would let a row stop being new
+	 * mid-animation, and `useState`'s initialiser is the one place that runs exactly once.
+	 */
+	const [justCreated] = useState(() => Date.now() - session.createdAt < JUST_CREATED_MS);
+	const title = useTypedText(sessionTitle(session.title));
+
 	return (
 		<div
 			className={`ly-scroll group/session relative rounded-lg transition-colors duration-[var(--ly-t-quick)] active:bg-elevated ${
-				active ? "bg-card-hover" : "hover:bg-card-hover"
-			}`}
+				justCreated ? "ly-drop" : ""
+			} ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
 		>
 			<button
 				type="button"
@@ -52,7 +80,7 @@ export function SessionRow({
 			>
 				{/* In the indent the titles already had, so nothing moved to make room for it. */}
 				<SessionStatus activity={visibleActivity(activity[session.id] ?? null, active)} />
-				<ScrollText text={session.title} className="ly-fade-tail min-w-0 flex-1" />
+				<ScrollText text={title} className="ly-fade-tail min-w-0 flex-1" />
 			</button>
 
 			{/* The strip never takes pointer events; only the button does. Anything wider would
@@ -61,7 +89,9 @@ export function SessionRow({
 				<button
 					type="button"
 					data-ly-tip="归档会话"
-					aria-label={`归档会话「${session.title}」`}
+					// The settled name, not the one being typed: a label read aloud mid-rewrite is a
+					// truncation of a title nobody ever gave this conversation.
+					aria-label={`归档会话「${sessionTitle(session.title)}」`}
 					onClick={onArchive}
 					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 				>

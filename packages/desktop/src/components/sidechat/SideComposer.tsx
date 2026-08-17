@@ -9,8 +9,10 @@
 import type { UserContent } from "@lyra/core";
 import { RotateCcw } from "lucide-react";
 import { useState } from "react";
+import { findModel } from "../../models.ts";
 import { useApp } from "../../store.ts";
 import { ComposerSend, ComposerShell } from "../ComposerShell.tsx";
+import { ModelIcon } from "../ModelIcon.tsx";
 
 export function SideComposer({
 	running,
@@ -38,7 +40,8 @@ export function SideComposer({
 	}
 
 	// Stated, not offered. The side chat runs on whatever the main session runs on.
-	const modelName = findModelName(settings, meta?.modelId ?? settings?.defaultModelId ?? null);
+	const model = findModel(settings, meta?.modelId ?? settings?.defaultModelId ?? null);
+	const modelName = model?.name ?? null;
 
 	/*
 	 * 15, because of what sits below it: the panel's 4px inset plus its 1px card border. The
@@ -57,9 +60,10 @@ export function SideComposer({
 				left={
 					<span
 						data-ly-tip={modelName ? `跟随主会话：${modelName}` : undefined}
-						className="h-7 min-w-0 truncate px-2 text-label leading-7 text-ink-faint"
+						className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-label text-ink-faint"
 					>
-						{modelName ?? "未配置模型"}
+						<ModelIcon model={model?.modelId} name={modelName} />
+						<span className="min-w-0 truncate">{modelName ?? "未配置模型"}</span>
 					</span>
 				}
 				right={
@@ -81,16 +85,4 @@ export function SideComposer({
 			/>
 		</div>
 	);
-}
-
-function findModelName(
-	settings: ReturnType<typeof useApp.getState>["settings"],
-	modelId: string | null,
-): string | null {
-	if (!settings || !modelId) return null;
-	for (const provider of settings.providers) {
-		const model = provider.models.find((m) => m.id === modelId);
-		if (model) return model.name;
-	}
-	return null;
 }

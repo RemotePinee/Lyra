@@ -1,8 +1,9 @@
 import type { McpServerConfig } from "@lyra/core";
-import { Cable, Plus, Trash2 } from "lucide-react";
+import { Cable, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentCapabilities } from "../../../electron/ipc-types.ts";
 import { PluginIcon } from "./PluginIcon.tsx";
+import { useConfirmer } from "../Confirm.tsx";
 import { useApp } from "../../store.ts";
 import { Badge, Card, EmptyHint, Field, GhostButton, SectionTitle, Select, TextInput, Toggle } from "./controls.tsx";
 
@@ -36,11 +37,26 @@ const RECOMMENDED: { id: string; name: string; detail: string; server: McpServer
 	},
 ];
 
+/**
+ * A blank server of the given kind, ready to be edited.
+ *
+ * Exported because adding one is offered from the page's own ⋯ as well as from here, and the two
+ * must produce the same thing — a second copy of these defaults would drift the first time one of
+ * them was corrected.
+ */
+export function newMcpServer(transport: "stdio" | "http"): McpServerConfig {
+	const id = `mcp-${Date.now().toString(36)}`;
+	return transport === "stdio"
+		? { id, name: "新建 stdio 服务", transport: "stdio", command: "npx", args: [], enabled: true }
+		: { id, name: "新建 HTTP 服务", transport: "http", url: "https://", enabled: true };
+}
+
 export function McpSettings({ filter = "" }: { filter?: string }) {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
+	const confirm = useConfirmer();
 
 	useEffect(() => {
 		if (!activeSessionId) return;
@@ -57,37 +73,24 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 			mcpServers: settings.mcpServers.map((s) => (s.id === id ? ({ ...s, ...patch } as McpServerConfig) : s)),
 		});
 
-	const add = (transport: "stdio" | "http") => {
-		const id = `mcp-${Date.now().toString(36)}`;
-		const server: McpServerConfig =
-			transport === "stdio"
-				? { id, name: "新建 stdio 服务", transport: "stdio", command: "npx", args: [], enabled: true }
-				: { id, name: "新建 HTTP 服务", transport: "http", url: "https://", enabled: true };
-		void saveSettings({ ...settings, mcpServers: [...settings.mcpServers, server] });
-	};
-
 	const remove = (id: string) =>
 		void saveSettings({ ...settings, mcpServers: settings.mcpServers.filter((s) => s.id !== id) });
 
+	/**
+	 * Uninstalling reaches past this page, because an installed server is two things.
+	 *
+	 * The row here is a copy of what a directory under `~/.lyra/mcp` declared. Deleting only the
+	 * row leaves the directory, and the next scan does not care that you deleted anything — the
+	 * main process removes both, keyed on the bundle name every row it wrote carries.
+	 */
+	const uninstallBundle = async (bundle: string) => {
+		if (!bundle) return;
+		await window.lyra.plugins.uninstall(bundle);
+	};
+
 	return (
 		<div>
-			<header className="flex items-start justify-end pb-4">
-				<div className="flex shrink-0 gap-2 pt-1">
-					<GhostButton onClick={() => add("stdio")}>
-						<span className="flex items-center gap-1.5">
-							<Plus size={12} strokeWidth={2} />
-							stdio
-						</span>
-					</GhostButton>
-					<GhostButton onClick={() => add("http")}>
-						<span className="flex items-center gap-1.5">
-							<Plus size={12} strokeWidth={2} />
-							HTTP
-						</span>
-					</GhostButton>
-				</div>
-			</header>
-
+			{/* Adding a server is in the page's ⋯ now, beside the other two tabs' directory actions. */}
 			<SectionTitle>推荐</SectionTitle>
 			<Card className="mb-7">
 				{RECOMMENDED.map((entry) => {
@@ -142,11 +145,39 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 									<Badge tone="muted">{server.transport}</Badge>
 									{status?.state === "connected" && <Badge tone="ok">{status.toolCount} 个工具</Badge>}
 									{status?.state === "failed" && <Badge tone="danger">连接失败</Badge>}
+									{/*
+									 * Where it came from, said on the row.
+									 *
+									 * Everything on this page used to be typed in by hand, so there was
+									 * nothing to say. Now half of them arrived from the catalogue, and which
+									 * half decides what the delete button means: a hand-made row is one
+									 * server to drop, an installed one has a directory that has to go with
+									 * it — otherwise the next scan writes the row straight back.
+									 */}
+									{server.origin && <Badge tone="muted">来自市场</Badge>}
 									<Toggle checked={server.enabled} onChange={(enabled) => update(server.id, { enabled })} />
 									<button
 										type="button"
-										data-ly-tip="删除"
-										onClick={() => remove(server.id)}
+										data-ly-tip={server.origin ? "卸载" : "删除"}
+										aria-label={`${server.origin ? "卸载" : "删除"} ${server.name}`}
+										onClick={(event) =>
+											confirm.ask(
+												event,
+												server.origin
+													? {
+															title: `卸载 ${server.name}？`,
+															detail: `它是从市场装的。卸载会删掉 ${server.origin.bundle} 的目录，你在这里改过的参数也一起清掉。`,
+															confirmLabel: "卸载",
+															onConfirm: () => void uninstallBundle(server.origin?.bundle ?? ""),
+														}
+													: {
+															title: `删除 ${server.name}？`,
+															detail: "这条服务的配置会从设置里消失，包括它的命令和参数。",
+															confirmLabel: "删除",
+															onConfirm: () => remove(server.id),
+														},
+											)
+										}
 										className="text-ink-faint transition-colors hover:text-danger"
 									>
 										<Trash2 size={14} strokeWidth={1.8} />
@@ -225,6 +256,8 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 					})}
 				</div>
 			)}
+
+			{confirm.element}
 		</div>
 	);
 }

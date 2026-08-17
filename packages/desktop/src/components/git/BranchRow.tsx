@@ -21,7 +21,8 @@ export function BranchRow({
   remote?: boolean;
   onSwitch: () => void;
   onCompare?: () => void;
-  onDelete?: () => void;
+  /** Takes the event, because what confirms it hangs off the button that was clicked. */
+  onDelete?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <div className="group/branch flex items-center gap-1 rounded-md px-1.5 py-1 transition-colors hover:bg-card-hover">

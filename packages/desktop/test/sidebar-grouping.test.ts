@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeProviderLabel, groupSessions, listableSessions, NO_PROJECT } from "../src/components/sidebar/grouping.ts";
+import { activeProviderLabel, groupSessions, listableSessions } from "../src/components/sidebar/grouping.ts";
 
 type Session = Parameters<typeof listableSessions>[0][number];
 
@@ -48,13 +48,26 @@ test("an empty session is not a conversation yet, unless it is the one being sta
 	);
 });
 
+test("a conversation that has just been sent to stays listed after you click away", () => {
+	/*
+	 * The row is only exempt from the "must have a message" rule while it is selected, so a session
+	 * carrying the stored `messageCount: 0` vanished the moment another conversation was opened.
+	 * `send` counts the message it just sent, which is what this depends on.
+	 */
+	const justSent = session({ id: "just-sent", messageCount: 1 });
+	assert.deepEqual(
+		listableSessions([justSent], "somebody-else").map((s) => s.id),
+		["just-sent"],
+	);
+});
+
 test("a pinned project keeps its row with no sessions; an unpinned one does not", () => {
-	const { pinned, recent } = groupSessions([], projects, "");
+	const { pinned, projects: rest } = groupSessions([], projects, "");
 	assert.deepEqual(
 		pinned.map((g) => g.path),
 		["/pinned"],
 	);
-	assert.deepEqual(recent, []);
+	assert.deepEqual(rest, []);
 });
 
 test("searching filters sessions without dissolving their projects", () => {
@@ -63,9 +76,9 @@ test("searching filters sessions without dissolving their projects", () => {
 		session({ id: "2", title: "登录页样式", cwd: "/b", projectName: "b" }),
 		session({ id: "3", title: "无关的事", cwd: "/a" }),
 	];
-	const { recent } = groupSessions(sessions, projects, "登录");
+	const { projects: rest } = groupSessions(sessions, projects, "登录");
 	assert.deepEqual(
-		recent.map((g) => [g.path, g.sessions.map((s) => s.id)]),
+		rest.map((g) => [g.path, g.sessions.map((s) => s.id)]),
 		[
 			["/a", ["1"]],
 			["/b", ["2"]],
@@ -75,9 +88,9 @@ test("searching filters sessions without dissolving their projects", () => {
 
 test("projects keep their configured order; unknown ones go last", () => {
 	const sessions = [session({ id: "1", cwd: "/z", projectName: "z" }), session({ id: "2", cwd: "/a" })];
-	const { recent } = groupSessions(sessions, projects, "");
+	const { projects: rest } = groupSessions(sessions, projects, "");
 	assert.deepEqual(
-		recent.map((g) => g.path),
+		rest.map((g) => g.path),
 		["/a", "/z"],
 	);
 });
@@ -94,56 +107,81 @@ test("with nothing configured the settings row says so", () => {
 	assert.equal(activeProviderLabel([]), "未配置模型供应商");
 });
 
-test("project-less conversations are grouped together, not as a project each", () => {
+test("project-less conversations are loose rows, not a project each and not a project at all", () => {
 	/*
 	 * They are real sessions worth returning to — a review asked about yesterday should be one
-	 * click away — but their directory is scratch space. Grouped by directory the usual way, each
-	 * one becomes a project called `owner-repo-6381` sitting among the user's actual work.
+	 * click away — but their directory is the app's own. Grouped by directory the usual way, each
+	 * one becomes a project called `owner-repo-6381` sitting among the user's actual work; grouped
+	 * under one folder row, that row is a project named after not being one.
 	 */
-	const roots = ["/home/.lyra/scratch"];
+	const roots = ["/home/.lyra/workspaces"];
 	const sessions = [
 		session({ id: "work", cwd: "/a" }),
-		session({ id: "review-1", cwd: "/home/.lyra/scratch/owner-repo-1" }),
-		session({ id: "review-2", cwd: "/home/.lyra/scratch/owner-repo-2" }),
+		session({ id: "review-1", cwd: "/home/.lyra/workspaces/owner-repo-1" }),
+		session({ id: "review-2", cwd: "/home/.lyra/workspaces/owner-repo-2" }),
 	];
 
-	const { recent } = groupSessions(sessions, projects, "", roots);
-	const scratch = recent.find((g) => g.path === NO_PROJECT);
+	const { projects: rest, loose } = groupSessions(sessions, projects, "", roots);
 
-	assert.ok(scratch, "there should be one group for them");
 	assert.deepEqual(
-		scratch.sessions.map((s) => s.id),
+		loose.map((s) => s.id),
 		["review-1", "review-2"],
-		"both belong to the same group despite different directories",
+		"both are loose despite living in different directories",
 	);
-	assert.equal(scratch.name, "无项目");
-	assert.equal(recent[recent.length - 1].path, NO_PROJECT, "and it sorts last");
+	assert.deepEqual(
+		rest.map((g) => g.path),
+		["/a"],
+		"and none of them invents a project",
+	);
 });
 
-test("every historical scratch root is recognised, not just the current one", () => {
-	// The directory was renamed once. Sessions record the path they were created under, so
-	// forgetting the old one turns every already-opened review back into a fake project.
+test("loose rows are newest first, whatever order they arrived in", () => {
+	const roots = ["/home/.lyra/workspaces"];
 	const sessions = [
-		session({ id: "old", cwd: "/home/.lyra/pr/owner-repo-1" }),
-		session({ id: "new", cwd: "/home/.lyra/scratch/owner-repo-2" }),
+		session({ id: "older", cwd: "/home/.lyra/workspaces/general", updatedAt: 10 }),
+		session({ id: "newest", cwd: "/home/.lyra/workspaces/general", updatedAt: 30 }),
+		session({ id: "middle", cwd: "/home/.lyra/workspaces/general", updatedAt: 20 }),
+	];
+	assert.deepEqual(
+		groupSessions(sessions, [], "", roots).loose.map((s) => s.id),
+		["newest", "middle", "older"],
+	);
+});
+
+test("every historical root is recognised, not just the current one", () => {
+	// The directory has been renamed twice. Sessions record the path they were created under, so
+	// forgetting an old one turns every already-opened review back into a fake project.
+	const sessions = [
+		session({ id: "oldest", cwd: "/home/.lyra/pr/owner-repo-1" }),
+		session({ id: "old", cwd: "/home/.lyra/scratch/owner-repo-2" }),
+		session({ id: "new", cwd: "/home/.lyra/workspaces/owner-repo-3" }),
 	];
 
-	const { recent } = groupSessions(sessions, [], "", ["/home/.lyra/scratch", "/home/.lyra/pr"]);
-	assert.equal(recent.length, 1, "both are project-less, so there is one group");
-	assert.equal(recent[0].path, NO_PROJECT);
+	const { projects: rest, loose } = groupSessions(sessions, [], "", [
+		"/home/.lyra/workspaces",
+		"/home/.lyra/scratch",
+		"/home/.lyra/pr",
+	]);
+	assert.deepEqual(
+		loose.map((s) => s.id),
+		["oldest", "old", "new"],
+	);
+	assert.deepEqual(rest, [], "none of them is a project");
 });
 
 test("a project whose path merely starts the same is still its own project", () => {
 	// The root arrives without a trailing slash; a plain `startsWith` would swallow
-	// `/home/.lyra/prototypes` into the project-less group.
+	// `/home/.lyra/prototypes` into the loose rows.
 	const sessions = [session({ id: "prototypes", cwd: "/home/.lyra/prototypes" })];
 
-	const { recent } = groupSessions(sessions, [], "", ["/home/.lyra/pr"]);
-	assert.equal(recent[0].path, "/home/.lyra/prototypes");
+	const { projects: rest, loose } = groupSessions(sessions, [], "", ["/home/.lyra/pr"]);
+	assert.deepEqual(loose, []);
+	assert.equal(rest[0].path, "/home/.lyra/prototypes");
 });
 
-test("with no scratch roots known yet, nothing is grouped as project-less", () => {
-	const sessions = [session({ id: "review", cwd: "/home/.lyra/scratch/owner-repo-1" })];
-	const { recent } = groupSessions(sessions, [], "", []);
-	assert.notEqual(recent[0].path, NO_PROJECT);
+test("with no roots known yet, nothing is treated as project-less", () => {
+	const sessions = [session({ id: "review", cwd: "/home/.lyra/workspaces/owner-repo-1" })];
+	const { projects: rest, loose } = groupSessions(sessions, [], "", []);
+	assert.deepEqual(loose, []);
+	assert.equal(rest[0].path, "/home/.lyra/workspaces/owner-repo-1");
 });

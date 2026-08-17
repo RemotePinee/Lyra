@@ -3,6 +3,7 @@ import { ScrollText } from "../ScrollText.tsx";
 import type { SessionMeta } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { Card, EmptyHint, SectionTitle } from "./controls.tsx";
+import { sessionTitle } from "../../sessionTitle.ts";
 
 export function UsageSettings() {
   const sessionsFromStore = useApp((s) => s.sessions);
@@ -81,7 +82,7 @@ export function UsageSettings() {
             >
               <div className="flex flex-col gap-1 @lg:flex-row @lg:items-center @lg:gap-3">
                 <ScrollText
-                  text={session.title}
+                  text={sessionTitle(session.title)}
                   className="min-w-0 flex-1 text-label text-ink"
                 />
                 <div className="flex min-w-0 items-center gap-3 @lg:contents">

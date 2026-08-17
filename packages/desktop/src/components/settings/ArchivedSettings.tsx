@@ -1,10 +1,12 @@
 import type { SessionMeta } from "@lyra/core";
 import { Archive, ArchiveRestore, Folder, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useConfirmer } from "../Confirm.tsx";
 import { SearchField } from "../SearchField.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { GhostButton, InlineSelect } from "./controls.tsx";
 import { useApp } from "../../store.ts";
+import { sessionTitle } from "../../sessionTitle.ts";
 
 /**
  * The archive: everything filed away from the sidebar, grouped by project.
@@ -23,7 +25,7 @@ export function ArchivedSettings() {
 
 	const [query, setQuery] = useState("");
 	const [project, setProject] = useState("all");
-	const [confirmingAll, setConfirmingAll] = useState(false);
+	const confirm = useConfirmer();
 
 	const archived = useMemo(() => sessions.filter((s) => s.archived), [sessions]);
 
@@ -63,38 +65,23 @@ export function ArchivedSettings() {
 					</p>
 				</div>
 
-				{archived.length > 0 &&
-					(confirmingAll ? (
-						<div className="flex shrink-0 items-center gap-2">
-							<button
-								type="button"
-								onClick={() => setConfirmingAll(false)}
-								className="h-8 rounded-lg px-3 text-label text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-							>
-								取消
-							</button>
-							<button
-								type="button"
-								onClick={() => {
-									void deleteAll();
-									setConfirmingAll(false);
-								}}
-								className="flex h-8 items-center gap-1.5 rounded-lg bg-danger px-3 text-label font-medium text-white transition-opacity hover:opacity-90"
-							>
-								<Trash2 size={13} strokeWidth={2} />
-								确认删除 {archived.length} 个
-							</button>
-						</div>
-					) : (
-						<button
-							type="button"
-							onClick={() => setConfirmingAll(true)}
-							className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-danger/40 px-3 text-label text-danger transition-colors hover:bg-danger/10"
-						>
-							<Trash2 size={13} strokeWidth={2} />
-							全部删除
-						</button>
-					))}
+				{archived.length > 0 && (
+					<button
+						type="button"
+						onClick={(event) =>
+							confirm.ask(event, {
+								title: `删除全部 ${archived.length} 个归档会话？`,
+								detail: "所有记录和它们的用量统计会被永久删除，拿不回来。取消归档只能一个一个来，这个不能。",
+								confirmLabel: `删除 ${archived.length} 个`,
+								onConfirm: () => void deleteAll(),
+							})
+						}
+						className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-danger/40 px-3 text-label text-danger transition-colors hover:bg-danger/10"
+					>
+						<Trash2 size={13} strokeWidth={2} />
+						全部删除
+					</button>
+				)}
 			</header>
 
 			{archived.length === 0 ? (
@@ -158,6 +145,8 @@ export function ArchivedSettings() {
 					))}
 				</>
 			)}
+
+			{confirm.element}
 		</div>
 	);
 }
@@ -175,7 +164,7 @@ function Row({
 	onRestore: () => void;
 	onDelete: () => void;
 }) {
-	const [confirming, setConfirming] = useState(false);
+	const confirm = useConfirmer();
 
 	return (
 		<div
@@ -184,45 +173,42 @@ function Row({
 			}`}
 		>
 			<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left" data-ly-tip="打开并取消归档">
-				<ScrollText text={session.title} className="text-label text-ink" />
+				<ScrollText text={sessionTitle(session.title)} className="text-label text-ink" />
 				<span className="mt-0.5 block text-detail text-ink-faint">
 					{formatDate(session.updatedAt)} · {session.messageCount} 条消息
 				</span>
 			</button>
 
-			{confirming ? (
-				<div className="flex shrink-0 items-center gap-1.5">
-					<button
-						type="button"
-						onClick={() => setConfirming(false)}
-						className="h-7 rounded-lg px-2.5 text-detail text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
-					>
-						取消
-					</button>
-					<button
-						type="button"
-						onClick={onDelete}
-						className="h-7 rounded-lg bg-danger px-2.5 text-detail font-medium text-white transition-opacity hover:opacity-90"
-					>
-						确认删除
-					</button>
-				</div>
-			) : (
-				<div className="flex shrink-0 items-center gap-1">
-					<button
-						type="button"
-						data-ly-tip="删除"
-						aria-label={`删除「${session.title}」`}
-						onClick={() => setConfirming(true)}
-						className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-danger/10 hover:text-danger"
-					>
-						<Trash2 size={13.5} strokeWidth={1.8} />
-					</button>
-					<GhostButton onClick={onRestore} icon={<ArchiveRestore size={13} strokeWidth={1.8} />}>
-						取消归档
-					</GhostButton>
-				</div>
-			)}
+			{/*
+			 * The app's confirmation, not a pair of buttons that replace the row's own.
+			 *
+			 * This asked properly long before anything else did — by swapping 删除 for 取消 and
+			 * 确认删除 in place, which works and is the only place in the app that does it that way.
+			 * Same question, same surface as everywhere else now.
+			 */}
+			<div className="flex shrink-0 items-center gap-1">
+				<button
+					type="button"
+					data-ly-tip="删除"
+					aria-label={`删除「${session.title}」`}
+					onClick={(event) =>
+						confirm.ask(event, {
+							title: "删除这个会话？",
+							detail: `「${session.title}」的 ${session.messageCount} 条消息会被永久删除，拿不回来。`,
+							confirmLabel: "删除",
+							onConfirm: onDelete,
+						})
+					}
+					className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-danger/10 hover:text-danger"
+				>
+					<Trash2 size={13.5} strokeWidth={1.8} />
+				</button>
+				<GhostButton onClick={onRestore} icon={<ArchiveRestore size={13} strokeWidth={1.8} />}>
+					取消归档
+				</GhostButton>
+			</div>
+
+			{confirm.element}
 		</div>
 	);
 }

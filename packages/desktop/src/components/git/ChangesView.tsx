@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import type { GitStatus, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 
+import { useConfirmer } from "../Confirm.tsx";
 import { IconButton } from "../IconButton.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
 
@@ -37,6 +38,7 @@ export function ChangesView({
   act: Act;
 }) {
   const [message, setMessage] = useState("");
+  const confirm = useConfirmer();
   const [staged, setStaged] = useState<WorkspaceDiffFile[]>([]);
   const [unstaged, setUnstaged] = useState<WorkspaceDiffFile[]>([]);
 
@@ -140,18 +142,25 @@ export function ChangesView({
                   size="sm"
                   tone="danger"
                   disabled={busy}
-                  onClick={() => {
-                    // Deleting an untracked file is not something to do on one click.
-                    if (
-                      window.confirm(
-                        `放弃 ${file.path} 的改动？此操作不可撤销。`,
-                      )
-                    ) {
-                      void act(() =>
-                        window.lyra.git.discard(cwd, [file.path]),
-                      );
-                    }
-                  }}
+                  /*
+                   * The app's own confirmation, not the browser's.
+                   *
+                   * Discarding is the most irreversible thing this panel does — an untracked file
+                   * is deleted outright, and a tracked one loses work that was never committed, so
+                   * there is nothing to recover it from. It did ask, via `window.confirm`, which
+                   * draws a Chromium dialog with system fonts, an OS-blue button and the word
+                   * "localhost" across the top, and freezes the renderer while it is up.
+                   */
+                  onClick={(event) =>
+                    confirm.ask(event, {
+                      title: `放弃 ${file.path.split("/").pop()} 的改动？`,
+                      detail:
+                        "这个文件会回到上次提交的样子；没提交过的内容找不回来，git 里也没有它的副本。",
+                      confirmLabel: "放弃改动",
+                      onConfirm: () =>
+                        void act(() => window.lyra.git.discard(cwd, [file.path])),
+                    })
+                  }
                 />
                 <IconButton
                   icon={<Plus size={12} strokeWidth={1.9} />}
@@ -198,6 +207,8 @@ export function ChangesView({
           </button>
         </div>
       </div>
+
+      {confirm.element}
     </>
   );
 }

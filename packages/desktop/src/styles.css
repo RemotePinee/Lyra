@@ -843,16 +843,62 @@
   /* Explicit, because the track it sits in is `none` and this property inherits. Invisible is not
      the same as absent: the thumb is what you reach for, and it has to be there before you do. */
   pointer-events: auto;
-  transition: opacity 200ms ease-out;
+  /* Width and offset animate too, for the thickening under the pointer below. */
+  transition:
+    opacity 200ms ease-out,
+    width 120ms ease-out,
+    right 120ms ease-out;
+}
+
+/*
+ * A grab area wider than the mark, reaching inwards.
+ *
+ * The bar is 6px because 6px is what it should look like. Six pixels is not what it should be
+ * asked to *hit*: it sits against the edge of a pane, on macOS the outermost pixels of a window
+ * belong to the OS resize border, and what is left is a target most attempts miss. Measured in
+ * `e2e/scrollbar.test.ts` — the press did reach the thumb, so nothing was broken in the sense of
+ * throwing or being covered, and it was still unusable.
+ *
+ * Extended inwards rather than outwards for the same reason: outwards is the window frame. Taller
+ * than the thumb as well, so the grab does not slip off the ends of a short one.
+ */
+.ly-thumb::after,
+.ly-hthumb::after {
+  content: "";
+  position: absolute;
+}
+
+.ly-thumb::after {
+  inset: -4px -2px -4px -9px;
+}
+
+.ly-hthumb::after {
+  inset: -9px -4px -2px -4px;
 }
 
 .ly-scroll-host:hover .ly-thumb {
   opacity: 0.5;
 }
 
+/*
+ * Thicker under the pointer, the way the platform's own does it.
+ *
+ * Two things at once: it is easier to hold, and it says the thing is grabbable before you commit
+ * to grabbing it — which for a bar that is otherwise a flat 6px mark is the only feedback there
+ * was. It grows leftwards (`right` shrinks by as much as the width gains), so the outer edge stays
+ * where it is and the bar does not appear to shift.
+ */
 .ly-scroll-host .ly-thumb:hover,
 .ly-thumb.ly-thumb-active {
   opacity: 0.85;
+  width: 9px;
+  right: 1px;
+}
+
+.ly-hthumb:hover,
+.ly-hthumb.ly-hthumb-active {
+  height: 9px;
+  bottom: 1px;
 }
 
 /* Dragging the thumb must not select the text it passes over. */
@@ -873,7 +919,11 @@
  */
 .ly-hthumb {
   opacity: 0;
-  transition: opacity 200ms ease-out;
+  pointer-events: auto;
+  transition:
+    opacity 200ms ease-out,
+    height 120ms ease-out,
+    bottom 120ms ease-out;
 }
 
 .ly-diff-host:hover .ly-hthumb,
@@ -1035,6 +1085,32 @@
 
 .ly-enter {
   animation: ly-fade-up var(--ly-t-quick) var(--ly-e-out);
+}
+
+/*
+ * A row arriving at the top of a list, rather than simply being there.
+ *
+ * The opposite direction to `ly-enter`, and for the opposite reason. A message enters at the
+ * bottom of a transcript you are reading downwards, so it rises into place. A conversation is
+ * filed at the *top* of the sidebar the moment its first message is sent — it comes from above,
+ * and rising into place would have it arrive from the wrong side of its own list.
+ *
+ * Longer than the message entrance and further, because this one has to be caught in peripheral
+ * vision: you are looking at the composer when it happens, not at the sidebar.
+ */
+@keyframes ly-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-9px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ly-drop {
+  animation: ly-drop-in var(--ly-t-base) var(--ly-e-out);
 }
 
 /*
@@ -1466,8 +1542,19 @@
   animation: ly-fade-in 220ms ease-out 170ms both;
 }
 
-/* Popovers grow from the edge nearest their trigger, so the link between them reads. */
-@keyframes ly-pop-up {
+/*
+ * Popovers grow from the point nearest their trigger, so the link between them reads.
+ *
+ * One keyframe, not three. The direction was only ever carried by `transform-origin` — the scale
+ * and fade were byte-identical in all three — and three copies of one animation is three chances
+ * for one of them to drift. The origin is measured during placement and handed over inline, since
+ * the constant `center` these classes used was wrong for every menu not centred on its trigger,
+ * which is most of them: a right-aligned menu grew out of its own middle.
+ *
+ * `transform-origin` here is the fallback for the one caller outside React — CodeMirror's find
+ * panel, which is created by the editor and only ever drops downwards.
+ */
+@keyframes ly-pop-in {
   from {
     opacity: 0;
     transform: scale(0.95);
@@ -1478,41 +1565,9 @@
   }
 }
 
-@keyframes ly-pop-down {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.ly-pop-up {
-  transform-origin: bottom center;
-  animation: ly-pop-up 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
-}
-
-.ly-pop-down {
+.ly-pop-in {
   transform-origin: top center;
-  animation: ly-pop-down 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
-}
-
-@keyframes ly-pop-right {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.ly-pop-right {
-  transform-origin: left top;
-  animation: ly-pop-right 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: ly-pop-in 130ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 /*
@@ -1581,14 +1636,8 @@
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 
-.ly-glass {
-  /*
-   * `--color-float` and not `--color-elevated`: the elevated token steps toward the
-   * foreground, which on a light theme makes a menu darker than the page it floats over — and
-   * blurring a dark translucent panel over a light page just yields grey.
-   */
-  background: color-mix(in srgb, var(--color-float) 52%, transparent);
-  backdrop-filter: blur(34px) saturate(200%);
+.ly-glass,
+.ly-glass-solid {
   box-shadow:
     /* A hairline along the top edge, as if the panel had thickness — enough to read as glass,
        not so much that it becomes a stripe. */
@@ -1597,12 +1646,44 @@
     0 1px 5px -2px rgb(0 0 0 / 0.09);
 }
 
-:root.dark .ly-glass {
-  background: color-mix(in srgb, var(--color-float) 62%, transparent);
+.ly-glass {
+  /*
+   * `--color-float` and not `--color-elevated`: the elevated token steps toward the
+   * foreground, which on a light theme makes a menu darker than the page it floats over — and
+   * blurring a dark translucent panel over a light page just yields grey.
+   */
+  background: color-mix(in srgb, var(--color-float) 52%, transparent);
+  backdrop-filter: blur(34px) saturate(200%);
+}
+
+/*
+ * The same surface, for the places that cannot blur.
+ *
+ * `backdrop-filter` samples only what has been painted inside the nearest *backdrop root*, and
+ * `mask`, `filter`, `clip-path` and `opacity` each make an element one. Every scroller in this app
+ * that softens its edges carries a mask — so a frosted panel inside one blurs that scroller's own
+ * transparent background rather than the page, and comes out with its tint and its shadow but no
+ * blur at all, with whatever is beneath it still sharp.
+ *
+ * A popover escapes by rendering into `<body>`; something pinned to a card that scrolls cannot.
+ * That is what this is for: the same border, shadow and shape, an opaque fill instead of a blurred
+ * one. Reach for it when the surface is part of scrolling content — never for a menu, which should
+ * be portalled out instead and keep the real thing.
+ */
+.ly-glass-solid {
+  background: var(--color-float);
+}
+
+:root.dark .ly-glass,
+:root.dark .ly-glass-solid {
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.07),
     0 8px 24px -6px rgb(0 0 0 / 0.5),
     0 1px 6px -2px rgb(0 0 0 / 0.38);
+}
+
+:root.dark .ly-glass {
+  background: color-mix(in srgb, var(--color-float) 62%, transparent);
 }
 
 @supports not (backdrop-filter: blur(1px)) {

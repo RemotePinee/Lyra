@@ -12,6 +12,26 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { JsonSchema, Tool, ToolResult, UserContent } from "../types.ts";
 
+/**
+ * Where a server's configuration came from.
+ *
+ * Set for one installed from a registry, absent for one somebody typed in. The distinction is
+ * what lets the settings page offer 卸载 for the first and 删除 for the second, and clean up the
+ * bundle's directory when the last server it brought is gone.
+ *
+ * It replaced a `pluginId`, which said something that is no longer true: a plugin is a bundle of
+ * *skills*. A directory whose entire content is a `.mcp.json` was never a plugin — it is an MCP
+ * server that arrived in a git repository, and calling it a plugin is what put the same Context7
+ * in two places at once, with two switches that could not see each other.
+ */
+export interface McpOrigin {
+	/** Directory name under `~/.lyra/mcp`; also the entry's id in the registry it came from. */
+	bundle: string;
+	/** Which registry listed it, for telling two entries of the same name apart. */
+	registry?: string;
+	version?: string;
+}
+
 export interface McpStdioServer {
 	id: string;
 	name: string;
@@ -20,8 +40,7 @@ export interface McpStdioServer {
 	args?: string[];
 	env?: Record<string, string>;
 	enabled: boolean;
-	/** Set when the server was declared by a plugin bundle rather than configured by hand. */
-	pluginId?: string;
+	origin?: McpOrigin;
 }
 
 export interface McpHttpServer {
@@ -31,8 +50,7 @@ export interface McpHttpServer {
 	url: string;
 	headers?: Record<string, string>;
 	enabled: boolean;
-	/** Set when the server was declared by a plugin bundle rather than configured by hand. */
-	pluginId?: string;
+	origin?: McpOrigin;
 }
 
 export type McpServerConfig = McpStdioServer | McpHttpServer;
@@ -40,7 +58,7 @@ export type McpServerConfig = McpStdioServer | McpHttpServer;
 export interface McpServerStatus {
 	id: string;
 	name: string;
-	pluginId?: string;
+	origin?: McpOrigin;
 	state: "connected" | "failed" | "disabled";
 	toolCount: number;
 	error?: string;
@@ -65,14 +83,14 @@ export class McpManager {
 		const results = await Promise.all(
 			servers.map(async (server): Promise<McpServerStatus> => {
 				if (!server.enabled) {
-					return { id: server.id, name: server.name, pluginId: server.pluginId, state: "disabled", toolCount: 0, tools: [] };
+					return { id: server.id, name: server.name, origin: server.origin, state: "disabled", toolCount: 0, tools: [] };
 				}
 				try {
 					const connection = await this.connect(server);
 					return {
 						id: server.id,
 						name: server.name,
-						pluginId: server.pluginId,
+						origin: server.origin,
 						state: "connected",
 						toolCount: connection.tools.length,
 						tools: connection.tools.map((t) => ({ name: t.name, description: t.description })),
@@ -80,7 +98,7 @@ export class McpManager {
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					this.failures.set(server.id, message);
-					return { id: server.id, name: server.name, pluginId: server.pluginId, state: "failed", toolCount: 0, error: message, tools: [] };
+					return { id: server.id, name: server.name, origin: server.origin, state: "failed", toolCount: 0, error: message, tools: [] };
 				}
 			}),
 		);
@@ -134,7 +152,7 @@ export class McpManager {
 			out.push({
 				id: connection.config.id,
 				name: connection.config.name,
-				pluginId: connection.config.pluginId,
+				origin: connection.config.origin,
 				state: "connected",
 				toolCount: connection.tools.length,
 				tools: connection.tools.map((t) => ({ name: t.name, description: t.description })),

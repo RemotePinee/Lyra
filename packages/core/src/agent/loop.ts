@@ -44,6 +44,10 @@ export interface AgentRunConfig {
 	/** Session-scoped scratch space shared by every tool. */
 	state?: Map<string, unknown>;
 	requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+	/** Passed through to the tools; see `ToolContext.sandboxMode`. */
+	sandboxMode?: ToolContext["sandboxMode"];
+	/** Passed through to the tools; see `ToolContext.allowedHosts`. */
+	allowedHosts?: ToolContext["allowedHosts"];
 	/** Passed through to the tools; see `ToolContext.writePreview`. */
 	writePreview?: ToolContext["writePreview"];
 	spawnSubAgent?: (input: SubAgentInput) => Promise<string>;

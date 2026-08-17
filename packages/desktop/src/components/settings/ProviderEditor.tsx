@@ -14,8 +14,10 @@ import type { ApiFormat, ModelConfig, ProviderConfig } from "@lyra/core";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
+import { useConfirmer } from "../Confirm.tsx";
 import { Badge, Field, GhostButton, SecretInput, Select, TextInput } from "./controls.tsx";
 import { ProviderModels } from "./ProviderModels.tsx";
+import { RollingText } from "../RollingText.tsx";
 
 const API_OPTIONS: { value: ApiFormat; label: string }[] = [
 	{ value: "openai-responses", label: "Responses (/responses)" },
@@ -110,6 +112,7 @@ function ProviderHeading({
 }) {
 	const [name, setName] = useState(provider.name);
 	const [renaming, setRenaming] = useState(false);
+	const confirm = useConfirmer();
 
 	return (
 		<div className="flex items-center gap-2.5 pb-6">
@@ -140,9 +143,11 @@ function ProviderHeading({
 				</>
 			)}
 
-			<Badge tone={provider.enabled ? "ok" : "muted"}>{provider.enabled ? "已启用" : "已禁用"}</Badge>
+			<Badge tone={provider.enabled ? "ok" : "muted"}>
+				<RollingText>{provider.enabled ? "已启用" : "已禁用"}</RollingText>
+			</Badge>
 			<GhostButton onClick={() => onChange({ enabled: !provider.enabled })}>
-				{provider.enabled ? "禁用" : "启用"}
+				<RollingText>{provider.enabled ? "禁用" : "启用"}</RollingText>
 			</GhostButton>
 
 			<div className="flex-1" />
@@ -150,11 +155,20 @@ function ProviderHeading({
 				type="button"
 				data-ly-tip="删除供应商"
 				aria-label="删除供应商"
-				onClick={onRemove}
+				onClick={(event) =>
+					confirm.ask(event, {
+						title: `删除 ${provider.name}？`,
+						detail: `它的地址、密钥，以及配置在它下面的 ${provider.models.length} 个模型都会一起删掉。`,
+						confirmLabel: "删除",
+						onConfirm: onRemove,
+					})
+				}
 				className="text-ink-faint transition-colors hover:text-danger"
 			>
 				<Trash2 size={15} strokeWidth={1.8} />
 			</button>
+
+			{confirm.element}
 		</div>
 	);
 }

@@ -10,6 +10,7 @@ import type { Message, Settings } from "@lyra/core";
 import { useEffect, useState } from "react";
 
 import type { ContextBreakdown, ContextSegmentKey } from "../../electron/ipc-types.ts";
+import { findModel } from "../models.ts";
 import { Popover, usePopover } from "./Popover.tsx";
 import { formatTokens } from "./RunningIndicator.tsx";
 
@@ -104,13 +105,17 @@ export function ContextMeter({
 			</button>
 
 			{open && (
-				/*
-				 * Sized here rather than through Popover's `width`, which lands on the element
-				 * after the measurement that positions it — a card whose text wraps then ends up
-				 * taller than the box that was placed, and settles over the control it points at.
-				 */
-				<Popover anchor={popover.anchor} onClose={popover.close} placement="top" align="center">
-					<div className="w-[300px] px-3.5 py-3">
+				// A reading, not a menu — `group` so it is not announced as a list of things to pick.
+				<Popover
+					anchor={popover.anchor}
+					onClose={popover.close}
+					placement="top"
+					align="center"
+					width="panel"
+					role="group"
+					label="上下文窗口用量"
+				>
+					<div className="px-3.5 py-3">
 						<div className="flex items-baseline justify-between gap-4">
 							<span className="text-label text-ink">上下文窗口</span>
 							<span className={`text-label tabular-nums ${tight ? "text-danger" : "text-ink-muted"}`}>
@@ -275,13 +280,4 @@ function measureContext(messages: Message[]): number {
 		return measured + estimateTokens(messages.slice(i + 1));
 	}
 	return estimateTokens(messages);
-}
-
-function findModel(settings: Settings | null, modelId: string | null) {
-	if (!settings || !modelId) return null;
-	for (const provider of settings.providers) {
-		const model = provider.models.find((m) => m.id === modelId);
-		if (model) return model;
-	}
-	return null;
 }

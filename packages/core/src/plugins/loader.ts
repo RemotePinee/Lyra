@@ -1,18 +1,32 @@
 /**
- * Plugins.
+ * Plugins, and the MCP servers that were being mistaken for them.
  *
- * A plugin is a *bundle*: a manifest plus a `skills/` directory (each skill may carry its own
- * `scripts/`, `assets/` and sub-agent definitions) plus an optional MCP server declaration.
- * It is not a third mechanism alongside skills and MCP — it is the packaging format that ships
- * them together, which is why loading one simply contributes skills and MCP servers to the
- * session.
+ * A plugin is a bundle of *skills*: a manifest plus a `skills/` directory, where each skill may
+ * carry its own `scripts/`, `assets/` and sub-agent definitions. That is the whole of it.
  *
- * Layout (compatible with Codex's, so existing bundles drop straight in):
+ * It used to also carry MCP servers, on the reasoning that a bundle is just packaging and may as
+ * well ship both. What that produced, in practice, was a catalogue of nine "plugins" of which
+ * seven were a single `.mcp.json` and no skills at all — Context7, Filesystem, Playwright: MCP
+ * servers, listed as plugins, installed as plugins, and then invisible on the MCP settings page
+ * because that page reads `settings.mcpServers` and these had gone somewhere else entirely. The
+ * same server could be configured twice, from two places, with two switches that could not see
+ * each other.
+ *
+ * So the rule is now: **what a directory contains decides what it is.** Skills make it a plugin.
+ * Only a `.mcp.json` makes it an MCP server that happens to have arrived in a git repository —
+ * `McpBundle` below — and installing one of those writes its servers into settings, where every
+ * other MCP server already lives. A directory holding both is loaded as a plugin and says so in
+ * a diagnostic; nothing in the wild does this, and the alternative is the ambiguity we just left.
+ *
+ * Layout:
  *
  *   my-plugin/
- *     .lyra-plugin/plugin.json   (or .codex-plugin/plugin.json, or ./plugin.json)
+ *     .lyra-plugin/plugin.json   (or ./plugin.json)
  *     skills/<name>/SKILL.md
  *     skills/<name>/scripts/…
+ *
+ *   my-mcp-server/
+ *     .lyra-plugin/plugin.json   (for its name, icon and description)
  *     .mcp.json
  */
 
@@ -56,10 +70,27 @@ export interface Plugin {
 	manifest: PluginManifest;
 	source: "workspace" | "user";
 	skills: Skill[];
-	mcpServers: McpServerConfig[];
 	enabled: boolean;
 	/** Populated when the bundle is present but unusable. */
 	error?: string;
+}
+
+/**
+ * A directory that turned out to be an MCP server rather than a plugin.
+ *
+ * Same shape on disk, same registry, same install — but no skills, so there is nothing for it to
+ * contribute to a session except a server declaration, and a server declaration belongs in
+ * settings where the user can point Filesystem at the right directory. This type is what the
+ * install path reads to know what to write there; nothing loads it into a session directly.
+ */
+export interface McpBundle {
+	/** Directory name; matches `McpOrigin.bundle` on every server it produced. */
+	id: string;
+	dir: string;
+	manifest: PluginManifest;
+	source: "workspace" | "user";
+	/** What its `.mcp.json` declares, ready to be merged into settings. */
+	servers: McpServerConfig[];
 }
 
 export interface PluginDiagnostic {
@@ -73,11 +104,19 @@ const MANIFEST_LOCATIONS = [
 	"plugin.json",
 ];
 
+/**
+ * Read every bundle under the given roots and sort it by what it actually contains.
+ *
+ * Both kinds are returned from one pass because they live in the same directories and are told
+ * apart by their contents, not their location — a bundle that was installed before the split, or
+ * dropped in by hand, lands in the right list without anything having to move first.
+ */
 export async function loadPlugins(
 	sources: { dir: string; source: Plugin["source"] }[],
 	disabled: string[] = [],
-): Promise<{ plugins: Plugin[]; diagnostics: PluginDiagnostic[] }> {
+): Promise<{ plugins: Plugin[]; mcpBundles: McpBundle[]; diagnostics: PluginDiagnostic[] }> {
 	const plugins: Plugin[] = [];
+	const mcpBundles: McpBundle[] = [];
 	const diagnostics: PluginDiagnostic[] = [];
 	const seen = new Set<string>();
 
@@ -114,17 +153,27 @@ export async function loadPlugins(
 			 * installed on the machine. Naming every plugin to disable it is not an option there,
 			 * because the point is precisely not knowing what is installed.
 			 */
-			const enabled = !disabled.includes("*") && !disabled.includes(id);
-			const skillsDir = resolveInside(pluginDir, manifest.skills ?? "./skills/");
-			const loadedSkills = skillsDir ? await loadSkills([{ dir: skillsDir, source }]) : { skills: [], diagnostics: [] };
-			for (const diagnostic of loadedSkills.diagnostics) {
-				diagnostics.push({ path: diagnostic.path, message: diagnostic.message });
-			}
+			const read = await readContents(pluginDir, manifest, id, source);
+			diagnostics.push(...read.diagnostics);
 
-			const mcpResult = manifest.mcpServers
-				? await readMcpServers(pluginDir, manifest.mcpServers, id)
-				: { servers: [], error: undefined };
-			if (mcpResult.error) diagnostics.push({ path: pluginDir, message: mcpResult.error });
+			/*
+			 * No skills and a server declaration: this is an MCP server, whatever the directory it
+			 * sits in is called. It contributes nothing to a session on its own — its servers are
+			 * merged into settings at install time, and settings is what the session reads.
+			 */
+			if (read.kind === "mcp") {
+				mcpBundles.push({
+					id,
+					dir: pluginDir,
+					manifest,
+					source,
+					servers: read.servers.map((server) => ({
+						...server,
+						origin: { bundle: entry.name, version: manifest.version },
+					})),
+				});
+				continue;
+			}
 
 			plugins.push({
 				id,
@@ -132,14 +181,72 @@ export async function loadPlugins(
 				manifest,
 				source,
 				// Tag skills so the UI can show which plugin brought them in.
-				skills: loadedSkills.skills.map((skill) => ({ ...skill, pluginId: id })),
-				mcpServers: mcpResult.servers.map((server) => ({ ...server, enabled: server.enabled && enabled })),
-				enabled,
+				skills: read.skills.map((skill) => ({ ...skill, pluginId: id })),
+				enabled: !disabled.includes("*") && !disabled.includes(id),
 			});
 		}
 	}
 
-	return { plugins, diagnostics };
+	return { plugins, mcpBundles, diagnostics };
+}
+
+/**
+ * What one directory holds, and therefore what it is.
+ *
+ * Shared with the install path, which has to answer the same question about a fresh clone before
+ * it knows where to put it — and answering it from the contents is what makes the answer right
+ * even when the registry that listed it said something else.
+ */
+export async function inspectBundle(
+	dir: string,
+	source: Plugin["source"] = "user",
+): Promise<
+	| { kind: "plugin" | "mcp"; manifest: PluginManifest; skills: Skill[]; servers: McpServerConfig[] }
+	| { kind: "none"; error?: string }
+> {
+	const found = await readManifest(dir);
+	if (!found) return { kind: "none" };
+	if (!found.manifest) return { kind: "none", error: found.error };
+
+	const manifest = found.manifest;
+	const read = await readContents(dir, manifest, manifest.name || basename(dir), source);
+	return { kind: read.kind, manifest, skills: read.skills, servers: read.servers };
+}
+
+/** The skills and servers a manifest points at, and the verdict that follows from having them. */
+async function readContents(
+	dir: string,
+	manifest: PluginManifest,
+	id: string,
+	source: Plugin["source"],
+): Promise<{ kind: "plugin" | "mcp"; skills: Skill[]; servers: McpServerConfig[]; diagnostics: PluginDiagnostic[] }> {
+	const diagnostics: PluginDiagnostic[] = [];
+
+	const skillsDir = resolveInside(dir, manifest.skills ?? "./skills/");
+	const loaded = skillsDir ? await loadSkills([{ dir: skillsDir, source }]) : { skills: [], diagnostics: [] };
+	for (const diagnostic of loaded.diagnostics) {
+		diagnostics.push({ path: diagnostic.path, message: diagnostic.message });
+	}
+
+	const mcp = manifest.mcpServers
+		? await readMcpServers(dir, manifest.mcpServers, id)
+		: { servers: [], error: undefined };
+	if (mcp.error) diagnostics.push({ path: dir, message: mcp.error });
+
+	if (loaded.skills.length === 0 && mcp.servers.length > 0) {
+		return { kind: "mcp", skills: [], servers: mcp.servers, diagnostics };
+	}
+
+	// Both, which nothing in the wild actually does. Kept as a plugin, and said out loud: dropping
+	// the servers in silence would be exactly the ambiguity this split exists to remove.
+	if (mcp.servers.length > 0) {
+		diagnostics.push({
+			path: dir,
+			message: `插件不再捆绑 MCP 服务，"${id}" 声明的 ${mcp.servers.length} 个服务未加载——请在设置 › MCP 里单独添加`,
+		});
+	}
+
+	return { kind: "plugin", skills: loaded.skills, servers: mcp.servers, diagnostics };
 }
 
 type ManifestResult = { manifest: PluginManifest; error?: undefined } | { manifest?: undefined; error: string };
@@ -280,7 +387,6 @@ function normalizeServer(
 			args: Array.isArray(config.args) ? config.args.filter((a): a is string => typeof a === "string") : [],
 			env,
 			enabled: true,
-			pluginId: id.split("__")[0],
 		};
 	}
 
@@ -300,7 +406,6 @@ function normalizeServer(
 			url,
 			headers,
 			enabled: true,
-			pluginId: id.split("__")[0],
 		};
 	}
 

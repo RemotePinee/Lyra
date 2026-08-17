@@ -61,6 +61,11 @@ const api: LyraApi = {
 	settings: {
 		get: () => ipcRenderer.invoke("settings:get"),
 		save: (settings) => ipcRenderer.invoke("settings:save", settings),
+		onChanged: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("settings:changed", listener);
+			return () => ipcRenderer.removeListener("settings:changed", listener);
+		},
 	},
 	workspace: {
 		pick: () => ipcRenderer.invoke("workspace:pick"),
@@ -153,7 +158,7 @@ const api: LyraApi = {
 		revealDir: (scope, cwd) => ipcRenderer.invoke("plugins:revealDir", scope, cwd),
 		installExample: (scope, cwd) => ipcRenderer.invoke("plugins:installExample", scope, cwd),
 		fetchRegistry: (url) => ipcRenderer.invoke("registry:fetch", url),
-		installFromRegistry: (entry) => ipcRenderer.invoke("registry:install", entry),
+		installFromRegistry: (entry, registryName) => ipcRenderer.invoke("registry:install", entry, registryName),
 		uninstall: (id) => ipcRenderer.invoke("registry:uninstall", id),
 	},
 	

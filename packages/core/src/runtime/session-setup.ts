@@ -42,6 +42,12 @@ export async function loadCapabilities(
 		[
 			{ dir: join(cwd, ".lyra", "plugins"), source: "workspace" as const },
 			{ dir: join(lyraHome(), "plugins"), source: "user" as const },
+			/*
+			 * Where MCP bundles live once installed. Read here as well because a bundle is sorted
+			 * by its contents rather than its location — one that predates the split, or was put
+			 * in by hand, is found either way, and only its `origin` cares which directory it is in.
+			 */
+			{ dir: join(lyraHome(), "mcp"), source: "user" as const },
 		],
 		settings.disabledPlugins,
 	);
@@ -70,8 +76,15 @@ export async function loadCapabilities(
 
 	const agents = [...BUILTIN_AGENTS, ...(await loadAgentDefinitions(cwd))];
 
-	const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
-	const mcpStatuses = await mcp.connectAll([...settings.mcpServers, ...pluginServers]);
+	/*
+	 * Settings is the only place a session reads MCP servers from.
+	 *
+	 * Plugins used to contribute their own, which is how the same server ended up configured in
+	 * two places at once — the MCP settings page could not see the plugin's copy, and the plugin
+	 * could not see the user's. Installing an MCP bundle now writes into settings, so this is one
+	 * list, and what is on the page is what the session connects to.
+	 */
+	const mcpStatuses = await mcp.connectAll(settings.mcpServers);
 	const tools = [...builtinTools(), ...extraTools, ...mcp.allTools()];
 
 	return { plugins, pluginDiagnostics, skills, skillDiagnostics, agents, mcpStatuses, tools };

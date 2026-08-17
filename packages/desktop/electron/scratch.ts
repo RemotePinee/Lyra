@@ -17,7 +17,8 @@
  * from remote input, so every character outside a safe set is replaced rather than trusted.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { lyraHome } from "@lyra/core";
 
@@ -55,52 +56,123 @@ export function prChatSlug(repo: string, number: number): string {
 }
 
 /**
- * The directory every pull request conversation lives under.
+ * The directory every project-less conversation runs in.
  *
- * Exposed so the renderer can recognise these sessions and keep them out of the sidebar. They are
- * real sessions in a real directory — that is what makes them reopen months later — but they are
- * not projects, and listing a folder called `owner-repo-6381` between someone's actual work is
- * noise. Derived here rather than pattern-matched there: the home is `LYRA_HOME`-overridable, so
- * a hard-coded `.lyra/pr` in the renderer would be wrong for anyone who moved it.
+ * Exposed so the renderer can recognise these sessions and keep them out of the sidebar's project
+ * list. They are real sessions in a real directory — that is what makes them reopen months later —
+ * but they are not projects, and listing a folder called `owner-repo-6381` between someone's actual
+ * work is noise. Derived here rather than pattern-matched there: the home is `LYRA_HOME`-overridable,
+ * so a hard-coded path in the renderer would be wrong for anyone who moved it.
+ *
+ * `workspaces/`, and the name is the fix.
+ *
+ * This used to be `scratch/` — the same directory `core` uses for the throwaway files it tells the
+ * model to write, which are named after the session that made them and swept on every launch by
+ * `pruneSessionArtifacts`: any subdirectory whose name is not a live session id is deleted. Nothing
+ * here is named after a session. `general` and `owner-repo-6381` were never live session ids, so
+ * every launch deleted the working directory of every project-less conversation and every pull
+ * request review — the checkout, the patch, the PR.md written for it, all of it — and the next
+ * launch deleted whatever had been put there since.
+ *
+ * Two mechanisms, one path, opposite lifetimes. Separating them is the whole repair: `core` keeps
+ * sweeping `scratch/`, and nothing it sweeps belongs to anybody.
  */
-export function scratchRoot(): string {
-	return join(lyraHome(), "scratch");
+export function workspacesRoot(): string {
+	return join(lyraHome(), "workspaces");
 }
 
 /**
- * Every directory these conversations have ever lived under.
+ * Every directory these conversations have ever lived under, newest first.
  *
- * The first shipped release put them in `pr/`, before the same mechanism was needed for 「不在项目
- * 中工作」 and the name stopped fitting. Renaming the directory does not move the sessions: they are
- * filed by a hash of their working directory and each one records that path, so anything created
- * under the old name still says so.
+ * Sessions are filed by a hash of their working directory and each one records the path it was
+ * created under, so moving the directory does not move them. The sidebar recognises these sessions
+ * by path — drop an old entry and every review anyone had already opened reappears as a project
+ * called `owner-repo-6381`, sitting among their real work.
  *
- * Which matters for exactly one reason — the sidebar excludes these by path. Drop the old entry
- * and every review anyone had already opened reappears as a project called `owner-repo-6381`,
- * sitting among their real work. Cheaper to remember one dead path than to rewrite stored history.
+ * So the list only grows. `pr/` was the first release, `scratch/` the second (see `workspacesRoot`
+ * for why it could not stay), and both stay here forever to keep old conversations recognisable.
  */
 export function scratchRoots(): string[] {
-	return [scratchRoot(), join(lyraHome(), "pr")];
+	return [workspacesRoot(), join(lyraHome(), "scratch"), join(lyraHome(), "pr")];
 }
 
-/** The scratch directory for one pull request, created if it is not there yet. */
+/** The working directory for one pull request, created if it is not there yet. */
 export async function prScratchDir(repo: string, number: number): Promise<string> {
-	const dir = join(scratchRoot(), prChatSlug(repo, number));
+	const dir = join(workspacesRoot(), prChatSlug(repo, number));
 	await mkdir(dir, { recursive: true });
 	return dir;
 }
 
 /**
- * The scratch directory for a conversation with no subject at all — 「不在项目中工作」.
+ * The working directory for a conversation with no subject at all — 「不在项目中工作」.
  *
  * One shared directory rather than one per session: without a pull request there is nothing to
  * derive a stable name from, and a fresh folder per conversation would pile up empty directories
  * nobody ever looks in.
  */
 export async function generalScratchDir(): Promise<string> {
-	const dir = join(scratchRoot(), "general");
+	const dir = join(workspacesRoot(), "general");
 	await mkdir(dir, { recursive: true });
 	return dir;
+}
+
+/**
+ * Anything a session id could look like, so a rescue can tell the two kinds of directory apart.
+ *
+ * `core` names its throwaway directories after the conversation that made them — a UUID. Ours are
+ * named `general` or `owner-repo-6381`. Nothing else distinguishes them, since for one release
+ * they shared a parent.
+ */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Move whatever is left of the old arrangement into `workspaces/`, once, before anything sweeps.
+ *
+ * Only reaches directories that are ours by name: a UUID belongs to `core`'s own housekeeping and
+ * is left exactly where it is. A destination that already exists is left alone too — the new
+ * location wins, because it is the one that has not been being deleted.
+ *
+ * Most people will have nothing to rescue: the sweep ran on every launch, so these directories
+ * were empty by the next morning. It matters for the launch right after the last session someone
+ * ran — the checkout they made to answer a review, still sitting there, one startup away from
+ * being deleted for the last time.
+ *
+ * Returns what it moved, for the log.
+ */
+export async function rescueLegacyWorkspaces(): Promise<string[]> {
+	const moved: string[] = [];
+	for (const legacy of [join(lyraHome(), "scratch"), join(lyraHome(), "pr")]) {
+		const entries = await readdir(legacy, { withFileTypes: true }).catch(() => []);
+		for (const entry of entries) {
+			if (!entry.isDirectory() || SESSION_ID.test(entry.name)) continue;
+			const to = join(workspacesRoot(), entry.name);
+			if (existsSync(to)) continue;
+			await mkdir(workspacesRoot(), { recursive: true });
+			await rename(join(legacy, entry.name), to).catch(() => {});
+			if (existsSync(to)) moved.push(entry.name);
+		}
+	}
+	return moved;
+}
+
+/**
+ * Put a project-less conversation's directory back if it is missing, and refuse anything else.
+ *
+ * Two ways it goes missing. Every launch before this fix swept them, so anyone upgrading has
+ * sessions whose recorded `cwd` no longer exists; and a directory under the app's own home is
+ * something a person can delete without thinking of it as deleting a conversation. Either way the
+ * session is still in the log and still opens — it just has nowhere to run, and every tool in it
+ * fails on a working directory that is not there.
+ *
+ * Guarded by the roots rather than trusting the caller: this creates directories from a path that
+ * came out of a stored session record, and the one thing it must never do is create one somewhere
+ * that is not ours.
+ */
+export async function ensureSessionWorkspace(cwd: string): Promise<boolean> {
+	const roots = scratchRoots().map((root) => (root.endsWith("/") ? root : `${root}/`));
+	if (!roots.some((root) => cwd.startsWith(root))) return false;
+	await mkdir(cwd, { recursive: true });
+	return true;
 }
 
 export interface PrBrief {

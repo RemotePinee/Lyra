@@ -10,10 +10,12 @@ import type { ScheduledTask } from "@lyra/core";
 import { nextRunAt } from "@lyra/core/schedule";
 import { Clock, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useConfirmer } from "./Confirm.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 import { Toggle } from "./settings/controls.tsx";
+import { sessionTitle } from "../sessionTitle.ts";
 
 export function ScheduledView() {
 	const settings = useApp((s) => s.settings);
@@ -77,19 +79,25 @@ export function ScheduledView() {
 				)}
 
 				<div className="space-y-3">
-					{tasks.map((task) => (
-						<TaskCard
-							key={task.id}
-							task={task}
-							lastSessionTitle={sessions.find((s) => s.id === task.lastSessionId)?.title}
-							onChange={(patch) => update(task.id, patch)}
-							onRemove={() => remove(task.id)}
-							onOpenLast={() => {
-								const meta = sessions.find((s) => s.id === task.lastSessionId);
-								if (meta) void openSession(meta);
-							}}
-						/>
-					))}
+					{tasks.map((task) => {
+						// Looked up once. The card needs its name and the button needs the meta itself,
+						// and two searches for the same row is one of them that can go stale on its own.
+						const last = sessions.find((s) => s.id === task.lastSessionId);
+						return (
+							<TaskCard
+								key={task.id}
+								task={task}
+								// Undefined stays undefined: the card reads it as "this has never run",
+								// which is not the same as a run whose conversation is still unnamed.
+								lastSessionTitle={last ? sessionTitle(last.title) : undefined}
+								onChange={(patch) => update(task.id, patch)}
+								onRemove={() => remove(task.id)}
+								onOpenLast={() => {
+									if (last) void openSession(last);
+								}}
+							/>
+						);
+					})}
 				</div>
 			</Scroller>
 		</div>
@@ -119,6 +127,7 @@ function TaskCard({
 	const [prompt, setPrompt] = useState(task.prompt);
 	const [name, setName] = useState(task.name);
 	const [running, setRunning] = useState(false);
+	const confirm = useConfirmer();
 
 	return (
 		<div className="ly-enter overflow-hidden rounded-[10px] border border-line bg-card/40">
@@ -150,11 +159,21 @@ function TaskCard({
 				<button
 					type="button"
 					data-ly-tip="删除"
-					onClick={onRemove}
+					aria-label={`删除定时任务「${task.name}」`}
+					onClick={(event) =>
+						confirm.ask(event, {
+							title: `删除「${task.name}」？`,
+							detail: "这条定时任务不会再运行，它的提示和时间设置一起删掉。已经跑出来的会话留着。",
+							confirmLabel: "删除",
+							onConfirm: onRemove,
+						})
+					}
 					className="text-ink-faint transition-colors hover:text-danger"
 				>
 					<Trash2 size={13} strokeWidth={1.8} />
 				</button>
+
+				{confirm.element}
 			</div>
 
 			<div className="space-y-3 px-4 py-3">

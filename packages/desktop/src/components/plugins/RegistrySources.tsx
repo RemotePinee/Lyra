@@ -14,6 +14,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { useConfirmer } from "../Confirm.tsx";
 import { Overlay } from "../modals/Overlay.tsx";
 import { GhostButton } from "../settings/controls.tsx";
 import { TextInput } from "../settings/inputs.tsx";
@@ -32,6 +33,7 @@ export function RegistrySources({
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	const [adding, setAdding] = useState("");
+	const confirm = useConfirmer();
 
 	const add = () => {
 		const url = adding.trim();
@@ -67,7 +69,14 @@ export function RegistrySources({
 									type="button"
 									data-ly-tip="移除这个市场"
 									aria-label={`移除 ${url}`}
-									onClick={() => remove(url)}
+									onClick={(event) =>
+										confirm.ask(event, {
+											title: "移除这个插件市场？",
+											detail: "从它装过的插件都留在本地，只是以后不会再从这里看到新的。",
+											confirmLabel: "移除",
+											onConfirm: () => remove(url),
+										})
+									}
 									className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-danger/10 hover:text-danger"
 								>
 									<Trash2 size={12} strokeWidth={1.8} />
@@ -89,6 +98,8 @@ export function RegistrySources({
 							添加
 						</GhostButton>
 					</div>
+
+					{confirm.element}
 				</div>
 			</div>
 		</Overlay>

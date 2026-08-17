@@ -1,35 +1,50 @@
 /**
- * The plugin catalogue: what you could have, and what you already do.
+ * The catalogue: what you could have, and what you already do.
  *
  * This is the browsing half of a subject that has two halves. It answers "what is out there and
  * what did I install" — a page of marks and one-line descriptions, laid out to be skimmed. The
- * other half is 设置 › 插件, which answers "what is this one doing": toggles, versions, the MCP
- * servers a bundle brought with it, where its directory is. The sidebar's 插件 used to go
- * straight there, which meant the first question had nowhere to be asked. The gear in the header
- * is the way from here to there, and it is deliberately the only one.
+ * other half is 设置, which answers "what is this one doing": switches, versions, parameters,
+ * where its directory is. The sidebar used to go straight there, which meant the first question
+ * had nowhere to be asked. The gear in the header is the way from here to there, and it points
+ * at whichever settings tab matches the tab you are on.
+ *
+ * Three tabs, because there are three things and they are not interchangeable: a plugin is a
+ * bundle of skills, an MCP server is a program that gets started, and a skill is a page of
+ * instructions. They used to share one tab called 插件, which is how seven MCP servers came to be
+ * listed, installed and described as plugins — and then failed to appear on the MCP settings page,
+ * because that page reads the settings file and these had been written somewhere else.
  *
  * Its header lives in the window's own 44px strip, level with the sidebar's controls, the same
  * way the pull request view does — see `PullRequestList` for why `no-drag` sits on the controls
  * and never on the row.
  */
 
-import type { Skill } from "@lyra/core";
+import type { BundleKind, Skill } from "@lyra/core";
 import { Blocks, Cable, ChevronDown, Plus, RefreshCw, Settings as SettingsIcon, Sparkles, Store } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
-import { MenuItem, Popover, usePopover } from "./Popover.tsx";
+import { MenuBody, MenuItem, Popover, usePopover } from "./Popover.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
 import { PluginIcon } from "./settings/PluginIcon.tsx";
 import { CatalogCard } from "./plugins/CatalogCard.tsx";
 import { PluginDetail } from "./plugins/PluginDetail.tsx";
 import { RegistrySources } from "./plugins/RegistrySources.tsx";
-import { groupByCategory, UNFILED, useCatalog } from "./plugins/useCatalog.ts";
+import { groupByCategory, isEnabled, isInstalled, UNFILED, useCatalog } from "./plugins/useCatalog.ts";
 import { toolbarContentLeft } from "./WindowToolbar.tsx";
+import { RollingText } from "./RollingText.tsx";
 
-type Tab = "plugins" | "skills";
+/**
+ * Which of the three the page is showing.
+ *
+ * `plugins` and `mcp` are the two things a registry offers, and they are separated because they
+ * are not the same thing — a plugin is a bundle of skills, an MCP server is a program that gets
+ * started and speaks a protocol. One tab called 插件 holding both is what let seven MCP servers
+ * be advertised as plugins, installed as plugins, and then not appear on the MCP settings page.
+ */
+type Tab = "plugins" | "mcp" | "skills";
 /**
  * Which half of the catalogue is on show.
  *
@@ -61,17 +76,39 @@ export function PluginsView() {
 	 * Holding the object would freeze it at the moment it was clicked: install something from its
 	 * own page and the page would go on describing the version that had no directory yet. The key
 	 * is looked up against the live catalogue on every render, so a refresh flows through.
+	 *
+	 * In the store rather than here because 设置 › 插件 opens this page too, from a window this
+	 * component is not on screen for.
 	 */
-	const [openKey, setOpenKey] = useState<string | null>(null);
+	const openKey = useApp((s) => s.pluginFocus);
+	const setOpenKey = useApp((s) => s.setPluginFocus);
 	const add = usePopover();
 
-	const openSettings = () => {
+	// The settings page has a tab per kind now, so the gear points at the matching one rather
+	// than always at 插件 — which, from the MCP tab, was the wrong half of the answer.
+	const openSettings = (section: "plugins" | "mcp" = "plugins") => {
 		setView("settings");
-		setSettingsSection("plugins");
+		setSettingsSection(section);
 	};
 
-	const published = catalog.items.filter((item) => item.entry !== null);
-	const personal = catalog.items.filter((item) => item.entry === null);
+	/**
+	 * Leave for a new conversation with one of a bundle's own example prompts already typed.
+	 *
+	 * Shared by the cards and the detail page, because 立即试用 has to mean the same thing in both
+	 * — the card reached it through a menu and the page through a bubble, and they were two
+	 * copies of the same three calls in the same order.
+	 */
+	const startWith = (prompt: string) => {
+		void newSession();
+		setComposerDraft(prompt);
+		setView("chat");
+	};
+
+	// Whichever kind this tab is about. Everything below — the counts, the two scopes, the
+	// installed strip — is scoped to it, so the page never mixes the two.
+	const ofKind = catalog.items.filter((item) => item.kind === (tab === "mcp" ? "mcp" : "plugin"));
+	const published = ofKind.filter((item) => item.entry !== null);
+	const personal = ofKind.filter((item) => item.entry === null);
 	/*
 	 * Undecided until the user decides, then fixed.
 	 *
@@ -93,7 +130,7 @@ export function PluginsView() {
 	);
 	const groups = useMemo(() => groupByCategory(filtered), [filtered]);
 
-	const installed = catalog.items.filter((item) => item.installed !== null);
+	const installed = ofKind.filter(isInstalled);
 
 	/*
 	 * Looked up rather than remembered — see `openKey`. Falls back to the grid if the key stops
@@ -110,11 +147,7 @@ export function PluginsView() {
 					catalog.refresh();
 				}}
 				onError={setFailure}
-				onTry={(prompt) => {
-					void newSession();
-					setComposerDraft(prompt);
-					setView("chat");
-				}}
+				onTry={startWith}
 			/>
 		);
 	}
@@ -129,13 +162,19 @@ export function PluginsView() {
 					{(
 						[
 							{ id: "plugins" as const, label: "插件", icon: Blocks },
+							{ id: "mcp" as const, label: "MCP 服务", icon: Cable },
 							{ id: "skills" as const, label: "技能", icon: Sparkles },
 						] satisfies { id: Tab; label: string; icon: typeof Blocks }[]
 					).map((entry) => (
 						<button
 							key={entry.id}
 							type="button"
-							onClick={() => setTab(entry.id)}
+							onClick={() => {
+								setTab(entry.id);
+								// The two scopes are counted per kind, so a choice made under one tab
+								// says nothing about the next: start it undecided again.
+								setScope(null);
+							}}
 							className={`h-[26px] rounded-lg px-2.5 text-label transition-colors duration-[var(--ly-t-quick)] ${
 								tab === entry.id ? "bg-card-hover text-ink" : "text-ink-muted hover:text-ink"
 							}`}
@@ -152,7 +191,10 @@ export function PluginsView() {
 					<HeaderButton label="重新读取" onClick={catalog.refresh}>
 						<RefreshCw size={13.5} strokeWidth={1.8} className={catalog.loading ? "ly-spin" : undefined} />
 					</HeaderButton>
-					<HeaderButton label="插件设置" onClick={openSettings}>
+					<HeaderButton
+						label={tab === "mcp" ? "MCP 设置" : "插件设置"}
+						onClick={() => openSettings(tab === "mcp" ? "mcp" : "plugins")}
+					>
 						<SettingsIcon size={13.5} strokeWidth={1.8} />
 					</HeaderButton>
 					<button
@@ -169,8 +211,8 @@ export function PluginsView() {
 			</header>
 
 			{add.open && (
-				<Popover anchor={add.anchor} onClose={add.close} placement="bottom" align="end" width={200}>
-					<div className="p-1">
+				<Popover anchor={add.anchor} onClose={add.close} placement="bottom" align="end" width="default">
+					<MenuBody>
 						<MenuItem
 							icon={<Store size={14} strokeWidth={1.8} />}
 							onClick={() => {
@@ -200,7 +242,7 @@ export function PluginsView() {
 						>
 							安装示例插件
 						</MenuItem>
-					</div>
+					</MenuBody>
 				</Popover>
 			)}
 
@@ -209,19 +251,29 @@ export function PluginsView() {
 				    the sidebar and the panel both take from it. */}
 				<div className="@container mx-auto w-full max-w-[860px]">
 					<h1 className="pt-6 text-display leading-tight font-semibold tracking-tight text-ink">
-						{tab === "plugins" ? "插件" : "技能"}
+						<RollingText>{tab === "plugins" ? "插件" : tab === "mcp" ? "MCP 服务" : "技能"}</RollingText>
 					</h1>
+					{/*
+					 * Each one says what it is, because they are three different things.
+					 *
+					 * The plugin line used to read "一个插件是一组技能和 MCP 服务", which is what the
+					 * whole page was built on and is not true: a plugin is skills. A server that runs
+					 * a command on this machine is not a kind of skill bundle, and saying so is what
+					 * made 安装 mean two different things under one word.
+					 */}
 					<p className="pt-2 pb-6 text-label leading-relaxed text-ink-muted">
 						{tab === "plugins"
-							? "一个插件是一组技能和 MCP 服务。装上之后，新开的会话就带着它们。"
-							: "技能是一份写给 agent 的说明书。它们随插件一起来，也可以自己放一份。"}
+							? "一个插件是一组技能。装上之后，新开的会话就带着它们。"
+							: tab === "mcp"
+								? "一个 MCP 服务是一个对外的程序，装上之后它的工具就出现在 agent 的工具表里。装完默认关着，去设置 › MCP 里开。"
+								: "技能是一份写给 agent 的说明书。它们随插件一起来，也可以自己放一份。"}
 					</p>
 
 					<SearchField
 						size="comfortable"
 						value={query}
 						onChange={setQuery}
-						placeholder={tab === "plugins" ? "搜索插件" : "搜索技能"}
+						placeholder={tab === "plugins" ? "搜索插件" : tab === "mcp" ? "搜索 MCP 服务" : "搜索技能"}
 						className="w-full"
 					/>
 
@@ -231,7 +283,7 @@ export function PluginsView() {
 						</p>
 					)}
 
-					{tab === "plugins" ? (
+					{tab !== "skills" ? (
 						<>
 							{installed.length > 0 && (
 								<section className="pt-8">
@@ -239,7 +291,10 @@ export function PluginsView() {
 										<h2 className="text-body font-medium text-ink">已安装</h2>
 										<span className="text-detail text-ink-faint tabular-nums">{installed.length}</span>
 										<div className="flex-1" />
-										<HeaderButton label="管理已安装的插件" onClick={openSettings}>
+										<HeaderButton
+											label={tab === "mcp" ? "管理已安装的 MCP 服务" : "管理已安装的插件"}
+											onClick={() => openSettings(tab === "mcp" ? "mcp" : "plugins")}
+										>
 											<SettingsIcon size={13} strokeWidth={1.8} />
 										</HeaderButton>
 									</div>
@@ -248,11 +303,11 @@ export function PluginsView() {
 											<button
 												key={item.key}
 												type="button"
-												data-ly-tip={item.installed?.enabled ? item.name : `${item.name}（已停用）`}
+												data-ly-tip={isEnabled(item) ? item.name : `${item.name}（未启用）`}
 												aria-label={item.name}
 												onClick={() => setOpenKey(item.key)}
 												className={`flex h-[52px] w-[52px] items-center justify-center rounded-xl transition-[background-color,opacity] duration-[var(--ly-t-quick)] hover:bg-card-hover/60 ${
-													item.installed?.enabled ? "" : "opacity-40"
+													isEnabled(item) ? "" : "opacity-40"
 												}`}
 											>
 												<PluginIcon
@@ -276,7 +331,16 @@ export function PluginsView() {
 								</ScopeTab>
 							</div>
 
-							{catalog.errors.length > 0 && current === "public" && (
+							{/*
+							 * Shown whichever side is open, which it was not.
+							 *
+							 * It was gated on the 公开 tab, and the tab that opens by default is whichever
+							 * one has anything in it — so a registry that failed to load left 公开 empty,
+							 * dropped you on 个人, and hid the reason on the tab you were not looking at.
+							 * The page then read as "there is nothing here", which is a different problem
+							 * with a different fix.
+							 */}
+							{catalog.errors.length > 0 && (
 								<div className="mt-3 rounded-[10px] border border-accent/35 bg-accent/6 px-3 py-2">
 									{catalog.errors.map((error) => (
 										<p key={error.url} className="py-0.5 text-detail leading-relaxed text-accent">
@@ -288,6 +352,7 @@ export function PluginsView() {
 
 							{groups.length === 0 ? (
 								<Empty
+									kind={tab === "mcp" ? "mcp" : "plugin"}
 									scope={current}
 									loading={catalog.loading}
 									searching={needle.length > 0}
@@ -317,6 +382,7 @@ export function PluginsView() {
 															catalog.refresh();
 														}}
 														onError={setFailure}
+														onTry={startWith}
 													/>
 												</div>
 											))}
@@ -414,44 +480,57 @@ function ScopeTab({
  * accurate in all four and actionable in none.
  */
 function Empty({
+	kind,
 	scope,
 	loading,
 	searching,
 	sources,
 	onAddSource,
 }: {
+	kind: BundleKind;
 	scope: Scope;
 	loading: boolean;
 	searching: boolean;
 	sources: number;
 	onAddSource: () => void;
 }) {
+	const noun = kind === "mcp" ? "MCP 服务" : "插件";
 	if (loading) {
 		return <p className="py-16 text-center text-label text-ink-faint">读取中…</p>;
 	}
 	if (searching) {
-		return <p className="py-16 text-center text-label text-ink-faint">没有匹配的插件</p>;
+		return <p className="py-16 text-center text-label text-ink-faint">没有匹配的{noun}</p>;
 	}
 	if (scope === "personal") {
 		return (
 			<p className="py-16 text-center text-label leading-relaxed text-ink-faint">
-				这台机器上没有自己放的插件。
-				<br />
-				从「添加 › 安装示例插件」装一个，可以看看这个格式长什么样。
+				{kind === "mcp" ? (
+					<>
+						这台机器上没有自己放的 MCP 服务。
+						<br />
+						手动配一个不用装包：去设置 › MCP，填命令或地址就行。
+					</>
+				) : (
+					<>
+						这台机器上没有自己放的插件。
+						<br />
+						从「添加 › 安装示例插件」装一个，可以看看这个格式长什么样。
+					</>
+				)}
 			</p>
 		);
 	}
 	return (
 		<div className="py-16 text-center">
 			<p className="text-label leading-relaxed text-ink-faint">
-				{sources === 0 ? "还没有添加任何插件市场。" : "这些市场里一个插件也没有。"}
+				{sources === 0 ? "还没有添加任何插件市场。" : `这些市场里一个${noun}也没有。`}
 			</p>
 			<button
 				type="button"
 				onClick={onAddSource}
 				className="mt-4 h-8 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90"
 			>
-				{sources === 0 ? "添加插件市场" : "管理插件市场"}
+				<RollingText>{sources === 0 ? "添加插件市场" : "管理插件市场"}</RollingText>
 			</button>
 		</div>
 	);
@@ -472,7 +551,7 @@ function SkillList({ skills, needle }: { skills: Skill[]; needle: string }) {
 	if (filtered.length === 0) {
 		return (
 			<p className="py-16 text-center text-label text-ink-faint">
-				{needle ? "没有匹配的技能" : "还没有技能。装一个插件，或者往技能目录里放一份 SKILL.md。"}
+				<RollingText>{needle ? "没有匹配的技能" : "还没有技能。装一个插件，或者往技能目录里放一份 SKILL.md。"}</RollingText>
 			</p>
 		);
 	}

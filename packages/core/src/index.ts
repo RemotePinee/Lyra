@@ -26,6 +26,22 @@ export {
 	type ToolRegistry,
 } from "./kernel/index.ts";
 export { getSandbox, useSandbox, LocalSandbox } from "./sandbox/index.ts";
+export { WINDOWS_RUNNER_FLAG, runSandboxRunner, workspaceWriteSid, tempWriteSid } from "./sandbox/index.ts";
+export {
+	registerSearchProvider,
+	resetSearchProviders,
+	search,
+	searchProviders,
+	selectSearchProvider,
+	SearchError,
+	type SearchProvider,
+	type SearchRequest,
+	type SearchResult,
+	type SearchSource,
+} from "./search/index.ts";
+export { duckDuckGoProvider, DUCKDUCKGO_PROVIDER_ID } from "./search/duckduckgo.ts";
+export { instantAnswerProvider, INSTANT_PROVIDER_ID } from "./search/instant.ts";
+export { keyedSearchProvider, BRAVE_PROVIDER_ID, EXA_PROVIDER_ID, TAVILY_PROVIDER_ID } from "./search/keyed.ts";
 export { approvalPolicy, useApprovalPolicy } from "./runtime/approval-policy.ts";
 export type { SessionStorage } from "./session/storage.ts";
 export {
@@ -74,20 +90,26 @@ export {
 export {
 	McpManager,
 	type McpHttpServer,
+	type McpOrigin,
 	type McpServerConfig,
 	type McpServerStatus,
 	type McpStdioServer,
 } from "./mcp/client.ts";
 export {
+	bundleRoot,
 	fetchRegistry,
 	installEntry,
 	uninstallEntry,
+	type BundleKind,
+	type Installed,
 	type Registry,
 	type RegistryEntry,
 } from "./plugins/registry.ts";
 export {
+	inspectBundle,
 	loadPlugins,
 	pluginSummary,
+	type McpBundle,
 	type Plugin,
 	type PluginDiagnostic,
 	type PluginInterface,

@@ -60,9 +60,24 @@ export function turnSlice(set: Set, get: Get) {
           settings?.defaultModelId ?? "",
         );
         sessionId = snapshot.meta.id;
+        /*
+         * One message, because one was just sent.
+         *
+         * `create` returns the session as it was created — empty, `messageCount: 0` — and the
+         * prompt that follows is what puts a message in it. The sidebar lists a conversation once
+         * it has one, with an exemption for the session you are currently in, and between those
+         * two facts sat the bug: the row was on screen only because it was selected, so clicking
+         * any other conversation dropped it out of the list entirely. It came back whenever the
+         * turn ended and the list was re-read from disk — which, on a turn that takes a minute,
+         * is a minute of the conversation you just started not existing.
+         *
+         * Counting the message the composer already sent is the honest fix: the stored count is
+         * stale rather than zero, and the refresh at `agent_end` replaces it with the real one.
+         */
+        const listed = { ...snapshot.meta, messageCount: 1 };
         set({
           activeSessionId: sessionId,
-          meta: snapshot.meta,
+          meta: listed,
           toolRuns: {},
           approvals: [],
           loadingSession: false,
@@ -70,7 +85,7 @@ export function turnSlice(set: Set, get: Get) {
           // does not resolve until the turn ends, which would leave the row you are
           // actively talking to missing from the sidebar for the whole reply. The
           // title arrives with the refresh at `agent_end`.
-          sessions: [snapshot.meta, ...get().sessions],
+          sessions: [listed, ...get().sessions],
         });
         void window.lyra.sessions
           .capabilities(sessionId)

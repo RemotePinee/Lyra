@@ -90,6 +90,28 @@ export interface ScheduledTask {
 }
 
 export interface Settings {
+	/**
+	 * Keys for the search services that want one.
+	 *
+	 * Optional throughout: search works without any of them through the keyless provider, and a key
+	 * is an upgrade rather than a prerequisite. Read at call time so pasting one in takes effect
+	 * without a restart.
+	 */
+	searchApiKeys?: { tavily?: string; exa?: string; brave?: string };
+	/** Which search provider to use when more than one is usable. */
+	searchProvider?: string | null;
+	/**
+	 * Internal hosts the agent may reach, named one at a time.
+	 *
+	 * Private addresses are refused rather than asked about, because a prompt showing
+	 * `169.254.169.254` is a question almost nobody can answer. Somebody who genuinely runs a
+	 * service on their own network needs a way to say so — and this is it: a decision made once,
+	 * while thinking about it, rather than mid-turn.
+	 *
+	 * Matched by hostname. It cannot open a private address reached through a public name, which
+	 * is the shape of an attack rather than a configuration anybody intends.
+	 */
+	allowedHosts?: string[];
 	version: 1;
 	providers: ProviderConfig[];
 	mcpServers: McpServerConfig[];
@@ -157,6 +179,8 @@ export const DEFAULT_SETTINGS: Settings = {
 	alwaysAllow: [],
 	sync: { enabled: false, port: 4517, token: null },
 	editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
+	searchApiKeys: {},
+	allowedHosts: [],
 };
 
 export function settingsPath(): string {

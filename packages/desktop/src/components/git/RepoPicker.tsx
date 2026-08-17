@@ -5,8 +5,7 @@ import { Check, ChevronDown, Folder, GitBranchPlus } from "lucide-react";
 
 import type { RepoRef } from "../../../electron/git.ts";
 
-import { MenuItem, Popover, usePopover } from "../Popover.tsx";
-import { Scroller } from "../Scroller.tsx";
+import { MENU_MAX_HEIGHT, MenuBody, MenuItem, Popover, usePopover } from "../Popover.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Text } from "../Text.tsx";
 
@@ -70,16 +69,24 @@ export function RepoPicker({
       </button>
 
       {menu.open && (
-        <Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="start" width={264}>
+        <Popover
+          anchor={menu.anchor}
+          onClose={menu.close}
+          placement="bottom"
+          align="start"
+          width="wide"
+          maxHeight={MENU_MAX_HEIGHT}
+          label="切换仓库"
+        >
           {/*
            * The app's own menu parts, not a hand-rolled list.
            *
            * This was a bare scrolling div with rows built here — which meant its own row height,
            * its own padding and a scrollbar the rest of the app does not show, sitting a few
-           * pixels away from menus that had all three settled long ago. `Scroller` brings the
-           * hidden bar and the faded edge; `MenuItem` brings the two-line row this needs anyway.
+           * pixels away from menus that had all three settled long ago. The surface brings the
+           * hidden bar and the faded edge now; `MenuItem` brings the two-line row this needs.
            */}
-          <Scroller className="max-h-[min(320px,44vh)]" contentClassName="p-1">
+          <MenuBody>
             {repos.map((repo) => (
               <div key={repo.path}>
                 <MenuItem
@@ -114,7 +121,7 @@ export function RepoPicker({
                 ))}
               </div>
             ))}
-          </Scroller>
+          </MenuBody>
         </Popover>
       )}
     </>

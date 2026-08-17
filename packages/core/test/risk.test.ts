@@ -114,17 +114,32 @@ test("the machine's own ports are not the internet", () => {
 		"http://[::1]:5173/",
 		"http://app.localhost:3000",
 	]) {
-		assert.equal(assessNetwork(local).risky, false, local);
+		assert.equal(assessNetwork({ url: local }).decision, "allow", local);
 	}
 });
 
-test("anything that leaves the machine still asks", () => {
-	for (const remote of ["https://example.com", "http://192.168.1.5", "https://raw.githubusercontent.com/x/y"]) {
-		assert.equal(assessNetwork(remote).risky, true, remote);
+/*
+ * This used to assert that everything leaving the machine asks a person, and it was the rule that
+ * made the app interrupt a turn to confirm reading a documentation page. Reading is now allowed,
+ * writing is asked about, and reaching inward is refused outright — see `risk-network.test.ts` for
+ * the full table. What survives here is the part that was always right: a name that merely looks
+ * like loopback is not loopback.
+ */
+test("reading the public web no longer interrupts anybody", () => {
+	for (const remote of ["https://example.com", "https://raw.githubusercontent.com/x/y"]) {
+		assert.equal(assessNetwork({ url: remote }).decision, "allow", remote);
 	}
+});
+
+test("a request that changes something at the other end still asks", () => {
+	assert.equal(assessNetwork({ url: "https://example.com/x", method: "POST" }).decision, "ask");
+});
+
+test("reaching inward is refused rather than asked about", () => {
+	assert.equal(assessNetwork({ url: "http://192.168.1.5" }).decision, "refuse");
 	// A hostname that merely contains "localhost" is not the loopback.
-	assert.equal(assessNetwork("https://localhost.evil.com/").risky, true);
-	assert.equal(assessNetwork("not a url").risky, true);
+	assert.equal(assessNetwork({ url: "https://localhost.evil.com/" }).decision, "allow");
+	assert.equal(assessNetwork({ url: "not a url" }).decision, "refuse");
 });
 
 test("a glob delete inside the workspace is ordinary work", () => {

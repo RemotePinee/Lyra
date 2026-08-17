@@ -1,7 +1,6 @@
-import { Check, Folder, Plus, Search, X } from "lucide-react";
+import { Check, Folder, Plus, X } from "lucide-react";
 import { useState } from "react";
-import { MenuBody, MenuItem, Popover, type Anchor } from "../Popover.tsx";
-import { Scroller } from "../Scroller.tsx";
+import { MENU_MAX_HEIGHT, MenuBody, MenuItem, MenuSearch, Popover, type Anchor } from "../Popover.tsx";
 import { useLayout } from "../../layout.tsx";
 import { useApp } from "../../store.ts";
 
@@ -33,19 +32,29 @@ export function ProjectPicker({ anchor, onClose }: { anchor: Anchor; onClose: ()
 	};
 
 	return (
-		<Popover anchor={anchor} onClose={onClose} placement="top" align="start" width={288}>
-			<div className="flex h-9 items-center gap-2 border-b border-line px-3">
-				<Search size={13} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
-				<input
-					autoFocus
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					placeholder="搜索项目"
-					className="h-full min-w-0 flex-1 bg-transparent text-label text-ink placeholder:text-ink-faint"
-				/>
-			</div>
-
-			<Scroller className="max-h-[min(280px,42vh)]" bottom="none" contentClassName="p-1">
+		<Popover
+			anchor={anchor}
+			onClose={onClose}
+			placement="top"
+			align="start"
+			width="wide"
+			maxHeight={MENU_MAX_HEIGHT}
+			label="切换项目"
+			header={<MenuSearch value={query} onChange={setQuery} placeholder="搜索项目" />}
+			// The two ways out of the list stay put while it scrolls: neither is about a project
+			// you are looking at, and both are what you reach for when none of them is the one.
+			footer={
+				<MenuBody>
+					<MenuItem icon={<Plus size={13} strokeWidth={1.9} />} onClick={() => choose(() => void pickWorkspace())}>
+						新建项目
+					</MenuItem>
+					<MenuItem icon={<X size={13} strokeWidth={1.9} />} onClick={() => choose(clearWorkspace)}>
+						不在项目中工作
+					</MenuItem>
+				</MenuBody>
+			}
+		>
+			<MenuBody>
 				{projects.map((project) => (
 					<MenuItem
 						key={project.path}
@@ -64,18 +73,7 @@ export function ProjectPicker({ anchor, onClose }: { anchor: Anchor; onClose: ()
 				))}
 
 				{projects.length === 0 && <p className="px-2.5 py-5 text-center text-detail text-ink-faint">还没有项目</p>}
-			</Scroller>
-
-			<div className="border-t border-line">
-				<MenuBody>
-					<MenuItem icon={<Plus size={13} strokeWidth={1.9} />} onClick={() => choose(() => void pickWorkspace())}>
-						新建项目
-					</MenuItem>
-					<MenuItem icon={<X size={13} strokeWidth={1.9} />} onClick={() => choose(clearWorkspace)}>
-						不在项目中工作
-					</MenuItem>
-				</MenuBody>
-			</div>
+			</MenuBody>
 		</Popover>
 	);
 }

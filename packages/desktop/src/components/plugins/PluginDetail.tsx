@@ -1,20 +1,20 @@
 /**
- * One plugin, at length.
+ * One bundle, at length — either kind.
  *
  * The grid answers "which one"; this answers "what is in it, and do I want it". Those need
  * different amounts of room, which is why it is a page rather than a popover — a bundle that
- * brings four skills and two MCP servers has a real inventory, and an inventory that has to be
- * scrolled inside a floating card is an inventory nobody reads.
+ * brings four skills has a real inventory, and an inventory that has to be scrolled inside a
+ * floating card is an inventory nobody reads.
  *
- * How much there is to say depends on which side of installation you are on. A bundle on disk
- * has a manifest: every skill it carries, every server it declares, what it says about itself at
- * length. One that is still in a registry has a name, a line, and a git URL — so the page shows
- * what it has and does not pad the rest out with empty headings.
+ * What it shows depends on which of the two this is, because they are not the same thing. A
+ * plugin carries skills and has one switch, held in `disabledPlugins`. An MCP bundle carries
+ * server declarations that were copied into settings at install time, and its switches are per
+ * server, on the settings page, beside the parameters each one needs — so this page sends you
+ * there rather than offering a switch that could not express the state underneath it.
  *
- * The skills and servers are listed, not switched. There is one switch in this app and it is the
- * plugin — `disabledPlugins` is the whole of the persistence — so a toggle on each row would be a
- * control that reports a state it cannot hold. Listing them says what arrives with the bundle,
- * which is the question being asked before installing it.
+ * How much there is to say also depends on which side of installation you are on. Something on
+ * disk has a manifest; something still in a registry has a name, a line and a git URL — so the
+ * page shows what it has and does not pad the rest out with empty headings.
  */
 
 import type { McpServerConfig, Plugin } from "@lyra/core";
@@ -32,9 +32,10 @@ import {
 import { useState } from "react";
 
 import { useApp } from "../../store.ts";
+import { useConfirmer } from "../Confirm.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { PluginIcon } from "../settings/PluginIcon.tsx";
-import type { CatalogItem } from "./useCatalog.ts";
+import { isEnabled, isInstalled, type CatalogItem } from "./useCatalog.ts";
 
 export function PluginDetail({
 	item,
@@ -52,17 +53,32 @@ export function PluginDetail({
 }) {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
+	const setView = useApp((s) => s.setView);
+	const setSettingsSection = useApp((s) => s.setSettingsSection);
 	const [busy, setBusy] = useState<"install" | "uninstall" | null>(null);
+	const confirm = useConfirmer();
 
 	const plugin = item.installed;
-	const ui = plugin?.manifest.interface;
+	const bundle = item.bundle;
+	const manifest = plugin?.manifest ?? bundle?.manifest;
+	const ui = manifest?.interface;
 	const prompts = ui?.defaultPrompt ?? [];
-	const installed = plugin !== null;
+	const installed = isInstalled(item);
+	const dir = plugin?.dir ?? bundle?.dir ?? null;
+	const isMcp = item.kind === "mcp";
+	/** A bundle inside the project's own directory is removed by deleting it there. */
+	const workspaceOwned = (plugin?.source ?? bundle?.source) === "workspace";
+
+	/** Its servers live on the settings page, which is also the only place they can be edited. */
+	const onManageServers = () => {
+		setSettingsSection("mcp");
+		setView("settings");
+	};
 
 	const install = async () => {
 		if (!item.entry) return;
 		setBusy("install");
-		const result = await window.lyra.plugins.installFromRegistry(item.entry);
+		const result = await window.lyra.plugins.installFromRegistry(item.entry, item.from ?? undefined);
 		setBusy(null);
 		if (result.ok) onChanged();
 		else onError(`${item.name}：${result.message}`);
@@ -109,7 +125,7 @@ export function PluginDetail({
 						onClick={onBack}
 						className="rounded-lg px-2 py-1 text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 					>
-						插件
+						{isMcp ? "MCP 服务" : "插件"}
 					</button>
 					<ChevronRight size={13} strokeWidth={1.8} className="shrink-0 text-ink-faint" />
 					<span className="max-w-[280px] truncate px-1 text-ink">{item.name}</span>
@@ -156,19 +172,45 @@ export function PluginDetail({
 						<div className="flex shrink-0 items-center gap-1.5 pt-1">
 							{installed ? (
 								<>
+									{/*
+									 * A plugin has one switch; an MCP bundle has one per server, and those
+									 * live on the settings page next to the parameters each server needs.
+									 * Offering a single 停用 here would be a control that cannot express
+									 * the state underneath it.
+									 */}
+									{plugin ? (
+										<button
+											type="button"
+											onClick={toggleEnabled}
+											className="flex h-[30px] items-center rounded-lg border border-line px-3 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
+										>
+											{plugin.enabled ? "停用" : "启用"}
+										</button>
+									) : (
+										<button
+											type="button"
+											onClick={onManageServers}
+											className="flex h-[30px] items-center gap-1.5 rounded-lg border border-line px-3 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
+										>
+											<Cable size={12.5} strokeWidth={1.8} />
+											{item.servers.some((server) => server.enabled) ? "在设置里管理" : "去设置里启用"}
+										</button>
+									)}
 									<button
 										type="button"
-										onClick={toggleEnabled}
-										className="flex h-[30px] items-center rounded-lg border border-line px-3 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
-									>
-										{plugin.enabled ? "停用" : "启用"}
-									</button>
-									<button
-										type="button"
-										data-ly-tip={plugin.source === "workspace" ? "项目里的插件，从项目目录里删" : "卸载"}
+										data-ly-tip={workspaceOwned ? "项目目录里的，从那里删" : "卸载"}
 										aria-label="卸载"
-										disabled={busy !== null || plugin.source === "workspace"}
-										onClick={() => void uninstall()}
+										disabled={busy !== null || workspaceOwned}
+										onClick={(event) =>
+											confirm.ask(event, {
+												title: `卸载 ${item.name}？`,
+												detail: isMcp
+													? `它的目录会被删除，它在设置 › MCP 里的 ${item.servers.length} 条配置也一起清掉——包括你在那里改过的参数。`
+													: "它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。",
+												confirmLabel: "卸载",
+												onConfirm: () => void uninstall(),
+											})
+										}
 										className="flex h-[30px] w-[30px] items-center justify-center rounded-lg text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-danger/10 hover:text-danger disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-faint"
 									>
 										{busy === "uninstall" ? (
@@ -202,10 +244,11 @@ export function PluginDetail({
 					 * The examples, on the bundle's own colour.
 					 *
 					 * Only for something installed and switched on: these are buttons that start a
-					 * conversation, and offering to run a prompt against a plugin that is not loaded
-					 * would produce a session that silently lacks the thing being demonstrated.
+					 * conversation, and offering to run a prompt against a plugin that is not loaded —
+					 * or an MCP server whose every server is still off — would produce a session that
+					 * silently lacks the thing being demonstrated.
 					 */}
-					{prompts.length > 0 && installed && plugin.enabled && (
+					{prompts.length > 0 && isEnabled(item) && (
 						<section
 							style={{
 								background: item.brandColor
@@ -248,9 +291,17 @@ export function PluginDetail({
 						</p>
 					)}
 
-					{plugin && plugin.mcpServers.length > 0 && (
-						<Section title="MCP 服务器" count={plugin.mcpServers.length}>
-							{plugin.mcpServers.map((server) => (
+					{/*
+					 * Read from settings rather than from the bundle's own `.mcp.json`.
+					 *
+					 * What the user has is whatever they edited on the MCP page — a Filesystem
+					 * pointed at their own directory, a server they switched off. The declaration in
+					 * the directory is only where it started. Before install there is nothing to
+					 * read, so the page says what installing will do instead.
+					 */}
+					{isMcp && item.servers.length > 0 && (
+						<Section title="MCP 服务" count={item.servers.length}>
+							{item.servers.map((server) => (
 								<ServerRow key={server.id} server={server} />
 							))}
 						</Section>
@@ -300,14 +351,14 @@ export function PluginDetail({
 								</button>
 							</InfoRow>
 						)}
-						{plugin && (
+						{dir && (
 							<InfoRow label="目录">
 								<button
 									type="button"
-									onClick={() => void window.lyra.system.openPath(plugin.dir)}
+									onClick={() => void window.lyra.system.openPath(dir)}
 									className="inline-flex items-center gap-1 font-mono text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 								>
-									{plugin.dir.replace(/^\/Users\/[^/]+/, "~")}
+									{dir.replace(/^\/Users\/[^/]+/, "~")}
 									<FolderOpen size={11} strokeWidth={1.9} />
 								</button>
 							</InfoRow>
@@ -323,14 +374,15 @@ export function PluginDetail({
 					 */}
 					{!installed && item.entry && (
 						<p className="pt-8 text-detail leading-relaxed text-ink-faint">
-							安装会把这个仓库克隆到本地插件目录。市场只是一份索引，不做审核——装之前请自己看一眼它的仓库。
-							{plugin === null && item.entry.path
-								? "它声明的 MCP 服务会随插件一起启用，那条命令会在你的机器上以你的权限运行。"
-								: ""}
+							{isMcp
+								? "安装会把这个仓库克隆下来，并把它声明的服务写进设置 › MCP——默认关着，开之前请看清楚那条命令：它会在你的机器上以你的权限运行。市场只是一份索引，不做审核。"
+								: "安装会把这个仓库克隆到本地插件目录。它带来的是技能，也就是一份写给 agent 的说明书。市场只是一份索引，不做审核——装之前请自己看一眼它的仓库。"}
 						</p>
 					)}
 				</div>
 			</Scroller>
+
+			{confirm.element}
 		</div>
 	);
 }

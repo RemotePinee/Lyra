@@ -17,6 +17,9 @@ export function EmptyState() {
 	const send = useApp((s) => s.send);
 	const { compact } = useLayout();
 
+	/** No project behind this conversation, and that was the choice — see the composer's chip. */
+	const chatting = !workspace && Boolean(scratchCwd);
+
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			{/*
@@ -37,16 +40,30 @@ export function EmptyState() {
 							compact ? "text-heading" : "text-display"
 						}`}
 					>
-						要在{" "}
 						{/*
-						 * The project name carries itself.
+						 * A different question, not the same question with a different noun in it.
 						 *
-						 * It used to be underlined with a dotted rule, which is the convention for
-						 * "there is a definition behind this" — and there is not. A heading that
-						 * hints at an interaction it does not have is worse than a plain one.
+						 * 「要在 X 内开发什么？」 is a sentence about working inside something. Sliding the
+						 * name of the project-less mode into that slot produced 「要在 无项目 内开发什么？」
+						 * — grammatical, and meaningless: there is no inside to be in. Renaming the mode
+						 * to Chat would only have made it 「要在 Chat 内开发什么？」. When there is nowhere to
+						 * be working, the honest opening is the one that does not claim there is.
 						 */}
-						<span className="text-ink">{workspace?.name ?? (scratchCwd ? "无项目" : "未选择项目")}</span>{" "}
-						内开发什么？
+						{chatting ? (
+							"想聊点什么？"
+						) : (
+							<>
+								要在{" "}
+								{/*
+								 * The project name carries itself.
+								 *
+								 * It used to be underlined with a dotted rule, which is the convention for
+								 * "there is a definition behind this" — and there is not. A heading that
+								 * hints at an interaction it does not have is worse than a plain one.
+								 */}
+								<span className="text-ink">{workspace?.name ?? "未选择项目"}</span> 内开发什么？
+							</>
+						)}
 					</h1>
 
 					{/*

@@ -68,6 +68,17 @@ export function ApprovalOverlay() {
           bottom="none"
           contentClassName="px-4 py-3"
         >
+          {/*
+           * Why, before what.
+           *
+           * When the model asked for this — an escalation after the sandbox refused something —
+           * it had to give a reason, and that sentence is the only part of this prompt somebody
+           * can actually judge. A path and a mode describe what would happen; this says what it
+           * is for. Set in the reading face rather than the code face because it is prose.
+           */}
+          {request.reason && (
+            <p className="mb-2.5 text-label leading-relaxed text-ink">{request.reason}</p>
+          )}
           {/* The command itself is code being read before it runs, so it takes 代码字号. */}
           <pre className="font-mono text-code whitespace-pre-wrap text-ink-muted">
             {request.detail}
@@ -82,12 +93,22 @@ export function ApprovalOverlay() {
           >
             拒绝
           </button>
+          {/*
+           * A permanent grant should say what it is granting.
+           *
+           * This was a bare 「始终允许」 — allow what, exactly? The answer is the subject the gate
+           * remembers, which for a network request is an origin and for a command is the command
+           * itself. Shown in the tooltip rather than the label so the button stays a button, and
+           * the label says 「不再问」 because that is the effect: this decision stops the question,
+           * it does not widen anything. Revocable in 设置 › 访问授权.
+           */}
           <button
             type="button"
+            data-ly-tip={request.subject ? `以后不再问：${request.subject}` : "以后不再问这一项"}
             onClick={() => void respond(request.id, "always")}
             className="h-8 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
           >
-            始终允许
+            以后不再问
           </button>
           <button
             type="button"

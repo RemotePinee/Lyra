@@ -61,6 +61,77 @@ export function Row({
 	);
 }
 
+/**
+ * A row that leads with a mark, for a thing rather than a setting.
+ *
+ * `Row` describes a preference: a name, what it does, and the control that changes it. This is
+ * for a list of things that were installed — a plugin, a skill, a server — where the mark is how
+ * you find the one you mean, and the one line under it is all anybody reads.
+ *
+ * That line is the whole point. The plugin list used to carry, per row: a version badge, a source
+ * badge, a category badge, a skill count, a server count, a 详情 link that unfolded three more
+ * sections, and a 打开目录 link. All true, none of it what the page is for — which is seeing what
+ * you have and switching it on or off. The rest of it lives on the bundle's own page, which is
+ * where you go when the answer is not on the row.
+ *
+ * `actions` is for what appears on hover; `control` for what is always there. Keeping them apart
+ * is what stops a ⋯ from shifting the switch beside it a few pixels as the pointer arrives.
+ */
+export function ListRow({
+	icon,
+	title,
+	detail,
+	actions,
+	control,
+	onOpen,
+	openLabel,
+}: {
+	icon?: React.ReactNode;
+	title: React.ReactNode;
+	detail?: React.ReactNode;
+	actions?: React.ReactNode;
+	control?: React.ReactNode;
+	/** Makes the row itself a target — for a thing that has somewhere further to go. */
+	onOpen?: () => void;
+	openLabel?: string;
+}) {
+	return (
+		<div className="group/row relative flex items-center gap-3 border-b border-line-soft px-4 py-3 last:border-b-0">
+			{/*
+			 * The row's own hit area, underneath everything on it.
+			 *
+			 * A row cannot be a `<button>` while it also holds a switch and a menu — a button inside
+			 * a button is not a thing the platform has. Laid over the row instead and left at the
+			 * bottom of the stack, so every control on top of it takes its own clicks first.
+			 */}
+			{onOpen && (
+				<button
+					type="button"
+					aria-label={openLabel}
+					onClick={onOpen}
+					className="absolute inset-y-0 -inset-x-1 rounded-[10px] transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/50"
+				/>
+			)}
+
+			{icon && <span className="pointer-events-none relative shrink-0">{icon}</span>}
+
+			<div className="pointer-events-none relative min-w-0 flex-1">
+				<Text as="div" size="body" className="truncate">
+					{title}
+				</Text>
+				{detail && (
+					<Text as="div" size="label" tone="muted" className="mt-0.5 truncate">
+						{detail}
+					</Text>
+				)}
+			</div>
+
+			{actions && <div className="relative flex shrink-0 items-center gap-1">{actions}</div>}
+			{control && <div className="relative shrink-0">{control}</div>}
+		</div>
+	);
+}
+
 export function Field({
 	label,
 	hint,

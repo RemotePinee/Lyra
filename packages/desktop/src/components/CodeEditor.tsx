@@ -173,7 +173,7 @@ export function CodeEditor({
 			 */
 			const panel = element.querySelector<HTMLElement>(".cm-panel.cm-search");
 			// The app's floating surface, so the find card matches every menu and popover in it.
-			panel?.classList.add("ly-glass", "ly-pop-down");
+			panel?.classList.add("ly-glass", "ly-pop-in");
 			if (panel && !panel.querySelector("[name=ly-replace-toggle]")) {
 				const toggle = document.createElement("button");
 				toggle.setAttribute("name", "ly-replace-toggle");

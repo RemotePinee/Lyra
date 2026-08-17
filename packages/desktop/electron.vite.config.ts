@@ -59,10 +59,16 @@ export default defineConfig({
 				 * path. Inlined into an ESM bundle its `__dirname` does not exist, and the app
 				 * fails to boot at all. Native modules are always external.
 				 *
+				 * `koffi` is the same kind of thing and fails in a worse way. It resolves to a
+				 * platform-specific `.node` binary, and left to the bundler that binary is inlined
+				 * as a module — so a build made on macOS carries `koffi-darwin-arm64` into the
+				 * Windows package, where the sandbox that depends on it cannot load. External, it
+				 * resolves at runtime on the machine that is actually running.
+				 *
 				 * Listed here rather than left to the plugin because assigning `external`
 				 * replaces what the plugin contributes instead of adding to it.
 				 */
-				external: ["electron", "node-pty"],
+				external: ["electron", "node-pty", "koffi"],
 			},
 		},
 		resolve: {

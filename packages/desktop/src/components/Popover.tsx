@@ -4,9 +4,17 @@
  * Menus that belong to a control should appear next to that control, not in the middle of the
  * window — the centred dialog loses the connection between what you clicked and what opened.
  * Position is measured from the trigger's rect and flipped when it would run off screen.
+ *
+ * The surface is three slots rather than one: `header` and `footer` stay put while the middle
+ * scrolls. Before that existed, a menu needing a search field put one inside its scrolling area
+ * and then had to keep it from scrolling away — which two menus solved twice, differently, and a
+ * third avoided by never scrolling at all.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { Scroller } from "./Scroller.tsx";
 
 /**
  * A point to hang a menu from, for right-click — where the thing being acted on is a whole
@@ -19,11 +27,40 @@ interface PointAnchor {
 
 export type Anchor = HTMLElement | PointAnchor | null;
 
-function rectOf(anchor: Anchor): DOMRect | null {
-	if (!anchor) return null;
-	if (anchor instanceof HTMLElement) return anchor.getBoundingClientRect();
-	// A zero-size rect at the cursor: every placement rule below already works off a rect.
-	return new DOMRect(anchor.x, anchor.y, 0, 0);
+/**
+ * The widths a floating surface is allowed to be.
+ *
+ * There were twelve of them between 184 and 288, and no two menus that look alike agreed on one —
+ * so the same gesture in the sidebar and in the composer produced panels four pixels apart for a
+ * reason nobody could state. Four sizes, chosen by what the surface holds rather than by how long
+ * its longest label happened to be on the day it was written.
+ */
+export const MENU_WIDTH = {
+	/** Actions only, a word or two each. */
+	compact: 190,
+	/** The ordinary menu — icon, label, sometimes a second line — and every dropdown. */
+	default: 224,
+	/** Anything with a search field, or a list long enough to scroll. */
+	wide: 272,
+	/** Not a menu: a reading, a slider, a form. */
+	panel: 300,
+} as const;
+
+export type PopoverWidth = keyof typeof MENU_WIDTH | number;
+
+/**
+ * How tall a menu that lists things is allowed to get.
+ *
+ * Left to the window, a project menu on a tall display runs from the composer to the top of the
+ * screen — technically correct, and a list of forty rows nobody reads to the end of. The three
+ * menus that scroll each picked their own ceiling (280, 300, 320) for the same reason; this is
+ * that reason, stated once.
+ */
+export const MENU_MAX_HEIGHT = 340;
+
+function widthOf(width: PopoverWidth | undefined): number | undefined {
+	if (width === undefined) return undefined;
+	return typeof width === "number" ? width : MENU_WIDTH[width];
 }
 
 export interface PopoverProps {
@@ -40,8 +77,31 @@ export interface PopoverProps {
 	placement?: "top" | "bottom" | "right";
 	/** Which edge of the popover lines up with the anchor. */
 	align?: "start" | "end" | "center";
-	width?: number;
+	width?: PopoverWidth;
+	/**
+	 * Pinned above the scrolling body — a search field, a heading.
+	 *
+	 * Kept out of `children` because it must not scroll: a filter that leaves the screen the
+	 * moment you use it is one you have to scroll back up to correct.
+	 */
+	header?: React.ReactNode;
+	/** Pinned below it, for an action that stays reachable however long the list gets. */
+	footer?: React.ReactNode;
+	/** Ceiling for a surface that would otherwise grow to fill the window — see `MENU_MAX_HEIGHT`. */
+	maxHeight?: number;
+	/**
+	 * What this surface is, for anything reading the window rather than looking at it.
+	 *
+	 * It used to be hard-coded to `menu` — right for most of them, wrong for the three that are
+	 * not: a rename form, a context reading, an effort slider. A text field announced as a menu
+	 * item is worse than one announced as nothing.
+	 */
+	role?: "menu" | "listbox" | "dialog" | "group";
+	/** Names the surface where its trigger does not. */
+	label?: string;
 	className?: string;
+	/** Lands on the scrolling body, for surfaces that pad their own content. */
+	bodyClassName?: string;
 }
 
 const GAP = 8;
@@ -82,11 +142,16 @@ export function Popover({
 	placement = "top",
 	align = "end",
 	width,
+	header,
+	footer,
+	maxHeight,
+	role = "menu",
+	label,
 	className = "",
+	bodyClassName = "",
 }: PopoverProps) {
 	const ref = useRef<HTMLDivElement>(null);
 	const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0, left: 0, top: 0 });
-	const [side, setSide] = useState<"top" | "bottom" | "right">(placement);
 	/**
 	 * Set while the exit animation plays, before the caller is told to unmount.
 	 *
@@ -152,10 +217,21 @@ export function Popover({
 		const measure = () => {
 			const a = rectOf(anchor);
 			if (!a) return;
-			const box = element.getBoundingClientRect();
 			// A menu wider than the window cannot be nudged into view — it has to give up width.
 			const limit = window.innerWidth - MARGIN * 2;
-			const w = Math.min(width ?? box.width, limit);
+			const fixed = widthOf(width);
+			/*
+			 * Width first, then measure — because height depends on it.
+			 *
+			 * The width used to be handed over with the position, which is one frame too late: the
+			 * first measurement read the height of content laid out at its *intrinsic* width, and a
+			 * card whose text then wrapped at 300px came out taller than the box that had been
+			 * placed for it. Whether it fits above the trigger was decided on the wrong number, and
+			 * a panel that answered "yes" wrongly settled over the control it points at.
+			 */
+			if (fixed !== undefined) element.style.width = `${Math.min(fixed, limit)}px`;
+			const box = element.getBoundingClientRect();
+			const w = Math.min(fixed ?? box.width, limit);
 
 			const fitsAbove = a.top - box.height - GAP >= MARGIN;
 			const fitsBelow = a.bottom + box.height + GAP <= window.innerHeight - MARGIN;
@@ -179,6 +255,17 @@ export function Popover({
 			 */
 			let anchorEdge: { top: number } | { bottom: number };
 			let resolved: "top" | "bottom" | "right";
+			/*
+			 * Where the growth starts, in the popover's own coordinates.
+			 *
+			 * One keyframe scales up from a point, and the point is the corner nearest the trigger
+			 * — worked out here because only this pass knows which way the surface flipped and how
+			 * far it had to be clamped. It used to be a constant per direction, `top center` or
+			 * `bottom center`, so a right-aligned menu hanging off a button in the corner grew out
+			 * of its own middle and read as having appeared from nowhere rather than from the thing
+			 * that was clicked.
+			 */
+			let origin: string;
 
 			if (placement === "right") {
 				// Beside the trigger, aligned to its top edge, nudged up only if it would run off
@@ -186,32 +273,36 @@ export function Popover({
 				resolved = "right";
 				const fitsRight = a.right + GAP + w <= maxLeft + w;
 				left = clampX(fitsRight ? a.right + GAP : a.left - GAP - w);
-				anchorEdge = { top: Math.min(Math.max(MARGIN, a.top - 4), window.innerHeight - box.height - MARGIN) };
+				const top = Math.min(Math.max(MARGIN, a.top - 4), window.innerHeight - box.height - MARGIN);
+				anchorEdge = { top };
+				origin = `${fitsRight ? "0px" : "100%"} ${clamp(a.top + a.height / 2 - top, 0, box.height)}px`;
 			} else {
 				resolved =
 					placement === "top" ? (fitsAbove || !fitsBelow ? "top" : "bottom") : fitsBelow || !fitsAbove ? "bottom" : "top";
 				left = clampX(align === "start" ? a.left : align === "center" ? a.left + a.width / 2 - w / 2 : a.right - w);
-				anchorEdge =
-					resolved === "top" ? { bottom: window.innerHeight - a.top + GAP } : { top: a.bottom + GAP };
+				anchorEdge = resolved === "top" ? { bottom: window.innerHeight - a.top + GAP } : { top: a.bottom + GAP };
+				origin = `${clamp(a.left + a.width / 2 - left, 0, w)}px ${resolved === "top" ? "100%" : "0px"}`;
 			}
-
-			setSide(resolved);
 
 			setPlaced(true);
 			setStyle({
 				left,
 				...anchorEdge,
 				// Leave intrinsic width intrinsic; only cap it, so content changes still reflow.
-				width,
+				width: fixed,
 				maxWidth: limit,
+				transformOrigin: origin,
 				// Capped at the gap it was placed in, so content arriving later scrolls inside the
-				// card rather than pushing its far edge off the screen.
-				maxHeight:
+				// card rather than pushing its far edge off the screen. A caller's own ceiling
+				// only ever lowers it further.
+				maxHeight: Math.min(
 					resolved === "top"
 						? a.top - GAP - MARGIN
 						: resolved === "bottom"
 							? window.innerHeight - a.bottom - GAP - MARGIN
 							: window.innerHeight - MARGIN * 2,
+					maxHeight ?? Infinity,
+				),
 				opacity: 1,
 			});
 		};
@@ -219,7 +310,7 @@ export function Popover({
 		measure();
 		window.addEventListener("resize", measure);
 		return () => window.removeEventListener("resize", measure);
-	}, [anchor, align, placement, width]);
+	}, [anchor, align, placement, width, maxHeight]);
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -243,10 +334,41 @@ export function Popover({
 		};
 	}, [anchor, dismiss]);
 
-	return (
+	/*
+	 * Frosted over the page, opaque over the sidebar.
+	 *
+	 * Under vibrancy the sidebar has no background at all — macOS draws the material *below* the web
+	 * contents, so every layer from the sidebar up to `<html>` is transparent. There is nothing there
+	 * for `backdrop-filter` to blur, and a 52% panel over nothing is 52% of nothing: the rows behind
+	 * it simply show through, legibly, which is the one thing a menu must not allow.
+	 *
+	 * Blur cannot fix that, so this stops asking for it there and pays with an opaque fill instead.
+	 * Over `main` — which does paint a background — the real thing still happens.
+	 */
+	const surface =
+		anchor instanceof HTMLElement && anchor.closest("aside") && document.documentElement.dataset.vibrancy === "on"
+			? "ly-glass-solid"
+			: "ly-glass";
+
+	/*
+	 * Rendered into `<body>`, not where it was written.
+	 *
+	 * A popover is `position: fixed` and positioned from window coordinates, so where it sits in
+	 * the tree never affected where it appeared — until it did. `backdrop-filter` samples what has
+	 * been painted *inside the nearest backdrop root*, and a `mask` makes an element one. Every
+	 * scroller in this app that softens its edges carries a mask, so a menu opened inside one was
+	 * blurring that scroller's own transparent background instead of the page: the frosted panel
+	 * kept its tint and its shadow and lost the blur, and the text underneath came through sharp.
+	 *
+	 * The same containment would eventually have clipped a menu against an ancestor's `overflow`
+	 * as well. Both problems are the same problem — a transient layer that belongs on top of the
+	 * window should not be a descendant of anything in it.
+	 */
+	return createPortal(
 		<div
 			ref={ref}
-			role="menu"
+			role={role}
+			aria-label={label}
 			style={style}
 			/*
 			 * Above everything, including the side panel.
@@ -255,21 +377,37 @@ export function Popover({
 			 * panel — and a menu opened near it was simply cut in half. A popover is transient
 			 * and belongs on top of whatever it was opened over, always.
 			 */
-			className={`ly-glass ly-scroll-host ly-scroll-view fixed z-[60] overflow-x-hidden overflow-y-auto rounded-[10px] border border-line ${
-				leaving
-					? "ly-pop-out"
-					: placed
-						? side === "top"
-							? "ly-pop-up"
-							: side === "right"
-								? "ly-pop-right"
-								: "ly-pop-down"
-						: ""
+			className={`${surface} fixed z-[60] flex flex-col overflow-hidden rounded-[10px] border border-line ${
+				leaving ? "ly-pop-out" : placed ? "ly-pop-in" : ""
 			} ${className}`}
 		>
-			{children}
-		</div>
+			{header && <div className="shrink-0 border-b border-line-soft">{header}</div>}
+
+			{/*
+			 * The app's own scroller, not `overflow: auto` — so a menu that outgrows the gap it was
+			 * placed in gets the same overlaid bar and softened edge as every other list in the
+			 * window. Three menus used to reach for `Scroller` themselves and the rest scrolled with
+			 * a native bar; making it the surface's job is what makes the answer the same everywhere.
+			 */}
+			<Scroller className="min-h-0 flex-auto" contentClassName={`overflow-x-hidden ${bodyClassName}`}>
+				{children}
+			</Scroller>
+
+			{footer && <div className="shrink-0 border-t border-line-soft">{footer}</div>}
+		</div>,
+		document.body,
 	);
+}
+
+function rectOf(anchor: Anchor): DOMRect | null {
+	if (!anchor) return null;
+	if (anchor instanceof HTMLElement) return anchor.getBoundingClientRect();
+	// A zero-size rect at the cursor: every placement rule below already works off a rect.
+	return new DOMRect(anchor.x, anchor.y, 0, 0);
+}
+
+function clamp(value: number, low: number, high: number): number {
+	return Math.min(Math.max(value, low), high);
 }
 
 /** Track an anchor element and its open state, the pair every popover trigger needs. */
@@ -296,4 +434,4 @@ export function usePopover() {
  * The definitions moved to `Menu.tsx`; a popover is a positioned surface and a menu is what is
  * often put on one, which is a relationship rather than an identity.
  */
-export { MenuBody, MenuItem, MenuLabel, MenuSeparator } from "./Menu.tsx";
+export { MenuBody, MenuItem, MenuLabel, MenuSearch, MenuSeparator } from "./Menu.tsx";

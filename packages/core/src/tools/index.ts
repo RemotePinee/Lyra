@@ -10,6 +10,7 @@ import { symbolTool } from "./symbol.ts";
 import { taskTool } from "./task.ts";
 import { previewTool } from "./preview.ts";
 import { todoTool } from "./todo.ts";
+import { webSearchTool } from "./search.ts";
 import { webFetchTool } from "./web.ts";
 import { writeTool } from "./write.ts";
 
@@ -48,6 +49,7 @@ function staticTools(): Tool[] {
 		taskTool,
 		skillTool,
 		webFetchTool,
+		webSearchTool,
 		previewTool,
 	] as Tool[];
 }
@@ -68,4 +70,5 @@ export { AGENTS_KEY, BUILTIN_AGENTS, taskTool, type AgentDefinition } from "./ta
 export { previewTool } from "./preview.ts";
 export { readTodos, todoTool, TODOS_KEY, type TodoItem } from "./todo.ts";
 export { htmlToText, webFetchTool } from "./web.ts";
+export { webSearchTool } from "./search.ts";
 export { writeTool } from "./write.ts";

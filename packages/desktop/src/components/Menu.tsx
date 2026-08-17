@@ -1,5 +1,5 @@
 /**
- * The pieces a menu is made of: a row, a separator, a heading, a scrolling body.
+ * The pieces a menu is made of: a row, a separator, a heading, a search field, a padded body.
  *
  * Separate from `Popover`, which is only a positioned surface. A popover can hold anything — a
  * colour picker, a form — and a menu can live somewhere that is not a popover. Keeping the two
@@ -7,7 +7,43 @@
  * by accident.
  */
 
+import { Search, X } from "lucide-react";
+import { createContext, useContext } from "react";
+
 import { ScrollText } from "./ScrollText.tsx";
+
+/**
+ * Whether rows in this menu keep a column for their mark, even the ones that have none.
+ *
+ * Set by the body rather than by each row, because it is a fact about the menu: the file-opener
+ * dropdown lists seven applications and finds an icon for three of them, so with the column
+ * collapsing per row its labels started at two different x positions and the list read as two
+ * lists. A row cannot see its neighbours; the body can.
+ */
+const InsetIcons = createContext(false);
+
+/**
+ * The padded box every menu's contents sit in.
+ *
+ * Rows are rounded, so the panel needs a margin for them to sit inside — and every menu
+ * needing the same margin is exactly the sort of thing that drifts if each one writes it out.
+ */
+export function MenuBody({
+	children,
+	insetIcons = false,
+	className = "",
+}: {
+	children: React.ReactNode;
+	/** Reserve the icon column on every row, for a menu where only some rows have one. */
+	insetIcons?: boolean;
+	className?: string;
+}) {
+	return (
+		<InsetIcons.Provider value={insetIcons}>
+			<div className={`p-1 ${className}`}>{children}</div>
+		</InsetIcons.Provider>
+	);
+}
 
 /**
  * One row in a menu.
@@ -49,6 +85,8 @@ export function MenuItem({
 	title?: string;
 	onClick?: () => void;
 }) {
+	const inset = useContext(InsetIcons);
+
 	return (
 		<button
 			type="button"
@@ -62,14 +100,26 @@ export function MenuItem({
 				detail ? "items-start py-1.5" : "h-[28px] items-center"
 			}`}
 		>
-			{icon && <span className={`shrink-0 text-ink-muted ${detail ? "mt-[3px]" : ""}`}>{icon}</span>}
+			{/*
+			 * A fixed column, whatever is in it.
+			 *
+			 * Menus mix 13px lucide marks with 18px application icons, and a slot that took each
+			 * one's own width left the labels beside them a few pixels out of line — the sort of
+			 * thing nobody names but everybody sees. Centred in a column wide enough for the
+			 * largest, so the text starts in the same place regardless.
+			 */}
+			{(icon || inset) && (
+				<span
+					className={`flex w-[18px] shrink-0 items-center justify-center text-ink-muted ${detail ? "mt-[3px]" : ""}`}
+				>
+					{icon}
+				</span>
+			)}
 			<span className="min-w-0 flex-1">
 				{typeof children === "string" ? <ScrollText text={children} /> : children}
 				{/* One line. A detail that wraps makes its row taller than its neighbours, and a menu
 				 * of ragged rows is harder to scan than one where the odd path is cut short. */}
-				{detail && (
-					<span className="mt-0.5 block truncate text-caption leading-snug opacity-65">{detail}</span>
-				)}
+				{detail && <span className="mt-0.5 block truncate text-caption leading-snug opacity-65">{detail}</span>}
 			</span>
 			{hint !== undefined && (
 				<span className={`shrink-0 font-mono text-caption text-ink-faint ${detail ? "mt-[3px]" : ""}`}>{hint}</span>
@@ -90,11 +140,52 @@ export function MenuLabel({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The padded box every menu's contents sit in.
+ * The filter at the top of a menu that lists more than a screenful.
  *
- * Rows are rounded, so the panel needs a margin for them to sit inside — and every menu
- * needing the same margin is exactly the sort of thing that drifts if each one writes it out.
+ * Written out twice before this — once in the branch menu, once in the project picker — with the
+ * same height, the same magnifier and the same placeholder wording, which is two chances for one
+ * of them to drift. Meant for `Popover`'s `header` slot, so it stays put while the list scrolls;
+ * the rule beneath it belongs to that slot and is not drawn here.
+ *
+ * Escape clears before it closes, matching `SearchField`: the first press undoes the typing, and
+ * only a press with nothing to undo dismisses the menu.
  */
-export function MenuBody({ children }: { children: React.ReactNode }) {
-	return <div className="p-1">{children}</div>;
+export function MenuSearch({
+	value,
+	onChange,
+	placeholder,
+	autoFocus = true,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	placeholder?: string;
+	autoFocus?: boolean;
+}) {
+	return (
+		<div className="flex h-9 items-center gap-2 px-3">
+			<Search size={13} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
+			<input
+				autoFocus={autoFocus}
+				value={value}
+				onChange={(event) => onChange(event.target.value)}
+				onKeyDown={(event) => {
+					if (event.key !== "Escape" || !value) return;
+					event.stopPropagation();
+					onChange("");
+				}}
+				placeholder={placeholder}
+				className="h-full min-w-0 flex-1 bg-transparent text-label text-ink placeholder:text-ink-faint"
+			/>
+			{value && (
+				<button
+					type="button"
+					aria-label="清除搜索"
+					onClick={() => onChange("")}
+					className="flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+				>
+					<X size={10.5} strokeWidth={2.2} />
+				</button>
+			)}
+		</div>
+	);
 }

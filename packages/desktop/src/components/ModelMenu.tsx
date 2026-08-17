@@ -1,5 +1,7 @@
 import { Check, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ModelIcon } from "./ModelIcon.tsx";
+import { RollingText } from "./RollingText.tsx";
 import { MenuBody, MenuItem, MenuLabel, MenuSeparator, Popover, type Anchor } from "./Popover.tsx";
 import { useApp } from "../store.ts";
 
@@ -47,7 +49,7 @@ export function ModelMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => 
 	});
 
 	return (
-		<Popover anchor={anchor} onClose={onClose} placement="top" align="start" width={272}>
+		<Popover anchor={anchor} onClose={onClose} placement="top" align="start" width="wide" label="选择模型">
 			<MenuBody>
 				<MenuLabel>模型</MenuLabel>
 
@@ -68,6 +70,9 @@ export function ModelMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => 
 						key={entry.model.id}
 						selected={current === entry.model.id}
 						title={entry.provider.name}
+						// The house, not the provider. One relay serves models from five of them, so a
+						// provider icon here would draw the same mark on every row.
+						icon={<ModelIcon model={entry.model.modelId} name={entry.model.name} size={14} />}
 						hint={formatWindow(entry.model.contextWindow)}
 						trailing={
 							current === entry.model.id ? (
@@ -99,7 +104,7 @@ export function ModelMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => 
 								/>
 							}
 						>
-							{showAll ? "收起" : "更多模型"}
+							<RollingText>{showAll ? "收起" : "更多模型"}</RollingText>
 						</MenuItem>
 					</>
 				)}

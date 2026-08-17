@@ -1,19 +1,19 @@
-import { FolderOpen, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PluginIcon } from "./PluginIcon.tsx";
 import { useApp } from "../../store.ts";
-import { Badge, Card, EmptyHint, GhostButton, SectionTitle } from "./controls.tsx";
-
-const SOURCE_LABEL: Record<string, string> = { workspace: "项目", user: "用户", builtin: "内置" };
+import { Badge, Card, EmptyHint, ListRow, SectionTitle } from "./controls.tsx";
 
 export function SkillsSettings({ filter = "" }: { filter?: string }) {
 	const workspace = useApp((s) => s.workspace);
+	// A plugin carries skills, so installing one moves this list without touching this page.
+	const extensionsNonce = useApp((s) => s.extensionsNonce);
 	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
 
 	// Scanned directly so the page works before any session exists.
 	useEffect(() => {
 		void window.lyra.plugins.list(workspace?.path ?? "").then(setScan);
-	}, [workspace?.path]);
+	}, [workspace?.path, extensionsNonce]);
 
 	// Name or description, because you remember a skill by either.
 	const needle = filter.trim().toLowerCase();
@@ -24,27 +24,8 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 
 	return (
 		<div>
-			<header className="flex items-start justify-end pb-4">
-				<div className="flex shrink-0 gap-2">
-					<GhostButton
-						onClick={() => void window.lyra.system.revealSkillsDir("user", workspace?.path ?? "")}
-					>
-						<span className="flex items-center gap-1.5">
-							<FolderOpen size={12} strokeWidth={1.9} />
-							用户目录
-						</span>
-					</GhostButton>
-					{workspace && (
-						<GhostButton onClick={() => void window.lyra.system.revealSkillsDir("workspace", workspace.path)}>
-							<span className="flex items-center gap-1.5">
-								<FolderOpen size={12} strokeWidth={1.9} />
-								项目目录
-							</span>
-						</GhostButton>
-					)}
-				</div>
-			</header>
-
+			{/* The two directory buttons that used to sit here are in the page's ⋯ now — three tabs
+			    each opening with its own pair of them was a header that said nothing about the tab. */}
 			{diagnostics.length > 0 && (
 				<Card className="mb-6 border-accent/35 bg-accent/6">
 					<div className="px-4 py-3">
@@ -70,24 +51,26 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 						在上面的目录里新建 <span className="font-mono">{"<技能名>/SKILL.md"}</span>，写上 name 和 description 即可。
 					</EmptyHint>
 				) : (
+					/*
+					 * The same row as the plugin list, because it is the same kind of thing: a mark, a
+					 * name, one line, and the row itself opens it. The badges are gone except the one
+					 * that changes behaviour — where a skill came from is on its own page, but a skill
+					 * the model is not allowed to reach for is a fact about what it will do.
+					 */
 					skills.map((skill) => (
-						<div key={skill.path} className="border-b border-line-soft px-4 py-3.5 last:border-b-0">
-							<div className="flex items-center gap-2">
-								<PluginIcon name={skill.name} size={22} />
-								<span className="font-mono text-label text-ink">{skill.name}</span>
-								<Badge tone="muted">{SOURCE_LABEL[skill.source] ?? skill.source}</Badge>
-								{skill.disableModelInvocation && <Badge tone="accent">仅手动调用</Badge>}
-								<div className="flex-1" />
-								<button
-									type="button"
-									onClick={() => void window.lyra.system.openPath(skill.path)}
-									className="text-detail text-ink-faint transition-colors hover:text-ink"
-								>
-									打开
-								</button>
-							</div>
-							<p className="mt-1 text-label leading-relaxed text-ink-muted">{skill.description}</p>
-						</div>
+						<ListRow
+							key={skill.path}
+							icon={<PluginIcon name={skill.name} size={28} />}
+							title={
+								<span className="flex min-w-0 items-center gap-2">
+									<span className="truncate font-mono">{skill.name}</span>
+									{skill.disableModelInvocation && <Badge tone="accent">仅手动调用</Badge>}
+								</span>
+							}
+							detail={skill.description}
+							onOpen={() => void window.lyra.system.openPath(skill.path)}
+							openLabel={`打开 ${skill.name}`}
+						/>
 					))
 				)}
 			</Card>

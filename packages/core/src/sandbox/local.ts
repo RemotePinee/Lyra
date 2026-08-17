@@ -1,13 +1,20 @@
 /**
- * Running a command on this machine.
+ * Running a command on this machine, inside whatever confinement this machine can provide.
  *
- * The default sandbox, and the one that isn't one: the command gets the user's own shell, cwd and
- * environment. That is the right default for a tool the user is sitting in front of, and the wrong
- * one for anything else — which is why it goes through the seam rather than being called directly.
+ * Without a mode this is what it always was: the user's own shell, cwd and environment. That is
+ * the right default for a tool somebody is sitting in front of, and it is what the CLI and the
+ * tests get.
+ *
+ * With a mode, the command is wrapped — `sandbox-exec` on macOS, `bwrap` on Linux — and if this
+ * host cannot provide that, the call **throws**. Not falling back is the entire point. A sandbox
+ * that quietly runs the command anyway when it cannot confine it is worse than no sandbox: the UI
+ * says confined, the logs say confined, and nothing is.
  */
 
 import { spawn } from "node:child_process";
 import type { Sandbox, SandboxProcess } from "../kernel/services.ts";
+import { confine } from "./backend.ts";
+import type { SandboxMode } from "./policy.ts";
 
 /**
  * Kept out of the child's environment.
@@ -18,12 +25,26 @@ import type { Sandbox, SandboxProcess } from "../kernel/services.ts";
 const QUIET_ENV = { TERM: "dumb", NO_COLOR: "1", GIT_PAGER: "cat", PAGER: "cat" };
 
 export class LocalSandbox implements Sandbox {
-	run(command: string, options: { cwd: string; env?: Record<string, string> }): SandboxProcess {
-		const child = spawn(command, {
-			cwd: options.cwd,
-			shell: process.env.SHELL || "/bin/bash",
-			env: { ...process.env, ...QUIET_ENV, ...options.env },
-		});
+	run(command: string, options: { cwd: string; env?: Record<string, string>; mode?: SandboxMode }): SandboxProcess {
+		const shell = process.env.SHELL || "/bin/bash";
+		const env = { ...process.env, ...QUIET_ENV, ...options.env };
+
+		/*
+		 * The wrapper takes the shell as an argument instead of `spawn`'s `shell: true`.
+		 *
+		 * `shell: true` asks Node to build the argv itself, which leaves no place to put
+		 * `sandbox-exec -p <profile> --` in front of it. Naming the shell explicitly is the same
+		 * command through one more process, and it is the only arrangement where the confinement
+		 * is applied *before* the shell exists rather than around a shell that is already running.
+		 */
+		const wrap = options.mode ? confine({ mode: options.mode, workspaceRoot: options.cwd }) : null;
+		const child = wrap
+			? spawn(wrap.command, [...wrap.args, shell, "-c", command], {
+					cwd: options.cwd,
+					// The Windows runner needs `ELECTRON_RUN_AS_NODE`; the others contribute nothing.
+					env: { ...env, ...wrap.env },
+				})
+			: spawn(command, { cwd: options.cwd, shell, env });
 
 		return {
 			onOutput(listener) {

@@ -13,7 +13,18 @@ export type AgentEvent =
 	| { type: "tool_start"; toolCallId: string; toolName: string; args: Record<string, unknown>; summary: string }
 	| { type: "tool_update"; toolCallId: string; partial: ToolResult }
 	| { type: "tool_end"; toolCallId: string; toolName: string; result: ToolResult; isError: boolean }
-	| { type: "approval_request"; requestId: string; toolCallId: string; kind: string; title: string; detail: string }
+	| {
+			type: "approval_request";
+			requestId: string;
+			toolCallId: string;
+			kind: string;
+			title: string;
+			detail: string;
+			/** The asker's own sentence on why — the model's words when it is requesting an escalation. */
+			reason?: string;
+			/** What an "always" answer would be remembered against, so the prompt can say so. */
+			subject: string;
+		}
 	| { type: "turn_end"; message: AssistantMessage; toolResults: ToolResultMessage[] }
 	/** `stalled`: the turn kept making the same call for the same answer and was stopped. */
 	| { type: "agent_end"; reason: "done" | "aborted" | "error" | "max_turns" | "stalled"; error?: string }

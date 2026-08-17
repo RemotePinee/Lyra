@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { getSandbox } from "../sandbox/index.ts";
+import { getSandbox, looksDenied } from "../sandbox/index.ts";
+import {
+	approveEscalation,
+	escalationHint,
+	ESCALATION_TARGETS,
+	sandboxDenialMarker,
+	validateEscalationArgs,
+} from "./escalation.ts";
 import { errorResult } from "../agent/tool-run.ts";
 import type { Tool, ToolContext, ToolResult } from "../types.ts";
 
@@ -12,6 +19,10 @@ interface BashArgs {
 	description?: string;
 	timeout?: number;
 	run_in_background?: boolean;
+	/** The wider sandbox mode this command needs; only valid retrying one the sandbox denied. */
+	escalate?: string;
+	/** Why that wider mode is needed, in one sentence, shown to the user verbatim. */
+	justification?: string;
 }
 
 interface BackgroundJob {
@@ -73,7 +84,11 @@ export const bashTool: Tool<BashArgs> = {
 	description:
 		"Run a shell command in the workspace. The working directory persists between calls but shell state " +
 		"(variables, functions) does not. Use `run_in_background: true` for long-running processes such as dev servers, " +
-		"then read their output with `bash_output`. Prefer the dedicated file tools over cat/sed/echo.",
+		"then read their output with `bash_output`. Prefer the dedicated file tools over cat/sed/echo. " +
+		"Commands may run under a file sandbox. A blocked write is reported as a policy denial, not a bug in the " +
+		"command — do not retry it another way. When one is denied and a wider mode would let it through, retry that " +
+		"exact command once with `escalate` and `justification`; the user is asked, and the grant covers only that call. " +
+		"Never escalate up front: only after this session has actually denied the same access.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -81,6 +96,17 @@ export const bashTool: Tool<BashArgs> = {
 			description: { type: "string", description: "5-10 word description shown to the user." },
 			timeout: { type: "number", description: "Timeout in milliseconds. Default 120000, max 600000." },
 			run_in_background: { type: "boolean", description: "Detach the process and return immediately." },
+			escalate: {
+				type: "string",
+				enum: [...ESCALATION_TARGETS],
+				description:
+					"Only valid as a one-shot retry of a command the sandbox just denied. The narrowest mode that would " +
+					"let it through. Requires justification, and asks the user.",
+			},
+			justification: {
+				type: "string",
+				description: "One sentence on why the wider mode is needed. Shown to the user verbatim.",
+			},
 		},
 		required: ["command"],
 		additionalProperties: false,
@@ -93,7 +119,44 @@ export const bashTool: Tool<BashArgs> = {
 			return errorResult("`command` is required.");
 		}
 
-		if (ctx.requestApproval && !isReadOnlyCommand(args.command)) {
+		/*
+		 * The escalation, resolved before anything runs.
+		 *
+		 * A refused request never reaches the user: asking for a mode that is not wider grants
+		 * nothing, so there is nothing to decide. What does reach them is the model's own sentence
+		 * about why — which is the difference between a prompt somebody can answer and one they
+		 * can only guess at.
+		 */
+		let mode = ctx.sandboxMode;
+		try {
+			validateEscalationArgs(args.escalate, args.justification);
+			if (args.escalate) {
+				mode = await approveEscalation(
+					{
+						requested: args.escalate,
+						justification: args.justification!,
+						current: ctx.sandboxMode ?? "danger-full-access",
+						subject: "命令",
+					},
+					ctx.requestApproval
+						? async (reason) =>
+								(await ctx.requestApproval!({
+									kind: "bash",
+									title: `提权运行：${args.description ?? args.command.split("\n")[0].slice(0, 60)}`,
+									detail: args.command,
+									subject: `escalate:${args.escalate}:${args.command}`,
+									reason,
+								})) === "reject"
+									? "reject"
+									: "once"
+						: undefined,
+				);
+			}
+		} catch (error) {
+			return errorResult(error instanceof Error ? error.message : String(error));
+		}
+
+		if (ctx.requestApproval && !args.escalate && !isReadOnlyCommand(args.command)) {
 			const decision = await ctx.requestApproval({
 				kind: "bash",
 				title: args.description ?? "Run shell command",
@@ -107,7 +170,7 @@ export const bashTool: Tool<BashArgs> = {
 
 		const timeout = Math.min(args.timeout ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
 		return new Promise<ToolResult>((resolve) => {
-			const child = getSandbox().run(args.command, { cwd: ctx.cwd });
+			const child = getSandbox().run(args.command, { cwd: ctx.cwd, mode });
 
 			let output = "";
 			let settled = false;
@@ -154,9 +217,23 @@ export const bashTool: Tool<BashArgs> = {
 				clearTimeout(timer);
 				ctx.signal?.removeEventListener("abort", onAbort);
 				const text = clip(output).trim();
+				/*
+				 * Say when it was the sandbox, not the command.
+				 *
+				 * A denied write fails the way a full disk or a wrong path fails — some non-zero
+				 * code and a message about permission — and a model that cannot tell the two apart
+				 * does the worst possible thing: it tries the same write another way, three times,
+				 * and reports that the tool is broken. The marker turns "it failed" into "it was
+				 * refused", and the hint beside it is the sanctioned way forward.
+				 */
+				const ranUnder = mode;
+				const denied = ranUnder !== undefined && ranUnder !== "danger-full-access" && looksDenied(output);
+				const body = denied
+					? [text || "(no output)", sandboxDenialMarker(ranUnder), escalationHint("command")].join("\n")
+					: text || `(no output, exit code ${code ?? 0})`;
 				resolve({
-					content: [{ type: "text", text: text || `(no output, exit code ${code ?? 0})` }],
-					details: { kind: "bash", command: args.command, exitCode: code ?? 0 },
+					content: [{ type: "text", text: body }],
+					details: { kind: "bash", command: args.command, exitCode: code ?? 0, ...(denied ? { denied: true } : {}) },
 					isError: code !== 0,
 				});
 			});
@@ -166,7 +243,7 @@ export const bashTool: Tool<BashArgs> = {
 
 function startBackground(args: BashArgs, ctx: ToolContext): ToolResult {
 	const id = randomUUID().slice(0, 8);
-	const child = getSandbox().run(args.command, { cwd: ctx.cwd });
+	const child = getSandbox().run(args.command, { cwd: ctx.cwd, mode: ctx.sandboxMode });
 
 	const job: BackgroundJob = {
 		id,

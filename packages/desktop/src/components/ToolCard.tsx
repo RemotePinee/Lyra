@@ -165,7 +165,6 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 	);
 }
 
-
 function resultText(result: ToolResult): string {
 	return result.content
 		.map((block) => (block.type === "text" ? block.text : `[图片 ${block.mimeType}]`))

@@ -174,6 +174,8 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
             kind: event.kind,
             title: event.title,
             detail: event.detail,
+            ...(event.reason ? { reason: event.reason } : {}),
+            subject: event.subject,
           },
         ],
       });

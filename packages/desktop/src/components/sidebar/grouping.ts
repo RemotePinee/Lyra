@@ -1,5 +1,5 @@
 /**
- * Turning a flat list of sessions into the sidebar's two lists.
+ * Turning a flat list of sessions into the sidebar's three lists.
  *
  * Pure, and separate from the pane that renders it, because the rules are the sort you want to be
  * able to state and check: a project keeps its configured order, a project with no sessions is
@@ -22,26 +22,39 @@ export interface ProjectRef {
 	lastOpenedAt: number;
 }
 
-/** The one group every project-less conversation lands in, whatever directory it actually ran in. */
-export const NO_PROJECT = "\u0000no-project";
+export interface Grouped {
+	/** Pinned projects, in configured order. */
+	pinned: Group[];
+	/** Everything else that is a project, in configured order, unknown ones last. */
+	projects: Group[];
+	/**
+	 * Conversations that belong to no project, flat and newest first.
+	 *
+	 * Not a group. They used to be collected under a folder row called 「无项目」, which put a
+	 * project-shaped thing in the list for the one case that is defined by not being a project —
+	 * a folder you cannot open, named after the absence of the thing folders are named after.
+	 * They are simply the conversations that are not filed anywhere, and they sit under 「最近」
+	 * at the bottom, which is what they are and where they belong.
+	 */
+	loose: SessionMeta[];
+}
 
 export function groupSessions(
 	sessions: SessionMeta[],
 	projects: ProjectRef[],
 	query: string,
 	/**
-	 * Directories that are scratch space rather than projects.
+	 * Directories that hold project-less conversations rather than projects.
 	 *
-	 * Sessions there are real and worth returning to — a review you asked about yesterday should
-	 * be one click away — but they are not projects, and grouping them by directory the usual way
-	 * produces a row called `owner-repo-6381` sitting among someone's actual work. They all go
-	 * into one group instead, named for what they are.
+	 * Sessions there are real and worth returning to — a review you asked about yesterday should be
+	 * one click away — but they are not projects, and grouping them by directory the usual way
+	 * produces a row called `owner-repo-6381` sitting among someone's actual work.
 	 *
-	 * More than one root because the directory has been renamed once and stored sessions still
+	 * More than one root because the directory has been renamed twice and stored sessions still
 	 * record the path they were created under.
 	 */
 	scratchRoots: string[] = [],
-): { pinned: Group[]; recent: Group[] } {
+): Grouped {
 	const needle = query.trim().toLowerCase();
 	const filtered = needle ? sessions.filter((s) => s.title.toLowerCase().includes(needle)) : sessions;
 
@@ -52,16 +65,16 @@ export function groupSessions(
 	const roots = scratchRoots.filter(Boolean).map((root) => (root.endsWith("/") ? root : `${root}/`));
 	const isScratch = (cwd: string) => roots.some((root) => cwd.startsWith(root));
 
+	const loose: SessionMeta[] = [];
 	for (const session of filtered) {
-		const key = isScratch(session.cwd) ? NO_PROJECT : session.cwd;
-		let group = byPath.get(key);
+		if (isScratch(session.cwd)) {
+			loose.push(session);
+			continue;
+		}
+		let group = byPath.get(session.cwd);
 		if (!group) {
-			group = {
-				path: key,
-				name: key === NO_PROJECT ? "无项目" : session.projectName,
-				sessions: [],
-			};
-			byPath.set(key, group);
+			group = { path: session.cwd, name: session.projectName, sessions: [] };
+			byPath.set(session.cwd, group);
 		}
 		group.sessions.push(session);
 	}
@@ -71,18 +84,21 @@ export function groupSessions(
 	const all = [...byPath.values()]
 		// A project with no sessions is only worth a row when the user pinned it.
 		.filter((g) => g.sessions.length > 0 || pinnedPaths.has(g.path))
-		.sort((a, b) => rank(a.path, order) - rank(b.path, order));
+		.sort((a, b) => (order.get(a.path) ?? 999) - (order.get(b.path) ?? 999));
 
 	return {
 		pinned: all.filter((g) => pinnedPaths.has(g.path)),
-		recent: all.filter((g) => !pinnedPaths.has(g.path)),
+		projects: all.filter((g) => !pinnedPaths.has(g.path)),
+		/*
+		 * Newest first, decided here rather than trusted from the caller.
+		 *
+		 * Inside a project the rows arrive in whatever order the session list came in, and that has
+		 * always been recency — but these rows are the ones under a heading that literally says
+		 * 「最近」, so the order is part of what the section claims rather than an accident of the
+		 * input.
+		 */
+		loose: loose.sort((a, b) => b.updatedAt - a.updatedAt),
 	};
-}
-
-/** Configured projects in their configured order, then unknown ones, then 无项目 last of all. */
-function rank(path: string, order: Map<string, number>): number {
-	if (path === NO_PROJECT) return 1000;
-	return order.get(path) ?? 999;
 }
 
 /**

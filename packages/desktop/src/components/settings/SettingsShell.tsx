@@ -5,6 +5,8 @@ import {
 	Bot,
 	Database,
 	Globe,
+	Search,
+	ShieldCheck,
 	Layers,
 	Palette,
 	Rocket,
@@ -31,6 +33,8 @@ import { HooksSettings } from "./HooksSettings.tsx";
 import { IndexSettings } from "./IndexSettings.tsx";
 import { BrowserSettings } from "./BrowserSettings.tsx";
 import { SkillsSettings } from "./SkillsSettings.tsx";
+import { AccessSettings } from "./AccessSettings.tsx";
+import { SearchSettings } from "./SearchSettings.tsx";
 import { SyncSettings } from "./SyncSettings.tsx";
 import { UsageSettings } from "./UsageSettings.tsx";
 
@@ -59,6 +63,8 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 			{ id: "agents", label: "子智能体", icon: Bot },
 			{ id: "commands", label: "命令", icon: SquareTerminal },
 			{ id: "hooks", label: "钩子", icon: Anchor },
+			{ id: "search", label: "网页搜索", icon: Search },
+			{ id: "access", label: "访问授权", icon: ShieldCheck },
 		],
 	},
 	{
@@ -275,6 +281,10 @@ function SectionBody({ section }: { section: SettingsSection }) {
 			return <BrowserSettings />;
 		case "commands":
 			return <CommandsSettings />;
+		case "search":
+			return <SearchSettings />;
+		case "access":
+			return <AccessSettings />;
 		case "sync":
 			return <SyncSettings />;
 		case "usage":

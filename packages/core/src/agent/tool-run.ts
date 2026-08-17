@@ -112,6 +112,8 @@ async function executeOne(
 		signal: config.signal,
 		state,
 		requestApproval: config.requestApproval,
+		sandboxMode: config.sandboxMode,
+		allowedHosts: config.allowedHosts,
 		writePreview: config.writePreview,
 		spawnSubAgent: config.spawnSubAgent,
 		onProgress: (partial) => void emit({ type: "tool_update", toolCallId: call.id, partial }),

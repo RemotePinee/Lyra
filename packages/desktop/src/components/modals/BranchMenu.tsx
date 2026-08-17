@@ -1,8 +1,7 @@
-import { Check, GitBranch, Search } from "lucide-react";
+import { Check, GitBranch } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { BranchList } from "../../../electron/ipc-types.ts";
-import { MenuItem, MenuLabel, Popover, type Anchor } from "../Popover.tsx";
-import { Scroller } from "../Scroller.tsx";
+import { MENU_MAX_HEIGHT, MenuBody, MenuItem, MenuLabel, MenuSearch, Popover, type Anchor } from "../Popover.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { useApp } from "../../store.ts";
 
@@ -68,19 +67,17 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	}
 
 	return (
-		<Popover anchor={anchor} onClose={onClose} placement="top" align="start" width={272}>
-			<div className="flex h-9 items-center gap-2 border-b border-line px-3">
-				<Search size={13} strokeWidth={1.9} className="shrink-0 text-ink-faint" />
-				<input
-					autoFocus
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					placeholder="搜索分支"
-					className="h-full min-w-0 flex-1 bg-transparent text-label text-ink placeholder:text-ink-faint"
-				/>
-			</div>
-
-			<Scroller className="max-h-[min(300px,44vh)]" contentClassName="p-1">
+		<Popover
+			anchor={anchor}
+			onClose={onClose}
+			placement="top"
+			align="start"
+			width="wide"
+			maxHeight={MENU_MAX_HEIGHT}
+			label="切换分支"
+			header={<MenuSearch value={query} onChange={setQuery} placeholder="搜索分支" />}
+		>
+			<MenuBody>
 				{/*
 				 * Rows, not a line of text.
 				 *
@@ -124,7 +121,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 						))}
 					</>
 				)}
-			</Scroller>
+			</MenuBody>
 		</Popover>
 	);
 }

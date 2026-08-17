@@ -7,9 +7,9 @@
  * rather than three.
  */
 
-import { ChevronDown, Eye, EyeOff } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
-import { MenuItem, Popover, usePopover } from "../Popover.tsx";
+import { MenuBody, MenuItem, Popover, usePopover } from "../Popover.tsx";
 
 export function TextInput({
 	value,
@@ -103,7 +103,7 @@ function Dropdown<T extends string>({
 			<button
 				type="button"
 				onClick={menu.toggle}
-				aria-haspopup="listbox"
+				aria-haspopup="menu"
 				aria-expanded={menu.open}
 				className={`flex items-center justify-between gap-2 border text-ink transition-colors ${
 					field
@@ -124,14 +124,28 @@ function Dropdown<T extends string>({
 			</button>
 
 			{menu.open && (
-				<Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="end" width={220}>
-					<div className="p-1">
+				<Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="end" width="default">
+					{/*
+					 * The icon column is reserved for the whole list, not per row.
+					 *
+					 * These options carry an icon only where one could be found — the file-opener
+					 * dropdown reads each application's own icon off the machine, and four of its seven
+					 * are simply not installed. With the column collapsing on the rows that had none,
+					 * their labels started 26px left of the rest and the menu read as two lists that
+					 * had been stacked by accident.
+					 */}
+					<MenuBody insetIcons={options.some((option) => option.icon)}>
 						{options.map((option) => (
 							<MenuItem
 								key={option.value}
 								selected={option.value === value}
 								detail={option.detail}
 								icon={option.icon}
+								trailing={
+									option.value === value ? (
+										<Check size={13} strokeWidth={2.2} className={`shrink-0 text-ink ${option.detail ? "mt-[3px]" : ""}`} />
+									) : undefined
+								}
 								onClick={() => {
 									onChange(option.value);
 									menu.close();
@@ -140,7 +154,7 @@ function Dropdown<T extends string>({
 								{option.label}
 							</MenuItem>
 						))}
-					</div>
+					</MenuBody>
 				</Popover>
 			)}
 		</>

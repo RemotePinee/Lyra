@@ -10,6 +10,15 @@ import {
 	loadPlugins,
 	DEFAULT_PLUGINS,
 	pruneSessionArtifacts,
+	WINDOWS_RUNNER_FLAG,
+	runSandboxRunner,
+	registerSearchProvider,
+	duckDuckGoProvider,
+	instantAnswerProvider,
+	keyedSearchProvider,
+	BRAVE_PROVIDER_ID,
+	EXA_PROVIDER_ID,
+	TAVILY_PROVIDER_ID,
 	useAgentLoop,
 	useApprovalPolicy,
 	useCompaction,
@@ -52,6 +61,7 @@ import {
 	sessions,
 } from "./session-hub.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
+import { rescueLegacyWorkspaces } from "./scratch.ts";
 import { applySettings, loadAppSettings, onSettingsChanged } from "./app-settings.ts";
 import { registerServicesIpc } from "./ipc/services.ts";
 import { registerWorkspaceIpc } from "./ipc/workspace.ts";
@@ -159,6 +169,19 @@ protocol.registerSchemesAsPrivileged([
  * also decides where `app.getPath("userData")` points, which is why it is set here rather than
  * after the app is ready.
  */
+/*
+ * The one thing that has to happen before anything else.
+ *
+ * On Windows a confined command is run by spawning this same executable with a marker flag; that
+ * process must do the Win32 work and exit, never become a second copy of the app. Checked here
+ * because "before the app is ready" is not early enough — module side effects would already have
+ * run by then.
+ */
+if (process.argv.includes(WINDOWS_RUNNER_FLAG)) {
+	const start = process.argv.indexOf(WINDOWS_RUNNER_FLAG) + 1;
+	process.exit(runSandboxRunner(process.argv.slice(start)));
+}
+
 app.setName("Lyra");
 
 app.whenReady().then(async () => {
@@ -172,6 +195,18 @@ app.whenReady().then(async () => {
 	if (migration.error) console.warn(`[lyra] 旧目录迁移失败：${migration.error}`);
 
 	await mkdir(lyraHome(), { recursive: true });
+
+	/*
+	 * Before the sweep below gets to them.
+	 *
+	 * Project-less conversations used to run in `scratch/`, which is also where `core` puts the
+	 * throwaway files it names after a session and deletes when that session is gone. `general` and
+	 * `owner-repo-6381` were never session ids, so every launch deleted the working directory of
+	 * every such conversation. They live in `workspaces/` now; this carries over whatever the last
+	 * launch had not yet destroyed, and has to run first for that to mean anything.
+	 */
+	const rescued = await rescueLegacyWorkspaces().catch(() => []);
+	if (rescued.length > 0) console.log(`[lyra] 把 ${rescued.length} 个无项目会话的目录挪到了 workspaces/：${rescued.join("、")}`);
 
 	/*
 	 * The dock icon, which macOS otherwise takes from the bundle.
@@ -261,6 +296,20 @@ app.whenReady().then(async () => {
 			if (gone > 0) console.log(`[lyra] 清理了 ${gone} 个会话的临时文件`);
 		})
 		.catch(() => {});
+	/*
+	 * Search, working out of the box.
+	 *
+	 * The keyless provider is registered unconditionally so a fresh install can search at all; the
+	 * keyed ones read their key at call time, so they become available the moment one is pasted in
+	 * and stay out of the way until then. With more than one usable, the seam asks which — see
+	 * `selectSearchProvider`.
+	 */
+	registerSearchProvider(duckDuckGoProvider());
+	registerSearchProvider(instantAnswerProvider());
+	registerSearchProvider(keyedSearchProvider(TAVILY_PROVIDER_ID, () => settings?.searchApiKeys?.tavily));
+	registerSearchProvider(keyedSearchProvider(EXA_PROVIDER_ID, () => settings?.searchApiKeys?.exa));
+	registerSearchProvider(keyedSearchProvider(BRAVE_PROVIDER_ID, () => settings?.searchApiKeys?.brave));
+
 	registerIpc();
 	createWindow();
 	if (settings.sync.enabled) await startSync();

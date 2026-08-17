@@ -3,6 +3,7 @@ import type { QueuedTask } from "../agent/events.ts";
 import type { TurnMiddleware } from "../runtime/turn.ts";
 import type { Skill } from "../skills/loader.ts";
 import type { Message, ModelConfig, Provider, ProviderConfig, Tool } from "../types.ts";
+import type { SandboxMode } from "../sandbox/policy.ts";
 
 /**
  * The seams.
@@ -94,7 +95,14 @@ export interface SandboxProcess {
 }
 
 export interface Sandbox {
-	run(command: string, options: { cwd: string; env?: Record<string, string> }): SandboxProcess;
+	/**
+	 * Start one command.
+	 *
+	 * `mode` is what the caller wants enforced, not a hint: an implementation that cannot enforce
+	 * it must throw rather than run the command anyway. Omitting it means the caller is not asking
+	 * for confinement — the CLI and the tests, which have no permission mode to map from.
+	 */
+	run(command: string, options: { cwd: string; env?: Record<string, string>; mode?: SandboxMode }): SandboxProcess;
 }
 
 /**

@@ -2,6 +2,7 @@ import type { HookConfig } from "@lyra/core";
 import { ScrollText } from "../ScrollText.tsx";
 import { Anchor, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useConfirmer } from "../Confirm.tsx";
 import { useApp } from "../../store.ts";
 import {
   Badge,
@@ -172,6 +173,7 @@ function HookCard({
   onRemove: () => void;
 }) {
   const [command, setCommand] = useState(hook.command);
+  const confirm = useConfirmer();
 
   return (
     <Card>
@@ -196,11 +198,21 @@ function HookCard({
         <button
           type="button"
           data-ly-tip="删除"
-          onClick={onRemove}
+          aria-label="删除这个钩子"
+          onClick={(event) =>
+            confirm.ask(event, {
+              title: "删除这个钩子？",
+              detail: hook.command,
+              confirmLabel: "删除",
+              onConfirm: onRemove,
+            })
+          }
           className="text-ink-faint transition-colors hover:text-danger"
         >
           <Trash2 size={14} strokeWidth={1.8} />
         </button>
+
+        {confirm.element}
       </div>
 
       <div className="space-y-3 px-4 py-3.5">

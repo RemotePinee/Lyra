@@ -2,6 +2,7 @@ import type { ThinkingLevel } from "@lyra/core";
 import { CircleHelp } from "lucide-react";
 import { useState } from "react";
 import { Popover, type Anchor } from "./Popover.tsx";
+import { RollingText } from "./RollingText.tsx";
 import { useApp } from "../store.ts";
 
 /** Ordered low to high; the slider index maps straight onto this. */
@@ -46,23 +47,25 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	};
 
 	return (
-		// 232, down from 288: it has to sit inside the conversation column, which is 458px wide
-		// at the default window with the side panel open.
-		<Popover anchor={anchor} onClose={onClose} placement="top" align="center" width={232}>
+		/*
+		 * The ordinary menu width, not a bespoke one.
+		 *
+		 * It was 232 — picked because it has to sit inside the conversation column, 458px wide at
+		 * the default window with the side panel open. Every size below that satisfies the same
+		 * constraint, so the constraint does not need its own number; `group` because this is a
+		 * slider and a paragraph, and nothing on it is a thing to pick.
+		 */
+		<Popover anchor={anchor} onClose={onClose} placement="top" align="center" width="default" role="group" label="推理强度">
 			<div className="px-3 py-2.5">
 				<div className="flex items-center gap-1.5">
 					<span className="text-label text-ink-muted">推理强度</span>
 					{/*
-					 * Keyed on the value, so React remounts it and the roll replays. The colour turns
-					 * violet at the top level along with the track — the name and the bar are saying
-					 * the same thing, and only one of them changing looked like a bug.
+					 * The colour turns violet at the top level along with the track — the name and the
+					 * bar are saying the same thing, and only one of them changing looked like a bug.
+					 * The roll itself is `RollingText`, the same one every other changing label uses.
 					 */}
-					<span
-						key={current.value}
-						className="ly-roll text-label font-medium"
-						style={{ color: atMax ? "var(--color-violet)" : "var(--color-info)" }}
-					>
-						{current.label}
+					<span className="text-label font-medium" style={{ color: atMax ? "var(--color-violet)" : "var(--color-info)" }}>
+						<RollingText>{current.label}</RollingText>
 					</span>
 					<div className="flex-1" />
 					<button
@@ -87,9 +90,9 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 				 * popover mid-drag — the control you are dragging would move out from under the pointer.
 				 */}
 				<p className="mt-2 h-[34px] text-detail leading-relaxed text-ink-faint">
-					<span key={supported ? current.value : "unsupported"} className="ly-roll block">
+					<RollingText rollKey={supported ? current.value : "unsupported"} className="block">
 						{supported ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
-					</span>
+					</RollingText>
 				</p>
 
 				{/*

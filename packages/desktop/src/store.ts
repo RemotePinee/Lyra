@@ -44,6 +44,8 @@ export type SettingsSection =
   | "commands"
   | "hooks"
   | "index"
+  | "search"
+  | "access"
   | "usage"
   | "sync"
   | "archived";
@@ -64,12 +66,35 @@ export interface PendingApproval {
   kind: string;
   title: string;
   detail: string;
+  /** Why the asker is asking, in its own words. Present when a model requested an escalation. */
+  reason?: string;
+  /** What an "always" answer gets remembered against. */
+  subject?: string;
 }
 
 export interface AppState {
   ready: boolean;
   view: View;
   settingsSection: SettingsSection;
+  /**
+   * Which bundle the catalogue should be showing, by key, or null for the grid.
+   *
+   * Up here rather than inside the view because it is now reached from two places: clicking a
+   * card, and 管理 on a row in settings — which has to leave the settings window entirely, and
+   * cannot hand a parameter to a view it is not rendering.
+   */
+  pluginFocus: string | null;
+  /**
+   * Bumped whenever something was installed, uninstalled, or written to disk under the extension
+   * directories — the signal every list that scans disk re-reads on.
+   *
+   * Four places show the same installed things from two angles: the catalogue's grid, its
+   * installed strip, 设置 › 插件, and the tab counts above it. Each used to scan on its own and
+   * re-scan on its own triggers, so installing from one left the other three showing what was
+   * true a moment ago. There is no file watcher and there does not need to be: the only thing
+   * that changes those directories is this app, and it knows when it did.
+   */
+  extensionsNonce: number;
 
   settings: Settings | null;
   sessions: SessionMeta[];
@@ -167,6 +192,10 @@ export interface AppState {
   bootstrap(): Promise<void>;
   setView(view: View): void;
   setSettingsSection(section: SettingsSection): void;
+  /** Open one bundle's page in the catalogue, or return to the grid with null. */
+  setPluginFocus(key: string | null): void;
+  /** Say that what is installed has changed, so every list showing it re-reads. */
+  bumpExtensions(): void;
   saveSettings(settings: Settings): Promise<void>;
 
   pickWorkspace(): Promise<void>;
@@ -211,6 +240,8 @@ export const useApp = create<AppState>((set, get) => ({
   ready: false,
   view: "chat",
   settingsSection: "models",
+  pluginFocus: null,
+  extensionsNonce: 0,
   settings: null,
   sessions: [],
   workspace: null,
@@ -267,6 +298,22 @@ export const useApp = create<AppState>((set, get) => ({
     const scratchRoots = await window.lyra.git.scratchRoots().catch(() => []);
     set({ settings, sessions, workspace, scratchRoots, ready: true });
 
+    /*
+     * Settings the window did not write itself.
+     *
+     * Installing an MCP bundle adds its servers, uninstalling one takes them away, an approval
+     * appends to `alwaysAllow`, sync rotates its token — all of that happens in the main process,
+     * which has always broadcast the result. Nothing listened, so the window kept showing the
+     * settings it last saved: a server installed from the catalogue simply was not on the MCP
+     * page, and the two halves of the same subject disagreed until the app was restarted.
+     *
+     * Also bumps `extensionsNonce`, because a change to `mcpServers` usually means a directory
+     * appeared or vanished as well, and the lists that scan disk have no other way to hear it.
+     */
+    window.lyra.settings.onChanged((next) =>
+      set((state) => ({ settings: next, extensionsNonce: state.extensionsNonce + 1 })),
+    );
+
     window.lyra.agent.onEvent(({ sessionId, event }) =>
       get().applyEvent(sessionId, event),
     );
@@ -281,6 +328,8 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (view) => set({ view }),
   setComposerDraft: (composerDraft) => set({ composerDraft }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
+  setPluginFocus: (pluginFocus) => set({ pluginFocus }),
+  bumpExtensions: () => set((state) => ({ extensionsNonce: state.extensionsNonce + 1 })),
 
   async saveSettings(settings) {
     const saved = await window.lyra.settings.save(settings);

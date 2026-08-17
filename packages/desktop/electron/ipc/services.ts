@@ -52,7 +52,7 @@ export function registerServicesIpc(deps: ServicesIpcDeps): void {
 
 	// Scanning does not need a live session: the settings pages are usually opened before
 	// any conversation exists, and an empty plugin list there reads as "nothing installed".
-	registerPluginsIpc({ disabledPlugins: () => settings().disabledPlugins });
+	registerPluginsIpc({ settings, saveSettings: applySettings });
 
 	registerSystemIpc();
 

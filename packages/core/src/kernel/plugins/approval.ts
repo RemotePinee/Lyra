@@ -1,4 +1,5 @@
-import { assessCommand, assessNetwork, assessWrite } from "../../tools/risk.ts";
+import { assessCommand, assessWrite } from "../../tools/risk.ts";
+import { assessNetwork } from "../../tools/risk-network.ts";
 import type { Context, Plugin } from "../context.ts";
 import { APPROVAL, type ApprovalPolicy, type ApprovalVerdict } from "../services.ts";
 
@@ -17,7 +18,18 @@ class DefaultPolicy implements ApprovalPolicy {
 	assess(kind: string, subject: string, cwd: string): ApprovalVerdict {
 		if (kind === "bash") return assessCommand(subject, cwd);
 		if (kind === "edit" || kind === "write") return assessWrite(subject, cwd);
-		if (kind === "network") return assessNetwork(subject);
+		if (kind === "network") {
+				/*
+				 * Three answers folded into this seam's two.
+				 *
+				 * `assessNetwork` distinguishes "refuse outright" from "ask a person", and this
+				 * interface only has "risky or not". Both non-allow answers arrive here as risky,
+				 * which is the safe fold — the refusals that matter are enforced at the tool,
+				 * before anything reaches a prompt.
+				 */
+				const verdict = assessNetwork({ url: subject });
+				return verdict.decision === "allow" ? { risky: false } : { risky: true, reason: verdict.reason };
+			}
 		// An unfamiliar kind is one this policy was not written for, so it defers to a person.
 		return { risky: true };
 	}

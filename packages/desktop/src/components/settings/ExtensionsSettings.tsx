@@ -1,10 +1,10 @@
-import { Blocks, Cable, ChevronDown, Plus, Sparkles, Store } from "lucide-react";
+import { Blocks, Cable, ChevronDown, FolderOpen, MoreHorizontal, Plus, Sparkles, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { MenuItem, Popover, usePopover } from "../Popover.tsx";
+import { MenuBody, MenuItem, Popover, usePopover } from "../Popover.tsx";
 import { SearchField } from "../SearchField.tsx";
 import { useApp } from "../../store.ts";
-import { McpSettings } from "./McpSettings.tsx";
+import { McpSettings, newMcpServer } from "./McpSettings.tsx";
 import { PluginsSettings } from "./PluginsSettings.tsx";
 import { SkillsSettings } from "./SkillsSettings.tsx";
 
@@ -24,11 +24,28 @@ type Tab = "plugins" | "skills" | "mcp";
 export function ExtensionsSettings() {
 	const workspace = useApp((s) => s.workspace);
 	const settings = useApp((s) => s.settings);
+	const saveSettings = useApp((s) => s.saveSettings);
 	const setView = useApp((s) => s.setView);
 	const [tab, setTab] = useState<Tab>("plugins");
 	const [query, setQuery] = useState("");
 	const [counts, setCounts] = useState({ plugins: 0, skills: 0 });
 	const add = usePopover();
+	const more = usePopover();
+	const extensionsNonce = useApp((s) => s.extensionsNonce);
+	const bumpExtensions = useApp((s) => s.bumpExtensions);
+
+	/** Whichever directory this tab is about — the two tabs that have one ask the same question. */
+	const revealDir = (scope: "user" | "workspace") => {
+		const cwd = workspace?.path ?? "";
+		if (tab === "skills") return window.lyra.system.revealSkillsDir(scope, cwd);
+		return window.lyra.plugins.revealDir(scope, cwd);
+	};
+
+	const addServer = (transport: "stdio" | "http") => {
+		if (!settings) return;
+		void saveSettings({ ...settings, mcpServers: [...settings.mcpServers, newMcpServer(transport)] });
+		setTab("mcp");
+	};
 
 	/*
 	 * Browsing is a different place now, not a dialog over this one.
@@ -44,20 +61,27 @@ export function ExtensionsSettings() {
 		void window.lyra.plugins.list(workspace?.path ?? "").then((scan) => {
 			setCounts({ plugins: scan.plugins.length, skills: scan.skills.length });
 		});
-	}, [workspace?.path, settings?.disabledPlugins.length]);
+	}, [workspace?.path, settings?.disabledPlugins.length, extensionsNonce]);
 
+	// Same order as the catalogue's tabs. They are the two halves of one subject, and a page where
+	// 技能 is second and another where it is third is two orders for one list.
 	const tabs: { id: Tab; label: string; count: number; icon: typeof Blocks }[] = [
 		{ id: "plugins", label: "插件", count: counts.plugins, icon: Blocks },
-		{ id: "skills", label: "技能", count: counts.skills, icon: Sparkles },
 		{ id: "mcp", label: "MCP", count: settings?.mcpServers.length ?? 0, icon: Cable },
+		{ id: "skills", label: "技能", count: counts.skills, icon: Sparkles },
 	];
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col pt-8">
-			<header className="flex shrink-0 items-center justify-between pb-5">
-				<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">插件</h1>
+			<header className="flex shrink-0 items-start justify-between pb-5">
+				<div className="min-w-0">
+					<h1 className="text-display leading-tight font-semibold tracking-tight text-ink">插件</h1>
+					{/* One line under the title, because the word 插件 is doing three jobs on this page —
+					    and the tabs below only make sense once you know it contains the other two. */}
+					<p className="pt-1 text-label text-ink-muted">管理插件、技能和 MCP</p>
+				</div>
 
-				<div className="flex shrink-0 items-center gap-2">
+				<div className="flex shrink-0 items-center gap-2 pt-1">
 					<button
 						type="button"
 						onClick={browse}
@@ -80,8 +104,8 @@ export function ExtensionsSettings() {
 			</header>
 
 			{add.open && (
-				<Popover anchor={add.anchor} onClose={add.close} placement="bottom" align="end" width={210}>
-					<div className="p-1">
+				<Popover anchor={add.anchor} onClose={add.close} placement="bottom" align="end" width="default">
+					<MenuBody>
 						<MenuItem
 							icon={<Store size={14} strokeWidth={1.8} />}
 							onClick={() => {
@@ -91,11 +115,13 @@ export function ExtensionsSettings() {
 						>
 							添加插件市场
 						</MenuItem>
+						{/* Adds one and lands on it, rather than only switching tab — the label says 添加,
+						    and a menu item that navigates instead of doing the thing it names is a lie. */}
 						<MenuItem
 							icon={<Cable size={14} strokeWidth={1.8} />}
 							onClick={() => {
 								add.close();
-								setTab("mcp");
+								addServer("stdio");
 							}}
 						>
 							添加 MCP 服务器
@@ -104,12 +130,15 @@ export function ExtensionsSettings() {
 							icon={<Plus size={14} strokeWidth={1.8} />}
 							onClick={() => {
 								add.close();
-								void window.lyra.plugins.installExample("user", workspace?.path ?? "");
+								// Writes a directory three other lists read; none of them would notice on their own.
+								void window.lyra.plugins
+									.installExample("user", workspace?.path ?? "")
+									.then(() => bumpExtensions());
 							}}
 						>
 							安装示例插件
 						</MenuItem>
-					</div>
+					</MenuBody>
 				</Popover>
 			)}
 
@@ -140,7 +169,79 @@ export function ExtensionsSettings() {
 					placeholder="搜索"
 					className="w-[220px]"
 				/>
+
+				{/*
+				 * What this tab can do besides list things.
+				 *
+				 * Each of the three used to open with a header of its own — two directory buttons on
+				 * plugins, the same two on skills, two 添加 buttons on MCP — so switching tab moved a
+				 * row of buttons around above a list that had not moved. They are the same kind of
+				 * thing (act on the tab, not on a row), and one ⋯ that changes contents is where that
+				 * kind of thing goes.
+				 */}
+				<button
+					type="button"
+					aria-label="更多操作"
+					aria-haspopup="menu"
+					aria-expanded={more.open}
+					onClick={more.toggle}
+					className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink aria-expanded:bg-card-hover aria-expanded:text-ink"
+				>
+					<MoreHorizontal size={15} strokeWidth={1.9} />
+				</button>
 			</div>
+
+			{more.open && (
+				<Popover anchor={more.anchor} onClose={more.close} placement="bottom" align="end" width="default">
+					<MenuBody>
+						{tab === "mcp" ? (
+							<>
+								<MenuItem
+									icon={<Plus size={13} strokeWidth={1.9} />}
+									onClick={() => {
+										more.close();
+										addServer("stdio");
+									}}
+								>
+									添加 stdio 服务
+								</MenuItem>
+								<MenuItem
+									icon={<Plus size={13} strokeWidth={1.9} />}
+									onClick={() => {
+										more.close();
+										addServer("http");
+									}}
+								>
+									添加 HTTP 服务
+								</MenuItem>
+							</>
+						) : (
+							<>
+								<MenuItem
+									icon={<FolderOpen size={13} strokeWidth={1.8} />}
+									onClick={() => {
+										more.close();
+										void revealDir("user");
+									}}
+								>
+									用户目录
+								</MenuItem>
+								<MenuItem
+									icon={<FolderOpen size={13} strokeWidth={1.8} />}
+									disabled={!workspace}
+									title={workspace ? undefined : "当前没有打开项目"}
+									onClick={() => {
+										more.close();
+										void revealDir("workspace");
+									}}
+								>
+									项目目录
+								</MenuItem>
+							</>
+						)}
+					</MenuBody>
+				</Popover>
+			)}
 
 			<div className="min-h-0 flex-1 overflow-y-auto pb-10">
 				{tab === "plugins" && <PluginsSettings filter={query} />}
