@@ -15,17 +15,22 @@ import {
 	commit,
 	current,
 	emptyHistory,
+	hitShape,
 	HISTORY_LIMIT,
 	mosaicBlock,
 	mosaicBrush,
 	mosaicCells,
+	moveShape,
+	pickTolerance,
 	redo,
+	shapeBounds,
 	stepNumber,
 	wrapText,
 	undo,
 	ZOOM_MAX,
 	ZOOM_MIN,
 	zoomAt,
+	type Point,
 	type Shape,
 } from "../src/components/image/annotate.ts";
 
@@ -150,6 +155,100 @@ test("block and brush scale with the image, and never collapse on a small one", 
 	assert.ok(mosaicBlock(100) >= 8, "and a tiny one still gets blocks you can see");
 	assert.ok(mosaicBrush(3000) > mosaicBrush(600));
 	assert.ok(mosaicBrush(50) >= 16);
+});
+
+// ---------------------------------------------------------------------------
+// Selecting and moving
+// ---------------------------------------------------------------------------
+
+test("the mark under the point is found, and a miss is reported as a miss", () => {
+	const line: Shape = { tool: "line", colour: "#000", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] };
+	assert.equal(hitShape([line], { x: 50, y: 2 }, 5), 0);
+	assert.equal(hitShape([line], { x: 50, y: 40 }, 5), -1, "far from the line");
+	assert.equal(hitShape([line], { x: 140, y: 0 }, 5), -1, "a segment is not its infinite extension");
+	assert.equal(hitShape([], { x: 0, y: 0 }, 5), -1, "nothing to hit");
+});
+
+test("an outline is hit on its outline, so what it frames stays clickable", () => {
+	const rect: Shape = { tool: "rect", colour: "#000", points: [{ x: 0, y: 0 }, { x: 100, y: 100 }] };
+	assert.equal(hitShape([rect], { x: 50, y: 1 }, 5), 0, "top edge");
+	assert.equal(hitShape([rect], { x: 100, y: 50 }, 5), 0, "right edge");
+	assert.equal(hitShape([rect], { x: 50, y: 50 }, 5), -1, "the middle belongs to whatever it frames");
+
+	const ellipse: Shape = { tool: "ellipse", colour: "#000", points: [{ x: 0, y: 0 }, { x: 200, y: 100 }] };
+	assert.equal(hitShape([ellipse], { x: 100, y: 0 }, 6), 0, "on the curve");
+	assert.equal(hitShape([ellipse], { x: 100, y: 50 }, 6), -1, "inside is not on it");
+});
+
+test("text and step badges are solid, and are hit anywhere in their box", () => {
+	const label: Shape = {
+		tool: "text",
+		colour: "#000",
+		points: [{ x: 10, y: 10 }],
+		text: "hello",
+		size: 20,
+		width: 200,
+		height: 60,
+	};
+	assert.equal(hitShape([label], { x: 100, y: 40 }, 2), 0, "middle of the box");
+	assert.equal(hitShape([label], { x: 205, y: 65 }, 2), 0, "bottom right corner");
+	assert.equal(hitShape([label], { x: 300, y: 40 }, 2), -1, "past the column");
+	assert.equal(hitShape([label], { x: 100, y: 200 }, 2), -1, "below it");
+
+	const badge: Shape = { tool: "step", colour: "#000", points: [{ x: 100, y: 100 }] };
+	assert.equal(hitShape([badge], { x: 100, y: 100 }, 3), 0, "the badge is a disc, not a ring");
+});
+
+test("a wide mosaic stroke is easier to hit than a thin pen stroke", () => {
+	// Beyond a pen's reach, inside a mosaic brush's.
+	const at: Point = { x: 50, y: 16 };
+	const path = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+	assert.equal(hitShape([{ tool: "pen", colour: "#000", points: path }], at, 5), -1);
+	assert.equal(hitShape([{ tool: "mosaic", colour: "#000", points: path }], at, 5), 0);
+});
+
+test("the topmost mark wins, because that is the one being pointed at", () => {
+	const a: Shape = { tool: "pen", colour: "#000", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] };
+	const b: Shape = { tool: "pen", colour: "#111", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] };
+	assert.equal(hitShape([a, b], { x: 50, y: 0 }, 5), 1, "the later one is on top");
+});
+
+test("moving shifts every point and changes nothing else", () => {
+	const shape: Shape = { tool: "text", colour: "#ef4444", points: [{ x: 10, y: 20 }], text: "hi", width: 100 };
+	const moved = moveShape(shape, 5, -8);
+	assert.deepEqual(moved.points, [{ x: 15, y: 12 }]);
+	assert.equal(moved.text, "hi");
+	assert.equal(moved.width, 100, "the column it wraps at travels with it");
+	assert.equal(moved.colour, "#ef4444");
+	assert.deepEqual(shape.points, [{ x: 10, y: 20 }], "and the original is untouched");
+});
+
+test("a moved mark can be picked up again where it now is, and not where it was", () => {
+	const before: Shape = { tool: "line", colour: "#000", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] };
+	const after = moveShape(before, 0, 200);
+	assert.equal(hitShape([after], { x: 50, y: 200 }, 5), 0);
+	assert.equal(hitShape([after], { x: 50, y: 0 }, 5), -1);
+});
+
+test("the selection box surrounds the mark it is drawn around", () => {
+	const line: Shape = { tool: "line", colour: "#000", points: [{ x: 20, y: 30 }, { x: 120, y: 80 }] };
+	const box = shapeBounds(line, 4);
+	assert.ok(box.x <= 20 && box.y <= 30, "starts at or before the mark");
+	assert.ok(box.x + box.w >= 120 && box.y + box.h >= 80, "ends at or after it");
+
+	// A step badge is centred on its point, not started from it.
+	const badge = shapeBounds({ tool: "step", colour: "#000", points: [{ x: 100, y: 100 }] }, 4);
+	assert.ok(badge.x < 100 && badge.y < 100 && badge.x + badge.w > 100, JSON.stringify(badge));
+
+	// A single-point pen dab still gets a box with area, or it cannot be shown as selected.
+	const dab = shapeBounds({ tool: "pen", colour: "#000", points: [{ x: 5, y: 5 }] }, 3);
+	assert.ok(dab.w > 0 && dab.h > 0, JSON.stringify(dab));
+});
+
+test("picking is forgiving by a constant number of screen pixels, however far in you are", () => {
+	assert.ok(pickTolerance(3, 0.25) > pickTolerance(3, 1), "zoomed out, one screen pixel is more image pixels");
+	assert.ok(pickTolerance(3, 4) < pickTolerance(3, 1));
+	assert.ok(pickTolerance(12, 8) >= 12, "never tighter than the mark's own width");
 });
 
 // ---------------------------------------------------------------------------

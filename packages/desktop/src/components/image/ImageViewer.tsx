@@ -89,6 +89,18 @@ export function ImageViewer() {
 	}, [src, resetView]);
 
 	/*
+	 * Closed means closed, however it was closed.
+	 *
+	 * `dismiss` leaves edit mode on the way out, but the store can be closed from anywhere — another
+	 * part of the app, or a keyboard shortcut that never goes through here. Without this the next
+	 * image to be opened would arrive with the annotator already up, over a picture nobody asked to
+	 * annotate.
+	 */
+	useEffect(() => {
+		if (!state) setEditing(false);
+	}, [state]);
+
+	/*
 	 * The flight, driven straight at the DOM rather than through React.
 	 *
 	 * FLIP measures the *final* layout and then expresses the start as a transform away from it. The
@@ -189,7 +201,19 @@ export function ImageViewer() {
 				setSpacing(true);
 				return;
 			}
-			if (event.key === "Escape") dismiss();
+			/*
+			 * Escape undoes one layer at a time.
+			 *
+			 * A selection, then annotating, then the viewer. Closing the whole thing because something
+			 * was selected throws away the work to answer a much smaller question, and the way back
+			 * from that is no way back at all.
+			 */
+			if (event.key === "Escape") {
+				if (editing && annotator.selected !== null) annotator.setSelected(null);
+				else if (editing) setEditing(false);
+				else dismiss();
+				return;
+			}
 			if (editing) return;
 			if (event.key === "ArrowLeft") stepViewer(-1);
 			if (event.key === "ArrowRight") stepViewer(1);
@@ -208,7 +232,7 @@ export function ImageViewer() {
 			window.removeEventListener("keyup", onUp);
 			window.removeEventListener("blur", release);
 		};
-	}, [shown, editing, dismiss]);
+	}, [shown, editing, dismiss, annotator]);
 
 	if (!shown || !image) return null;
 
@@ -299,7 +323,7 @@ export function ImageViewer() {
 					}}
 				>
 					{editing ? (
-						<AnnotateCanvas annotator={annotator} />
+						<AnnotateCanvas annotator={annotator} zoom={zoom} />
 					) : (
 						<img
 							src={image.src}

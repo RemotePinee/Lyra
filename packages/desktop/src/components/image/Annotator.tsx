@@ -20,6 +20,7 @@
 
 import {
 	ArrowUpRight,
+	MousePointer2,
 	Circle,
 	Grid2x2,
 	ListOrdered,
@@ -32,7 +33,7 @@ import {
 	Undo2,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
 	canRedo,
@@ -40,10 +41,14 @@ import {
 	commit,
 	current,
 	emptyHistory,
+	hitShape,
 	mosaicBlock,
 	mosaicBrush,
 	mosaicCells,
+	moveShape,
+	pickTolerance,
 	redo,
+	shapeBounds,
 	stepNumber,
 	undo,
 	wrapText,
@@ -65,6 +70,25 @@ interface Typing {
 	value: string;
 	/** The column it wraps at, dragged by the handle on its edge. */
 	width: number;
+	/**
+	 * The caption this one replaces, when an existing mark is being edited rather than a new one
+	 * written. It is hidden from the paint while it is being edited, so it is not drawn twice.
+	 */
+	replacing?: number;
+}
+
+/** A mark being dragged: which one, where the drag started, and where it has got to. */
+interface Dragging {
+	index: number;
+	from: Point;
+	moving: Shape;
+	/**
+	 * Whether it has actually gone anywhere.
+	 *
+	 * A click that selects is a drag of zero length, and committing that would put a step in the
+	 * history that changes nothing — undo would appear not to work until pressed twice.
+	 */
+	moved: boolean;
 }
 
 /** Line spacing and padding, shared by the field and the paint so the two agree exactly. */
@@ -97,6 +121,10 @@ export interface Annotator {
 	canUndo: boolean;
 	canRedo: boolean;
 	dirty: boolean;
+	/** Which mark is selected, or null. An index into the current state's list. */
+	selected: number | null;
+	setSelected: (index: number | null) => void;
+	removeSelected: () => void;
 	/** The annotated image as a PNG data URL, or null before the source has decoded. */
 	render: () => string | null;
 	// Internals the canvas needs; not for callers.
@@ -125,6 +153,7 @@ export function useAnnotator(src: string): Annotator {
 	const [colour, setColour] = useState(COLOURS[0]!);
 	const [backdrop, setBackdrop] = useState<string | undefined>(undefined);
 	const [history, setHistory] = useState<History>(emptyHistory);
+	const [selected, setSelected] = useState<number | null>(null);
 	const [ready, setReady] = useState(false);
 	const [width, setWidth] = useState(0);
 
@@ -132,6 +161,7 @@ export function useAnnotator(src: string): Annotator {
 	useEffect(() => {
 		setReady(false);
 		setHistory(emptyHistory());
+		setSelected(null);
 		// The viewer passes "" while it is only showing the picture. Setting an empty `src` on an
 		// Image resolves against the document URL and fetches the page itself, so it is not a
 		// harmless no-op — it has to be skipped rather than allowed to fail.
@@ -172,19 +202,51 @@ export function useAnnotator(src: string): Annotator {
 
 	const shapes = current(history);
 
+	/*
+	 * Anything that changes the list clears the selection.
+	 *
+	 * A selection is an index, and an index only means something against the list it was taken
+	 * from. After an undo the list is a different one: the same index is a different mark, or none
+	 * at all, and a selection box would be drawn around something the user did not select. Clearing
+	 * is both correct and what every editor does — undo puts you back, it does not keep your hands
+	 * where they were.
+	 */
+	const step = useCallback((change: (h: History) => History) => {
+		setSelected(null);
+		setHistory(change);
+	}, []);
+
 	return {
 		tool,
-		setTool,
+		setTool: useCallback((next: Tool) => {
+			// A selection belongs to the selecting tool; keeping it while a pen is chosen would leave
+			// a box around something the next click is not going to affect.
+			if (next !== "select") setSelected(null);
+			setTool(next);
+		}, []),
 		colour,
 		setColour,
 		backdrop,
 		setBackdrop,
-		undo: useCallback(() => setHistory(undo), []),
-		redo: useCallback(() => setHistory(redo), []),
-		clear: useCallback(() => setHistory((h) => (current(h).length === 0 ? h : commit(h, []))), []),
+		undo: useCallback(() => step(undo), [step]),
+		redo: useCallback(() => step(redo), [step]),
+		clear: useCallback(() => step((h) => (current(h).length === 0 ? h : commit(h, []))), [step]),
 		canUndo: canUndo(history),
 		canRedo: canRedo(history),
 		dirty: shapes.length > 0,
+		selected,
+		setSelected,
+		// Two plain calls rather than one inside the other's updater: an updater has to be pure,
+		// because React runs it more than once per commit. This is the same trap that made a caption
+		// commit twice, and it is worth writing out longhand every time.
+		removeSelected: useCallback(() => {
+			if (selected === null) return;
+			setHistory((h) => {
+				const list = current(h);
+				return selected < list.length ? commit(h, list.filter((_, i) => i !== selected)) : h;
+			});
+			setSelected(null);
+		}, [selected]),
 		render: useCallback(() => canvas.current?.toDataURL("image/png") ?? null, []),
 		shapes,
 		canvas,
@@ -204,20 +266,32 @@ export function useAnnotator(src: string): Annotator {
 export const STAGE_FIT = "max-h-[86vh] max-w-[86vw]";
 
 const CURSOR: Partial<Record<Tool, string>> = {
+	select: "cursor-default",
 	text: "cursor-text",
 	step: "cursor-copy",
 	mosaic: "cursor-cell",
 };
 
-export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
-	const { canvas, image, pixels, ready, width, tool, colour, backdrop, shapes, setHistory } = annotator;
+export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom: number }) {
+	const { canvas, image, pixels, ready, width, tool, colour, backdrop, shapes, setHistory, selected, setSelected } =
+		annotator;
 	const [drawing, setDrawing] = useState<Shape | null>(null);
 	const [typing, setTyping] = useState<Typing | null>(null);
+	const [dragging, setDragging] = useState<Dragging | null>(null);
 	const field = useRef<HTMLTextAreaElement>(null);
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
 
 	const stroke = Math.max(STROKE_BASE, Math.round(width / 500));
 	const typeSize = stroke * TEXT_SCALE;
+
+	/*
+	 * Image pixels → display pixels, read during render rather than stored.
+	 *
+	 * Declared up here because `commitText` closes over it: a `useCallback` dependency array is
+	 * evaluated as the component renders, so a `const` defined further down is still in its temporal
+	 * dead zone by the time the array is built.
+	 */
+	const display = canvas.current && canvas.current.width > 0 ? canvas.current.clientWidth / canvas.current.width : 1;
 
 	/*
 	 * Sized on attach as well as on load, which is what stops the flash.
@@ -240,9 +314,25 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 		[canvas, image],
 	);
 
-	// One painter for everything: committed marks, the shape being dragged, and the text being
-	// typed. The last of those is why typing shows on the picture as you type rather than when you
-	// press enter.
+	/**
+	 * What is actually on screen: the committed marks, with the one being dragged shown where it is
+	 * being dragged to, and the one being re-edited taken out because the field is standing in for it.
+	 */
+	const live = useMemo(() => {
+		const list = shapes
+			.map((shape, index) => (dragging?.index === index ? dragging.moving : shape))
+			.filter((_, index) => index !== typing?.replacing);
+		return drawing ? [...list, drawing] : list;
+	}, [shapes, drawing, dragging, typing?.replacing]);
+
+	/*
+	 * The canvas carries only what will be saved.
+	 *
+	 * The selection box is drawn in the DOM, a few lines below, rather than here. Painting it onto
+	 * the canvas would mean `toDataURL` picked it up, and the fix for that — repaint without it,
+	 * grab the URL, repaint with it — is a second rendering path that exists only to be forgotten
+	 * about later. An element over the canvas cannot end up in the file.
+	 */
 	useEffect(() => {
 		const el = canvas.current;
 		const img = image.current;
@@ -253,18 +343,13 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 		ctx.clearRect(0, 0, el.width, el.height);
 		ctx.drawImage(img, 0, 0);
 
-		const live: Shape[] = [...shapes];
-		if (drawing) live.push(drawing);
-		// The caption being typed is *not* painted here — the field itself is styled to match, so
-		// painting it as well would draw everything twice, half a pixel apart.
-
 		const block = mosaicBlock(width);
 		const brush = mosaicBrush(width);
 		live.forEach((shape, index) => {
 			if (shape.tool === "mosaic") paintMosaic(ctx, shape, pixels.current, block, brush);
 			else paint(ctx, shape, stroke, stepNumber(live, index));
 		});
-	}, [shapes, drawing, ready, width, stroke, canvas, image, pixels]);
+	}, [live, ready, width, stroke, canvas, image, pixels]);
 
 	// Focused on appearing, so typing can start immediately; and grown to fit its content on every
 	// keystroke, so the box is always exactly as tall as what is in it.
@@ -277,8 +362,10 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 	}, [typing]);
 
 	/** Display coordinates → image pixels, which is where the shapes live. */
+	// Takes anything with client coordinates, so a double-click can be located the same way a
+	// pointer press is without either knowing about the other's event type.
 	const at = useCallback(
-		(event: React.PointerEvent): Point => {
+		(event: { clientX: number; clientY: number }): Point => {
 			const el = canvas.current;
 			if (!el) return { x: 0, y: 0 };
 			// The rect already includes the stage's zoom transform, so this is correct at any zoom.
@@ -302,27 +389,79 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 	 */
 	const commitText = useCallback(() => {
 		if (!typing) return;
-		if (typing.value.trim())
-			setHistory((h) =>
-				commit(h, [
-					...current(h),
-					{
-						tool: "text",
-						colour,
-						points: [typing.at],
-						text: typing.value,
-						size: typeSize,
-						width: typing.width,
-						background: backdrop,
-					},
-				]),
-			);
+		const { at: where, value, width: column, replacing } = typing;
+		// Measured from the field that typed it, so the box that can be selected later is exactly the
+		// box that was seen. Falls back to one line if the element has already gone.
+		const height = field.current ? field.current.offsetHeight / (display || 1) : typeSize * LINE;
+
+		setHistory((h) => {
+			const list = current(h);
+			const written = value.trim();
+
+			if (replacing !== undefined) {
+				if (replacing >= list.length) return h;
+				// Emptying an existing caption removes it. Anything else would leave an invisible mark
+				// that can still be selected, which is worse than either outcome the user meant.
+				if (!written) return commit(h, list.filter((_, i) => i !== replacing));
+				return commit(
+					h,
+					list.map((shape, i) =>
+						i === replacing
+							? { ...shape, colour, points: [where], text: value, size: typeSize, width: column, height, background: backdrop }
+							: shape,
+					),
+				);
+			}
+
+			if (!written) return h;
+			return commit(h, [
+				...list,
+				{ tool: "text", colour, points: [where], text: value, size: typeSize, width: column, height, background: backdrop },
+			]);
+		});
 		setTyping(null);
-	}, [typing, setHistory, colour, typeSize, backdrop]);
+	}, [typing, setHistory, colour, typeSize, backdrop, display]);
+
+	/** Put an existing caption back into the field it came from. */
+	const editText = useCallback(
+		(index: number) => {
+			const shape = shapes[index];
+			if (!shape || shape.tool !== "text") return false;
+			annotator.setColour(shape.colour);
+			annotator.setBackdrop(shape.background);
+			setSelected(null);
+			setTyping({
+				at: shape.points[0] ?? { x: 0, y: 0 },
+				value: shape.text ?? "",
+				width: shape.width ?? Math.max(160, Math.round(width * 0.3)),
+				replacing: index,
+			});
+			return true;
+		},
+		[shapes, annotator, setSelected, width],
+	);
 
 	const start = (event: React.PointerEvent) => {
 		if (event.button !== 0) return;
 		const point = at(event);
+
+		/*
+		 * Selecting and moving are one gesture.
+		 *
+		 * Pressing on a mark selects it *and* begins the drag, so moving something takes one gesture
+		 * rather than a click to select followed by a drag to move. Pressing on nothing clears the
+		 * selection, which is the only other thing a press on empty space could mean.
+		 */
+		if (tool === "select") {
+			if (typing) commitText();
+			const index = hitShape(shapes, point, pickTolerance(stroke, zoom));
+			setSelected(index < 0 ? null : index);
+			if (index >= 0) {
+				event.currentTarget.setPointerCapture(event.pointerId);
+				setDragging({ index, from: point, moving: shapes[index]!, moved: false });
+			}
+			return;
+		}
 
 		if (tool === "text") {
 			/*
@@ -354,12 +493,26 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 		}
 
 		event.currentTarget.setPointerCapture(event.pointerId);
-		setDrawing({ tool, colour, points: [point] });
+		setDrawing({ tool: tool as Exclude<Tool, "select" | "text" | "step">, colour, points: [point] });
 	};
 
 	const move = (event: React.PointerEvent) => {
-		if (!drawing) return;
 		const point = at(event);
+
+		if (dragging) {
+			const dx = point.x - dragging.from.x;
+			const dy = point.y - dragging.from.y;
+			setDragging((held) => {
+				if (!held) return held;
+				const origin = shapes[held.index];
+				if (!origin) return held;
+				// Always from the original, so the drag does not accumulate rounding as it goes.
+				return { ...held, moving: moveShape(origin, dx, dy), moved: held.moved || Math.hypot(dx, dy) > 0.5 };
+			});
+			return;
+		}
+
+		if (!drawing) return;
 		setDrawing((live) => {
 			if (!live) return live;
 			// Pen and mosaic accumulate; everything else is defined by its two ends.
@@ -370,6 +523,19 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 	};
 
 	const end = () => {
+		if (dragging) {
+			// One step in the history per move, and none at all for a drag that went nowhere.
+			if (dragging.moved) {
+				const { index, moving } = dragging;
+				setHistory((h) => {
+					const list = current(h);
+					return index < list.length ? commit(h, list.map((s, i) => (i === index ? moving : s))) : h;
+				});
+			}
+			setDragging(null);
+			return;
+		}
+
 		if (!drawing) return;
 		// A click with no drag leaves a one-point shape, which paints as nothing — drop it, except
 		// for the pen and the mosaic, where a single dab is a legitimate mark.
@@ -378,10 +544,19 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 		setDrawing(null);
 	};
 
-	// Where the field goes: image pixels scaled to however large the canvas is being displayed.
-	// Inside the stage, so it zooms and pans with the picture and stays over the right spot.
-	const el = canvas.current;
-	const display = el && el.width > 0 ? el.clientWidth / el.width : 1;
+	/*
+	 * Where the selection box goes, in display pixels.
+	 *
+	 * Read from `shapes` rather than from `live`: `selected` is an index into the committed list, and
+	 * `live` has the caption being re-edited filtered out of it, so the two do not line up whenever
+	 * both are in play. Taken from the drag when there is one, so the box travels with the mark
+	 * rather than staying where it was picked up.
+	 */
+	const chosen =
+		tool === "select" && selected !== null
+			? (dragging?.index === selected ? dragging.moving : shapes[selected]) ?? null
+			: null;
+	const box = chosen ? shapeBounds(chosen, stroke) : null;
 
 	return (
 		<div className="relative">
@@ -391,9 +566,47 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 				onPointerMove={move}
 				onPointerUp={end}
 				onPointerCancel={end}
+				onDoubleClick={(event) => {
+					// Zooming is the double-click on the stage below; this one belongs to the mark.
+					event.stopPropagation();
+					if (tool !== "select") return;
+					const index = hitShape(shapes, at(event), pickTolerance(stroke, zoom));
+					if (index >= 0) editText(index);
+				}}
 				className={`${STAGE_FIT} block rounded-xl bg-white ${CURSOR[tool] ?? "cursor-crosshair"}`}
 				style={{ touchAction: "none" }}
 			/>
+
+			{box && (
+				/*
+				 * A box around what is selected, and a button to remove it.
+				 *
+				 * `pointer-events-none` on the frame: it lies over the mark, and a frame that swallowed
+				 * the press would make the thing it is pointing at the one thing you cannot grab.
+				 */
+				<div
+					className="pointer-events-none absolute"
+					style={{
+						left: box.x * display,
+						top: box.y * display,
+						width: box.w * display,
+						height: box.h * display,
+					}}
+				>
+					<span className="absolute inset-0 rounded-[3px] border border-sky-400 border-dashed bg-sky-400/10" />
+					<button
+						type="button"
+						data-ly-tip="删除这个标注 ⌫"
+						data-ly-tip-side="top"
+						aria-label="删除选中的标注"
+						onPointerDown={(event) => event.stopPropagation()}
+						onClick={annotator.removeSelected}
+						className="pointer-events-auto -top-3 -right-3 absolute flex h-6 w-6 items-center justify-center rounded-full bg-[#1c1c1e] text-white/90 shadow-md transition-[transform,background-color] duration-[var(--ly-t-quick)] hover:scale-110 hover:bg-red-500 hover:text-white"
+					>
+						<Trash2 size={12} strokeWidth={2} />
+					</button>
+				</div>
+			)}
 
 			{typing && (
 				/*
@@ -493,6 +706,7 @@ export function AnnotateCanvas({ annotator }: { annotator: Annotator }) {
 // ---------------------------------------------------------------------------
 
 const TOOLS: [Tool, typeof Pencil, string][] = [
+	["select", MousePointer2, "选择 / 移动"],
 	["pen", Pencil, "画笔"],
 	["arrow", ArrowUpRight, "箭头"],
 	["line", Minus, "直线"],
@@ -530,16 +744,27 @@ export function AnnotateToolbar({
 		return () => cancelAnimationFrame(id);
 	}, []);
 
-	// Undo and redo from the keyboard, which is where anyone drawing reaches first.
+	// Undo, redo and delete from the keyboard, which is where anyone drawing reaches first.
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
-			if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
 			const target = event.target as HTMLElement | null;
-			// Not while typing a caption — there, undo belongs to the field.
+			// Never while typing a caption: there, ⌘Z belongs to the field and backspace is a
+			// backspace. A shortcut that deletes the mark you are in the middle of writing is worse
+			// than no shortcut.
 			if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
-			event.preventDefault();
-			if (event.shiftKey) annotator.redo();
-			else annotator.undo();
+
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+				event.preventDefault();
+				if (event.shiftKey) annotator.redo();
+				else annotator.undo();
+				return;
+			}
+
+			if ((event.key === "Backspace" || event.key === "Delete") && annotator.selected !== null) {
+				// Backspace is the browser's "go back" on some setups; taking it is the point.
+				event.preventDefault();
+				annotator.removeSelected();
+			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);

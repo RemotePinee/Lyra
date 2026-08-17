@@ -13,7 +13,10 @@
  * screenshot when it is saved.
  */
 
-export type Tool = "pen" | "arrow" | "line" | "rect" | "ellipse" | "step" | "text" | "mosaic";
+export type Tool = "select" | "pen" | "arrow" | "line" | "rect" | "ellipse" | "step" | "text" | "mosaic";
+
+/** The tools that leave something behind. Selecting is a tool but not a kind of mark. */
+export type ShapeTool = Exclude<Tool, "select">;
 
 export interface Point {
 	x: number;
@@ -21,7 +24,7 @@ export interface Point {
 }
 
 export interface Shape {
-	tool: Tool;
+	tool: ShapeTool;
 	colour: string;
 	/** Pen and mosaic keep every point; the rest are defined by where the drag started and ended. */
 	points: Point[];
@@ -30,8 +33,148 @@ export interface Shape {
 	size?: number;
 	/** Text only: the column width it wraps at, in natural pixels. */
 	width?: number;
+	/** Text only: how tall it came out, measured from the field that typed it. */
+	height?: number;
 	/** Text only: a CSS colour behind the text, or undefined for none. */
 	background?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Selecting, moving, measuring
+// ---------------------------------------------------------------------------
+
+/** Every point shifted; nothing else about the mark changes. */
+export function moveShape(shape: Shape, dx: number, dy: number): Shape {
+	return { ...shape, points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+}
+
+/**
+ * The box around a mark, for drawing the selection and for nothing else.
+ *
+ * Deliberately generous: it is a hint about what is selected, not a claim about which pixels the
+ * mark covers, and a box that clips the thing it surrounds looks like a mistake.
+ */
+export function shapeBounds(shape: Shape, stroke: number): { x: number; y: number; w: number; h: number } {
+	const first = shape.points[0] ?? { x: 0, y: 0 };
+
+	if (shape.tool === "text") {
+		const size = shape.size ?? 16;
+		return {
+			x: first.x,
+			y: first.y,
+			w: shape.width ?? size * 6,
+			h: shape.height ?? size * 1.9,
+		};
+	}
+
+	if (shape.tool === "step") {
+		const r = Math.max(12, stroke * 4.5);
+		return { x: first.x - r, y: first.y - r, w: r * 2, h: r * 2 };
+	}
+
+	const xs = shape.points.map((p) => p.x);
+	const ys = shape.points.map((p) => p.y);
+	// Mosaic is painted with a wide brush; the rest with a stroke.
+	const pad = shape.tool === "mosaic" ? stroke * 6 : stroke;
+	const [x1, x2] = [Math.min(...xs) - pad, Math.max(...xs) + pad];
+	const [y1, y2] = [Math.min(...ys) - pad, Math.max(...ys) + pad];
+	return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+/**
+ * Which mark is under the point, or -1.
+ *
+ * Searched newest first, so the one on top wins — which is the one being pointed at, as far as
+ * anyone looking at the picture is concerned.
+ *
+ * Outlines are hit on the outline rather than over their area: a rectangle drawn *around* something
+ * is drawn around it in order to leave it visible, and swallowing clicks meant for what is inside
+ * would undo the point of it. Text and step badges are solid things and are hit over their whole box.
+ */
+export function hitShape(shapes: Shape[], at: Point, tolerance: number): number {
+	for (let i = shapes.length - 1; i >= 0; i--) {
+		const shape = shapes[i];
+		if (shape && hits(shape, at, tolerance)) return i;
+	}
+	return -1;
+}
+
+function hits(shape: Shape, at: Point, tolerance: number): boolean {
+	const first = shape.points[0];
+	if (!first) return false;
+	const last = shape.points[shape.points.length - 1] ?? first;
+
+	if (shape.tool === "text" || shape.tool === "step") {
+		const box = shapeBounds(shape, tolerance);
+		return (
+			at.x >= box.x - tolerance &&
+			at.x <= box.x + box.w + tolerance &&
+			at.y >= box.y - tolerance &&
+			at.y <= box.y + box.h + tolerance
+		);
+	}
+
+	if (shape.tool === "pen" || shape.tool === "mosaic") {
+		// A mosaic is a wide brush, so its stroke is easier to hit than a pen's.
+		const reach = shape.tool === "mosaic" ? tolerance * 4 : tolerance;
+		for (let i = 1; i < shape.points.length; i++) {
+			const a = shape.points[i - 1];
+			const b = shape.points[i];
+			if (a && b && toSegment(at, a, b) <= reach) return true;
+		}
+		return shape.points.length === 1 && distance(at, first) <= reach;
+	}
+
+	if (shape.tool === "line" || shape.tool === "arrow") return toSegment(at, first, last) <= tolerance;
+
+	if (shape.tool === "rect") {
+		const [x1, x2] = [Math.min(first.x, last.x), Math.max(first.x, last.x)];
+		const [y1, y2] = [Math.min(first.y, last.y), Math.max(first.y, last.y)];
+		const edges: [Point, Point][] = [
+			[{ x: x1, y: y1 }, { x: x2, y: y1 }],
+			[{ x: x2, y: y1 }, { x: x2, y: y2 }],
+			[{ x: x2, y: y2 }, { x: x1, y: y2 }],
+			[{ x: x1, y: y2 }, { x: x1, y: y1 }],
+		];
+		return edges.some(([a, b]) => toSegment(at, a, b) <= tolerance);
+	}
+
+	// Ellipse: how far the point is from the curve, along the ray from the centre. Exact would need
+	// an iterative solve; this is the standard approximation and is well inside the tolerance for
+	// anything drawn by hand.
+	const cx = (first.x + last.x) / 2;
+	const cy = (first.y + last.y) / 2;
+	const rx = Math.abs(last.x - first.x) / 2;
+	const ry = Math.abs(last.y - first.y) / 2;
+	if (rx < 1 || ry < 1) return toSegment(at, first, last) <= tolerance;
+	const radius = Math.hypot((at.x - cx) / rx, (at.y - cy) / ry);
+	if (radius === 0) return false;
+	return Math.abs(radius - 1) * Math.min(rx, ry) <= tolerance;
+}
+
+const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Shortest distance from a point to a line segment — the whole of hit testing an outline. */
+function toSegment(p: Point, a: Point, b: Point): number {
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const length = dx * dx + dy * dy;
+	if (length === 0) return distance(p, a);
+	// Where the perpendicular lands, clamped to the segment so the ends are round rather than
+	// extending to infinity along the line.
+	const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length));
+	return distance(p, { x: a.x + t * dx, y: a.y + t * dy });
+}
+
+/**
+ * How wide a miss selecting forgives, in natural pixels.
+ *
+ * Scaled by the stroke — a mark drawn 12px wide is aimed at as 12px wide — and inversely by zoom, so
+ * the forgiveness is a constant number of *screen* pixels however far in you are. A fixed tolerance
+ * in image pixels would be impossible to aim at 25% and absurdly sticky at 800%.
+ */
+export function pickTolerance(stroke: number, zoom: number): number {
+	return Math.max(stroke, 7 / Math.max(zoom, 0.01)) + stroke / 2;
 }
 
 // ---------------------------------------------------------------------------
