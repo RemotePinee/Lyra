@@ -1,8 +1,14 @@
-# Lyra
+<p align="center">
+  <img src="assets/lyra.png" alt="" width="200">
+</p>
 
-[![CI](https://github.com/kittors/Lyra/actions/workflows/ci.yml/badge.svg)](https://github.com/kittors/Lyra/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg)](.nvmrc)
+<h1 align="center">Lyra</h1>
+
+<p align="center">
+  <a href="https://github.com/kittors/Lyra/actions/workflows/ci.yml"><img src="https://github.com/kittors/Lyra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href=".nvmrc"><img src="https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg" alt="Node ≥ 24"></a>
+</p>
 
 一个自带模型配置的独立 code agent。桌面端用 Electron，移动端用 React Native，两端共用同一份会话数据。
 
