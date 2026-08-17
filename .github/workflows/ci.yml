@@ -33,12 +33,18 @@ jobs:
       - run: pnpm typecheck
 
   test:
-    # Both, because the agent shells out and touches the filesystem: path handling, scratch
-    # directories and the risk classifier all behave differently on macOS.
+    # Both platforms, but not on every push.
+    #
+    # The agent shells out and touches the filesystem — path handling, scratch directories and the
+    # risk classifier genuinely differ on macOS — so the second platform is worth having. It is not
+    # worth having ten times a day: a macOS minute costs ten times a Linux one against the account's
+    # allowance, and this repository exhausted a month of it in an afternoon of pushes. So macOS
+    # runs where a second opinion actually changes a decision (a pull request, a tag, a manual run)
+    # and Linux runs everywhere.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -48,6 +54,10 @@ jobs:
   e2e:
     # macOS only: the runner there has a display, and this starts a real window. Linux would need
     # xvfb, which is one more moving part for a check that is already covered on one platform.
+    #
+    # Skipped on a plain push for the same reason as the macOS unit tests — it is the single most
+    # expensive job here (a real Electron install plus a real window, on the 10x platform).
+    if: github.event_name != 'push'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -89,6 +99,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verdict
+        # `skipped` is a pass. e2e does not run on a push, and a verdict that treated "did not run"
+        # as "did not succeed" would make every push to main red for a job nobody asked to run.
         run: |
           echo "lint=${{ needs.lint.result }} typecheck=${{ needs.typecheck.result }}"
           echo "test=${{ needs.test.result }} build=${{ needs.build.result }} e2e=${{ needs.e2e.result }}"

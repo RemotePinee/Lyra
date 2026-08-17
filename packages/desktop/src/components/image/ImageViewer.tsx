@@ -134,7 +134,23 @@ export function ImageViewer() {
 	const open = !leaving;
 
 	return createPortal(
-		<div role="dialog" aria-modal aria-label="图片预览" className="fixed inset-0 z-[100] flex items-center justify-center">
+		<div
+			role="dialog"
+			aria-modal
+			aria-label="图片预览"
+			/*
+			 * `no-drag` over the whole overlay.
+			 *
+			 * The window reserves its top 44px as a drag region, and a drag region hands the press to
+			 * the window manager before the page ever sees it. This overlay covers the window, so its
+			 * controls sit in that strip — and they were drawn, were on top, passed every hit test the
+			 * page can run, and did nothing at all: pressing one moved the window.
+			 *
+			 * The whole layer rather than each button, because while a modal is up there is nothing
+			 * behind it to drag the window by. Dragging resumes the moment it closes.
+			 */
+			className="no-drag fixed inset-0 z-[100] flex items-center justify-center"
+		>
 			{/*
 			 * The backdrop is a button rather than a div with a handler on it: dismissing by clicking
 			 * away is a real action, and giving it a real control is what makes it reachable by

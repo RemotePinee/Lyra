@@ -16,3 +16,6 @@ packages/core/dist/
 # Deliberately not published: they are written for us and for the agent working in this repo,
 # not for anyone reading the project from outside.
 docs/
+
+# 本机的工作约定，不进仓库
+AGENTS.local.md
