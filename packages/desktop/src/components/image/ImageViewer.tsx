@@ -91,14 +91,23 @@ export function ImageViewer() {
 	/*
 	 * Closed means closed, however it was closed.
 	 *
-	 * `dismiss` leaves edit mode on the way out, but the store can be closed from anywhere — another
-	 * part of the app, or a keyboard shortcut that never goes through here. Without this the next
-	 * image to be opened would arrive with the annotator already up, over a picture nobody asked to
-	 * annotate.
+	 * `dismiss` tidies up on its way out, but the store can be closed from anywhere — another part of
+	 * the app, or a shortcut that never comes through here. Two things then have to be let go of.
+	 *
+	 * Edit mode, or the next image arrives with the annotator already up over a picture nobody asked
+	 * to annotate. And `held`, the copy kept alive so the closing animation has something to shrink:
+	 * only `dismiss` clears it, so a close from elsewhere left the overlay on screen showing a
+	 * picture the store no longer has. That also kept the annotator's source unchanged, and with it
+	 * every mark from the previous session — reopening the same image brought back annotations that
+	 * had been abandoned.
+	 *
+	 * Not while `leaving`, which is `dismiss` doing this deliberately and slowly.
 	 */
 	useEffect(() => {
-		if (!state) setEditing(false);
-	}, [state]);
+		if (state) return;
+		setEditing(false);
+		if (!leaving) setHeld(null);
+	}, [state, leaving]);
 
 	/*
 	 * The flight, driven straight at the DOM rather than through React.

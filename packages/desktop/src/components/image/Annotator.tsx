@@ -88,6 +88,13 @@ interface Dragging {
 	/** Which grip is being pulled, or null when the whole mark is being moved. */
 	handle: number | null;
 	/**
+	 * Whether this mark was already selected when the press landed on it.
+	 *
+	 * A press on something already selected, released without moving, is the second click of
+	 * "click to select, click again to edit" — the same gesture a file manager uses for renaming.
+	 */
+	wasSelected: boolean;
+	/**
 	 * Whether it has actually gone anywhere.
 	 *
 	 * A click that selects is a drag of zero length, and committing that would put a step in the
@@ -372,12 +379,34 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		});
 	}, [live, ready, width, stroke, canvas, image, pixels]);
 
+	/** Whether the field has been focused for the caption currently open in it. */
+	const entered = useRef(false);
+
 	// Focused on appearing, so typing can start immediately; and grown to fit its content on every
 	// keystroke, so the box is always exactly as tall as what is in it.
 	useEffect(() => {
 		const el = field.current;
-		if (!el || !typing) return;
+		if (!el || !typing) {
+			entered.current = false;
+			return;
+		}
 		if (document.activeElement !== el) el.focus();
+
+		/*
+		 * Caret at the end, and only on the way in.
+		 *
+		 * Reopening a caption is almost always to add to it or fix its tail, and a caret parked at
+		 * character zero puts every new word in front of what is already there — "改了第一段" when
+		 * "第一段改了" was meant. Doing it once rather than on every keystroke, because this effect
+		 * also runs for each character typed and moving the caret then would make the field
+		 * impossible to edit in the middle.
+		 */
+		if (!entered.current) {
+			entered.current = true;
+			const end = el.value.length;
+			el.setSelectionRange(end, end);
+		}
+
 		el.style.height = "auto";
 		el.style.height = `${el.scrollHeight}px`;
 	}, [typing]);
@@ -485,36 +514,53 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 			const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= tolerance * 1.8);
 			if (grip) {
 				event.currentTarget.setPointerCapture(event.pointerId);
-				setDragging({ index: selected, from: point, moving: chosen, handle: grip.index, moved: false });
-				return;
-			}
-			if (hitShape([chosen], point, tolerance) === 0) {
-				event.currentTarget.setPointerCapture(event.pointerId);
-				setDragging({ index: selected, from: point, moving: chosen, handle: null, moved: false });
+				setDragging({ index: selected, from: point, moving: chosen, handle: grip.index, moved: false, wasSelected: true });
 				return;
 			}
 		}
 
 		/*
-		 * Selecting and moving are one gesture.
+		 * What this press has taken hold of, if anything.
 		 *
-		 * Pressing on a mark selects it *and* begins the drag, so moving something takes one gesture
-		 * rather than a click to select followed by a drag to move. Pressing on nothing clears the
-		 * selection, which is the only other thing a press on empty space could mean.
+		 * Three ways to take hold of an existing mark, and they are deliberately not the same:
+		 *
+		 *  - it is the selected one, under any tool — the arrangement that makes drawing and adjusting
+		 *    one continuous activity rather than two modes;
+		 *  - the selecting tool is in hand, so any mark is fair game;
+		 *  - the text tool is in hand and the mark is a caption. A caption is the one thing the text
+		 *    tool could sensibly mean other than "start a new one", and pressing on one used to lay a
+		 *    second caption directly on top of the first — two overlapping texts, no way to tell.
+		 *    Pressing anywhere else with that tool still starts a new one, including on top of a
+		 *    rectangle, because writing over a box is a real thing to want.
 		 */
-		if (tool === "select") {
-			if (typing) commitText();
-			const index = hitShape(shapes, point, tolerance);
-			setSelected(index < 0 ? null : index);
-			if (index >= 0) {
-				event.currentTarget.setPointerCapture(event.pointerId);
-				setDragging({ index, from: point, moving: shapes[index]!, handle: null, moved: false });
-			}
+		let target = -1;
+		let held = false;
+		if (chosen && selected !== null && hitShape([chosen], point, tolerance) === 0) {
+			target = selected;
+			held = true;
+		} else if (tool === "select") {
+			target = hitShape(shapes, point, tolerance);
+		} else if (tool === "text") {
+			const hit = hitShape(shapes, point, tolerance);
+			if (hit >= 0 && shapes[hit]?.tool === "text") target = hit;
+		}
+
+		if (target >= 0) {
+			// Committing first: the caption being written is finished with the moment another mark is
+			// picked up, and leaving it open would make the next release edit two things at once.
+			if (typing && typing.replacing !== target) commitText();
+			setSelected(target);
+			event.currentTarget.setPointerCapture(event.pointerId);
+			setDragging({ index: target, from: point, moving: shapes[target]!, handle: null, moved: false, wasSelected: held });
 			return;
 		}
 
-		// Drawing somewhere else means that mark is finished with.
+		// Nothing under the pointer: the selecting tool has nothing to do, everything else draws.
 		if (selected !== null) setSelected(null);
+		if (tool === "select") {
+			if (typing) commitText();
+			return;
+		}
 
 		if (tool === "text") {
 			/*
@@ -599,13 +645,26 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 
 	const end = () => {
 		if (dragging) {
-			// One step in the history per move, and none at all for a drag that went nowhere.
-			if (dragging.moved) {
-				const { index, moving } = dragging;
+			const { index, moving, moved, wasSelected } = dragging;
+			if (moved) {
+				// One step in the history per move, and none at all for a drag that went nowhere.
 				setHistory((h) => {
 					const list = current(h);
 					return index < list.length ? commit(h, list.map((s, i) => (i === index ? moving : s))) : h;
 				});
+			} else {
+				/*
+				 * A press that went nowhere was a click, and on a caption a click means "let me at the
+				 * words" — either because the text tool is in hand, or because this is the second click
+				 * on something already selected.
+				 *
+				 * Deciding it here rather than on the way down is what lets one gesture serve both:
+				 * press and drag moves the caption, press and release opens it. Neither has to be
+				 * chosen in advance, which is the whole reason a single click can safely do something
+				 * as consequential as entering an editor.
+				 */
+				const shape = shapes[index];
+				if (shape?.tool === "text" && (tool === "text" || wasSelected)) editText(index);
 			}
 			setDragging(null);
 			return;
@@ -653,11 +712,14 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				onPointerCancel={end}
 				onPointerLeave={() => setHovering(null)}
 				onDoubleClick={(event) => {
-					// Zooming is the double-click on the stage below; this one belongs to the mark.
+					/*
+					 * Only to stop the stage below from zooming.
+					 *
+					 * Opening a caption is not handled here any more: two clicks already do it — the
+					 * first selects, the second opens — so catching the double as well would open it
+					 * twice and throw away whatever the first one had started.
+					 */
 					event.stopPropagation();
-					if (tool !== "select") return;
-					const index = hitShape(shapes, at(event), pickTolerance(stroke, zoom));
-					if (index >= 0) editText(index);
 				}}
 				className={`${STAGE_FIT} block rounded-xl bg-white ${cursor}`}
 				style={{ touchAction: "none" }}
