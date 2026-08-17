@@ -72,7 +72,7 @@ function ChatShell() {
 	const loadingSession = useApp((s) => s.loadingSession);
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const workspace = useApp((s) => s.workspace);
-	const { compact, navOpen, nativeFullScreen, sidebarWidth, bounds, setPanelWidth, resetPanelWidth, toggleNav, dismissNav } =
+	const { compact, navOpen, nativeFullScreen, bounds, setPanelWidth, resetPanelWidth, toggleNav, dismissNav } =
 		useLayout();
 
 	const panelOpen = useSide((s) => s.panelOpen);
@@ -83,7 +83,7 @@ function ChatShell() {
 	const toggleExpanded = useSide((s) => s.toggleExpanded);
 	const attach = useSide((s) => s.attach);
 
-	const { panelWidth, panelMax, fullScreen, panelHostsControls, openPanel } = usePanelLayout();
+	const { panelWidth, panelMax, sidebarWidth, sidebarMax, fullScreen, panelHostsControls, openPanel } = usePanelLayout();
 
 	/*
 	 * The right-hand panel belongs to the workspace, not to the window.
@@ -125,7 +125,7 @@ function ChatShell() {
 
 	return (
 		<div className="ly-shell relative flex h-full overflow-hidden">
-			<NavPane width={sidebarWidth} label="侧边栏">
+			<NavPane width={sidebarWidth} maxWidth={sidebarMax} label="侧边栏">
 				<Sidebar />
 			</NavPane>
 
@@ -190,26 +190,29 @@ function ChatShell() {
 				open={panelOpen && panelApplies}
 				fullScreen={fullScreen}
 				offset={navOpen ? sidebarWidth : 0}
-			>
-				<SidePanel />
-
-				{/*
+				/*
+				 * Beside the pane rather than inside it — the pane clips, and this straddles its edge.
+				 *
 				 * Not in compact or full screen, where the panel covers the column rather than
 				 * sharing it: there is no boundary between two things to move. Nor while closed —
 				 * the pane is still mounted then, and an edge with nothing on one side of it is
 				 * not an edge.
-				 */}
-				{panelOpen && panelApplies && !compact && !fullScreen && (
-					<ResizeHandle
-						edge="start"
-						width={panelWidth}
-						min={bounds.panel.min}
-						max={panelMax}
-						onResize={setPanelWidth}
-						onReset={resetPanelWidth}
-						label="调整面板宽度"
-					/>
-				)}
+				 */
+				handle={
+					panelOpen && panelApplies && !compact && !fullScreen ? (
+						<ResizeHandle
+							edge="start"
+							width={panelWidth}
+							min={bounds.panel.min}
+							max={panelMax}
+							onResize={setPanelWidth}
+							onReset={resetPanelWidth}
+							label="调整面板宽度"
+						/>
+					) : null
+				}
+			>
+				<SidePanel />
 			</SidePane>
 
 			{(!panelHostsControls || !panelApplies) && (

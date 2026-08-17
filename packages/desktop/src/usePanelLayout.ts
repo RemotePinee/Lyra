@@ -38,9 +38,6 @@ export function usePanelLayout() {
 	const panelOpen = useSide((s) => s.panelOpen);
 	const expanded = useSide((s) => s.expanded);
 
-	const available = width - (navOpen && !compact ? sidebarWidth : 0);
-	const panelWidth = Math.max(bounds.panel.min, Math.min(preferred, available - CONTENT_MIN));
-
 	/**
 	 * Full-screen: the panel takes the conversation's whole column.
 	 *
@@ -49,6 +46,35 @@ export function usePanelLayout() {
 	 * the trip — covering it leaves the conversation exactly as it was underneath.
 	 */
 	const fullScreen = expanded && !compact;
+
+	/**
+	 * What the panel is entitled to keep while the sidebar is being sized against it.
+	 *
+	 * Its minimum, not its current width: the panel already yields down to that floor on its own,
+	 * so holding back any more would stop the sidebar while there was still room to take.
+	 */
+	const panelReserve = panelOpen && !fullScreen && !compact ? bounds.panel.min : 0;
+
+	/**
+	 * The width the sidebar actually gets, which is not always the one it was given.
+	 *
+	 * `sidebarWidth` is a preference — what the user dragged it to, remembered across launches. The
+	 * panel has always distinguished the two: its stored width is clamped against what is left, so
+	 * a window too narrow for it simply shows less of it. The sidebar did not, and the difference
+	 * showed the moment a window got small: it held its full 420 while the panel shrank to its own
+	 * floor, and the column between them took whatever remained — at 900px that was a hundred
+	 * pixels of conversation.
+	 *
+	 * Clamping here rather than writing the smaller number back keeps it a preference. Widen the
+	 * window again and the sidebar returns to what it was, because nothing overwrote it.
+	 */
+	const sidebarActual =
+		navOpen && !compact
+			? Math.max(bounds.sidebar.min, Math.min(sidebarWidth, width - CONTENT_MIN - panelReserve))
+			: 0;
+
+	const available = width - sidebarActual;
+	const panelWidth = Math.max(bounds.panel.min, Math.min(preferred, available - CONTENT_MIN));
 
 	/**
 	 * Who draws the window's three buttons.
@@ -68,10 +94,17 @@ export function usePanelLayout() {
 	const openPanel = (open: () => void) => {
 		open();
 		dismissNav();
-		if (!compact && navOpen && width - sidebarWidth - panelWidth < CONTENT_MIN) collapseNav();
+		if (!compact && navOpen && width - sidebarActual - panelWidth < CONTENT_MIN) collapseNav();
 	};
 
 	/*
+	 * Put away only once it cannot fit even at its narrowest.
+	 *
+	 * This used to test the sidebar's *preferred* width, so a window narrowing past a sidebar that
+	 * happened to be wide made the whole pane vanish while there was still plenty of room for a
+	 * narrow one. It now gives way by degrees — `sidebarActual` above shrinks it first — and
+	 * disappearing is what happens at the end of that, not instead of it.
+	 *
 	 * Only while shrinking. Reacting to `navOpen` as well would mean re-opening the sidebar by
 	 * hand gets undone a frame later, which is the app arguing with the user rather than
 	 * responding to a window that genuinely no longer fits.
@@ -81,13 +114,35 @@ export function usePanelLayout() {
 		const shrinking = width < lastWidth.current;
 		lastWidth.current = width;
 		if (!shrinking || compact || !panelOpen || !navOpen) return;
-		if (width < sidebarWidth + CONTENT_MIN + bounds.panel.min) collapseNav();
-	}, [width, compact, panelOpen, navOpen, collapseNav, sidebarWidth, bounds.panel.min]);
+		if (width < bounds.sidebar.min + CONTENT_MIN + bounds.panel.min) collapseNav();
+	}, [width, compact, panelOpen, navOpen, collapseNav, bounds.sidebar.min, bounds.panel.min]);
 
 	return {
 		panelWidth,
+		/** The clamped width to render the sidebar at — see `sidebarActual`. */
+		sidebarWidth: sidebarActual,
 		/** The most the resize handle may give it, with the conversation's floor honoured. */
 		panelMax: Math.max(bounds.panel.min, Math.min(bounds.panel.max, available - CONTENT_MIN)),
+		/**
+		 * The same floor, enforced from the other side.
+		 *
+		 * The panel has always yielded to the conversation — its width is clamped against
+		 * `available - CONTENT_MIN` and its handle stops there. The sidebar never did: its ceiling
+		 * was a flat 420 that asked nothing about how much room was left, so dragging it right kept
+		 * going after the panel had already shrunk to its own minimum, and the column between them
+		 * was whatever happened to remain. On a narrow window that is nothing.
+		 *
+		 * `panel.min` rather than the panel's current width, because the panel gives way first: by
+		 * the time the sidebar is pushing, the panel is already down to its floor, and reserving
+		 * more than that would stop the drag while there was still room to take.
+		 *
+		 * Never below `sidebar.min` — a ceiling under the floor would leave the handle unable to
+		 * move in either direction on a window too small for all three.
+		 */
+		sidebarMax: Math.max(
+			bounds.sidebar.min,
+			Math.min(bounds.sidebar.max, width - CONTENT_MIN - (panelOpen && !fullScreen ? bounds.panel.min : 0)),
+		),
 		fullScreen,
 		panelHostsControls,
 		openPanel,

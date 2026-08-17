@@ -21,13 +21,22 @@ import { useFocusTrap, useLayout } from "./layout.tsx";
 export function NavPane({
 	width,
 	label,
+	maxWidth,
 	children,
 }: {
 	width: number;
 	label: string;
+	/**
+	 * A ceiling lower than the pane's own, when the rest of the window needs the room.
+	 *
+	 * The workspace shell passes one computed from what is left after the conversation's floor and
+	 * the panel's minimum. Absent — the settings window, which has neither beside it — the pane's
+	 * own bound is the only limit there is.
+	 */
+	maxWidth?: number;
 	children: React.ReactNode;
 }) {
-	const { compact, navOpen, sidebarWidth, setSidebarWidth, resetSidebarWidth, bounds } = useLayout();
+	const { compact, navOpen, setSidebarWidth, resetSidebarWidth, bounds } = useLayout();
 	const ref = useRef<HTMLElement>(null);
 	/**
 	 * Suppresses the transition for one beat after the breakpoint moves.
@@ -106,9 +115,11 @@ export function NavPane({
 			{navOpen && (
 				<ResizeHandle
 					edge="end"
-					width={sidebarWidth}
+					// The width on screen, not the one in storage — a drag that started from the
+					// remembered number would jump by the difference on its first move.
+					width={width}
 					min={bounds.sidebar.min}
-					max={bounds.sidebar.max}
+					max={Math.min(bounds.sidebar.max, maxWidth ?? bounds.sidebar.max)}
 					onResize={setSidebarWidth}
 					onReset={resetSidebarWidth}
 					label="调整侧边栏宽度"
@@ -135,6 +146,7 @@ export function SidePane({
 	open,
 	fullScreen,
 	offset,
+	handle,
 	children,
 }: {
 	width: number;
@@ -143,6 +155,16 @@ export function SidePane({
 	fullScreen: boolean;
 	/** Where the covering form starts, so it stops short of the navigation. */
 	offset: number;
+	/**
+	 * The drag handle, rendered outside the pane rather than in it.
+	 *
+	 * It used to be passed in with the children and therefore lived inside a box that clips its
+	 * own overflow — which was survivable only while the handle sat wholly within the pane. It no
+	 * longer does: it straddles the boundary now, to keep off the scrollbar's thumb, so the part
+	 * hanging outside was simply cut away and what was left was a one-pixel strip. Same frame as
+	 * `NavPane`, same reason.
+	 */
+	handle?: React.ReactNode;
 	children: React.ReactNode;
 }) {
 	const { compact } = useLayout();
@@ -160,7 +182,7 @@ export function SidePane({
 
 	const covering = compact || fullScreen;
 
-	return (
+	const pane = (
 		<aside
 			ref={ref}
 			aria-label="面板"
@@ -171,8 +193,8 @@ export function SidePane({
 			className={`${
 				covering
 					? `ly-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
-					: "ly-opaque relative z-50 shrink-0 overflow-hidden"
-			} ${snap ? "transition-none" : "transition-[margin-right,transform] duration-[var(--ly-t-base)] ease-out"}`}
+					: "ly-opaque h-full w-full overflow-hidden"
+			} ${snap ? "transition-none" : "transition-transform duration-[var(--ly-t-base)] ease-out"}`}
 			/*
 			 * Moved, never faded.
 			 *
@@ -182,14 +204,31 @@ export function SidePane({
 			 * the window's vibrancy is grey. Fading it in meant every open began with a grey sheet
 			 * that resolved to white, which read as a rendering glitch rather than as an entrance.
 			 * Sliding alone is also simply the truer gesture: the panel arrives from the edge.
+			 *
+			 * Beside the content the sliding belongs to the frame below, which is what carries the
+			 * width — two boxes both applying it would be twice as wide as either meant.
 			 */
-			style={
-				covering
-					? { left: compact ? 0 : offset, transform: open ? "none" : "translateX(100%)" }
-					: { width, marginRight: open ? 0 : -width }
-			}
+			style={covering ? { left: compact ? 0 : offset, transform: open ? "none" : "translateX(100%)" } : undefined}
 		>
 			{children}
 		</aside>
+	);
+
+	/*
+	 * Covering, there is no boundary to drag — the pane is over the content rather than beside it,
+	 * and the frame would only add a box around something already positioned against the window.
+	 */
+	if (covering) return pane;
+
+	return (
+		<div
+			className={`relative z-50 shrink-0 ${
+				snap ? "transition-none" : "transition-[margin-right] duration-[var(--ly-t-base)] ease-out"
+			}`}
+			style={{ width, marginRight: open ? 0 : -width }}
+		>
+			{pane}
+			{handle}
+		</div>
 	);
 }
