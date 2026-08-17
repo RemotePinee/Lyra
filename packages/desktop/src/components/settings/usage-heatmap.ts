@@ -121,27 +121,3 @@ export function monthLabels(grid: DayUsage[][]): { column: number; text: string 
 	});
 	return labels;
 }
-
-/**
- * The three things a calendar of days invites you to ask once you have looked at it: how often, how
- * consistently, and what the biggest day was.
- *
- * Days in the future are excluded — the trailing padding of the last column is not a run of quiet
- * days, it is days that have not happened.
- */
-export function summarise(grid: DayUsage[][], now: Date): { active: number; streak: number; peak: DayUsage | null } {
-	const days = grid.flat().filter((d) => d.date.getTime() <= now.getTime());
-	let streak = 0;
-	let running = 0;
-	let peak: DayUsage | null = null;
-	for (const day of days) {
-		if (day.sessions > 0) {
-			running += 1;
-			streak = Math.max(streak, running);
-			if (!peak || day.input + day.output > peak.input + peak.output) peak = day;
-		} else {
-			running = 0;
-		}
-	}
-	return { active: days.filter((d) => d.sessions > 0).length, streak, peak };
-}

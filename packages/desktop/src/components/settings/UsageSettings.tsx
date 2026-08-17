@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { SessionMeta } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { Card, EmptyHint, SectionTitle } from "./controls.tsx";
-import { type DayUsage, heatLevel, heatmapWeeks, monthLabels, summarise } from "./usage-heatmap.ts";
+import { type DayUsage, heatLevel, heatmapWeeks, monthLabels } from "./usage-heatmap.ts";
 
 /**
  * A year.
@@ -37,7 +37,7 @@ export function UsageSettings() {
     () => Math.max(0, ...grid.flat().map((d) => d.input + d.output)),
     [grid],
   );
-  const stats = useMemo(() => summarise(grid, new Date()), [grid]);
+  const active = useMemo(() => grid.flat().filter((d) => d.sessions > 0).length, [grid]);
 
   return (
     <div className="pt-8">
@@ -75,15 +75,11 @@ export function UsageSettings() {
 
       <SectionTitle>使用节奏</SectionTitle>
       <Card>
-        {stats.active === 0 ? (
+        {active === 0 ? (
           <EmptyHint>还没有使用记录。</EmptyHint>
         ) : (
-          <div className="@container px-4 py-4">
-            {/* Side by side when there is room, stacked when there is not. */}
-            <div className="flex flex-col gap-5 @3xl:flex-row @3xl:items-start @3xl:gap-6">
-              <Heatmap grid={grid} busiest={busiestDay} />
-              <Summary stats={stats} />
-            </div>
+          <div className="px-4 py-4">
+            <Heatmap grid={grid} busiest={busiestDay} />
           </div>
         )}
       </Card>
@@ -128,8 +124,11 @@ function Heatmap({ grid, busiest }: { grid: DayUsage[][]; busiest: number }) {
   const labels = monthLabels(grid);
 
   return (
-    <div className="min-w-0 flex-1 overflow-x-auto" dir="rtl">
-      <div dir="ltr" className="inline-block">
+    <div className="overflow-x-auto" dir="rtl">
+      {/* Centred: a calendar that fills two thirds of its card and leaves the rest blank looks
+          like something that failed to load, while the same calendar with equal margins looks
+          placed. */}
+      <div dir="ltr" className="mx-auto inline-block">
         <div className="relative mb-1 h-[14px]">
           {labels.map((label) => (
             <span
@@ -205,52 +204,4 @@ function tipFor(day: DayUsage, tokens: number): string {
   const parts = [`${day.sessions} 个会话`, `${tokens.toLocaleString()} token`];
   if (day.cost > 0) parts.push(`$${day.cost.toFixed(4)}`);
   return `${date} · ${parts.join(" · ")}`;
-}
-
-/**
- * What the calendar leaves you wanting to know.
- *
- * Three numbers rather than a legend of averages: how many days had any work at all, the longest
- * run of consecutive ones, and which single day was the largest. Each is a sentence you could say
- * out loud about the grid beside it, which is the test for whether a summary is worth the space.
- */
-function Summary({ stats }: { stats: ReturnType<typeof summarise> }) {
-  return (
-    /*
-     * A column of its own width, not a share of what is left.
-     *
-     * As `flex-1` it competed with a 725px calendar for the same space and lost — the labels were
-     * cut off at the card's edge. The calendar can scroll; three short lines cannot.
-     */
-    <div className="flex shrink-0 flex-col justify-center gap-3 @3xl:w-[190px] @3xl:pl-1">
-      <Line label="有使用的天数" value={`${stats.active} 天`} />
-      {stats.streak > 1 && <Line label="最长连续" value={`${stats.streak} 天`} />}
-      {stats.peak && (
-        <Line
-          label="单日最多"
-          // Compact, because the full number plus a date does not fit and the exact digit count of
-          // a peak day is not what anyone is reading it for.
-          value={`${compact(stats.peak.input + stats.peak.output)} token`}
-          sub={`${stats.peak.date.getMonth() + 1}月${stats.peak.date.getDate()}日`}
-        />
-      )}
-    </div>
-  );
-}
-
-function Line({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-line-soft pb-2 last:border-b-0 last:pb-0">
-      <span className="shrink-0 text-detail text-ink-muted">{label}</span>
-      <span className="min-w-0 truncate text-label font-medium text-ink">
-        {value}
-        {sub && <span className="pl-1.5 text-detail font-normal text-ink-faint">{sub}</span>}
-      </span>
-    </div>
-  );
-}
-
-/** 1,252,867 → 125.3万. The tooltip on the day itself still carries the exact figure. */
-function compact(n: number): string {
-  return new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
