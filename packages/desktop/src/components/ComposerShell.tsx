@@ -95,8 +95,23 @@ export function ComposerShell({
           onPaste={
             onFiles
               ? (e) => {
-                  if (e.clipboardData.files.length > 0)
-                    onFiles(e.clipboardData.files);
+                  /*
+                   * A pasted file is a file, and nothing else.
+                   *
+                   * macOS puts more than one thing on the pasteboard when a screenshot is copied:
+                   * the image, and a `file://` URL pointing at where it was spooled. Taking the
+                   * image and letting the paste run its course took both — the picture became an
+                   * attachment and the path was typed into the message, so every pasted screenshot
+                   * arrived with a line of
+                   * `file:///Users/…/CoreSpotlight/PasteboardHistory/2026-08-17_19-40-12.png`
+                   * under it. The same is true of anything copied out of Finder.
+                   *
+                   * Only when there is actually a file: a paste with no files is ordinary text and
+                   * must go in as ordinary text.
+                   */
+                  if (e.clipboardData.files.length === 0) return;
+                  e.preventDefault();
+                  onFiles(e.clipboardData.files);
                 }
               : undefined
           }
