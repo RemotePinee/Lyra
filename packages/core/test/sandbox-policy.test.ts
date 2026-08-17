@@ -92,8 +92,20 @@ test("the profile is passed as -p, the way sandbox-exec takes it", () => {
 	assert.equal(args.length, 2);
 });
 
+/*
+ * The three escaping tests below deliberately sit outside `/tmp`.
+ *
+ * `writableRoots` drops any root contained by another — a workspace under `/tmp` is already covered
+ * by the `/tmp` grant, and saying so twice makes a profile nobody reads carefully. That de-duping is
+ * correct, but it also means a hostile path under `/tmp` never reaches the profile at all, leaving
+ * nothing to assert escaping against. On macOS this went unnoticed because `/tmp` canonicalises to
+ * `/private/tmp`, which does not contain `/tmp/...`; on Linux it is plain `/tmp`, which does. Two of
+ * these failed there and the third passed for the wrong reason — its `!includes` was satisfied by an
+ * empty profile rather than by an escaped one.
+ */
+
 test("a quote in a directory name cannot end the literal early", () => {
-	const hostile = '/tmp/we"ird';
+	const hostile = '/ws/we"ird';
 	const profile = profileOf(seatbeltArgs({ mode: "workspace-write", workspaceRoot: hostile }));
 	// The quote is escaped, so what follows stays inside the string literal.
 	assert.ok(profile.includes('we\\"ird'), profile);
@@ -103,17 +115,19 @@ test("a quote in a directory name cannot end the literal early", () => {
 });
 
 test("a backslash is escaped before the quote handling, not after", () => {
-	const hostile = "/tmp/back\\slash";
+	const hostile = "/ws/back\\slash";
 	const profile = profileOf(seatbeltArgs({ mode: "workspace-write", workspaceRoot: hostile }));
 	assert.ok(profile.includes("back\\\\slash"), profile);
 });
 
 test("a newline in a path cannot inject another profile form", () => {
-	const hostile = "/tmp/a\n(allow file-write* (subpath \"/\"))";
+	const hostile = "/ws/a\n(allow file-write* (subpath \"/\"))";
 	const profile = profileOf(seatbeltArgs({ mode: "workspace-write", workspaceRoot: hostile }));
 	// The injected form is inside a string literal — its quotes are escaped — so it is a path, not
 	// a grant. What must never appear is that form with its own unescaped quotes.
 	assert.ok(!profile.includes('(subpath "/"))'), profile);
+	// And the path did reach the profile, so the line above is about escaping rather than absence.
+	assert.ok(profile.includes("/ws/a"), profile);
 });
 
 // ---------------------------------------------------------------------------
