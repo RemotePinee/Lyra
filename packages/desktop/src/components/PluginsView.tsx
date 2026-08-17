@@ -105,7 +105,14 @@ export function PluginsView() {
 
 	// Whichever kind this tab is about. Everything below — the counts, the two scopes, the
 	// installed strip — is scoped to it, so the page never mixes the two.
-	const ofKind = catalog.items.filter((item) => item.kind === (tab === "mcp" ? "mcp" : "plugin"));
+	/*
+	 * One tab, one kind — including the skills tab, which used to be lumped in with plugins.
+	 *
+	 * That was fine while the only skills in existence were the ones a plugin brought with it: there
+	 * was nothing of kind `skill` to show. Now the registry offers collections directly, and a
+	 * collection filed under 插件 is the same mistake this page already made once with MCP servers.
+	 */
+	const ofKind = catalog.items.filter((item) => item.kind === (tab === "skills" ? "skill" : tab === "mcp" ? "mcp" : "plugin"));
 	const published = ofKind.filter((item) => item.entry !== null);
 	const personal = ofKind.filter((item) => item.entry === null);
 	/*

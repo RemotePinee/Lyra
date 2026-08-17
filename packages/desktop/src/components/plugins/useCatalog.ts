@@ -54,7 +54,16 @@ export function useCatalog(): Catalog {
 	 * being re-fetched whenever an unrelated piece of state moves, and it keeps the dependency
 	 * honest: the value the effect reads is the value it depends on.
 	 */
-	const urlsKey = (settings?.pluginRegistries ?? []).join("|");
+	/*
+	 * Both indexes, fetched as one list.
+	 *
+	 * They are configured separately because they answer separate questions, but by the time an
+	 * entry is here it carries its own `kind` and the catalogue files it accordingly — a skill
+	 * collection from the skill index and a plugin from the plugin index arrive as the same shape.
+	 * Keeping two parallel fetches, two loading flags and two error lists would be two of everything
+	 * to express one difference that is already in the data.
+	 */
+	const urlsKey = [...(settings?.pluginRegistries ?? []), ...(settings?.skillRegistries ?? [])].join("|");
 	const urls = useMemo(() => (urlsKey ? urlsKey.split("|") : []), [urlsKey]);
 
 	const cwd = workspace?.path ?? "";

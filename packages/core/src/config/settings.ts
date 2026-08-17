@@ -143,11 +143,22 @@ export interface Settings {
 	/**
 	 * Plugin registry index URLs the user has added, browsed from the plugins page.
 	 *
-	 * Empty by default. Shipping a preset would mean pointing at a collection whose contents we
-	 * do not control and cannot promise will stay there — and a dead URL in a fresh install reads
-	 * as a broken feature rather than as an empty one.
+	 * Ours is preset. The argument against shipping one was that it would point at a collection
+	 * whose contents we neither control nor can promise will stay — true of somebody else's list,
+	 * and not of `kittors/Lyra-Plugins`, which is maintained alongside this app and whose entries
+	 * are re-checked against their upstreams every day. A fresh install with no sources at all is
+	 * an empty shop with no way to know a shop exists.
 	 */
 	pluginRegistries: string[];
+	/**
+	 * Where skill collections are listed.
+	 *
+	 * Separate from `pluginRegistries` because they are separate questions with separate answers: a
+	 * plugin index says what to clone and how to run it, a skill index says which folders of
+	 * `SKILL.md` a repository holds. Merging them would mean every consumer of either list first
+	 * asking which sort of entry it was looking at.
+	 */
+	skillRegistries: string[];
 	/** Rules the user chose to always allow, keyed by tool kind. */
 	alwaysAllow: string[];
 	sync: {
@@ -162,6 +173,14 @@ export interface Settings {
 	};
 }
 
+/** The index this app maintains: plugins and MCP servers, re-checked against upstream daily. */
+export const DEFAULT_PLUGIN_REGISTRY =
+	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/registry.json";
+
+/** The same repository's other list: collections of skills. */
+export const DEFAULT_SKILL_REGISTRY =
+	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/skills.json";
+
 export const DEFAULT_SETTINGS: Settings = {
 	version: 1,
 	providers: [],
@@ -175,7 +194,8 @@ export const DEFAULT_SETTINGS: Settings = {
 	hooks: [],
 	scheduledTasks: [],
 	disabledPlugins: [],
-	pluginRegistries: [],
+	pluginRegistries: [DEFAULT_PLUGIN_REGISTRY],
+	skillRegistries: [DEFAULT_SKILL_REGISTRY],
 	alwaysAllow: [],
 	sync: { enabled: false, port: 4517, token: null },
 	editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
@@ -202,7 +222,15 @@ export async function loadSettings(): Promise<Settings> {
 			hooks: parsed.hooks ?? [],
 			scheduledTasks: parsed.scheduledTasks ?? [],
 			disabledPlugins: parsed.disabledPlugins ?? [],
-			pluginRegistries: parsed.pluginRegistries ?? [],
+			/*
+			 * A missing list gets the default; an empty one is left empty.
+			 *
+			 * The two are different intentions written the same way in JSON, and only one of them is
+			 * the user's: never having been asked, versus having removed every source deliberately.
+			 * `??` distinguishes them exactly.
+			 */
+			pluginRegistries: parsed.pluginRegistries ?? [DEFAULT_PLUGIN_REGISTRY],
+			skillRegistries: parsed.skillRegistries ?? [DEFAULT_SKILL_REGISTRY],
 			providers: parsed.providers ?? [],
 			mcpServers: parsed.mcpServers ?? [],
 			projects: parsed.projects ?? [],

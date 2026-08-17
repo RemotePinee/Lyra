@@ -30,7 +30,15 @@ const run = promisify(execFile);
  * found. An index that says "plugin" about a directory holding one `.mcp.json` is wrong, and
  * seven of the nine entries in the collection this was built against said exactly that.
  */
-export type BundleKind = "plugin" | "mcp";
+/**
+ * The three things a registry can offer, distinguished by where they land and what starts them.
+ *
+ * A plugin is a directory of skills the app loads. An MCP bundle is a server declaration that also
+ * has to be written into settings and launched. A skill collection is a directory of `SKILL.md`
+ * folders and nothing else — no manifest, no process, so it goes straight into the skills directory
+ * where loose skills already live rather than being wrapped in a bundle that would say nothing.
+ */
+export type BundleKind = "plugin" | "mcp" | "skill";
 
 /** How long a registry has to answer before we give up on it. */
 const FETCH_TIMEOUT_MS = 10_000;
@@ -91,8 +99,17 @@ export async function fetchRegistry(url: string, signal?: AbortSignal): Promise<
 	if (size > MAX_INDEX_BYTES) throw new Error("市场索引过大");
 
 	const raw: unknown = await response.json();
-	const list = Array.isArray(raw) ? raw : ((raw as { plugins?: unknown })?.plugins ?? []);
-	if (!Array.isArray(list)) throw new Error("市场索引格式不对：应为数组或 { plugins: [] }");
+	/*
+	 * `plugins` or `collections`, whichever the index used.
+	 *
+	 * A skill index lists collections and a plugin index lists plugins, and the two are different
+	 * enough to deserve different words in the file — but identical from here: a list of things with
+	 * an id, a name and somewhere to clone from. Accepting both keeps one fetcher rather than two
+	 * that would drift.
+	 */
+	const container = raw as { plugins?: unknown; collections?: unknown };
+	const list = Array.isArray(raw) ? raw : (container?.plugins ?? container?.collections ?? []);
+	if (!Array.isArray(list)) throw new Error("市场索引格式不对：应为数组或 { plugins: [] } / { collections: [] }");
 
 	return {
 		url,
@@ -108,7 +125,10 @@ export async function fetchRegistry(url: string, signal?: AbortSignal): Promise<
 
 /** Where each kind of bundle lives once installed. */
 export function bundleRoot(kind: BundleKind): string {
-	return join(lyraHome(), kind === "mcp" ? "mcp" : "plugins");
+	if (kind === "mcp") return join(lyraHome(), "mcp");
+	// Skills go where loose skills already are, so nothing has to know they came from a registry.
+	if (kind === "skill") return join(lyraHome(), "skills");
+	return join(lyraHome(), "plugins");
 }
 
 export interface Installed {
@@ -216,7 +236,14 @@ export async function uninstallEntry(id: string): Promise<void> {
 	await rm(join(bundleRoot("mcp"), id), { recursive: true, force: true });
 }
 
-function normalise(item: unknown): RegistryEntry | null {
+/**
+ * One entry of an index, or null if it is not one.
+ *
+ * Exported for the tests: what an index is allowed to say is a contract with people who do not have
+ * this codebase, and a contract that is only exercised over the network is a contract nobody checks
+ * until it is already broken in production.
+ */
+export function normalise(item: unknown): RegistryEntry | null {
 	if (!item || typeof item !== "object") return null;
 	const raw = item as Record<string, unknown>;
 
@@ -251,7 +278,20 @@ function normalise(item: unknown): RegistryEntry | null {
 		 * — a plugin, which is markdown in a directory, has no package to name. The guess is only
 		 * for the browsing view; the clone settles it.
 		 */
-		kind: declared === "mcp" || declared === "plugin" ? declared : packageName ? "mcp" : "plugin",
+		/*
+		 * Taken from the index when it says, inferred only when it does not.
+		 *
+		 * The inference is a fallback for indexes written before `kind` existed: naming an npm
+		 * `package` is how an MCP server is distributed, and nothing else in the format implies one.
+		 * A skill collection is never inferred — it has no distinguishing field, so an index that
+		 * wants one has to say so.
+		 */
+		kind:
+			declared === "mcp" || declared === "plugin" || declared === "skill"
+				? declared
+				: packageName
+					? "mcp"
+					: "plugin",
 		package: packageName,
 		version: pick(raw, "version"),
 	};
