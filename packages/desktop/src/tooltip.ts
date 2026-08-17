@@ -35,27 +35,56 @@ function ensureHost(): HTMLElement {
 function targetOf(node: EventTarget | null): HTMLElement | null {
 	if (!(node instanceof Element)) return null;
 	const el = node.closest<HTMLElement>("[data-ly-tip]");
-	return el && el.dataset.dwTip ? el : null;
+	return el && el.dataset.lyTip ? el : null;
+}
+
+interface Box {
+	top: number;
+	bottom: number;
+	left: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * Where the bubble goes: centred on the target, on the requested side unless that side is off
+ * screen, and never past either edge.
+ *
+ * Exported and free of the DOM because the flip is the part that is easy to get backwards, and
+ * getting it backwards is invisible until someone points at the one control near an edge. It was in
+ * fact backwards — every `side="top"` tip rendered below its target — and went unnoticed because a
+ * separate bug meant no tooltip appeared at all.
+ */
+export function tipPlacement(
+	target: Box,
+	tip: { width: number; height: number },
+	side: "top" | "bottom",
+	viewport: { width: number; height: number },
+): { left: number; top: number } {
+	const below = target.bottom + GAP;
+	const above = target.top - tip.height - GAP;
+	const fits = side === "bottom" ? below + tip.height < viewport.height - MARGIN : above > MARGIN;
+	// The preferred side when it fits, the other one when it does not.
+	const top = fits === (side === "bottom") ? below : above;
+
+	const centred = target.left + target.width / 2 - tip.width / 2;
+	const left = Math.min(Math.max(MARGIN, centred), viewport.width - tip.width - MARGIN);
+	return { left, top };
 }
 
 function place(el: HTMLElement) {
 	const tip = ensureHost();
-	tip.textContent = el.dataset.dwTip ?? "";
+	tip.textContent = el.dataset.lyTip ?? "";
 	tip.hidden = false;
 
 	const a = el.getBoundingClientRect();
 	const b = tip.getBoundingClientRect();
-	const preferred = el.dataset.dwTipSide === "top" ? "top" : "bottom";
-
-	const below = a.bottom + GAP;
-	const above = a.top - b.height - GAP;
-	// Flip rather than run off the edge of the window.
-	const fits = preferred === "bottom" ? below + b.height < window.innerHeight - MARGIN : above > MARGIN;
-	const top = (preferred === "bottom") === fits ? (preferred === "bottom" ? below : above) : preferred === "bottom" ? above : below;
-
-	const left = Math.min(Math.max(MARGIN, a.left + a.width / 2 - b.width / 2), window.innerWidth - b.width - MARGIN);
-	tip.style.left = `${Math.round(left)}px`;
-	tip.style.top = `${Math.round(top)}px`;
+	const at = tipPlacement(a, b, el.dataset.lyTipSide === "top" ? "top" : "bottom", {
+		width: window.innerWidth,
+		height: window.innerHeight,
+	});
+	tip.style.left = `${Math.round(at.left)}px`;
+	tip.style.top = `${Math.round(at.top)}px`;
 }
 
 function hide() {
