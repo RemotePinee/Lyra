@@ -186,11 +186,15 @@ export function SidePane({
 
 	useFocusTrap(ref, compact && open);
 
+	/*
+	 * Only `compact` still snaps: that is the window changing shape, and the frame below appears or
+	 * disappears in the same commit. Full screen is now just a width, and a width can be transitioned.
+	 */
 	useEffect(() => {
 		setSnap(true);
 		const id = window.setTimeout(() => setSnap(false), 60);
 		return () => window.clearTimeout(id);
-	}, [compact, fullScreen]);
+	}, [compact]);
 
 	const covering = compact || fullScreen;
 
@@ -202,11 +206,18 @@ export function SidePane({
 			// A closed pane is otherwise still in the tab order, so Tab walks into what nobody sees.
 			inert={!open}
 			data-pane={covering ? "cover" : "beside"}
-			className={`${
-				covering
-					? `ly-opaque fixed inset-y-0 right-0 z-50 ${compact ? "left-0" : ""}`
-					: "ly-opaque absolute inset-y-0 right-0 overflow-hidden"
-			} ${snap ? "transition-none" : "transition-[width,transform] duration-[var(--ly-t-base)] ease-out"}`}
+			/*
+			 * One positioning model for both forms, so the change between them can be animated.
+			 *
+			 * Covering used to be `fixed` with a `left`, beside was `absolute` with a `width`. Nothing
+			 * interpolates between those — different containing blocks, different properties — so the
+			 * switch had to turn transitions off and snap. The shell already fills the window, so
+			 * `absolute` against it describes the same rectangle `fixed` did; expressing the covering
+			 * form as a width in `calc` leaves one property changing, and one property CSS can animate.
+			 */
+			className={`ly-opaque absolute inset-y-0 right-0 z-50 overflow-hidden ${
+				snap ? "transition-none" : "transition-[width,transform] duration-[var(--ly-t-base)] ease-out"
+			}`}
 			/*
 			 * Moved, never faded.
 			 *
@@ -221,28 +232,46 @@ export function SidePane({
 			 * reserved width. This one carries its *drawn* width and hangs off the frame's right
 			 * edge, so the two differ by exactly how far it reaches over the conversation.
 			 */
-			style={covering ? { left: compact ? 0 : offset, transform: open ? "none" : "translateX(100%)" } : { width }}
+			style={
+				covering
+					? {
+							// Right-anchored like the other form, so only the width differs between them.
+							width: compact ? "100%" : `calc(100% - ${offset}px)`,
+							transform: open ? "none" : "translateX(100%)",
+						}
+					: { width }
+			}
 		>
 			{children}
 		</aside>
 	);
 
-	/*
-	 * Covering, there is no boundary to drag — the pane is over the content rather than beside it,
-	 * and the frame would only add a box around something already positioned against the window.
-	 */
-	if (covering) return pane;
-
 	const reserved = layoutWidth ?? width;
 	/** How far the pane's left edge sits beyond the frame's, which is where the handle belongs. */
 	const overhang = width - reserved;
 
+	/*
+	 * The frame is always rendered, even when it reserves nothing.
+	 *
+	 * It used to be skipped while covering — `if (covering) return pane` — which put the pane at a
+	 * different depth in the tree depending on the form. React cannot reconcile those two as the same
+	 * element, so switching to full screen unmounted the pane and mounted a new one: every transition
+	 * on it was moot, because a transition belongs to an element and this was a different element.
+	 * That is what made the expand button snap.
+	 *
+	 * `display: contents` makes the frame take part in nothing while covering — no box, no width, no
+	 * effect on the row — while keeping the pane in one place in the tree. Same node throughout.
+	 */
 	return (
 		<div
-			className={`relative z-50 shrink-0 ${
-				snap ? "transition-none" : "transition-[margin-right,width] duration-[var(--ly-t-base)] ease-out"
-			}`}
-			style={{ width: reserved, marginRight: open ? 0 : -reserved }}
+			className={
+				covering
+					? "contents"
+					: `relative z-50 shrink-0 ${
+							snap ? "transition-none" : "transition-[margin-right,width] duration-[var(--ly-t-base)] ease-out"
+						}`
+			}
+			style={covering ? undefined : { width: reserved, marginRight: open ? 0 : -reserved }}
 		>
 			{pane}
 
