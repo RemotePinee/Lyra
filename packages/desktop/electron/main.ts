@@ -81,6 +81,7 @@ import {
 import { MEDIA_SCHEME, PREVIEW_SCHEME, registerPreviewProtocols } from "./preview-protocol.ts";
 import { registerGitIpc } from "./ipc/git.ts";
 import { registerSideChatIpc } from "./ipc/side-chat.ts";
+import { registerUpdateIpc } from "./ipc/updates.ts";
 import { registerTerminalIpc } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
 import { createTray, destroyTray, hasTray, type TrayCommand } from "./tray.ts";
@@ -416,6 +417,7 @@ function registerIpc(): void {
 	registerFilesIpc({ insideAProject });
 
 	registerTerminalIpc({ terminals, spawnPty, insideAProject, window: () => getWindow() });
+	registerUpdateIpc();
 
 	registerServicesIpc({
 		testProvider,

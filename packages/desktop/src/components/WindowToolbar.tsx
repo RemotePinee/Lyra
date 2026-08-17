@@ -10,6 +10,7 @@
 import { Maximize2, Minimize2 } from "lucide-react";
 import { RightPanelIcon } from "./RightPanelIcon.tsx";
 import { ToolbarButton, WindowControls } from "./WindowControls.tsx";
+import { UpdateBadge } from "./UpdateBadge.tsx";
 
 /**
  * Left offset of the first toolbar button, when there are traffic lights to clear.
@@ -43,6 +44,27 @@ export function toolbarContentLeft(navOpen: boolean, nativeFullScreen: boolean):
 	if (navOpen) return 0;
 	// The toggle is 28 wide, plus the same ~10 gap the lights get.
 	return (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + 28 + 10;
+}
+
+/**
+ * Where the update chip sits: just past the sidebar toggle, on the toolbar's line.
+ *
+ * Its own slot rather than a child of `WindowButtons`, because that block is not always rendered —
+ * when the side panel is open it hosts the window controls itself and `WindowButtons` disappears
+ * entirely. An announcement that comes and goes with an unrelated panel is not an announcement.
+ *
+ * Unaffected by whether the sidebar is open, unlike `toolbarContentLeft`: this lands *inside* the
+ * sidebar's top strip when it is open, which is empty space and exactly where the chip belongs.
+ */
+export function UpdateSlot({ nativeFullScreen }: { nativeFullScreen: boolean }) {
+	return (
+		<div
+			className="no-drag absolute top-0 z-[61] flex h-[44px] items-center"
+			style={{ left: (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + 28 + 10 }}
+		>
+			<UpdateBadge />
+		</div>
+	);
 }
 
 /**

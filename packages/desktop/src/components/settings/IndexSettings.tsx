@@ -84,19 +84,19 @@ export function IndexSettings() {
 							title="符号数"
 							control={
 								<span className="font-mono text-label text-ink">
-									{stats?.symbols?.toLocaleString() ?? "—"}
+									{stats?.symbols?.toLocaleString()}
 								</span>
 							}
 						/>
 						<Row
 							title="已索引文件"
-							control={<span className="font-mono text-label text-ink">{stats?.files?.toLocaleString() ?? "—"}</span>}
+							control={<span className="font-mono text-label text-ink">{stats?.files?.toLocaleString()}</span>}
 						/>
 						<Row
 							title="索引大小"
 							control={
 								<span className="font-mono text-label text-ink">
-									{stats?.bytes ? `${(stats.bytes / 1024).toFixed(0)} KB` : "—"}
+									{stats?.bytes ? `${(stats.bytes / 1024).toFixed(0)} KB` : null}
 								</span>
 							}
 						/>

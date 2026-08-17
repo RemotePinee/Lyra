@@ -104,11 +104,17 @@ export function ScheduledView() {
 	);
 }
 
-/** When it fires next, in words. Disabled tasks say so rather than showing a date they will ignore. */
-function describeNext(task: ScheduledTask): string {
+/**
+ * When it fires next, in words, or nothing at all.
+ *
+ * A task with no next run — a one-off that has already fired, an expression that matches nothing —
+ * used to render an em dash. A dash is a promise that something belongs there, and here nothing
+ * does: the caller drops the line instead.
+ */
+function describeNext(task: ScheduledTask): string | null {
 	if (!task.enabled) return "已停用";
 	const at = nextRunAt(task);
-	return at === null ? "—" : new Date(at).toLocaleString("zh-CN");
+	return at === null ? null : new Date(at).toLocaleString("zh-CN");
 }
 
 function TaskCard({
@@ -242,7 +248,7 @@ function TaskCard({
 					 * them: `nextRunAt` lives in core precisely so the badge and the run cannot
 					 * disagree about when 09:00 is.
 					 */}
-					<span>下次运行：{describeNext(task)}</span>
+					{describeNext(task) && <span>下次运行：{describeNext(task)}</span>}
 					{task.lastSessionId && lastSessionTitle && (
 						<button type="button" onClick={onOpenLast} className="text-ink-muted transition-colors hover:text-ink">
 							打开上次会话

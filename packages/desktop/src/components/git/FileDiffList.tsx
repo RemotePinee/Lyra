@@ -127,9 +127,7 @@ export function FileDiffList({
                     {file.removed > 0 && (
                       <span className="text-danger">−{file.removed}</span>
                     )}
-                    {file.added === 0 && file.removed === 0 && (
-                      <span className="text-ink-faint">—</span>
-                    )}
+
                   </Text>
                 </button>
                 {actions?.(file)}

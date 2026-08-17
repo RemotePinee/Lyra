@@ -201,7 +201,7 @@ export function GitPanel() {
           className="shrink-0 text-ink-faint"
         />
         <Text size="label" tone="muted" className="min-w-0 truncate">
-          <span className="text-ink">{status?.branch ?? "—"}</span>
+          {status?.branch && <span className="text-ink">{status.branch}</span>}
           {status?.upstream && (
             <span className="pl-1.5 text-ink-faint">{status.upstream}</span>
           )}

@@ -6,8 +6,8 @@
  * both of which are mostly rules that were learned the hard way and are worth reading on their own.
  */
 
-import { useEffect } from "react";
-import { BootScreen } from "./components/BootScreen.tsx";
+import { useEffect, useState } from "react";
+import { BootScreen, MIN_BOOT_MS } from "./components/BootScreen.tsx";
 import { Conversation, ConversationSkeleton } from "./components/Conversation.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
 import { ImageViewer } from "./components/image/ImageViewer.tsx";
@@ -19,7 +19,7 @@ import { ScheduledView } from "./components/ScheduledView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
 import { SettingsShell } from "./components/settings/SettingsShell.tsx";
-import { DragBand, PanelControls, WindowButtons } from "./components/WindowToolbar.tsx";
+import { DragBand, PanelControls, UpdateSlot, WindowButtons } from "./components/WindowToolbar.tsx";
 import { LayoutProvider, NavPane, SidePane, useLayout } from "./layout.tsx";
 import { useShortcuts } from "./shortcuts.ts";
 import { useSide } from "./sideStore.ts";
@@ -46,7 +46,21 @@ export function App() {
 	// dropped for the one or two frames the boot screen is up.
 	useTrayCommands();
 
-	if (!ready) return <BootScreen />;
+	/*
+	 * The boot screen has a floor as well as a ceiling.
+	 *
+	 * `ready` arrives in a few hundred milliseconds, which meant the screen it gates was mounted and
+	 * unmounted faster than it could fade in — the launch read as a stutter rather than as a start.
+	 * Holding it for `MIN_BOOT_MS` gives it time to be seen; the timer starts with the window, so it
+	 * costs nothing that the boot was not already spending.
+	 */
+	const [settled, setSettled] = useState(false);
+	useEffect(() => {
+		const timer = window.setTimeout(() => setSettled(true), MIN_BOOT_MS);
+		return () => window.clearTimeout(timer);
+	}, []);
+
+	if (!ready || !settled) return <BootScreen />;
 
 	return (
 		<LayoutProvider>
@@ -225,6 +239,9 @@ function ChatShell() {
 			>
 				<SidePanel />
 			</SidePane>
+
+			{/* Always, regardless of who is hosting the window controls today. */}
+			<UpdateSlot nativeFullScreen={nativeFullScreen} />
 
 			{(!panelHostsControls || !panelApplies) && (
 				<WindowButtons

@@ -25,8 +25,24 @@ import { useEffect, useState } from "react";
  */
 import mark from "../assets/boot-mark.png?inline";
 
-/** Long enough that a normal launch never shows anything at all. */
-const QUIET_MS = 500;
+/**
+ * Short, now that the screen is guaranteed a couple of seconds.
+ *
+ * It used to be 500ms and existed to keep a fast launch from flashing — nothing was drawn until the
+ * boot had probably already finished. The effect was that the screen was almost never seen at all,
+ * which is the opposite complaint. With `MIN_BOOT_MS` holding the screen up, the quiet period only
+ * needs to cover the first paint.
+ */
+const QUIET_MS = 120;
+
+/**
+ * The floor on how long a launch shows this.
+ *
+ * Not a delay for its own sake: the window opens, the theme paints, and the mark is on screen long
+ * enough to be read as the app starting rather than as a stutter. Boot itself is usually done well
+ * inside it, so this is what decides the length of a normal launch.
+ */
+export const MIN_BOOT_MS = 2000;
 
 export function BootScreen() {
 	const [shown, setShown] = useState(false);
@@ -39,7 +55,7 @@ export function BootScreen() {
 	return (
 		<div className="flex h-full items-center justify-center bg-shell" aria-busy aria-label="Lyra 正在启动">
 			<div
-				className="flex flex-col items-center gap-8 transition-opacity duration-[900ms] ease-out"
+				className="flex flex-col items-center gap-8 transition-opacity duration-[520ms] ease-out"
 				style={{ opacity: shown ? 1 : 0 }}
 			>
 				{/*

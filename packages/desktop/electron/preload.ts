@@ -175,6 +175,17 @@ const api: LyraApi = {
 		ipcRenderer.on("tray:command", listener);
 		return () => ipcRenderer.removeListener("tray:command", listener);
 	},
+	updates: {
+		check: (force) => ipcRenderer.invoke("updates:check", force),
+		download: (version) => ipcRenderer.invoke("updates:download", version),
+		open: (url) => ipcRenderer.invoke("updates:open", url),
+		onProgress: (listener) => {
+			const handler = (_event: unknown, payload: { received: number; total: number; done?: boolean }) =>
+				listener(payload);
+			ipcRenderer.on("updates:progress", handler);
+			return () => ipcRenderer.off("updates:progress", handler);
+		},
+	},
 	system: {
 		openPath: (path) => ipcRenderer.invoke("system:openPath", path),
 		openExternal: (url) => ipcRenderer.invoke("system:openExternal", url),

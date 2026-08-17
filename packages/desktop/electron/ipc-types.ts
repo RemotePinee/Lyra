@@ -207,6 +207,23 @@ export interface LyraApi {
 	 * lands — the renderer never has to care whether it was already running.
 	 */
 	onTrayCommand(handler: (command: string) => void): () => void;
+	updates: {
+		/** Whether a newer release exists. Never throws: offline is a normal answer, not an error. */
+		check(force?: boolean): Promise<{
+			current: string;
+			latest: string;
+			available: boolean;
+			notes: string;
+			url: string;
+			publishedAt: number | null;
+			asset: { name: string; url: string; size: number } | null;
+		}>;
+		/** Fetches this platform's installer and opens it. Progress arrives on `onProgress`. */
+		download(version: string): Promise<{ ok: boolean; error?: string }>;
+		/** Opens the release page in the browser. Refuses anything that is not a github.com URL. */
+		open(url: string): Promise<boolean>;
+		onProgress(listener: (payload: { received: number; total: number; done?: boolean }) => void): () => void;
+	};
 	system: {
 		openPath(path: string): Promise<void>;
 		openExternal(url: string): Promise<void>;

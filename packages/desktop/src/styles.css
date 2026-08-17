@@ -1084,6 +1084,24 @@
 }
 
 /*
+ * The update dot.
+ *
+ * A pale blue, not a saturated one. It is the only thing on the toolbar that is not about the
+ * document, so it has to be findable — but it is also not urgent, and a bright chip carrying a
+ * version number announced itself far louder than the news deserves. What is wanted is "there is
+ * something", not "look at me".
+ */
+.ly-update-dot {
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+  color: var(--color-info);
+}
+
+.ly-update-dot:hover {
+  background: color-mix(in srgb, var(--color-info) 24%, transparent);
+}
+
+
+/*
  * Dialogs, coming and going.
  *
  * The scrim and the card are animated separately: the scrim only fades, because a dimming that also
