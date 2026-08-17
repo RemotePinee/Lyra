@@ -128,7 +128,8 @@ export function Annotator({
 				onPointerMove={move}
 				onPointerUp={end}
 				onPointerCancel={end}
-				className="max-h-[74vh] max-w-[86vw] cursor-crosshair rounded-xl bg-white shadow-2xl shadow-black/50"
+				// Same reasoning as the viewer: a black shadow on a black backdrop is a second border.
+				className="max-h-[74vh] max-w-[86vw] cursor-crosshair rounded-xl bg-white"
 				style={{ touchAction: "none" }}
 			/>
 

@@ -32,8 +32,6 @@ export function ImageViewer() {
 	const state = useViewer();
 	const [leaving, setLeaving] = useState(false);
 	const [editing, setEditing] = useState(false);
-	/** Null until the first frame has been painted at the origin, which is what starts the animation. */
-	const [settled, setSettled] = useState(false);
 	const figure = useRef<HTMLDivElement>(null);
 	const origin = useRef<DOMRect | null>(null);
 
@@ -48,21 +46,71 @@ export function ImageViewer() {
 		if (state.origin) origin.current = state.origin;
 	}, [state]);
 
-	// Two frames: one to paint at the origin, one to release the transform and let it travel.
-	useEffect(() => {
-		if (!shown || leaving) return;
-		setSettled(false);
-		const frame = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
-		return () => cancelAnimationFrame(frame);
+	/*
+	 * The flight, driven straight at the DOM rather than through React.
+	 *
+	 * FLIP measures the *final* layout and then expresses the start as a transform away from it. The
+	 * measurement therefore has to happen on a frame where no transform is applied — and that is
+	 * exactly what a rendered `transform` in JSX cannot guarantee, because the next render measures
+	 * an element that is already transformed. Doing that produced a scale of 1 on the second pass
+	 * (the box had shrunk to match the thumbnail, so they agreed) and the picture stayed thumbnail
+	 * sized for ever, which is the bug this replaced.
+	 *
+	 * Setting `style.transform` here instead means the element is only ever measured in its settled
+	 * state. Reading `offsetWidth` between the two writes forces the browser to accept the start
+	 * position as a real style before the transition to the end position begins; without it the two
+	 * writes coalesce and nothing animates.
+	 */
+	useLayoutEffect(() => {
+		const el = figure.current;
+		const from = origin.current;
+		if (!el || !shown || leaving) return;
+		if (!from) {
+			// Arrived without a source rectangle — an arrow key rather than a click. Nothing to fly
+			// from, so it simply appears.
+			el.style.transform = "";
+			return;
+		}
+		const to = el.getBoundingClientRect();
+		if (to.width === 0 || to.height === 0) return;
+
+		const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+		const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+		const sx = Math.max(from.width / to.width, 0.01);
+		const sy = Math.max(from.height / to.height, 0.01);
+
+		el.style.transition = "none";
+		el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+		void el.offsetWidth;
+		el.style.transition = "";
+		el.style.transform = "";
 	}, [shown, leaving]);
 
 	const dismiss = useCallback(() => {
 		if (leaving) return;
 		setEditing(false);
 		setLeaving(true);
+
+		// Backwards along the same path: measure where it is now, put it back on the thumbnail.
+		const el = figure.current;
+		const from = origin.current;
+		if (el && from) {
+			const to = el.getBoundingClientRect();
+			if (to.width > 0) {
+				const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+				const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+				el.style.transform = `translate(${dx}px, ${dy}px) scale(${Math.max(from.width / to.width, 0.01)}, ${Math.max(from.height / to.height, 0.01)})`;
+			}
+			el.style.opacity = "0";
+		}
+
 		window.setTimeout(() => {
 			setHeld(null);
 			origin.current = null;
+			if (el) {
+				el.style.transform = "";
+				el.style.opacity = "";
+			}
 			closeViewer();
 		}, DURATION);
 	}, [leaving]);
@@ -83,25 +131,7 @@ export function ImageViewer() {
 	const image = shown.images[shown.index];
 	if (!image) return null;
 
-	/*
-	 * The transform that puts the final box back on the thumbnail.
-	 *
-	 * Measured from the figure's own laid-out rectangle, so it stays correct whatever the image's
-	 * aspect ratio turned out to be. Absent an origin — arriving by arrow key rather than by click
-	 * — there is nothing to fly from and the picture simply fades.
-	 */
-	const from = origin.current;
-	const box = figure.current?.getBoundingClientRect();
-	let transform = "none";
-	if (from && box && box.width > 0 && (!settled || leaving)) {
-		const scaleX = from.width / box.width;
-		const scaleY = from.height / box.height;
-		const dx = from.left + from.width / 2 - (box.left + box.width / 2);
-		const dy = from.top + from.height / 2 - (box.top + box.height / 2);
-		transform = `translate(${dx}px, ${dy}px) scale(${Math.max(scaleX, 0.01)}, ${Math.max(scaleY, 0.01)})`;
-	}
-
-	const open = settled && !leaving;
+	const open = !leaving;
 
 	return createPortal(
 		<div role="dialog" aria-modal aria-label="图片预览" className="fixed inset-0 z-[100] flex items-center justify-center">
@@ -122,14 +152,7 @@ export function ImageViewer() {
 			<div
 				ref={figure}
 				className="relative transition-[transform,opacity] duration-[var(--ly-t-base)] ease-out"
-				style={{
-					maxWidth: `${FIT * 100}vw`,
-					maxHeight: `${FIT * 100}vh`,
-					transform,
-					// Only fades when there is no origin to fly from; a flight reads better at full opacity.
-					opacity: open || from ? 1 : 0,
-					transformOrigin: "center",
-				}}
+				style={{ maxWidth: `${FIT * 100}vw`, maxHeight: `${FIT * 100}vh`, transformOrigin: "center" }}
 			>
 				{editing ? (
 					<Annotator
@@ -156,7 +179,13 @@ export function ImageViewer() {
 						src={image.src}
 						alt={image.alt ?? ""}
 						draggable={false}
-						className="block max-h-[86vh] max-w-[86vw] rounded-xl object-contain shadow-2xl shadow-black/50"
+						/*
+						 * No shadow. A black one on a 72%-black backdrop does not read as depth — it
+						 * reads as a second, blurry border a few pixels outside the first, which is
+						 * what the ring around the picture was. The backdrop is already the whole of
+						 * the separation between the image and everything behind it.
+						 */
+						className="block max-h-[86vh] max-w-[86vw] rounded-xl object-contain"
 					/>
 				)}
 			</div>
