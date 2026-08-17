@@ -3,6 +3,7 @@ import type {
   UserMessage as UserMessageType,
 } from "@lyra/core";
 import { MessageSquarePlus, Pencil } from "lucide-react";
+import { openFromEvent } from "./image/viewer-store.ts";
 import { useEffect, useRef, useState } from "react";
 import { MessageActions } from "./MessageActions.tsx";
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
@@ -144,12 +145,26 @@ export function UserMessage({
           </p>
         )}
         {images.map((block, i) => (
-          <img
+          /*
+           * Openable, but not replaceable: this one has already been sent. The viewer notices the
+           * missing `onReplace` and offers the annotated copy as a new attachment instead of
+           * silently rewriting a message that is part of the record.
+           */
+          <button
             key={i}
-            src={`data:${block.mimeType};base64,${block.data}`}
-            alt=""
-            className="mt-2 max-h-[240px] rounded-lg border border-line"
-          />
+            type="button"
+            aria-label="预览图片"
+            onClick={(event) =>
+              openFromEvent(
+                event,
+                images.map((img) => ({ src: `data:${img.mimeType};base64,${img.data}` })),
+                i,
+              )
+            }
+            className="mt-2 block overflow-hidden rounded-lg border border-line transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90"
+          >
+            <img src={`data:${block.mimeType};base64,${block.data}`} alt="" className="max-h-[240px]" />
+          </button>
         ))}
       </div>
 

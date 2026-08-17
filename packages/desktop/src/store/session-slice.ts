@@ -7,11 +7,26 @@
  */
 
 import type { SessionMeta } from "@lyra/core";
+import type { SessionActivity } from "@lyra/core/activity";
 import { prune, rebuildToolRuns, todosFrom, wasCutShort, without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;
 type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+
+/**
+ * Whether this conversation runs in one of the app's own directories rather than in a project.
+ *
+ * 「不在项目中工作」 and a pull request review both need somewhere to run, and both get a directory
+ * under the app's home. Neither is a project, and the difference has to be made here because by the
+ * time you are looking at a session all you have is a path.
+ */
+function isProjectLess(cwd: string, scratchRoots: string[]): boolean {
+	return scratchRoots
+		.filter(Boolean)
+		.map((root) => (root.endsWith("/") ? root : `${root}/`))
+		.some((root) => cwd.startsWith(root));
+}
 
 export function sessionSlice(set: Set, get: Get) {
   return {
@@ -28,6 +43,19 @@ export function sessionSlice(set: Set, get: Get) {
     if (!get().workspace && !get().scratchCwd) {
       await get().pickWorkspace();
       return;
+    }
+    /*
+     * Out of the last conversation's directory, back to the shared one.
+     *
+     * `scratchCwd` says where the *next* conversation runs, and opening a project-less one points
+     * it at that conversation's own directory. For a pull request review that directory holds the
+     * review — its PR.md, whatever was checked out to answer the question — and starting a new
+     * conversation there hands all of it to a question that has nothing to do with that review.
+     * Projects do not have this problem: 新对话 in a project is meant to be in that project.
+     */
+    if (!get().workspace) {
+      const general = await window.lyra.git.generalScratch().catch(() => null);
+      if (general) set({ scratchCwd: general });
     }
     set({
       activeSessionId: null,
@@ -74,7 +102,33 @@ export function sessionSlice(set: Set, get: Get) {
     }
 
     const cached = cache[meta.id];
+    /*
+     * Which mode this conversation is in, decided from its own directory.
+     *
+     * A conversation carries where it runs, and opening one has to make the app agree with it.
+     * Before this, opening a project-less conversation left whichever project was open still
+     * showing in the composer — so the chip named a project the conversation had nothing to do
+     * with, and 新对话 from there started the next conversation *in* that project.
+     *
+     * Both halves are set here rather than only the one that changes: leaving `scratchCwd` behind
+     * when moving into a project, or leaving `workspace` behind when moving out of one, is the
+     * same bug in the other direction.
+     */
+    const projectLess = isProjectLess(meta.cwd, get().scratchRoots);
     set({
+      /*
+       * Opening it is reading it, and reading a result clears it.
+       *
+       * `done` and `failed` mean "finished since you last looked". The list used to hide them
+       * for whichever conversation was on screen and put them straight back the moment you
+       * moved on — a green dot on something read half an hour ago, for as long as the app
+       * stayed open. Hiding is a render-time trick; this is the state actually changing.
+       *
+       * `running` and `waiting` survive, because they are about the future rather than the
+       * past: a conversation still working, or still blocked on approval, is not finished by
+       * being looked at.
+       */
+      activity: readOutcome(get().activity, meta.id),
       sessionCache: prune(cache, meta.id),
       activeSessionId: meta.id,
       meta: cached?.meta ?? meta,
@@ -88,6 +142,7 @@ export function sessionSlice(set: Set, get: Get) {
       loadingSession: !cached,
       pendingUserMessage: null,
       view: "chat",
+      ...(projectLess ? { workspace: null, scratchCwd: meta.cwd } : { scratchCwd: null }),
     });
 
     /*
@@ -98,9 +153,17 @@ export function sessionSlice(set: Set, get: Get) {
      * message instead. The cwd comes from the meta we already have, so the git lookup need
      * not wait for the log either.
      */
+    /*
+     * The git lookup is only asked for when there is a project to ask about.
+     *
+     * A project-less conversation's directory is one of the app's own, and it is a real directory
+     * — so `workspace.info` answers about it perfectly happily, with a name taken from the folder:
+     * `general`, or `acme-widgets-42`. Handing that back as the workspace is how a conversation
+     * that is explicitly in no project ended up displaying one, named after a path nobody chose.
+     */
     const [snapshot, workspace] = await Promise.all([
       window.lyra.sessions.transcript(meta.projectId, meta.id),
-      window.lyra.workspace.info(meta.cwd),
+      projectLess ? Promise.resolve(null) : window.lyra.workspace.info(meta.cwd),
     ]);
 
     // A second click while this was in flight wins; discard the stale arrival.
@@ -123,7 +186,9 @@ export function sessionSlice(set: Set, get: Get) {
       running: snapshot.running,
       approvals: snapshot.pendingApprovals,
       toolRuns,
-      workspace: workspace ?? get().workspace,
+      // Null stays null for a project-less conversation: `?? get().workspace` would put back the
+      // project that was open before this one was clicked.
+      workspace: projectLess ? null : (workspace ?? get().workspace),
       loadingSession: false,
       sessionCache: {
         ...get().sessionCache,
@@ -195,3 +260,19 @@ export function sessionSlice(set: Set, get: Get) {
   };
 }
 
+/**
+ * Drop a finished outcome for one conversation, leaving anything still in progress alone.
+ *
+ * Returns the same object when there is nothing to clear, so opening a conversation that had no
+ * mark does not hand React a new map and re-render every row in the list.
+ */
+function readOutcome(
+  activity: Record<string, SessionActivity>,
+  id: string,
+): Record<string, SessionActivity> {
+  const current = activity[id];
+  if (current !== "done" && current !== "failed") return activity;
+  const next = { ...activity };
+  delete next[id];
+  return next;
+}

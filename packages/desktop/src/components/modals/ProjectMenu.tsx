@@ -1,5 +1,6 @@
-import { Archive, FolderOpen, GitBranch, PinOff, Pin, Settings2, X } from "lucide-react";
+import { Archive, ArrowRight, FolderOpen, GitBranch, PinOff, Pin, Settings2, X } from "lucide-react";
 import { useState } from "react";
+import { ConfirmBody } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, type Anchor } from "../Popover.tsx";
 import { useApp } from "../../store.ts";
 
@@ -20,6 +21,7 @@ export function ProjectMenu({
 	name: string;
 	onClose: () => void;
 }) {
+	const openWorkspace = useApp((s) => s.openWorkspace);
 	const settings = useApp((s) => s.settings);
 	const sessions = useApp((s) => s.sessions);
 	const setPinned = useApp((s) => s.setProjectPinned);
@@ -29,7 +31,7 @@ export function ProjectMenu({
 	const refreshWorkspace = useApp((s) => s.refreshWorkspace);
 	const notify = useApp((s) => s.notify);
 
-	const [mode, setMode] = useState<"menu" | "rename" | "worktree">("menu");
+	const [mode, setMode] = useState<"menu" | "rename" | "worktree" | "remove">("menu");
 	const [draft, setDraft] = useState(name);
 	const [busy, setBusy] = useState(false);
 
@@ -51,10 +53,44 @@ export function ProjectMenu({
 		onClose();
 	}
 
+	/*
+	 * The question replaces the menu rather than opening over it.
+	 *
+	 * Same surface, same anchor, one panel — a confirmation stacked on top of the menu that raised
+	 * it leaves the menu visible behind it, two shadows deep, with the row you just clicked still
+	 * highlighted. Removing a project only forgets the entry; the working tree is not touched, and
+	 * saying so is most of why this asks at all.
+	 */
+	if (mode === "remove") {
+		return (
+			<Popover anchor={anchor} onClose={onClose} placement="right" width="panel" role="dialog" label={`移除 ${name}`}>
+				<ConfirmBody
+					title={`移除 ${name}？`}
+					detail="只是从列表里去掉，磁盘上的目录和里面的文件都不动。置顶、改过的名字这些会丢。"
+					confirmLabel="移除"
+					onCancel={() => setMode("menu")}
+					onConfirm={() => {
+						void removeProject(path);
+						onClose();
+					}}
+				/>
+			</Popover>
+		);
+	}
+
 	if (mode === "rename" || mode === "worktree") {
 		const worktree = mode === "worktree";
 		return (
-			<Popover anchor={anchor} onClose={onClose} placement="right" width={260}>
+			// A form, not a menu — a text field announced as a menu item is worse than one
+			// announced as nothing.
+			<Popover
+				anchor={anchor}
+				onClose={onClose}
+				placement="right"
+				width="panel"
+				role="dialog"
+				label={worktree ? "新建工作树" : "编辑项目"}
+			>
 				<form
 					className="p-2.5"
 					onSubmit={(event) => {
@@ -113,8 +149,27 @@ export function ProjectMenu({
 	}
 
 	return (
-		<Popover anchor={anchor} onClose={onClose} placement="right" width={184}>
+		<Popover anchor={anchor} onClose={onClose} placement="right" width="compact" label={`${name} 的操作`}>
 			<MenuBody>
+				{/*
+				 * Switching to the project, which used to be what clicking its name did.
+				 *
+				 * The name now folds the group — that is what a heading in a long list is for — so
+				 * this needs somewhere to live. First in the menu because it is the one item that is
+				 * about going somewhere rather than about changing something.
+				 */}
+				<MenuItem
+					icon={<ArrowRight size={13} strokeWidth={1.8} />}
+					onClick={() => {
+						void openWorkspace(path);
+						onClose();
+					}}
+				>
+					切换到这个项目
+				</MenuItem>
+
+				<MenuSeparator />
+
 				<MenuItem
 					icon={pinned ? <PinOff size={13} strokeWidth={1.8} /> : <Pin size={13} strokeWidth={1.8} />}
 					onClick={() => {
@@ -165,14 +220,7 @@ export function ProjectMenu({
 				>
 					归档聊天
 				</MenuItem>
-				<MenuItem
-					icon={<X size={13} strokeWidth={1.9} />}
-					danger
-					onClick={() => {
-						void removeProject(path);
-						onClose();
-					}}
-				>
+				<MenuItem icon={<X size={13} strokeWidth={1.9} />} danger onClick={() => setMode("remove")}>
 					移除
 				</MenuItem>
 			</MenuBody>

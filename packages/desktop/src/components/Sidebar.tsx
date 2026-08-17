@@ -7,15 +7,29 @@
  * once rather than reading past on the way to the layout.
  */
 
-import { AtSign, Bell, Clock, GitPullRequest, Search, Settings as SettingsIcon, SquarePen } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AtSign, Bell, ChevronRight, Clock, GitPullRequest, Search, Settings as SettingsIcon, SquarePen } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 import { ScrollText } from "./ScrollText.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
 import { activeProviderLabel, groupSessions, listableSessions } from "./sidebar/grouping.ts";
+import { Collapsible } from "./sidebar/Collapsible.tsx";
 import { ProjectGroup, SESSION_PAGE } from "./sidebar/ProjectGroup.tsx";
+import { SessionRow } from "./sidebar/SessionRow.tsx";
+import { ShowMore } from "./sidebar/ShowMore.tsx";
+
+/** Where the folded-project list is remembered. */
+const COLLAPSED_KEY = "ly-collapsed-projects";
+/**
+ * Fold keys for the two sections, which are not projects and have no path.
+ *
+ * `§` because every project key is an absolute path and none of them can start with one, so the
+ * two kinds share a store without a chance of collision.
+ */
+const PINNED = "§pinned";
+const RECENT = "§recent";
 
 export function Sidebar() {
 	const settings = useApp((s) => s.settings);
@@ -39,6 +53,43 @@ export function Sidebar() {
 	const [searching, setSearching] = useState(false);
 	/** How many rows each project is showing. Absent means the default five. */
 	const [shown, setShown] = useState<Record<string, number>>({});
+	/** The same, for the 「最近」 section — one number, because there is only ever one of it. */
+	const [looseShown, setLooseShown] = useState(SESSION_PAGE);
+	/**
+	 * Which projects are folded shut.
+	 *
+	 * Kept here rather than in each group: a group is rebuilt whenever the session list changes,
+	 * and state living inside one would unfold every time somebody sent a message. Persisted, so a
+	 * sidebar somebody tidied stays tidy across launches.
+	 */
+	const [collapsed, setCollapsed] = useState<string[]>(() => {
+		try {
+			const stored = localStorage.getItem(COLLAPSED_KEY);
+			return stored ? (JSON.parse(stored) as string[]) : [];
+		} catch {
+			return [];
+		}
+	});
+	const toggleCollapsed = (path: string) =>
+		setCollapsed((current) => (current.includes(path) ? current.filter((p) => p !== path) : [...current, path]));
+
+	/*
+	 * Written here rather than inside the updater above.
+	 *
+	 * An updater has to be a pure function of its argument, because React calls it more than once —
+	 * twice per commit under StrictMode, and again whenever it replays a render it threw away.
+	 * Writing to storage in there meant the last write was not necessarily the one matching the
+	 * state that survived: folding a project left the fold on screen and `[]` on disk, so it came
+	 * back open on the next launch. The effect runs once per committed value, which is the only
+	 * moment a persisted copy is meaningful.
+	 */
+	useEffect(() => {
+		try {
+			localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+		} catch {
+			// A full or disabled storage costs the memory of the choice, not the choice itself.
+		}
+	}, [collapsed]);
 
 	const groups = useMemo(
 		() => groupSessions(listableSessions(sessions, activeSessionId), settings?.projects ?? [], query, scratchRoots),
@@ -46,6 +97,8 @@ export function Sidebar() {
 	);
 
 	const groupProps = (path: string) => ({
+		collapsed: collapsed.includes(path),
+		onToggleCollapsed: () => toggleCollapsed(path),
 		shown: shown[path] ?? SESSION_PAGE,
 		onShowMore: () => setShown((prev) => ({ ...prev, [path]: (prev[path] ?? SESSION_PAGE) + SESSION_PAGE })),
 		onCollapse: () => setShown((prev) => ({ ...prev, [path]: SESSION_PAGE })),
@@ -177,8 +230,39 @@ export function Sidebar() {
 					/>
 				</div>
 
-				{groups.pinned.length > 0 && <SectionLabel>置顶</SectionLabel>}
-				{groups.pinned.map((group) => (
+				{groups.pinned.length > 0 && (
+					<>
+						<SectionLabel
+							count={groups.pinned.length}
+							collapsed={collapsed.includes(PINNED)}
+							onToggle={() => toggleCollapsed(PINNED)}
+						>
+							置顶
+						</SectionLabel>
+						<Collapsible open={!collapsed.includes(PINNED)}>
+							{groups.pinned.map((group) => (
+								<ProjectGroup
+									key={group.path}
+									group={group}
+									active={workspace?.path === group.path}
+									{...groupProps(group.path)}
+								/>
+							))}
+						</Collapsible>
+					</>
+				)}
+
+				{/*
+				 * No heading over the projects.
+				 *
+				 * They used to sit under 「最近」, which then had nothing left to say when the
+				 * project-less conversations needed a home: a folder row called 「无项目」 was
+				 * invented for them, and a folder named after not having one is a contradiction you
+				 * cannot click on. 「最近」 belongs to those conversations — they are the ones that
+				 * are not filed anywhere and are found by when you last touched them. A project is
+				 * found by its name, and its own row is already the heading.
+				 */}
+				{groups.projects.map((group) => (
 					<ProjectGroup
 						key={group.path}
 						group={group}
@@ -187,17 +271,43 @@ export function Sidebar() {
 					/>
 				))}
 
-				{groups.recent.length > 0 && <SectionLabel>最近</SectionLabel>}
-				{groups.recent.map((group) => (
-					<ProjectGroup
-						key={group.path}
-						group={group}
-						active={workspace?.path === group.path}
-						{...groupProps(group.path)}
-					/>
-				))}
+				{groups.loose.length > 0 && (
+					<>
+						<SectionLabel
+							count={groups.loose.length}
+							collapsed={collapsed.includes(RECENT)}
+							onToggle={() => toggleCollapsed(RECENT)}
+						>
+							最近
+						</SectionLabel>
+						{/* Flat rows, the same ones a project shows — the section is what differs, not the
+						    conversation. Same gap as inside a project, so the two read as one list. */}
+						<Collapsible open={!collapsed.includes(RECENT)}>
+						<div className={`flex flex-col ${compact ? "gap-[5px]" : "gap-[4px]"}`}>
+							{groups.loose.slice(0, looseShown).map((session) => (
+								<SessionRow
+									key={session.id}
+									session={session}
+									active={activeSessionId === session.id}
+									onOpen={() => {
+										void openSession(session);
+										dismissNav();
+									}}
+									onArchive={() => void setSessionArchived(session, true)}
+								/>
+							))}
+							<ShowMore
+								hidden={Math.max(0, groups.loose.length - looseShown)}
+								canCollapse={looseShown > SESSION_PAGE}
+								onShowMore={() => setLooseShown((n) => n + SESSION_PAGE)}
+								onCollapse={() => setLooseShown(SESSION_PAGE)}
+							/>
+							</div>
+						</Collapsible>
+					</>
+				)}
 
-				{groups.pinned.length === 0 && groups.recent.length === 0 && (
+				{groups.pinned.length === 0 && groups.projects.length === 0 && groups.loose.length === 0 && (
 					<p className="px-2 py-6 text-center text-detail leading-relaxed text-ink-faint">
 						还没有会话。
 						<br />
@@ -236,8 +346,46 @@ export function Sidebar() {
 	);
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-	return <div className="px-2 pt-4 pb-1.5 text-detail font-medium text-ink-faint">{children}</div>;
+/**
+ * A section heading, which is also the control that folds the section.
+ *
+ * The projects underneath already fold one at a time; a section that could not fold meant the only
+ * way to put away a long 「最近」 was to fold nothing and scroll past it. Making the heading itself
+ * the target keeps the row count the same — no chevron column appearing beside every label, no
+ * second thing to aim at.
+ *
+ * The count only shows while shut. Open, the rows are the count; shut, it is the difference
+ * between "folded" and "empty", which are otherwise the same picture.
+ */
+function SectionLabel({
+	children,
+	count,
+	collapsed,
+	onToggle,
+}: {
+	children: React.ReactNode;
+	count: number;
+	collapsed: boolean;
+	onToggle: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			aria-expanded={!collapsed}
+			onClick={onToggle}
+			className="group/section flex w-full items-center gap-1 rounded-md px-2 pt-4 pb-1.5 text-left text-detail font-medium text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink-muted"
+		>
+			{children}
+			<ChevronRight
+				size={12}
+				strokeWidth={2.2}
+				className={`shrink-0 opacity-0 transition-[opacity,transform] duration-[var(--ly-t-quick)] group-hover/section:opacity-100 ${
+					collapsed ? "" : "rotate-90"
+				}`}
+			/>
+			{collapsed && count > 0 && <span className="ml-auto tabular-nums">{count}</span>}
+		</button>
+	);
 }
 
 /**

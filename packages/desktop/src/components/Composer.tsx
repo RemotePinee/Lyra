@@ -1,10 +1,13 @@
 import type { UserContent } from "@lyra/core";
-import { CircleAlert, Folder, GitBranch, Plus, X } from "lucide-react";
+import { CircleAlert, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
+import { openFromEvent } from "./image/viewer-store.ts";
 import { useEffect, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
 import { ComposerSend, ComposerShell } from "./ComposerShell.tsx";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { EffortMenu, effortLabel } from "./EffortMenu.tsx";
+import { ModelIcon } from "./ModelIcon.tsx";
+import { RollingText, useRolled } from "./RollingText.tsx";
 import { ScrollText } from "./ScrollText.tsx";
 import { ModelMenu } from "./ModelMenu.tsx";
 import { usePopover } from "./Popover.tsx";
@@ -12,6 +15,7 @@ import { BranchMenu } from "./modals/BranchMenu.tsx";
 import { PermissionPicker } from "./modals/PermissionPicker.tsx";
 import { ProjectPicker } from "./modals/ProjectPicker.tsx";
 import { useLayout } from "../layout.tsx";
+import { findModel } from "../models.ts";
 import { useApp } from "../store.ts";
 
 const PERMISSION_LABEL: Record<string, string> = {
@@ -64,8 +68,15 @@ export function Composer() {
 	const branchMenu = usePopover();
 	const fileRef = useRef<HTMLInputElement>(null);
 
+	/** No project behind this conversation, and that was the choice — not a step left undone. */
+	const chatting = !workspace && Boolean(scratchCwd);
 	const modelId = meta?.modelId ?? settings?.defaultModelId ?? null;
-	const modelName = findModelName(settings, modelId);
+	// The whole record, not just its name: the mark beside it is chosen from the id the provider
+	// knows the model by, which is not the same string as the label somebody typed for it.
+	const model = findModel(settings, modelId);
+	const modelName = model?.name ?? null;
+	// The mark rolls with the name it belongs to, on the same terms — never on the first paint.
+	const modelRolls = useRolled(modelId ?? "");
 	const permissionMode = settings?.permissionMode ?? "auto";
 	/**
 	 * Settled by the first message.
@@ -122,16 +133,20 @@ export function Composer() {
 				{showBottomPanel && (
 				<div className="flex items-center gap-0.5 overflow-hidden pb-1">
 					<Chip
-						icon={<Folder size={13} strokeWidth={1.8} />}
 						/*
-						 * 「无项目」 when that is a choice, 「选择项目」 when nothing has been chosen yet.
+						 * Chat, not 「无项目」.
 						 *
-						 * Reviewing a repository that is not checked out here, or 「不在项目中工作」, both
-						 * leave the workspace empty on purpose — and a chip that goes on saying
-						 * 「选择项目」 reads as an unfinished step rather than as the state the user asked
-						 * for. The picker is still behind it either way.
+						 * The old label named the state by what it lacks — a mode called "no project",
+						 * which reads as something missing rather than as something chosen. What it
+						 * actually is: a conversation with no checkout behind it. Reviewing a repository
+						 * that is not on this machine, asking something that is not about code. That is a
+						 * chat, and naming it after itself is the difference between a state and a gap.
+						 *
+						 * 「选择项目」 stays for the case where nothing has been chosen yet, which really is
+						 * an unfinished step. The picker sits behind all three.
 						 */
-						label={workspace?.name ?? (scratchCwd ? "无项目" : "选择项目")}
+						icon={chatting ? <MessageSquare size={13} strokeWidth={1.8} /> : <Folder size={13} strokeWidth={1.8} />}
+						label={workspace?.name ?? (chatting ? "Chat" : "选择项目")}
 						onClick={projectMenu.toggle}
 						active={projectMenu.open}
 					/>
@@ -157,13 +172,40 @@ export function Composer() {
 					attachments={
 						attachments.length > 0 ? (
 							<div className="flex flex-wrap gap-2 px-4 pt-3.5">
-								{attachments.map((attachment) => (
+								{attachments.map((attachment, index) => (
 									<div key={attachment.id} className="relative">
-										<img
-											src={`data:${attachment.mimeType};base64,${attachment.data}`}
-											alt={attachment.name}
-											className="h-[68px] w-[92px] rounded-lg border border-line object-cover"
-										/>
+										{/*
+										 * A button, because it is one: clicking a thumbnail opens the picture.
+										 * Its rectangle is what the viewer flies from, which is why the handler
+										 * takes the event rather than just the index.
+										 */}
+										<button
+											type="button"
+											aria-label={`预览 ${attachment.name}`}
+											onClick={(event) =>
+												openFromEvent(
+													event,
+													attachments.map((a) => ({
+														src: `data:${a.mimeType};base64,${a.data}`,
+														alt: a.name,
+														onReplace: (dataUrl: string) =>
+															setAttachments((prev) =>
+																prev.map((item) =>
+																	item.id === a.id ? { ...item, ...fromDataUrl(dataUrl, item) } : item,
+																),
+															),
+													})),
+													index,
+												)
+											}
+											className="block overflow-hidden rounded-lg border border-line transition-opacity duration-[var(--ly-t-quick)] hover:opacity-85"
+										>
+											<img
+												src={`data:${attachment.mimeType};base64,${attachment.data}`}
+												alt={attachment.name}
+												className="h-[68px] w-[92px] object-cover"
+											/>
+										</button>
 										<button
 											type="button"
 											onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
@@ -232,7 +274,9 @@ export function Composer() {
 								 * about 350px, and the label has to go long before the layout is
 								 * "compact".
 								 */}
-								<span className="@max-[420px]:hidden">{PERMISSION_LABEL[permissionMode]}</span>
+								<span className="@max-[420px]:hidden">
+									<RollingText>{PERMISSION_LABEL[permissionMode]}</RollingText>
+								</span>
 							</button>
 						</>
 					}
@@ -246,9 +290,10 @@ export function Composer() {
 								// clickable, so it should not look like something that might.
 								<span
 									data-ly-tip={`${modelName ?? "模型"} · 对话开始后不能更换，新建对话可选`}
-									className="h-7 min-w-0 truncate px-2 text-label leading-7 text-ink-faint"
+									className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-label text-ink-faint"
 								>
-									{modelName ?? "未配置模型"}
+									<ModelIcon model={model?.modelId} name={modelName} />
+									<span className="min-w-0 truncate">{modelName ?? "未配置模型"}</span>
 								</span>
 							) : (
 								<button
@@ -257,11 +302,19 @@ export function Composer() {
 									data-ly-tip={modelName ?? "选择模型"}
 									aria-haspopup="menu"
 									aria-expanded={modelMenu.open}
-									className={`h-7 min-w-0 truncate rounded-md px-2 text-label transition-colors ${
+									className={`flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
 										modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
 									}`}
 								>
-									{modelName ?? "选择模型"}
+									{/* Keyed on the model, so picking a different house turns the mark over with
+									    the label beside it rather than swapping under it. */}
+									<ModelIcon
+										key={modelId}
+										model={model?.modelId}
+										name={modelName}
+										className={modelRolls ? "ly-roll" : ""}
+									/>
+									<RollingText className="min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
 								</button>
 							)}
 							<button
@@ -270,11 +323,11 @@ export function Composer() {
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
 								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium")}`}
-								className={`mr-1.5 h-7 shrink-0 rounded-md px-2 text-label transition-colors ${
+								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>
-								{effortLabel(settings?.thinking ?? "medium")}
+								<RollingText>{effortLabel(settings?.thinking ?? "medium")}</RollingText>
 							</button>
 
 							<ComposerSend
@@ -308,6 +361,8 @@ function Chip({
 	onClick: (event: React.MouseEvent<HTMLElement>) => void;
 	active?: boolean;
 }) {
+	const rolls = useRolled(label);
+
 	return (
 		<button
 			type="button"
@@ -320,18 +375,12 @@ function Chip({
 			}`}
 		>
 			<span className="shrink-0 text-ink-faint">{icon}</span>
-			<ScrollText text={label} className="min-w-0" />
+			{/* Keyed on the label so switching project or branch rolls the new one in. `ScrollText`
+			    cannot take `RollingText` as a child — it measures the string to decide whether the
+			    chip scrolls on hover — so the remount happens around it instead, on the same terms. */}
+			<ScrollText key={label} text={label} className={`min-w-0 ${rolls ? "ly-roll" : ""}`} />
 		</button>
 	);
-}
-
-function findModelName(settings: ReturnType<typeof useApp.getState>["settings"], modelId: string | null): string | null {
-	if (!settings || !modelId) return null;
-	for (const provider of settings.providers) {
-		const model = provider.models.find((m) => m.id === modelId);
-		if (model) return model.name;
-	}
-	return null;
 }
 
 /** btoa cannot take a raw byte array; chunk it so large images do not blow the call stack. */
@@ -342,4 +391,16 @@ function bytesToBase64(bytes: Uint8Array): string {
 		binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
 	}
 	return btoa(binary);
+}
+
+/**
+ * Split an annotated `data:` URL back into the shape an attachment is stored in.
+ *
+ * The annotator always hands back PNG, whatever went in — flattening a JPEG with marks on it and
+ * calling it a JPEG would re-compress the original a second time.
+ */
+function fromDataUrl(dataUrl: string, previous: { mimeType: string }): { data: string; mimeType: string } {
+	const match = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl);
+	if (!match) return { data: "", mimeType: previous.mimeType };
+	return { mimeType: match[1], data: match[2] };
 }

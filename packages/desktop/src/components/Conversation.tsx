@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
+import { BackToLatest } from "./BackToLatest.tsx";
 import { Composer } from "./Composer.tsx";
 import { ResumeRow } from "./ResumeRow.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
@@ -52,6 +53,16 @@ export function Conversation() {
    * animate normally.
    */
   const [swapping, setSwapping] = useState(false);
+  /**
+   * Whether the newest message is off the bottom of the view.
+   *
+   * `pinnedToBottom` is a ref because following the bottom happens in a layout effect and must not
+   * cost a render. This is the same fact in state, because a button has to be drawn from it. They
+   * are set together and read in different places rather than one deriving the other.
+   */
+  const [away, setAway] = useState(false);
+  /** Something arrived while scrolled up, which is the difference between "go down" and "new". */
+  const [missed, setMissed] = useState(false);
 
   /*
    * Before paint, not after.
@@ -72,11 +83,22 @@ export function Conversation() {
      * to every streamed chunk here as well. A count of finished calls changes when a card
      * appears or completes — the moments that actually change the page height.
      */
+    setMissed(false);
+  }, [messages, toolRunCount]);
+
+  /*
+   * Arrived while away. Separate from the effect above because that one returns early when not
+   * pinned — which is exactly the case this needs to notice.
+   */
+  useLayoutEffect(() => {
+    if (!pinnedToBottom.current) setMissed(true);
   }, [messages, toolRunCount]);
 
   // A new session starts at the bottom, not wherever the previous one was left.
   useLayoutEffect(() => {
     pinnedToBottom.current = true;
+    setAway(false);
+    setMissed(false);
     setSwapping(true);
   }, [activeSessionId]);
 
@@ -127,8 +149,10 @@ export function Conversation() {
         scrollRef={scrollRef}
         contentClassName={compact ? "px-4" : "px-8"}
         onScroll={(el) => {
-          pinnedToBottom.current =
-            el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          pinnedToBottom.current = atBottom;
+          setAway(!atBottom);
+          if (atBottom) setMissed(false);
         }}
       >
         {/*
@@ -215,6 +239,28 @@ export function Conversation() {
           <ResumeRow />
         </div>
       </Scroller>
+
+      {/*
+       * Above the composer, over the transcript's last few pixels.
+       *
+       * Inside the same relative box as the Scroller rather than in the flow: a button that took a
+       * row of its own would push the transcript up by its own height the moment it appeared, and
+       * a control offering to move you should not itself move the thing it is about.
+       */}
+      <BackToLatest
+        show={away}
+        unread={missed}
+        onClick={() => {
+          const el = scrollRef.current;
+          if (!el) return;
+          el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+          // Set now rather than waiting for the scroll handler: a smooth scroll fires `scroll`
+          // all the way down, and the button would sit there flickering until it arrived.
+          pinnedToBottom.current = true;
+          setAway(false);
+          setMissed(false);
+        }}
+      />
 
       {/*
        * Approvals sit directly above the composer.

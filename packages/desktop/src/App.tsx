@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import { BootScreen } from "./components/BootScreen.tsx";
 import { Conversation, ConversationSkeleton } from "./components/Conversation.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
+import { ImageViewer } from "./components/image/ImageViewer.tsx";
 import { NoticeStack } from "./components/NoticeStack.tsx";
 import { PluginsView } from "./components/PluginsView.tsx";
 import { PullRequestsView } from "./components/PullRequestsView.tsx";
@@ -50,6 +51,14 @@ export function App() {
 	return (
 		<LayoutProvider>
 			<Shell />
+			{/*
+			 * One viewer for the whole window, outside the shell.
+			 *
+			 * Images are opened from the composer, from sent messages and from tool results, and all
+			 * three want the same overlay over everything. Mounting it per call site would give a
+			 * transcript with twelve screenshots in it twelve idle overlays.
+			 */}
+			<ImageViewer />
 		</LayoutProvider>
 	);
 }

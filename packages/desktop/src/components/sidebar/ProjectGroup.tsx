@@ -14,14 +14,15 @@
  */
 
 import type { SessionMeta } from "@lyra/core";
-import { Folder, SquarePen } from "lucide-react";
+import { ChevronRight, Folder, SquarePen } from "lucide-react";
 import { useLayout } from "../../layout.tsx";
-import { useApp } from "../../store.ts";
 import { ProjectMenu } from "../modals/ProjectMenu.tsx";
 import { usePopover } from "../Popover.tsx";
 import { ScrollText } from "../ScrollText.tsx";
+import { Collapsible } from "./Collapsible.tsx";
 import type { Group } from "./grouping.ts";
 import { SessionRow } from "./SessionRow.tsx";
+import { ShowMore } from "./ShowMore.tsx";
 
 /**
  * How many sessions a project shows before the rest are behind 展开显示, and how many more each
@@ -40,6 +41,8 @@ export function ProjectGroup({
 	active,
 	activeSessionId,
 	shown,
+	collapsed,
+	onToggleCollapsed,
 	onShowMore,
 	onCollapse,
 	onOpenSession,
@@ -50,13 +53,15 @@ export function ProjectGroup({
 	activeSessionId: string | null;
 	/** How many rows this group is currently showing. */
 	shown: number;
+	/** Folded shut, hiding its sessions. Remembered across launches. */
+	collapsed: boolean;
+	onToggleCollapsed: () => void;
 	onShowMore: () => void;
 	onCollapse: () => void;
 	onOpenSession: (meta: SessionMeta) => void;
 	onArchiveSession: (meta: SessionMeta) => void;
 }) {
-	const openWorkspace = useApp((s) => s.openWorkspace);
-	const { compact, dismissNav } = useLayout();
+	const { compact } = useLayout();
 	const menu = usePopover();
 	const visible = group.sessions.slice(0, Math.max(COLLAPSED_SESSION_COUNT, shown));
 	const hidden = group.sessions.length - visible.length;
@@ -64,7 +69,7 @@ export function ProjectGroup({
 	const canCollapse = visible.length > COLLAPSED_SESSION_COUNT;
 
 	return (
-		<div className={`mb-2 flex flex-col ${compact ? "gap-[5px]" : "gap-[4px]"}`}>
+		<div className="mb-2 flex flex-col">
 			{/* Same hover-owner arrangement as the session rows: the fill belongs to the row so
 			    reaching for the menu button does not drop it. */}
 			<div
@@ -76,18 +81,59 @@ export function ProjectGroup({
 					menu.openAtPoint(event);
 				}}
 			>
+				{/*
+				 * The heading folds the project; switching to it moved into the menu.
+				 *
+				 * A project name is a heading for the rows under it, and the thing you want from a
+				 * heading in a list this long is to be able to put it away. Switching workspace is
+				 * the rarer intent and it already happens on its own whenever you open a session
+				 * inside — so it lost the click and kept a menu item, rather than the two sharing
+				 * one target and the fold never existing.
+				 */}
 				<button
 					type="button"
-					onClick={() => {
-						void openWorkspace(group.path);
-						dismissNav();
-					}}
-					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
+					aria-expanded={!collapsed}
+					onClick={onToggleCollapsed}
+					className={`flex w-full items-center gap-2.5 rounded-lg pr-2 pl-6 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
 						compact ? "h-[40px]" : "h-[31px]"
 					} ${active ? "font-medium text-ink" : "text-ink group-hover/project:text-ink"}`}
 				>
-					<Folder size={15} strokeWidth={1.8} className={`shrink-0 ${active ? "text-accent" : "text-ink-muted"}`} />
+					{/*
+					 * The folder turns into a chevron under the pointer.
+					 *
+					 * At rest the icon says what the row is; reaching for it, it says what pressing
+					 * will do. Two marks in one place, neither of them a permanent extra control —
+					 * and the rotation carries the open/shut state without a third element.
+					 */}
+					<span className={`relative h-[15px] w-[15px] shrink-0 ${active ? "text-accent" : "text-ink-muted"}`}>
+						<Folder
+							size={15}
+							strokeWidth={1.8}
+							className="absolute inset-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-0"
+						/>
+						<ChevronRight
+							size={15}
+							strokeWidth={2}
+							className={`absolute inset-0 opacity-0 transition-[opacity,transform] duration-[var(--ly-t-quick)] group-hover/project:opacity-100 ${
+								collapsed ? "" : "rotate-90"
+							}`}
+						/>
+					</span>
 					<ScrollText text={group.name} className="ly-fade-tail min-w-0 flex-1" />
+					{/*
+					 * How many are folded away, so a shut project is not indistinguishable from an
+					 * empty one. Only while shut: open, the rows themselves are the count.
+					 *
+					 * It vacates under the pointer, the same way the folder does. The menu button
+					 * lives at this exact spot, and the two drawn together was not two things
+					 * crowding each other — it was a numeral and an icon on the same pixels, legible
+					 * as neither. Hovering is reaching for the button, so the count is what yields.
+					 */}
+					{collapsed && group.sessions.length > 0 && (
+						<span className="shrink-0 text-caption text-ink-faint tabular-nums transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-0">
+							{group.sessions.length}
+						</span>
+					)}
 				</button>
 
 				<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-100 focus-within:opacity-100">
@@ -106,46 +152,23 @@ export function ProjectGroup({
 
 			{menu.open && <ProjectMenu anchor={menu.anchor} path={group.path} name={group.name} onClose={menu.close} />}
 
-			{visible.map((session) => (
-				<SessionRow
-					key={session.id}
-					session={session}
-					active={activeSessionId === session.id}
-					onOpen={() => onOpenSession(session)}
-					onArchive={() => onArchiveSession(session)}
-				/>
-			))}
+			<Collapsible open={!collapsed}>
+				{/* The gap lives here rather than on the outer column, or a folded project would keep
+				    the space between rows it no longer has. */}
+				<div className={`flex flex-col ${compact ? "gap-[5px] pt-[5px]" : "gap-[4px] pt-[4px]"}`}>
+					{visible.map((session) => (
+						<SessionRow
+							key={session.id}
+							session={session}
+							active={activeSessionId === session.id}
+							onOpen={() => onOpenSession(session)}
+							onArchive={() => onArchiveSession(session)}
+						/>
+					))}
 
-			{/*
-			 * Two separate actions rather than one toggle.
-			 *
-			 * "More" and "back to the top" are different intentions, and a single control that means
-			 * whichever one the current state implies makes the second press unpredictable. The count
-			 * is what is left, not what a press will reveal — how much more there is is the question
-			 * being asked.
-			 */}
-			{(hidden > 0 || canCollapse) && (
-				<div className={`flex items-center gap-3 pl-9 ${compact ? "h-[32px]" : "h-[26px]"}`}>
-					{hidden > 0 && (
-						<button
-							type="button"
-							onClick={onShowMore}
-							className="text-left text-label text-ink-faint transition-colors hover:text-ink-muted"
-						>
-							展开显示 ({hidden})
-						</button>
-					)}
-					{canCollapse && (
-						<button
-							type="button"
-							onClick={onCollapse}
-							className="text-left text-label text-ink-faint transition-colors hover:text-ink-muted"
-						>
-							收起
-						</button>
-					)}
+					<ShowMore hidden={hidden} canCollapse={canCollapse} onShowMore={onShowMore} onCollapse={onCollapse} />
 				</div>
-			)}
+			</Collapsible>
 		</div>
 	);
 }
