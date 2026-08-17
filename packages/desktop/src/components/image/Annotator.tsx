@@ -278,6 +278,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	const [drawing, setDrawing] = useState<Shape | null>(null);
 	const [typing, setTyping] = useState<Typing | null>(null);
 	const [dragging, setDragging] = useState<Dragging | null>(null);
+	const [hovering, setHovering] = useState(false);
 	const field = useRef<HTMLTextAreaElement>(null);
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
 
@@ -499,6 +500,19 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	const move = (event: React.PointerEvent) => {
 		const point = at(event);
 
+		/*
+		 * The cursor says whether there is anything here to pick up.
+		 *
+		 * Tested against the same `hitShape` the press uses, so what the cursor promises and what a
+		 * press delivers cannot disagree — including the part where a hollow rectangle is grabbable
+		 * on its edge and not in its middle. Only written when it changes, so moving across empty
+		 * space does not re-render on every pointer event.
+		 */
+		if (tool === "select" && !dragging) {
+			const over = hitShape(shapes, point, pickTolerance(stroke, zoom)) >= 0;
+			setHovering((was) => (was === over ? was : over));
+		}
+
 		if (dragging) {
 			const dx = point.x - dragging.from.x;
 			const dy = point.y - dragging.from.y;
@@ -545,6 +559,17 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	};
 
 	/*
+	 * Grabbing while a mark is being moved, move while one is under the pointer, and the tool's own
+	 * cursor otherwise. `grabbing` outranks `move` so the cursor does not flicker back the instant a
+	 * fast drag outruns the hit test.
+	 */
+	const cursor = dragging
+		? "cursor-grabbing"
+		: tool === "select" && hovering
+			? "cursor-move"
+			: (CURSOR[tool] ?? "cursor-crosshair");
+
+	/*
 	 * Where the selection box goes, in display pixels.
 	 *
 	 * Read from `shapes` rather than from `live`: `selected` is an index into the committed list, and
@@ -566,6 +591,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 				onPointerMove={move}
 				onPointerUp={end}
 				onPointerCancel={end}
+				onPointerLeave={() => setHovering(false)}
 				onDoubleClick={(event) => {
 					// Zooming is the double-click on the stage below; this one belongs to the mark.
 					event.stopPropagation();
@@ -573,7 +599,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 					const index = hitShape(shapes, at(event), pickTolerance(stroke, zoom));
 					if (index >= 0) editText(index);
 				}}
-				className={`${STAGE_FIT} block rounded-xl bg-white ${CURSOR[tool] ?? "cursor-crosshair"}`}
+				className={`${STAGE_FIT} block rounded-xl bg-white ${cursor}`}
 				style={{ touchAction: "none" }}
 			/>
 
