@@ -1,14 +1,32 @@
+import type { Skill } from "@lyra/core";
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { PluginIcon } from "./PluginIcon.tsx";
+import { SkillMark } from "./PluginIcon.tsx";
 import { useApp } from "../../store.ts";
-import { Badge, Card, EmptyHint, ListRow, SectionTitle } from "./controls.tsx";
+import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
+import { Badge, Card, EmptyHint, ListRow } from "./controls.tsx";
+
+/**
+ * Where a skill came from, in one word.
+ *
+ * A plugin's name beats the directory it happens to sit in: `~/.lyra/skills` is where a collection
+ * flattens its skills too, so "个人" there would be false in the way that matters — it would say
+ * "you wrote this" about something that arrives and leaves with the plugin.
+ */
+function originOf(skill: Skill): string {
+	if (skill.pluginId) return skill.pluginId;
+	if (skill.source === "workspace") return "项目";
+	if (skill.source === "builtin") return "内置";
+	return "个人";
+}
 
 export function SkillsSettings({ filter = "" }: { filter?: string }) {
 	const workspace = useApp((s) => s.workspace);
 	// A plugin carries skills, so installing one moves this list without touching this page.
 	const extensionsNonce = useApp((s) => s.extensionsNonce);
 	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
+	/** Only when the scan is slow enough to notice; below that the list simply appears. */
+	const slow = useSlowLoad(scan === null);
 
 	// Scanned directly so the page works before any session exists.
 	useEffect(() => {
@@ -42,38 +60,42 @@ export function SkillsSettings({ filter = "" }: { filter?: string }) {
 				</Card>
 			)}
 
-			<SectionTitle>已安装（{skills.length}）</SectionTitle>
-			<Card>
-				{skills.length === 0 ? (
-					<EmptyHint>
-						还没有技能。
-						<br />
-						在上面的目录里新建 <span className="font-mono">{"<技能名>/SKILL.md"}</span>，写上 name 和 description 即可。
-					</EmptyHint>
-				) : (
-					/*
-					 * The same row as the plugin list, because it is the same kind of thing: a mark, a
-					 * name, one line, and the row itself opens it. The badges are gone except the one
-					 * that changes behaviour — where a skill came from is on its own page, but a skill
-					 * the model is not allowed to reach for is a fact about what it will do.
-					 */
-					skills.map((skill) => (
-						<ListRow
-							key={skill.path}
-							icon={<PluginIcon name={skill.name} size={28} />}
-							title={
-								<span className="flex min-w-0 items-center gap-2">
-									<span className="truncate font-mono">{skill.name}</span>
-									{skill.disableModelInvocation && <Badge tone="accent">仅手动调用</Badge>}
-								</span>
-							}
-							detail={skill.description}
-							onOpen={() => void window.lyra.system.openPath(skill.path)}
-							openLabel={`打开 ${skill.name}`}
-						/>
-					))
-				)}
-			</Card>
+			{slow ? (
+				<SkeletonList count={6} label="正在读取技能" />
+			) : skills.length === 0 ? (
+				<EmptyHint>
+					还没有技能。
+					<br />
+					在上面的目录里新建 <span className="font-mono">{"<技能名>/SKILL.md"}</span>，写上 name 和 description 即可。
+				</EmptyHint>
+			) : (
+				/*
+				 * The same row as the plugin list, because it is the same kind of thing: a mark, a
+				 * name, one line, and the row itself opens it.
+				 *
+				 * Where it came from sits on the right, quietly, because it is the one thing about a
+				 * skill you cannot work out from its name: two skills called `review` behave the same
+				 * way and live in different places, and which one is yours to edit depends entirely on
+				 * this word. `仅手动调用` stays beside the name instead, because that is not provenance
+				 * — it changes what the model will do.
+				 */
+				skills.map((skill) => (
+					<ListRow
+						key={skill.path}
+						icon={<SkillMark size={30} />}
+						title={
+							<span className="flex min-w-0 items-center gap-2">
+								<span className="truncate font-mono">{skill.name}</span>
+								{skill.disableModelInvocation && <Badge tone="accent">仅手动调用</Badge>}
+							</span>
+						}
+						detail={skill.description}
+						control={<span className="text-detail whitespace-nowrap text-ink-faint">{originOf(skill)}</span>}
+						onOpen={() => void window.lyra.system.openPath(skill.path)}
+						openLabel={`打开 ${skill.name}`}
+					/>
+				))
+			)}
 		</div>
 	);
 }

@@ -169,7 +169,11 @@ export interface LyraApi {
 		revealDir(scope: "workspace" | "user", cwd: string): Promise<string>;
 		/** Write a runnable example bundle so the format is discoverable. */
 		/** Read a registry index. Failures come back as data — a bad URL is routine, not exceptional. */
-		fetchRegistry(url: string): Promise<{ ok: true; registry: Registry } | { ok: false; message: string }>;
+		/** `force` skips the main process's cache — what 刷新 means, and the only thing that does. */
+		fetchRegistry(
+			url: string,
+			force?: boolean,
+		): Promise<{ ok: true; registry: Registry } | { ok: false; message: string }>;
 		/** A registry logo as a data URL, or null. Fetched in the main process; see `registry:icon`. */
 		icon(url: string): Promise<string | null>;
 		/**

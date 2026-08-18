@@ -14,9 +14,33 @@
  * distinguishing at a glance; for the rest, saying "no icon" once, in one picture, is the honest
  * answer — and it is a prompt to give the entry a real one in the registry.
  */
+import { FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import fallback from "../../assets/plugin-fallback.png?inline";
+
+/**
+ * A skill's mark, which is the same mark for every skill.
+ *
+ * A skill is a markdown file, not a product: it has no icon and never will, so the shared default
+ * for bundles is the wrong picture here — a list of eight skills became eight copies of the same
+ * colourful square, which is a lot of ink spent saying "these are all skills" to someone who is
+ * reading a list of skills.
+ *
+ * Quiet on purpose. It marks where the row starts and gives the name something to sit against;
+ * anything more competes with the only part of the row that differs.
+ */
+export function SkillMark({ size = 30 }: { size?: number }) {
+	return (
+		<span
+			aria-hidden
+			style={{ width: size, height: size, borderRadius: Math.round(size * 0.28) }}
+			className="flex shrink-0 items-center justify-center border border-line-soft bg-card/60 text-ink-faint"
+		>
+			<FileText size={Math.round(size * 0.46)} strokeWidth={1.7} />
+		</span>
+	);
+}
 
 /**
  * A remote logo, resolved to something the page is allowed to draw.

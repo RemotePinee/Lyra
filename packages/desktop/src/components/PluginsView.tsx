@@ -27,8 +27,9 @@ import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 import { MenuBody, MenuItem, Popover, usePopover } from "./Popover.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { SkeletonGrid, useSlowLoad } from "./Skeleton.tsx";
 import { SearchField } from "./SearchField.tsx";
-import { PluginIcon } from "./settings/PluginIcon.tsx";
+import { PluginIcon, SkillMark } from "./settings/PluginIcon.tsx";
 import { CatalogCard } from "./plugins/CatalogCard.tsx";
 import { PluginDetail } from "./plugins/PluginDetail.tsx";
 import { RegistrySources } from "./plugins/RegistrySources.tsx";
@@ -123,7 +124,13 @@ export function PluginsView() {
 	 * has something in it costs nothing and is right in both directions — a fresh install has only
 	 * personal bundles, a configured one has both.
 	 */
-	const current: Scope = scope ?? (published.length > 0 ? "public" : "personal");
+	/*
+	 * While the registries are still answering, 公开 is empty because it has not been filled yet —
+	 * which is not the same fact as being empty, and choosing between the two sides on it lands you
+	 * on 个人 and then moves you to 公开 a moment later. Waiting means the default is decided once,
+	 * against the finished answer, and the empty side shows a placeholder instead of a verdict.
+	 */
+	const current: Scope = scope ?? (published.length > 0 || catalog.loading ? "public" : "personal");
 	const shown = current === "public" ? published : personal;
 
 	const needle = query.trim().toLowerCase();
@@ -137,6 +144,8 @@ export function PluginsView() {
 	const groups = useMemo(() => groupByCategory(filtered), [filtered]);
 
 	const installed = ofKind.filter(isInstalled);
+	/** Long enough to be worth a placeholder; a fetch that beats the threshold shows nothing. */
+	const slow = useSlowLoad(catalog.loading);
 	/*
 	 * The collections the skills tab can offer, searched by the same box as everything else.
 	 *
@@ -357,7 +366,10 @@ export function PluginsView() {
 							 */}
 							{sourceErrors}
 
-							{groups.length === 0 ? (
+							{slow && groups.length === 0 ? (
+								/* Shaped like the grid it precedes, so nothing moves when the answer lands. */
+								<SkeletonGrid count={6} label="正在读取插件市场" />
+							) : groups.length === 0 ? (
 								<Empty
 									kind={tab === "mcp" ? "mcp" : "plugin"}
 									scope={current}
@@ -413,6 +425,13 @@ export function PluginsView() {
 						 */
 						<>
 							{sourceErrors}
+
+							{slow && collections.length === 0 && (
+								<section className="pt-6">
+									<h2 className="pb-1 text-body font-medium text-ink">技能集合</h2>
+									<SkeletonGrid count={4} label="正在读取技能市场" />
+								</section>
+							)}
 
 							{collections.length > 0 && (
 								<section className="pt-6">
@@ -617,7 +636,7 @@ function SkillList({ skills, needle }: { skills: Skill[]; needle: string }) {
 					onClick={() => void window.lyra.system.openPath(skill.dir)}
 					className="flex items-start gap-3 rounded-xl p-3 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/60"
 				>
-					<PluginIcon name={skill.name} id={skill.pluginId} category="skill" size={36} />
+					<SkillMark size={36} />
 					<div className="min-w-0 flex-1 pt-0.5">
 						<div className="flex items-center gap-2">
 							<span className="truncate text-label font-medium text-ink">{skill.name}</span>

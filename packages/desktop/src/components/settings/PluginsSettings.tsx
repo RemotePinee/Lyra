@@ -18,7 +18,8 @@ import { useEffect, useState } from "react";
 import { ConfirmBody } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, usePopover } from "../Popover.tsx";
 import { useApp } from "../../store.ts";
-import { Card, ListRow, SectionTitle, Toggle } from "./controls.tsx";
+import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
+import { Card, ListRow, Toggle } from "./controls.tsx";
 import { PluginIcon } from "./PluginIcon.tsx";
 
 export function PluginsSettings({ filter = "" }: { filter?: string }) {
@@ -30,6 +31,13 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	const extensionsNonce = useApp((s) => s.extensionsNonce);
 	const bumpExtensions = useApp((s) => s.bumpExtensions);
 	const [scan, setScan] = useState<Awaited<ReturnType<typeof window.lyra.plugins.list>> | null>(null);
+	/*
+	 * Declared here, above the early return, because hooks cannot be conditional.
+	 *
+	 * A local scan is usually instantaneous, so the placeholder is for the case where it is not —
+	 * a workspace with a lot of skill directories, or a cold filesystem cache.
+	 */
+	const slow = useSlowLoad(scan === null);
 
 	const refresh = async () => setScan(await window.lyra.plugins.list(workspace?.path ?? ""));
 
@@ -105,31 +113,35 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 				</p>
 			)}
 
-			<SectionTitle>已安装（{plugins.length}）</SectionTitle>
-
-			<Card>
-				{plugins.length === 0 ? (
-					<div className="px-4 py-8 text-center">
-						<p className="text-label leading-relaxed text-ink-muted">
-							{needle ? "没有匹配的插件。" : "还没有插件。去插件市场装一个，或把插件目录放进 ~/.lyra/plugins。"}
-						</p>
-
-					</div>
-				) : (
-					plugins.map((plugin) => (
-						<PluginRow
-							key={plugin.id}
-							plugin={plugin}
-							onToggle={(enabled) => toggle(plugin, enabled)}
-							onManage={() => manage(plugin)}
-							onRemoved={() => {
-								void refresh();
-								bumpExtensions();
-							}}
-						/>
-					))
-				)}
-			</Card>
+			{/*
+			 * No 已安装（N） heading.
+			 *
+			 * The tab above already says 插件 and carries the count, so the heading repeated both
+			 * words directly under the thing that had just said them — and it did it on all three
+			 * tabs, which made the tabs look like they had not changed anything.
+			 */}
+			{slow ? (
+				<SkeletonList count={5} label="正在读取已安装的插件" />
+			) : plugins.length === 0 ? (
+				<div className="py-10 text-center">
+					<p className="text-label leading-relaxed text-ink-muted">
+						{needle ? "没有匹配的插件。" : "还没有插件。去插件市场装一个，或把插件目录放进 ~/.lyra/plugins。"}
+					</p>
+				</div>
+			) : (
+				plugins.map((plugin) => (
+					<PluginRow
+						key={plugin.id}
+						plugin={plugin}
+						onToggle={(enabled) => toggle(plugin, enabled)}
+						onManage={() => manage(plugin)}
+						onRemoved={() => {
+							void refresh();
+							bumpExtensions();
+						}}
+					/>
+				))
+			)}
 		</div>
 	);
 }

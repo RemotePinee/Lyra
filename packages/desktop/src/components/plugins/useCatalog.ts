@@ -24,6 +24,19 @@ export interface Catalog {
 	refresh: () => void;
 }
 
+/**
+ * The last answer per set of sources, for the lifetime of this window.
+ *
+ * Module-level rather than in a store because nothing else needs it and nothing else may write it:
+ * it is not state anyone acts on, it is the reply we already got.
+ */
+const seen = new Map<string, { remote: { from: string; entry: RegistryEntry }[]; errors: { url: string; message: string }[] }>();
+
+/** The sources, as one string — the identity a cached answer belongs to. */
+function urlsKeyOf(settings: { pluginRegistries?: string[]; skillRegistries?: string[] } | null | undefined): string {
+	return [...(settings?.pluginRegistries ?? []), ...(settings?.skillRegistries ?? [])].join("|");
+}
+
 export function useCatalog(): Catalog {
 	const workspace = useApp((s) => s.workspace);
 	const settings = useApp((s) => s.settings);
@@ -43,9 +56,29 @@ export function useCatalog(): Catalog {
 		skills: Skill[];
 		diagnostics: { path: string; message: string }[];
 	}>({ plugins: [], mcpBundles: [], skills: [], diagnostics: [] });
-	const [remote, setRemote] = useState<{ from: string; entry: RegistryEntry }[]>([]);
-	const [errors, setErrors] = useState<{ url: string; message: string }[]>([]);
-	const [loading, setLoading] = useState(true);
+	/*
+	 * Seeded from the last answer for the same sources, so leaving and coming back shows the shop
+	 * rather than rebuilding it.
+	 *
+	 * The main process caches the fetch, which stops the network traffic but not the flicker: the
+	 * reply still arrives a tick later, and for that tick the view has nothing and renders its
+	 * loading state. What the eye reads is the catalogue emptying and refilling every visit. This
+	 * is the same data, held where the first render can already see it.
+	 *
+	 * Deliberately not persisted. It lives as long as the window does, which is exactly as long as
+	 * "I was just looking at this" is true.
+	 */
+	const [remote, setRemote] = useState<{ from: string; entry: RegistryEntry }[]>(() => seen.get(urlsKeyOf(settings))?.remote ?? []);
+	const [errors, setErrors] = useState<{ url: string; message: string }[]>(() => seen.get(urlsKeyOf(settings))?.errors ?? []);
+	const [loading, setLoading] = useState(() => !seen.has(urlsKeyOf(settings)));
+	/*
+	 * Bumped by 刷新, and the only thing that makes the fetch ignore the cache.
+	 *
+	 * Kept separate from `nonce` because they mean different things: mounting the view again is not
+	 * a request for fresh data, and treating it as one is what made the shop reload every time you
+	 * looked at it.
+	 */
+	const [forced, setForced] = useState(0);
 	const [nonce, setNonce] = useState(0);
 
 	/*
@@ -63,7 +96,7 @@ export function useCatalog(): Catalog {
 	 * Keeping two parallel fetches, two loading flags and two error lists would be two of everything
 	 * to express one difference that is already in the data.
 	 */
-	const urlsKey = [...(settings?.pluginRegistries ?? []), ...(settings?.skillRegistries ?? [])].join("|");
+	const urlsKey = urlsKeyOf(settings);
 	const urls = useMemo(() => (urlsKey ? urlsKey.split("|") : []), [urlsKey]);
 
 	const cwd = workspace?.path ?? "";
@@ -104,21 +137,26 @@ export function useCatalog(): Catalog {
 			setLoading(false);
 			return;
 		}
-		setLoading(true);
-		void Promise.all(urls.map((url) => window.lyra.plugins.fetchRegistry(url))).then((results) => {
+		/*
+		 * Only when there is nothing to show. A revalidation behind a full catalogue is not a wait,
+		 * and dressing it as one replaces what you were reading with a loading state.
+		 */
+		if (!seen.has(urlsKey)) setLoading(true);
+		void Promise.all(urls.map((url) => window.lyra.plugins.fetchRegistry(url, forced > 0))).then((results) => {
 			if (cancelled) return;
-			setRemote(
-				results.flatMap((result) =>
-					result.ok ? result.registry.entries.map((entry) => ({ from: result.registry.name, entry })) : [],
-				),
+			const entries = results.flatMap((result) =>
+				result.ok ? result.registry.entries.map((entry) => ({ from: result.registry.name, entry })) : [],
 			);
-			setErrors(results.flatMap((result, i) => (result.ok ? [] : [{ url: urls[i], message: result.message }])));
+			setRemote(entries);
+			const failures = results.flatMap((result, i) => (result.ok ? [] : [{ url: urls[i], message: result.message }]));
+			setErrors(failures);
 			setLoading(false);
+			seen.set(urlsKey, { remote: entries, errors: failures });
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [urls, nonce]);
+	}, [urls, urlsKey, nonce, forced]);
 
 	/*
 	 * Settings is where an MCP bundle's servers live, so the merge has to read it.
@@ -136,6 +174,7 @@ export function useCatalog(): Catalog {
 
 	/** Re-read here, and tell every other list that reads the same directories to do the same. */
 	const refresh = useCallback(() => {
+		setForced((n) => n + 1);
 		setNonce((n) => n + 1);
 		bumpExtensions();
 	}, [bumpExtensions]);

@@ -96,7 +96,16 @@ export function ListRow({
 	openLabel?: string;
 }) {
 	return (
-		<div className="group/row relative flex items-center gap-3 border-b border-line-soft px-4 py-3 last:border-b-0">
+		/*
+		 * No rule between rows, and no box around the list.
+		 *
+		 * A hairline every 52px turns a list of eight things into sixteen horizontal edges, and the
+		 * card's own border adds a seventeenth around the outside — all of it drawing structure that
+		 * the rows already have from their marks and their spacing. Taken away, the eye groups them
+		 * by rhythm, and the only line left on the page is the one under the tabs, which is the one
+		 * that means something.
+		 */
+		<div className="group/row relative flex items-center gap-3 rounded-[10px] px-2 py-3">
 			{/*
 			 * The row's own hit area, underneath everything on it.
 			 *
@@ -109,7 +118,7 @@ export function ListRow({
 					type="button"
 					aria-label={openLabel}
 					onClick={onOpen}
-					className="absolute inset-y-0 -inset-x-1 rounded-[10px] transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/50"
+					className="absolute inset-0 rounded-[10px] transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/60"
 				/>
 			)}
 

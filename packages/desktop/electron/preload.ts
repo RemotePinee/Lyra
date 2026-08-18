@@ -156,7 +156,7 @@ const api: LyraApi = {
 	plugins: {
 		list: (cwd) => ipcRenderer.invoke("plugins:list", cwd),
 		revealDir: (scope, cwd) => ipcRenderer.invoke("plugins:revealDir", scope, cwd),
-		fetchRegistry: (url) => ipcRenderer.invoke("registry:fetch", url),
+		fetchRegistry: (url, force) => ipcRenderer.invoke("registry:fetch", url, force),
 		icon: (url) => ipcRenderer.invoke("registry:icon", url),
 		installFromRegistry: (entry, registryName) => ipcRenderer.invoke("registry:install", entry, registryName),
 		uninstall: (id) => ipcRenderer.invoke("registry:uninstall", id),
