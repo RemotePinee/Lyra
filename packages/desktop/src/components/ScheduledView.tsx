@@ -166,8 +166,8 @@ function TaskCard({
 					type="button"
 					data-ly-tip="删除"
 					aria-label={`删除定时任务「${task.name}」`}
-					onClick={(event) =>
-						confirm.ask(event, {
+					onClick={() =>
+						confirm.ask({
 							title: `删除「${task.name}」？`,
 							detail: "这条定时任务不会再运行，它的提示和时间设置一起删掉。已经跑出来的会话留着。",
 							confirmLabel: "删除",

@@ -199,8 +199,8 @@ function HookCard({
           type="button"
           data-ly-tip="删除"
           aria-label="删除这个钩子"
-          onClick={(event) =>
-            confirm.ask(event, {
+          onClick={() =>
+            confirm.ask({
               title: "删除这个钩子？",
               detail: hook.command,
               confirmLabel: "删除",

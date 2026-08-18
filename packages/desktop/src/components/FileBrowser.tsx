@@ -1,40 +1,52 @@
-import { ChevronRight, Folder } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Folder } from "lucide-react";
+import { useCallback, useState } from "react";
 import type { FileContents, FileEntry } from "../../electron/ipc-types.ts";
 import { FileViewer } from "./FileViewer.tsx";
-import { iconColour, lookFor } from "./fileIcon.tsx";
+import { FileTree } from "./files/FileTree.tsx";
+import { isDescendantPath } from "./files/paths.ts";
+import { storedWidth } from "../layout-widths.ts";
 import { PanelEmpty } from "./PanelEmpty.tsx";
-import { Scroller } from "./Scroller.tsx";
-import { SearchField } from "./SearchField.tsx";
-import { ScrollText } from "./ScrollText.tsx";
+import { ResizeHandle } from "./ResizeHandle.tsx";
 import { useNarrow } from "./useNarrow.ts";
 import { useApp } from "../store.ts";
 
 /** Below this a tree and a file cannot sit side by side and still be readable, so they stack. */
 const TWO_COLUMN_MIN = 460;
 
-interface TreeNode {
-	entry: FileEntry;
-	depth: number;
-}
+/**
+ * How wide the tree column is, and how far it may be dragged.
+ *
+ * It used to be a fixed 212, which is a reasonable share of a 380px panel and an absurd one of a
+ * panel opened to full screen — a 212px list beside a 1200px editor. So it is a preference now,
+ * remembered like the other two pane widths.
+ */
+const TREE_KEY = "ly.files.treeWidth";
+const TREE_DEFAULT = 232;
+const TREE_MIN = 168;
+const TREE_MAX = 480;
 
 /**
- * The project's files, as a tree you can open things from.
+ * The project's files: a tree on the left, whatever it opened on the right.
  *
- * Lazily expanded, one directory at a time. A project with a `node_modules` in it has more
- * paths than anything would ever want to walk up front, and the only ones that matter are the
- * ones you have actually opened on the way to what you were looking for.
+ * This file is the arrangement only. What the tree contains, what right-clicking it offers and what
+ * happens to a file when you rename it all live in `files/` — the tree grew from "expand a folder,
+ * open a file" into something with a clipboard, a selection and a dozen operations, and none of
+ * that is about where the two columns sit.
  */
 export function FileBrowser() {
 	const workspace = useApp((s) => s.workspace);
 	const [narrow, body] = useNarrow(TWO_COLUMN_MIN);
 
-	/** Directory contents, keyed by path — the cache and the expansion state in one. */
-	const [children, setChildren] = useState<Record<string, FileEntry[]>>({});
-	const [expanded, setExpanded] = useState<Set<string>>(new Set());
-	const [selected, setSelected] = useState<string | null>(null);
+	const [treeWidth, setTreeWidth] = useState(() => storedWidth(TREE_KEY, TREE_DEFAULT, TREE_MIN, TREE_MAX));
+	const resizeTree = useCallback((next: number) => {
+		setTreeWidth(next);
+		window.localStorage.setItem(TREE_KEY, String(next));
+	}, []);
+
+	const [openPath, setOpenPath] = useState<string | null>(null);
 	const [contents, setContents] = useState<FileContents | null>(null);
 	const [loadingFile, setLoadingFile] = useState(false);
+	const [openName, setOpenName] = useState<string | null>(null);
 	/**
 	 * Unsaved edits, by path.
 	 *
@@ -43,114 +55,62 @@ export function FileBrowser() {
 	 * only, like the terminal's scrollback: they last as long as the app does.
 	 */
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
-	const [filter, setFilter] = useState("");
 
-	const root = workspace?.path;
+	const root = workspace?.path ?? null;
 
-	const load = useCallback(async (dir: string) => {
-		const entries = await window.lyra.files.list(dir);
-		setChildren((current) => ({ ...current, [dir]: entries }));
-	}, []);
-
-	/*
-	 * Re-read the tree when a turn ends.
-	 *
-	 * The agent writes files — that is most of what it does — and the panel was loading the tree
-	 * once, when the project opened. Watching it work meant watching a list that had been true
-	 * several minutes ago: files it had just created were simply absent. Every directory that is
-	 * open gets re-read, since those are the ones being looked at.
-	 */
-	const running = useApp((s) => s.running);
-	// A ref, so ending a turn re-reads whatever is open now without re-running on every expand.
-	const openDirs = useRef(expanded);
-	openDirs.current = expanded;
-	useEffect(() => {
-		if (running || !root) return;
-		void load(root);
-		for (const dir of openDirs.current) void load(dir);
-	}, [running, root, load]);
-
-	// Opening a different project starts from scratch rather than showing the old tree.
-	useEffect(() => {
-		setChildren({});
-		setExpanded(new Set());
-		setSelected(null);
-		setContents(null);
-		setDrafts({});
-		setFilter("");
-		if (root) void load(root);
-	}, [root, load]);
-
-	function toggleDirectory(path: string) {
-		setExpanded((current) => {
-			const next = new Set(current);
-			if (next.has(path)) next.delete(path);
-			else {
-				next.add(path);
-				if (!children[path]) void load(path);
-			}
-			return next;
-		});
-	}
-
-	async function openFile(entry: FileEntry) {
-		setSelected(entry.path);
+	const openFile = useCallback(async (entry: FileEntry) => {
+		setOpenPath(entry.path);
+		setOpenName(entry.name);
 		setLoadingFile(true);
 		try {
 			const read = await window.lyra.files.read(entry.path);
 			// A second click while this was in flight wins.
-			setSelected((current) => {
+			setOpenPath((current) => {
 				if (current === entry.path) setContents(read);
 				return current;
 			});
 		} finally {
 			setLoadingFile(false);
 		}
-	}
+	}, []);
 
 	/** Re-read after a save so the viewer's "saved" baseline matches what is on disk. */
-	async function reread(path: string) {
+	const reread = useCallback(async (path: string) => {
 		const read = await window.lyra.files.read(path);
 		if (read) setContents(read);
-	}
+	}, []);
 
 	/**
-	 * Flatten the opened parts of the tree into the rows actually on screen.
+	 * A rename or a move, which the open file has to survive.
 	 *
-	 * While filtering, the whole loaded tree is walked rather than only what is expanded, and a
-	 * directory is kept when anything under it matches. Searching only inside folders you had
-	 * already opened would answer a question nobody asked — the point of typing a name is to
-	 * find where it is, which is precisely what you do not yet know.
+	 * Both by path, and both silently wrong if ignored: the pane would keep showing a file at an
+	 * address that no longer exists, and saving it would recreate the old one. A folder counts too —
+	 * renaming `src` moves everything under it, including whatever is open.
 	 */
-	const rows = useMemo<TreeNode[]>(() => {
-		if (!root) return [];
-		const needle = filter.trim().toLowerCase();
-		const out: TreeNode[] = [];
+	const onMoved = useCallback((from: string, to: string) => {
+		const follow = (path: string) =>
+			path === from ? to : isDescendantPath(from, path) ? to + path.slice(from.length) : null;
 
-		const matches = (entry: FileEntry): boolean => entry.name.toLowerCase().includes(needle);
-		const hasMatchBelow = (dir: string): boolean =>
-			(children[dir] ?? []).some((entry) => matches(entry) || (entry.isDirectory && hasMatchBelow(entry.path)));
+		setOpenPath((current) => (current && follow(current)) || current);
+		setDrafts((current) => {
+			const moved = Object.entries(current).map(([path, text]) => [follow(path) ?? path, text] as const);
+			return Object.fromEntries(moved);
+		});
+	}, []);
 
-		const walk = (dir: string, depth: number) => {
-			for (const entry of children[dir] ?? []) {
-				if (!needle) {
-					out.push({ entry, depth });
-					if (entry.isDirectory && expanded.has(entry.path)) walk(entry.path, depth + 1);
-					continue;
-				}
-				const deeper = entry.isDirectory && hasMatchBelow(entry.path);
-				if (!matches(entry) && !deeper) continue;
-				out.push({ entry, depth });
-				// A directory on the path to a match opens itself; there is no point showing a
-				// folder that matched and then hiding what matched inside it.
-				if (deeper) walk(entry.path, depth + 1);
-			}
-		};
-		walk(root, 0);
-		return out;
-	}, [root, children, expanded, filter]);
+	const onRemoved = useCallback((paths: string[]) => {
+		const gone = (path: string) => paths.some((each) => path === each || isDescendantPath(each, path));
 
-	if (!workspace) {
+		setOpenPath((current) => {
+			if (!current || !gone(current)) return current;
+			setContents(null);
+			setOpenName(null);
+			return null;
+		});
+		setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([path]) => !gone(path))));
+	}, []);
+
+	if (!workspace || !root) {
 		return (
 			<PanelEmpty icon={Folder} title="文件">
 				先打开一个项目，这里显示它的文件。
@@ -158,22 +118,8 @@ export function FileBrowser() {
 		);
 	}
 
-	// oxlint-disable-next-line unicorn/prefer-array-find -- `pop` takes the last segment, not the first
-	const activeName = selected ? (selected.split("/").filter(Boolean).pop() ?? selected) : null;
-
 	return (
 		<div ref={body} className="flex min-h-0 flex-1 flex-col">
-			{/*
-			 * A search box, not the project's name.
-			 *
-			 * The name is already on the composer and in the sidebar; a third copy of it bought a
-			 * whole row and told you nothing. Finding a file in a tree you have not expanded yet
-			 * is the thing this pane is actually for.
-			 */}
-			<div className="shrink-0 px-1.5 pb-1.5">
-				<SearchField value={filter} onChange={setFilter} placeholder={`搜索 ${workspace.name} 内的文件`} />
-			</div>
-
 			{/*
 			 * Two panes, each its own card, stacked when narrow and side by side when there is room.
 			 *
@@ -186,71 +132,53 @@ export function FileBrowser() {
 			 * things to look at, not two halves of one — the space between them says so more
 			 * quietly than a line does, and it is what lets each keep its own rounded corners.
 			 *
-			 * `PANE_RADIUS` is concentric with the panel: 12 outer, less its 1px border, less the
-			 * 6px this sits in from it.
+			 * The radius is concentric with the panel: 12 outer, less its 1px border, less the 6px
+			 * this sits in from it.
 			 */}
-			<div className={`flex min-h-0 flex-1 gap-1.5 p-1.5 pt-0 ${narrow ? "flex-col" : ""}`}>
+			<div className={`flex min-h-0 flex-1 gap-1.5 p-1.5 ${narrow ? "flex-col" : ""}`}>
+				{/*
+				 * A frame around the tree card, so the drag handle can hang outside it.
+				 *
+				 * The card clips its own overflow — it has to, or a long filename spills past the
+				 * rounded corner — and the handle straddles the seam by design. Same arrangement as
+				 * `NavPane`: the frame carries the width, the card keeps the clipping.
+				 */}
 				<div
-					className={`flex min-h-0 flex-col overflow-hidden rounded-[5px] border border-line-soft bg-card/35 ${
+					// Named so a test can measure the column rather than guessing at which box it is.
+					data-ly-tree-column
+					className={`relative ${
 						!narrow
-							? "w-[212px] shrink-0"
-							: selected
+							? "shrink-0"
+							: openPath
 								? // Enough of the tree to keep your place, with the file taking the rest.
 									"max-h-[38%] min-h-[86px] shrink-0"
 								: "flex-1"
 					}`}
+					style={narrow ? undefined : { width: treeWidth }}
 				>
-					<Scroller className="flex-1" contentClassName="px-1 py-1">
-						{rows.map(({ entry, depth }) => (
-							<button
-								key={entry.path}
-								type="button"
-								data-ly-tip={entry.path}
-								onClick={() => (entry.isDirectory ? toggleDirectory(entry.path) : void openFile(entry))}
-								className={`ly-scroll flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-detail transition-colors ${
-									// Marked at every width now that the tree stays visible beside what it opened.
-									selected === entry.path ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover/60"
-								}`}
-								// Indent by depth; the guide is the offset itself rather than a rule.
-								style={{ paddingLeft: 6 + depth * 12 }}
-							>
-								{entry.isDirectory ? (
-									<ChevronRight
-										size={11}
-										strokeWidth={2.2}
-										className="shrink-0 text-ink-faint transition-transform duration-[var(--ly-t-quick)]"
-										style={expanded.has(entry.path) ? { transform: "rotate(90deg)" } : undefined}
-									/>
-								) : (
-									// Keep the chevron's width so file names line up with directory names.
-									<span className="w-[11px] shrink-0" />
-								)}
-								{(() => {
-									const look = lookFor(entry.name, entry.isDirectory, expanded.has(entry.path));
-									return (
-										<look.Icon
-											size={12.5}
-											strokeWidth={1.75}
-											className="shrink-0"
-											style={{ color: iconColour(look) }}
-										/>
-									);
-								})()}
-								<ScrollText text={entry.name} className="min-w-0 flex-1" />
-								{drafts[entry.path] !== undefined && (
-									// The dot is the only trace an unsaved file leaves in the tree.
-									<span
-										data-ly-tip="有未保存的修改"
-										className="h-[5px] w-[5px] shrink-0 rounded-full bg-info"
-									/>
-								)}
-							</button>
-						))}
+					<div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[5px] border border-line-soft bg-card/35">
+						<FileTree
+							root={root}
+							openPath={openPath}
+							dirtyPaths={new Set(Object.keys(drafts))}
+							onOpen={(entry) => void openFile(entry)}
+							onMoved={onMoved}
+							onRemoved={onRemoved}
+						/>
+					</div>
 
-						{rows.length === 0 && (
-							<p className="px-2 py-6 text-center text-detail text-ink-faint">这个目录是空的</p>
-						)}
-					</Scroller>
+					{/* Only where the two are side by side; stacked, there is no vertical seam to drag. */}
+					{!narrow && (
+						<ResizeHandle
+							edge="end"
+							width={treeWidth}
+							min={TREE_MIN}
+							max={TREE_MAX}
+							onResize={resizeTree}
+							onReset={() => resizeTree(TREE_DEFAULT)}
+							label="调整文件树宽度"
+						/>
+					)}
 				</div>
 
 				{/*
@@ -260,9 +188,9 @@ export function FileBrowser() {
 				 * `min-width: auto`, so it grows to its content instead of holding the column's
 				 * width — and the text overflows the panel however it is told to wrap.
 				 */}
-				{(!narrow || selected) && (
+				{(!narrow || openPath) && (
 					<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[5px] border border-line-soft">
-						{!selected ? (
+						{!openPath ? (
 							<p className="p-6 text-center text-detail text-ink-faint">选择左侧文件查看内容</p>
 						) : loadingFile ? (
 							<p className="ly-pulse p-6 text-center text-detail text-ink-faint">读取中…</p>
@@ -272,22 +200,22 @@ export function FileBrowser() {
 							<FileViewer
 								// Keyed on the path so a different file gets a fresh editor rather than
 								// inheriting the previous one's undo history and scroll position.
-								key={selected}
-								path={selected}
-								name={activeName ?? selected}
+								key={openPath}
+								path={openPath}
+								name={openName ?? openPath}
 								contents={contents}
-								draft={drafts[selected]}
+								draft={drafts[openPath]}
 								onDraft={(next) =>
 									setDrafts((current) => {
 										if (next === undefined) {
-											if (!(selected in current)) return current;
-											const { [selected]: _gone, ...rest } = current;
+											if (!(openPath in current)) return current;
+											const { [openPath]: _gone, ...rest } = current;
 											return rest;
 										}
-										return { ...current, [selected]: next };
+										return { ...current, [openPath]: next };
 									})
 								}
-								onSaved={() => void reread(selected)}
+								onSaved={() => void reread(openPath)}
 							/>
 						)}
 					</div>

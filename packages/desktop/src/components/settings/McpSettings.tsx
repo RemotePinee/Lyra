@@ -160,10 +160,8 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 										type="button"
 										data-ly-tip={server.origin ? "卸载" : "删除"}
 										aria-label={`${server.origin ? "卸载" : "删除"} ${server.name}`}
-										onClick={(event) =>
-											confirm.ask(
-												event,
-												server.origin
+										onClick={() =>
+											confirm.ask(server.origin
 													? {
 															title: `卸载 ${server.name}？`,
 															detail: `它是从市场装的。卸载会删掉 ${server.origin.bundle} 的目录，你在这里改过的参数也一起清掉。`,

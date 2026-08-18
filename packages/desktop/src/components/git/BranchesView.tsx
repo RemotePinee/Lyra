@@ -232,8 +232,8 @@ export function BranchesView({
               onDelete={
                 branch === current
                   ? undefined
-                  : (event) =>
-                      confirm.ask(event, {
+                  : () =>
+                      confirm.ask({
                         title: `删除分支 ${branch}？`,
                         detail:
                           "只删本地这一份。没有合并进别的分支的提交会跟着消失，除非你还记得它们的哈希。",

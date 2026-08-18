@@ -27,7 +27,7 @@
 import { Check, Download, FolderOpen, Loader2, MoreHorizontal, Play, Settings2, Trash2 } from "lucide-react";
 import { useState } from "react";
 
-import { ConfirmBody } from "../Confirm.tsx";
+import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, usePopover } from "../Popover.tsx";
 import { PluginIcon } from "../settings/PluginIcon.tsx";
 import { isEnabled, isInstalled, type CatalogItem } from "./useCatalog.ts";
@@ -223,6 +223,26 @@ export function CatalogCard({
 				)}
 			</div>
 
+
+			{/* The question is a modal now, so the menu is only ever a menu — see `Confirm`. */}
+			{confirming && (
+				<Confirm
+					title={`卸载 ${item.name}？`}
+					detail={
+						item.kind === "mcp"
+							? `它的目录会被删除，它在设置 › MCP 里的 ${item.servers.length} 条配置也一起清掉——包括你在那里改过的参数。`
+							: item.collected > 0
+								? `它带来的 ${item.collected} 个技能会从技能目录里删掉，你自己放的技能不受影响。重新安装可以拿回来。`
+								: "它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
+					}
+					confirmLabel="卸载"
+					onCancel={() => setConfirming(false)}
+					onConfirm={() => {
+						setConfirming(false);
+						void uninstall();
+					}}
+				/>
+			)}
 			{/* Being installed is what opens this menu, and being installed is what gives it a
 			    directory — named again so the rows below can use it without re-asking. */}
 			{menu.open && dir && (
@@ -231,29 +251,11 @@ export function CatalogCard({
 					onClose={close}
 					placement="bottom"
 					align="end"
-					width={confirming ? "panel" : "compact"}
-					role={confirming ? "dialog" : "menu"}
+					width="compact"
+					role="menu"
 					label={item.name}
 				>
-					{confirming ? (
-						<ConfirmBody
-							title={`卸载 ${item.name}？`}
-							detail={
-								item.kind === "mcp"
-									? `它的目录会被删除，它在设置 › MCP 里的 ${item.servers.length} 条配置也一起清掉——包括你在那里改过的参数。`
-									: item.collected > 0
-										? `它带来的 ${item.collected} 个技能会从技能目录里删掉，你自己放的技能不受影响。重新安装可以拿回来。`
-										: "它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
-							}
-							confirmLabel="卸载"
-							onCancel={close}
-							onConfirm={() => {
-								close();
-								void uninstall();
-							}}
-						/>
-					) : (
-						<MenuBody>
+					<MenuBody>
 							{trial && (
 								<MenuItem
 									icon={<Play size={13} strokeWidth={1.8} />}
@@ -291,12 +293,15 @@ export function CatalogCard({
 								icon={<Trash2 size={13} strokeWidth={1.8} />}
 								disabled={busy !== null || !removable}
 								title={removable ? undefined : "项目里的插件，从项目目录里删"}
-								onClick={() => setConfirming(true)}
+								onClick={() => {
+									// The menu gives way to the question rather than sitting behind it.
+									menu.close();
+									setConfirming(true);
+								}}
 							>
 								卸载
 							</MenuItem>
 						</MenuBody>
-					)}
 				</Popover>
 			)}
 		</div>

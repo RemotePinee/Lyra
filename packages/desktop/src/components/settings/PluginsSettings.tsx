@@ -15,7 +15,7 @@ import type { Plugin } from "@lyra/core";
 import { FolderOpen, MoreHorizontal, Settings2, TriangleAlert, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ConfirmBody } from "../Confirm.tsx";
+import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, usePopover } from "../Popover.tsx";
 import { useApp } from "../../store.ts";
 import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
@@ -200,28 +200,30 @@ function PluginRow({
 				control={<Toggle checked={plugin.enabled} onChange={onToggle} />}
 			/>
 
+			{/* The question is a modal now, so the menu is only ever a menu — see `Confirm`. */}
+			{confirming && (
+				<Confirm
+					title={`卸载 ${name}？`}
+					detail="它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
+					confirmLabel="卸载"
+					onCancel={() => setConfirming(false)}
+					onConfirm={() => {
+						setConfirming(false);
+						void uninstall();
+					}}
+				/>
+			)}
+
 			{menu.open && (
 				<Popover
 					anchor={menu.anchor}
 					onClose={close}
 					placement="bottom"
 					align="end"
-					width={confirming ? "panel" : "compact"}
-					role={confirming ? "dialog" : "menu"}
+					width="compact"
+					role="menu"
 					label={name}
 				>
-					{confirming ? (
-						<ConfirmBody
-							title={`卸载 ${name}？`}
-							detail="它的目录会被删除，随它安装的技能也一起消失。重新安装可以拿回来。"
-							confirmLabel="卸载"
-							onCancel={close}
-							onConfirm={() => {
-								close();
-								void uninstall();
-							}}
-						/>
-					) : (
 						<MenuBody>
 							<MenuItem
 								icon={<Settings2 size={13} strokeWidth={1.8} />}
@@ -249,12 +251,15 @@ function PluginRow({
 								icon={<Trash2 size={13} strokeWidth={1.8} />}
 								disabled={busy || !removable}
 								title={removable ? undefined : "项目里的插件，从项目目录里删"}
-								onClick={() => setConfirming(true)}
+								onClick={() => {
+									// The menu gives way to the question rather than sitting behind it.
+									menu.close();
+									setConfirming(true);
+								}}
 							>
 								卸载
 							</MenuItem>
 						</MenuBody>
-					)}
 				</Popover>
 			)}
 		</>

@@ -155,8 +155,8 @@ function ProviderHeading({
 				type="button"
 				data-ly-tip="删除供应商"
 				aria-label="删除供应商"
-				onClick={(event) =>
-					confirm.ask(event, {
+				onClick={() =>
+					confirm.ask({
 						title: `删除 ${provider.name}？`,
 						detail: `它的地址、密钥，以及配置在它下面的 ${provider.models.length} 个模型都会一起删掉。`,
 						confirmLabel: "删除",

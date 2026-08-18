@@ -125,8 +125,8 @@ function ModelRow({
 				type="button"
 				data-ly-tip="删除"
 				aria-label="删除模型"
-				onClick={(event) =>
-					confirm.ask(event, {
+				onClick={() =>
+					confirm.ask({
 						title: `删除 ${model.modelId}？`,
 						detail: isDefault ? "它是当前的默认模型，删掉之后要另选一个。" : undefined,
 						confirmLabel: "删除",

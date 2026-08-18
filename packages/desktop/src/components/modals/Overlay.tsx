@@ -52,7 +52,15 @@ export function Overlay({
    */
   return createPortal(
     <div
-      className={`fixed inset-0 z-[60] flex justify-center px-4 sm:px-8 ${
+      /*
+       * Above the menus, below the toasts.
+       *
+       * A modal that a popover can paint over is not a modal — and one of these is now raised from
+       * a menu row often enough for the two to meet (卸载 in the plugin menu, 删除 in the file
+       * tree). Menus are 60; toasts are `TOAST_Z`, and they outrank this on purpose, since a
+       * failure raised *by* the dialog has to be readable over it.
+       */
+      className={`fixed inset-0 z-[80] flex justify-center px-4 sm:px-8 ${
         align === "center" ? "items-center" : "items-end pb-[120px]"
       } ${leaving ? "ly-scrim-out" : "ly-scrim-in"}`}
       onMouseDown={(event) => {
@@ -61,6 +69,15 @@ export function Overlay({
     >
       <div
         ref={cardRef}
+        /*
+         * Announced as what it is.
+         *
+         * The scrim already stops the rest of the window from being clicked; saying so is what
+         * makes anything reading the page rather than looking at it treat the card the same way —
+         * and it is how a test can ask "is a question on screen" without knowing which one.
+         */
+        role="dialog"
+        aria-modal
         // The width is a preference, not a promise — a 460px card does not fit a 380px window.
         style={{ width, maxWidth: "100%" }}
         className={`max-h-[80vh] overflow-hidden rounded-[14px] border border-line bg-float shadow-2xl shadow-black/50 ${leaving ? "ly-dialog-out" : "ly-dialog-in"}`}

@@ -151,8 +151,8 @@ export function ChangesView({
                    * draws a Chromium dialog with system fonts, an OS-blue button and the word
                    * "localhost" across the top, and freezes the renderer while it is up.
                    */
-                  onClick={(event) =>
-                    confirm.ask(event, {
+                  onClick={() =>
+                    confirm.ask({
                       title: `放弃 ${file.path.split("/").pop()} 的改动？`,
                       detail:
                         "这个文件会回到上次提交的样子；没提交过的内容找不回来，git 里也没有它的副本。",

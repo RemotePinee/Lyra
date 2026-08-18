@@ -1,6 +1,6 @@
 import { Archive, ArrowRight, FolderOpen, GitBranch, PinOff, Pin, Settings2, X } from "lucide-react";
 import { useState } from "react";
-import { ConfirmBody } from "../Confirm.tsx";
+import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, type Anchor } from "../Popover.tsx";
 import { useApp } from "../../store.ts";
 
@@ -54,27 +54,28 @@ export function ProjectMenu({
 	}
 
 	/*
-	 * The question replaces the menu rather than opening over it.
+	 * The question is the app's modal, not a second panel hung off this menu.
 	 *
-	 * Same surface, same anchor, one panel — a confirmation stacked on top of the menu that raised
-	 * it leaves the menu visible behind it, two shadows deep, with the row you just clicked still
-	 * highlighted. Removing a project only forgets the entry; the working tree is not touched, and
-	 * saying so is most of why this asks at all.
+	 * It used to replace the menu in place, on the same anchor — which read well here and nowhere
+	 * else, since every other confirmation in the app is raised by a button rather than by a menu
+	 * row. One shape for all of them is worth more than each one being locally clever; see
+	 * `Confirm`. The menu goes away first, so nothing is left highlighted behind the scrim.
+	 *
+	 * Removing a project only forgets the entry; the working tree is not touched, and saying so is
+	 * most of why this asks at all.
 	 */
 	if (mode === "remove") {
 		return (
-			<Popover anchor={anchor} onClose={onClose} placement="right" width="panel" role="dialog" label={`移除 ${name}`}>
-				<ConfirmBody
-					title={`移除 ${name}？`}
-					detail="只是从列表里去掉，磁盘上的目录和里面的文件都不动。置顶、改过的名字这些会丢。"
-					confirmLabel="移除"
-					onCancel={() => setMode("menu")}
-					onConfirm={() => {
-						void removeProject(path);
-						onClose();
-					}}
-				/>
-			</Popover>
+			<Confirm
+				title={`移除 ${name}？`}
+				detail="只是从列表里去掉，磁盘上的目录和里面的文件都不动。置顶、改过的名字这些会丢。"
+				confirmLabel="移除"
+				onCancel={onClose}
+				onConfirm={() => {
+					void removeProject(path);
+					onClose();
+				}}
+			/>
 		);
 	}
 

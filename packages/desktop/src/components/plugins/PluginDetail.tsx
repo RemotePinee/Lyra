@@ -201,8 +201,8 @@ export function PluginDetail({
 										data-ly-tip={workspaceOwned ? "项目目录里的，从那里删" : "卸载"}
 										aria-label="卸载"
 										disabled={busy !== null || workspaceOwned}
-										onClick={(event) =>
-											confirm.ask(event, {
+										onClick={() =>
+											confirm.ask({
 												title: `卸载 ${item.name}？`,
 												detail: isMcp
 													? `它的目录会被删除，它在设置 › MCP 里的 ${item.servers.length} 条配置也一起清掉——包括你在那里改过的参数。`

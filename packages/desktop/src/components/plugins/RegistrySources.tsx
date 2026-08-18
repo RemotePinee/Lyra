@@ -69,8 +69,8 @@ export function RegistrySources({
 									type="button"
 									data-ly-tip="移除这个市场"
 									aria-label={`移除 ${url}`}
-									onClick={(event) =>
-										confirm.ask(event, {
+									onClick={() =>
+										confirm.ask({
 											title: "移除这个插件市场？",
 											detail: "从它装过的插件都留在本地，只是以后不会再从这里看到新的。",
 											confirmLabel: "移除",

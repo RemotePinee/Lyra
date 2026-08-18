@@ -68,8 +68,8 @@ export function ArchivedSettings() {
 				{archived.length > 0 && (
 					<button
 						type="button"
-						onClick={(event) =>
-							confirm.ask(event, {
+						onClick={() =>
+							confirm.ask({
 								title: `删除全部 ${archived.length} 个归档会话？`,
 								detail: "所有记录和它们的用量统计会被永久删除，拿不回来。取消归档只能一个一个来，这个不能。",
 								confirmLabel: `删除 ${archived.length} 个`,
@@ -192,8 +192,8 @@ function Row({
 					type="button"
 					data-ly-tip="删除"
 					aria-label={`删除「${session.title}」`}
-					onClick={(event) =>
-						confirm.ask(event, {
+					onClick={() =>
+						confirm.ask({
 							title: "删除这个会话？",
 							detail: `「${session.title}」的 ${session.messageCount} 条消息会被永久删除，拿不回来。`,
 							confirmLabel: "删除",
