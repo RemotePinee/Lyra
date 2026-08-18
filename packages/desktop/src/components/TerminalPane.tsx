@@ -88,14 +88,24 @@ export function TerminalPane() {
 		 */
 		const early = new Map<string, string[]>();
 
-		void window.lyra.terminal.create(cwd, terminal.cols, terminal.rows).then((id) => {
+		void window.lyra.terminal.attach(cwd, terminal.cols, terminal.rows).then(({ id, replay }) => {
 			// The panel can be closed before the shell finishes starting.
 			if (disposed) {
-				window.lyra.terminal.kill(id);
+				window.lyra.terminal.detach(id);
 				return;
 			}
 			sessionId.current = id;
 			setReady(true);
+			/*
+			 * Everything the shell wrote while there was no pane, before anything that arrived
+			 * since — including the chunks caught below while `attach` was in flight.
+			 *
+			 * It is the raw byte stream, escape sequences and all, so writing it back is not a
+			 * transcript being pasted in: xterm replays it and lands on exactly the screen the
+			 * shell had. That is what makes coming back to a terminal feel like returning to it
+			 * rather than opening a new one.
+			 */
+			if (replay) terminal.write(replay);
 			for (const chunk of early.get(id) ?? []) terminal.write(chunk);
 			early.clear();
 			terminal.onData((data) => window.lyra.terminal.write(id, data));
@@ -131,7 +141,17 @@ export function TerminalPane() {
 			observer.disconnect();
 			offData();
 			offExit();
-			if (sessionId.current) window.lyra.terminal.kill(sessionId.current);
+			/*
+			 * Detach, never kill.
+			 *
+			 * This runs whenever the pane goes away, and most of those are not the user finishing
+			 * with the terminal: closing the pane, switching to a conversation whose layout has no
+			 * terminal in it, or making another pane full screen. Killing here is what made all
+			 * three of those silently end a running build and throw away the scrollback.
+			 *
+			 * The shell is ended by the shell — `exit`, or the app quitting.
+			 */
+			if (sessionId.current) window.lyra.terminal.detach(sessionId.current);
 			sessionId.current = null;
 			terminal.dispose();
 			term.current = null;

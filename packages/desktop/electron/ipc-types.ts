@@ -179,7 +179,15 @@ export interface LyraApi {
 	};
 	/** A real pseudo-terminal, one per tab. */
 	terminal: {
-		create(cwd: string, cols: number, rows: number): Promise<string>;
+		/**
+		 * Connect to this directory's shell, starting one only if it does not already have one.
+		 *
+		 * `replay` is everything it has written so far, for redrawing a pane that was unmounted
+		 * while the shell kept running. Empty for a shell that has just started.
+		 */
+		attach(cwd: string, cols: number, rows: number): Promise<{ id: string; pid: number; replay: string }>;
+		/** Stop listening. The shell keeps running, and `attach` picks it up again. */
+		detach(id: string): void;
 		write(id: string, data: string): void;
 		resize(id: string, cols: number, rows: number): void;
 		kill(id: string): void;

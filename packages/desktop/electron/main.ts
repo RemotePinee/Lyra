@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { spawn as spawnPty, type IPty } from "node-pty";
+import { spawn as spawnPty } from "node-pty";
 import { app, BrowserWindow, protocol } from "electron";
 import {
 	createContext,
@@ -84,7 +84,7 @@ import { MEDIA_SCHEME, PREVIEW_SCHEME, registerPreviewProtocols } from "./previe
 import { registerGitIpc } from "./ipc/git.ts";
 import { registerSideChatIpc } from "./ipc/side-chat.ts";
 import { registerUpdateIpc } from "./ipc/updates.ts";
-import { registerTerminalIpc } from "./ipc/terminal.ts";
+import { registerTerminalIpc, type LiveTerminal } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
 import { createTray, destroyTray, hasTray, type TrayCommand } from "./tray.ts";
 
@@ -147,8 +147,12 @@ let kernel: CapabilityContext | null = null;
  * it reads — disposing a session drops its side chat with it.
  */
 const sideChats = new Map<string, SideChat>();
-/** Live pseudo-terminals, one per terminal tab. Killed when the app quits. */
-const terminals = new Map<string, IPty>();
+/**
+ * Live pseudo-terminals, one per project directory. Killed when the app quits.
+ *
+ * Deliberately outliving the panes that show them — see `ipc/terminal.ts` for why.
+ */
+const terminals = new Map<string, LiveTerminal>();
 let settings: Settings;
 
 /**
@@ -392,7 +396,7 @@ app.on("before-quit", async () => {
 	for (const dispose of browsers.values()) dispose();
 	browsers.clear();
 	// Shells are real child processes; without this they outlive the window that opened them.
-	for (const terminal of terminals.values()) terminal.kill();
+	for (const terminal of terminals.values()) terminal.pty.kill();
 	terminals.clear();
 	await Promise.all([...sessions.values()].map((s) => s.dispose()));
 	await stopSync();
