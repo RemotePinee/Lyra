@@ -11,7 +11,8 @@ import { BootScreen, MIN_BOOT_MS } from "./components/BootScreen.tsx";
 import { Conversation, ConversationSkeleton } from "./components/Conversation.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
 import { ImageViewer } from "./components/image/ImageViewer.tsx";
-import { NoticeStack } from "./components/NoticeStack.tsx";
+import { InputMenu } from "./components/InputMenu.tsx";
+import { Toaster } from "./components/toast/Toaster.tsx";
 import { PluginsView } from "./components/PluginsView.tsx";
 import { PullRequestsView } from "./components/PullRequestsView.tsx";
 import { ResizeHandle } from "./components/ResizeHandle.tsx";
@@ -73,6 +74,24 @@ export function App() {
 			 * transcript with twelve screenshots in it twelve idle overlays.
 			 */}
 			<ImageViewer />
+			{/*
+			 * Cut/copy/paste for every plain text field, mounted once for the same reason.
+			 *
+			 * Electron draws no context menu of its own, so without this right-clicking the composer
+			 * or a search box does nothing — in every window, on every screen, which is why it is
+			 * here rather than attached to the fields one at a time.
+			 */}
+			<InputMenu />
+			{/*
+			 * Last, and outside the shell.
+			 *
+			 * A toast is frequently the answer to what the thing on top just did — a file operation
+			 * refused from a menu, a save that failed behind the image viewer — so it is the one
+			 * surface that has to outrank every other, including the viewer above it in this list.
+			 * It does that by `TOAST_Z`, not by DOM order; being here is about it belonging to the
+			 * window rather than to any one view.
+			 */}
+			<Toaster />
 		</LayoutProvider>
 	);
 }
@@ -190,8 +209,6 @@ function ChatShell() {
 						)}
 					</div>
 				</div>
-
-				<NoticeStack />
 			</main>
 
 			{panelApplies && (

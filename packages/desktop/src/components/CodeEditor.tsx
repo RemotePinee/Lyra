@@ -22,6 +22,8 @@ import { useEffect, useRef, useState } from "react";
 import { GRAMMARS, highlightStyle } from "./highlight.ts";
 import { editorTheme } from "./editor/theme.ts";
 import { CHEVRON_DOWN, CHEVRON_RIGHT, OPTION_ICONS, SEARCH_ICONS, SEARCH_PHRASES, SEARCH_TIPS } from "./editor/chrome.ts";
+import { EditorMenu } from "./editor/EditorMenu.tsx";
+import { useContextMenu } from "./ContextMenu.tsx";
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
 
 /**
@@ -77,6 +79,9 @@ export function CodeEditor({
 	const onSaveRef = useRef(onSave);
 	onChangeRef.current = onChange;
 	onSaveRef.current = onSave;
+	const menu = useContextMenu();
+	/** Assigned below; held in a ref so the keymap built once can reach the current one. */
+	const openFindRef = useRef<(withReplace: boolean) => void>(() => {});
 
 	useEffect(() => {
 		const element = host.current;
@@ -128,6 +133,16 @@ export function CodeEditor({
 						key: "Mod-f",
 						preventDefault: true,
 						run: (view) => (searchPanelOpen(view.state) ? closeSearchPanel(view) : openSearchPanel(view)),
+					},
+					// The replace half, which is folded away until it is asked for — same as the
+					// context menu's 替换 item, so the two cannot say different things.
+					{
+						key: "Mod-Alt-f",
+						preventDefault: true,
+						run: () => {
+							openFindRef.current(true);
+							return true;
+						},
 					},
 					// Before the defaults, so ⌘S is ours rather than the browser's.
 					{
@@ -252,15 +267,52 @@ export function CodeEditor({
 		instance.dispatch({ changes: { from: 0, to: current.length, insert: text } });
 	}, [text]);
 
+	/**
+	 * Open the find bar, unfolding the replace half when that is what was asked for.
+	 *
+	 * The toggle is a button this component adds to CodeMirror's own panel (see `labelPanel`), so
+	 * pressing it is how "replace" is reached from anywhere else. The panel is built on first open,
+	 * hence the frame's wait: on the very first ⌥⌘F there is nothing to click yet.
+	 */
+	openFindRef.current = openFind;
+
+	function openFind(withReplace: boolean) {
+		const instance = view.current;
+		if (!instance) return;
+		if (!searchPanelOpen(instance.state)) openSearchPanel(instance);
+		if (!withReplace) return;
+		requestAnimationFrame(() => {
+			const panel = host.current?.querySelector<HTMLElement>(".cm-panel.cm-search");
+			if (panel && !panel.classList.contains("ly-replace-open")) {
+				panel.querySelector<HTMLButtonElement>("[name=ly-replace-toggle]")?.click();
+			}
+		});
+	}
+
 	return (
 		// `relative` so the thumbs can be positioned against the pane rather than the window.
 		<div className="ly-scroll-host relative flex min-h-0 flex-1">
-			<div ref={host} className="ly-cm min-h-0 min-w-0 flex-1 overflow-hidden" />
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: the menu is the editor's, not this box's. */}
+			<div
+				ref={host}
+				onContextMenu={(event) => menu.show(event, undefined)}
+				className="ly-cm min-h-0 min-w-0 flex-1 overflow-hidden"
+			/>
 			{scroller && (
 				<>
 					<OverlayScrollbar viewport={scrollerRef} orientation="vertical" />
 					<OverlayScrollbar viewport={scrollerRef} orientation="horizontal" />
 				</>
+			)}
+			{menu.open && (
+				<EditorMenu
+					anchor={menu.anchor}
+					onClose={menu.close}
+					view={view.current}
+					path={path}
+					readOnly={Boolean(readOnly)}
+					onFind={openFind}
+				/>
 			)}
 		</div>
 	);

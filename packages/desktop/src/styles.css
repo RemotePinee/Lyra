@@ -1197,6 +1197,49 @@
 }
 
 /*
+ * A toast arriving, and leaving the way it came.
+ *
+ * Down from above and back up, because that is where it lives — `ly-leave` slides to the right,
+ * which is right for a card pinned to the right edge and wrong for one centred at the top: it
+ * would exit sideways towards nothing. The slight scale on the way in is what separates "a card
+ * appeared" from "the page reflowed"; on the way out there is none, since a card shrinking as it
+ * goes reads as being sucked away rather than dismissed.
+ *
+ * Both are plain CSS animations, so the global reduce-motion rule further down collapses them to
+ * 0.01ms without this having to know anything about it.
+ */
+@keyframes ly-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ly-toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.ly-toast-in {
+  animation: ly-toast-in var(--ly-t-base) var(--ly-e-out);
+}
+
+.ly-toast-out {
+  animation: ly-toast-out 170ms ease-in forwards;
+  pointer-events: none;
+}
+
+/*
  * A value replacing a value.
  *
  * For text that changes in place — a level's name, the sentence describing it. Swapped outright,
