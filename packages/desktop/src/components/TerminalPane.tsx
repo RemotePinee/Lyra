@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { useApp } from "../store.ts";
 import { useSide } from "../sideStore.ts";
+import { useTerminals } from "../store/terminals.ts";
 
 /**
  * A real shell, in the panel.
@@ -14,6 +15,11 @@ import { useSide } from "../sideStore.ts";
  * other end believes it is talking to a person. Without a pty there is no colour, no prompt
  * redraw, no Ctrl-C, and anything full-screen — an editor, a pager, an interactive installer —
  * is simply unusable. Those are most of the reasons to want a terminal at all.
+ *
+ * The shell is not owned here. It lives in the main process, keyed by project directory, and this
+ * connects to whichever of that project's shells the tab strip has selected. So this component
+ * mounting is not a terminal starting, and it unmounting is not one ending — see
+ * `electron/terminal-registry.ts`.
  */
 export function TerminalPane() {
 	const workspace = useApp((s) => s.workspace);
@@ -25,7 +31,10 @@ export function TerminalPane() {
 	const fit = useRef<FitAddon | null>(null);
 	/** Held in a ref as well as state: the data handler runs before React re-renders. */
 	const sessionId = useRef<string | null>(null);
+	/** Which attach this pane is the owner of, so a superseded cleanup cannot mute the shell. */
+	const connection = useRef(0);
 	const [exited, setExited] = useState<number | null>(null);
+	const tabs = useTerminals((s) => (workspace?.path ? s.tabs[workspace.path] : undefined)) ?? [];
 
 	/*
 	 * Run what the transcript handed over.
@@ -52,10 +61,37 @@ export function TerminalPane() {
 	}, [pending, ready]);
 
 	const cwd = workspace?.path;
+	const active = useTerminals((s) => (cwd ? s.active[cwd] : undefined));
+
+	/*
+	 * Find out what this project already has running before drawing anything.
+	 *
+	 * Coming back to a project with two shells in it should show two tabs and the one that was in
+	 * front, not a third shell nobody asked for. Only when there is genuinely nothing does this
+	 * open one — which is the first-ever visit, and the only time a terminal is actually started
+	 * by looking at it.
+	 */
+	useEffect(() => {
+		if (!cwd) return;
+		let cancelled = false;
+		void window.lyra.terminal.list(cwd).then(async (tabs) => {
+			if (cancelled) return;
+			if (tabs.length > 0) {
+				useTerminals.getState().sync(cwd, tabs);
+				return;
+			}
+			const opened = await window.lyra.terminal.open(cwd, 80, 24);
+			if (cancelled) return;
+			useTerminals.getState().sync(cwd, [{ id: opened.id, title: opened.title }]);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [cwd]);
 
 	useLayoutEffect(() => {
 		const element = host.current;
-		if (!element || !cwd) return;
+		if (!element || !cwd || !active) return;
 
 		const terminal = new Terminal({
 			fontFamily: readVar("--ly-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -88,13 +124,18 @@ export function TerminalPane() {
 		 */
 		const early = new Map<string, string[]>();
 
-		void window.lyra.terminal.attach(cwd, terminal.cols, terminal.rows).then(({ id, replay }) => {
-			// The panel can be closed before the shell finishes starting.
+		void window.lyra.terminal.attach(active, terminal.cols, terminal.rows).then((connected) => {
+			// The shell can exit while the pane is away; the list effect above notices and moves
+			// the strip on, which brings us back here with a tab that does exist.
+			if (!connected) return;
+			const { id, epoch, replay } = connected;
+			// The panel can be closed before the shell finishes connecting.
 			if (disposed) {
-				window.lyra.terminal.detach(id);
+				window.lyra.terminal.detach(id, epoch);
 				return;
 			}
 			sessionId.current = id;
+			connection.current = epoch;
 			setReady(true);
 			/*
 			 * Everything the shell wrote while there was no pane, before anything that arrived
@@ -119,6 +160,9 @@ export function TerminalPane() {
 		const offExit = window.lyra.terminal.onExit(({ id, code }) => {
 			if (id !== sessionId.current) return;
 			sessionId.current = null;
+			// The tab goes with the shell that backed it: a strip listing a shell that has exited
+			// is a list of things that do not exist.
+			if (cwd) useTerminals.getState().remove(cwd, id);
 			setExited(code);
 		});
 
@@ -151,13 +195,13 @@ export function TerminalPane() {
 			 *
 			 * The shell is ended by the shell — `exit`, or the app quitting.
 			 */
-			if (sessionId.current) window.lyra.terminal.detach(sessionId.current);
+			if (sessionId.current) window.lyra.terminal.detach(sessionId.current, connection.current);
 			sessionId.current = null;
 			terminal.dispose();
 			term.current = null;
 			fit.current = null;
 		};
-	}, [cwd]);
+	}, [cwd, active]);
 
 	// Repaint on a theme change rather than rebuilding the shell under the user.
 	useEffect(() => {
@@ -172,12 +216,40 @@ export function TerminalPane() {
 		);
 	}
 
+	/*
+	 * Every tab closed.
+	 *
+	 * Reachable, and it used to leave the pane a blank rectangle with no xterm in it and nothing
+	 * said — which reads as the terminal having crashed rather than as the last tab having been
+	 * closed on purpose. The way out is the same + the header carries, offered here too because
+	 * an empty pane is where you look.
+	 */
+	if (cwd && tabs.length === 0) {
+		return (
+			<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-7 pb-6 text-center">
+				<SquareTerminal size={30} strokeWidth={1.35} className="text-ink-faint" />
+				<p className="text-label text-ink-muted">这里没有终端了。</p>
+				<button
+					type="button"
+					onClick={() => {
+						void window.lyra.terminal.open(cwd, 80, 24).then((opened) => {
+							useTerminals.getState().add(cwd, { id: opened.id, title: opened.title });
+						});
+					}}
+					className="rounded-lg border border-hairline px-3 py-1.5 text-label text-ink transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
+				>
+					新建终端
+				</button>
+			</div>
+		);
+	}
+
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col">
 			<div ref={host} className="ly-term min-h-0 flex-1 px-2 pt-1.5" />
 			{exited !== null && (
 				<div className="shrink-0 px-3 pb-2 text-detail text-ink-faint">
-					shell 已退出（代码 {exited}）。关掉这个标签再打开一个新的。
+					shell 已退出（代码 {exited}）。
 				</div>
 			)}
 		</div>

@@ -26,6 +26,7 @@ export function DockPane({
 	onDragStart,
 	onMove,
 	actions,
+	title,
 	inset,
 	onToggleMaximized,
 	onClose,
@@ -63,6 +64,8 @@ export function DockPane({
 	onMove: (side: DropSide) => void;
 	/** Controls belonging to what the pane holds — the conversation's panel buttons. */
 	actions?: React.ReactNode;
+	/** Drawn in the header in place of the name — see `PanelDefinition.header`. */
+	title?: React.ReactNode;
 	/** Room for the traffic lights, when this pane covers the window's top-left corner. */
 	inset?: number;
 	onToggleMaximized: () => void;
@@ -157,6 +160,7 @@ export function DockPane({
 				draggable={draggable}
 				carried={Boolean(carried)}
 				hideTitle={kind === "conversation"}
+				title={title}
 				canMaximize={kind !== "conversation"}
 				onDragStart={onDragStart}
 				onMove={onMove}

@@ -43,3 +43,9 @@ export function renderPanel(kind: PanelKind) {
 	const Body = panel.render;
 	return <Body />;
 }
+
+/** A panel's own header content, for the few that draw a control where the title goes. */
+export function renderPanelHeader(kind: PanelKind) {
+	const Header = allPanels().find((p) => p.kind === kind)?.header;
+	return Header ? <Header /> : null;
+}

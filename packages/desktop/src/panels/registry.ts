@@ -66,6 +66,14 @@ export interface PanelDefinition {
 		share?: number;
 	};
 	render: ComponentType;
+	/**
+	 * Drawn in the pane header in place of the title.
+	 *
+	 * For a panel whose header is a control rather than a label — the terminal's tab strip is the
+	 * one. Everything else gets the title, which is what a header is for; this exists because a
+	 * strip of tabs *is* the title once there is more than one of something in a pane.
+	 */
+	header?: ComponentType;
 }
 
 const registered: PanelDefinition[][] = [];

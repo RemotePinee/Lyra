@@ -19,7 +19,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLayout } from "../layout.tsx";
 import { WINDOW_CONTROLS_LEFT } from "../components/WindowControls.tsx";
 import { useApp } from "../store.ts";
-import { renderPanel, usePanelDefinitions } from "../panels/definitions.tsx";
+import { renderPanel, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
 import { CollapsedBar, type CollapsedItem } from "./CollapsedBar.tsx";
 import { pct } from "./css.ts";
 import { HEADER_PAD, PANEL_MIN_WIDTH_PX, paneFloor } from "./geometry.ts";
@@ -347,6 +347,7 @@ export function DockView({
 							onDragStart={(event) => start(kind, event)}
 							onMove={(side) => useDock.getState().moveTo(kind, { side, kind: null })}
 							actions={kind === "conversation" ? actions : undefined}
+							title={kind === "conversation" ? undefined : renderPanelHeader(kind)}
 							inset={corner === kind ? TRAFFIC_LIGHTS : 0}
 							onToggleMaximized={() =>
 								useDock.getState().toggleMaximized(kind, definitions.find((def) => def.kind === kind)?.companion?.kind)

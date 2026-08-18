@@ -14,6 +14,7 @@ import { GitPanel } from "../components/git/GitPanel.tsx";
 import { SideChat } from "../components/SideChat.tsx";
 import { TaskPanel } from "../components/TaskPanel.tsx";
 import { TerminalPane } from "../components/TerminalPane.tsx";
+import { TerminalTabs } from "../components/TerminalTabs.tsx";
 import { TrajectoryPanel } from "../components/trajectory/TrajectoryPanel.tsx";
 import { registerPanels, type PanelDefinition } from "./registry.ts";
 
@@ -76,6 +77,7 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		shortcut: "⌃`",
 		unavailable: needsCwd,
 		render: TerminalPane,
+		header: TerminalTabs,
 	},
 	{ kind: "tasks", label: "任务", icon: ListTodo, shortcut: "⌘J", render: TaskPanel },
 	{

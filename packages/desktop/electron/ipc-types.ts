@@ -45,6 +45,23 @@ import type {
 
 export * from "./ipc-shapes.ts";
 
+/** One shell in a directory, as the tab strip lists it. */
+export interface TerminalTab {
+	id: string;
+	title: string;
+}
+
+/** What a pane gets back when it connects to a shell. */
+export interface AttachedTerminal {
+	id: string;
+	title: string;
+	pid: number;
+	/** This connection's number, to be quoted back to `detach`. */
+	epoch: number;
+	/** Everything the shell has written, for redrawing a pane that came back. */
+	replay: string;
+}
+
 export interface LyraApi {
 	settings: {
 		get(): Promise<Settings>;
@@ -179,15 +196,25 @@ export interface LyraApi {
 	};
 	/** A real pseudo-terminal, one per tab. */
 	terminal: {
+		/** Every shell this directory already has — the pane's tabs. */
+		list(cwd: string): Promise<TerminalTab[]>;
+		/** Start another shell here. Always a new one: this is what the tab strip's `+` does. */
+		open(cwd: string, cols: number, rows: number): Promise<AttachedTerminal>;
 		/**
-		 * Connect to this directory's shell, starting one only if it does not already have one.
+		 * Connect to a shell that already exists.
 		 *
 		 * `replay` is everything it has written so far, for redrawing a pane that was unmounted
-		 * while the shell kept running. Empty for a shell that has just started.
+		 * while the shell kept running. `null` if that shell is gone — it may have exited while
+		 * the pane was away.
 		 */
-		attach(cwd: string, cols: number, rows: number): Promise<{ id: string; pid: number; replay: string }>;
-		/** Stop listening. The shell keeps running, and `attach` picks it up again. */
-		detach(id: string): void;
+		attach(id: string, cols: number, rows: number): Promise<AttachedTerminal | null>;
+		/**
+		 * Stop listening. The shell keeps running, and `attach` picks it up again.
+		 *
+		 * `epoch` is the one `attach` returned: a cleanup that has already been superseded by a
+		 * newer connection must not mute a shell that pane is still watching.
+		 */
+		detach(id: string, epoch: number): void;
 		write(id: string, data: string): void;
 		resize(id: string, cols: number, rows: number): void;
 		kill(id: string): void;

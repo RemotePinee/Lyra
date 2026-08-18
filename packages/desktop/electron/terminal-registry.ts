@@ -13,6 +13,9 @@
  * running and keeps recording what it writes, and the next attach replays that recording into the
  * fresh xterm, which redraws to exactly what was on screen before.
  *
+ * A directory can have several, which is what the pane's tabs are: `open` always starts a new one,
+ * `list` reports what a project already has, and `attach` connects to one by id.
+ *
  * The window is reached through a getter rather than held: it is replaced when the app is reopened
  * from the dock, and a captured reference would go on writing to a window nobody can see.
  *
@@ -35,11 +38,45 @@ export interface LiveTerminal {
 	pty: IPty;
 	cwd: string;
 	attached: boolean;
+	/** What the tab is called. Numbered per directory, and kept when its neighbours close. */
+	title: string;
 	/** Raw output, in the chunks it arrived in, capped by `SCROLLBACK_BYTES`. */
 	scrollback: string[];
 	bytes: number;
-	/** When a pane last attached, so the least useful shell is the one retired. */
+	/**
+	 * A counter, not a clock: which shell was returned to most recently.
+	 *
+	 * `Date.now()` cannot separate two attaches in the same millisecond, which made "retire the
+	 * one idle longest" a coin toss between them — and would have gone wrong in the same way if
+	 * the system clock ever stepped backwards.
+	 */
 	touched: number;
+	/**
+	 * Which connection is the current one.
+	 *
+	 * Bumped by every attach, and quoted back by `detach`. React mounts an effect twice in
+	 * development, and the first mount's cleanup lands after the second has already connected —
+	 * without this, that stale cleanup detached a shell somebody was listening to and the terminal
+	 * went silent for good.
+	 */
+	epoch: number;
+}
+
+/** One shell in a directory, as the tab strip lists it. */
+export interface TerminalTab {
+	id: string;
+	title: string;
+}
+
+/** What a pane gets back when it connects. */
+export interface Attached {
+	id: string;
+	title: string;
+	pid: number;
+	/** This connection's number, to be quoted back to `detach`. */
+	epoch: number;
+	/** Everything the shell has written, for redrawing a pane that came back. */
+	replay: string;
 }
 
 export interface TerminalDeps {
@@ -59,13 +96,17 @@ export interface TerminalDeps {
 const SCROLLBACK_BYTES = 256 * 1024;
 
 /**
- * How many shells may be kept alive at once.
+ * How many shells may be alive at once, across every project.
  *
- * These survive their panes, so without a ceiling a week of moving between projects would leave a
- * dozen idle shells running. Four covers going back and forth between the projects anyone has
- * open at once; past that the one nobody has returned to for longest is the one to end.
+ * They survive their panes, so without a ceiling a week of moving between projects would leave
+ * dozens running. When the ceiling is reached it is another project's idle shell that goes: the
+ * tabs of the project in front of you are a thing you opened deliberately, and closing one of
+ * those to make room for another would be the app taking away work you can see.
  */
-const MAX_TERMINALS = 4;
+const MAX_TERMINALS = 16;
+
+/** Ticks once per attach, so "used most recently" is an order rather than a timestamp. */
+let clock = 0;
 
 /**
  * The behaviour, with no Electron in it.
@@ -75,37 +116,24 @@ const MAX_TERMINALS = 4;
  * and they are decided here rather than in a message handler.
  */
 export function createTerminalRegistry({ terminals, spawnPty, insideAProject, window }: TerminalDeps) {
+	/** Where a terminal for this path actually starts: the project, or home if it is not one. */
+	const resolve = (cwd: string): string => (insideAProject(cwd) ? cwd : process.env.HOME || process.cwd());
+
+	/** Every shell this directory has, in the order they were opened. */
+	const list = (cwd: string): TerminalTab[] =>
+		[...terminals]
+			.filter(([, live]) => live.cwd === resolve(cwd))
+			.map(([id, live]) => ({ id, title: live.title }));
+
 	/**
-	 * Connect a pane to a shell for this directory, starting one only if there is not one already.
+	 * Start another shell here.
 	 *
-	 * Returns what the pane needs to redraw itself: the id to address it by, and everything the
-	 * shell has written. `pid` is returned as well — it is what makes "the same shell" checkable
-	 * from a test, rather than inferred from output that looks similar.
+	 * Always a new one — this is what the tab strip's `+` does. Joining an existing shell is
+	 * `attach`, and which of them a freshly opened pane wants is the pane's decision.
 	 */
-	const attach = (cwd: string, cols: number, rows: number): { id: string; pid: number; replay: string } => {
-		const home = process.env.HOME || process.cwd();
-		const dir = insideAProject(cwd) ? cwd : home;
-
-		const existing = [...terminals].find(([, live]) => live.cwd === dir);
-		if (existing) {
-			const [id, live] = existing;
-			live.attached = true;
-			live.touched = Date.now();
-			/*
-			 * The pane it left is not the pane it came back to: the dock may have resized in
-			 * between, and a shell told nothing wraps every line to a width that is no longer
-			 * there. A caller that does not know the size yet passes nothing and is not allowed to
-			 * shrink the shell to a sliver on its way to finding out.
-			 */
-			if (cols > 0 && rows > 0) {
-				try {
-					live.pty.resize(Math.max(2, cols), Math.max(2, rows));
-				} catch {}
-			}
-			return { id, pid: live.pty.pid, replay: live.scrollback.join("") };
-		}
-
-		retireIdle(terminals);
+	const open = (cwd: string, cols: number, rows: number): Attached => {
+		const dir = resolve(cwd);
+		retireIdle(terminals, dir);
 
 		const id = randomUUID();
 		const shell = process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash");
@@ -118,7 +146,16 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 			env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
 		});
 
-		const live: LiveTerminal = { pty: child, cwd: dir, attached: true, scrollback: [], bytes: 0, touched: Date.now() };
+		const live: LiveTerminal = {
+			pty: child,
+			cwd: dir,
+			title: nextTitle(terminals, dir),
+			attached: true,
+			scrollback: [],
+			bytes: 0,
+			touched: ++clock,
+			epoch: 1,
+		};
 
 		child.onData((data) => {
 			live.scrollback.push(data);
@@ -133,7 +170,36 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 			window()?.webContents.send("terminal:exit", { id, code: exitCode });
 		});
 		terminals.set(id, live);
-		return { id, pid: child.pid, replay: "" };
+		return { id, title: live.title, pid: child.pid, epoch: 1, replay: "" };
+	};
+
+	/**
+	 * Connect a pane to a shell that already exists.
+	 *
+	 * Returns what the pane needs to redraw itself: everything the shell has written, and an
+	 * `epoch` identifying this particular connection, to be handed back to `detach`. `null` if
+	 * that shell is gone — it may have exited while the pane was away, and the pane decides what
+	 * to do about that rather than being handed a surprise new shell.
+	 */
+	const attach = (id: string, cols: number, rows: number): Attached | null => {
+		const live = terminals.get(id);
+		if (!live) return null;
+
+		live.attached = true;
+		live.touched = ++clock;
+		live.epoch++;
+		/*
+		 * The pane it left is not the pane it came back to: the dock may have resized in between,
+		 * and a shell told nothing wraps every line to a width that is no longer there. A caller
+		 * that does not know the size yet passes nothing and is not allowed to shrink the shell to
+		 * a sliver on its way to finding out.
+		 */
+		if (cols > 0 && rows > 0) {
+			try {
+				live.pty.resize(Math.max(2, cols), Math.max(2, rows));
+			} catch {}
+		}
+		return { id, title: live.title, pid: live.pty.pid, epoch: live.epoch, replay: live.scrollback.join("") };
 	};
 
 	/**
@@ -141,10 +207,12 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 	 *
 	 * Output carries on being recorded so the next attach can redraw it; it just stops being sent
 	 * to a renderer with nothing to show it in.
+	 *
+	 * Ignored unless it names the connection that is actually current — see `epoch`.
 	 */
-	const detach = (id: string): void => {
+	const detach = (id: string, epoch: number): void => {
 		const live = terminals.get(id);
-		if (live) live.attached = false;
+		if (live && live.epoch === epoch) live.attached = false;
 	};
 
 	const write = (id: string, data: string): void => {
@@ -163,21 +231,36 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 		terminals.delete(id);
 	};
 
-	return { attach, detach, write, resize, kill };
+	return { list, open, attach, detach, write, resize, kill };
 }
 
 
-/** Make room by ending the detached shell nobody has come back to for longest. */
-function retireIdle(terminals: Map<string, LiveTerminal>): void {
+/**
+ * Make room, without touching the project in front of you.
+ *
+ * Candidates are idle shells belonging to some other directory, oldest first. If there are none —
+ * everything alive is either on screen or a tab of the current project — the ceiling yields. A
+ * shell the user opened and can see is not a leak, and ending one to satisfy a number would be
+ * the app closing a tab behind their back.
+ */
+function retireIdle(terminals: Map<string, LiveTerminal>, keep: string): void {
 	while (terminals.size >= MAX_TERMINALS) {
 		let oldest: [string, LiveTerminal] | null = null;
 		for (const entry of terminals) {
-			if (entry[1].attached) continue;
+			if (entry[1].attached || entry[1].cwd === keep) continue;
 			if (!oldest || entry[1].touched < oldest[1].touched) oldest = entry;
 		}
-		// Every one of them is on screen: that is a layout the user built, not a leak.
 		if (!oldest) return;
 		oldest[1].pty.kill();
 		terminals.delete(oldest[0]);
+	}
+}
+
+/** `终端 1`, `终端 2`, … per directory, never reusing a number a live tab still has. */
+function nextTitle(terminals: Map<string, LiveTerminal>, cwd: string): string {
+	const taken = new Set([...terminals.values()].filter((live) => live.cwd === cwd).map((live) => live.title));
+	for (let n = 1; ; n++) {
+		const title = `终端 ${n}`;
+		if (!taken.has(title)) return title;
 	}
 }

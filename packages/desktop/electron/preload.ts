@@ -148,8 +148,10 @@ const api: LyraApi = {
 		write: (text) => ipcRenderer.invoke("clipboard:write", text),
 	},
 	terminal: {
-		attach: (cwd, cols, rows) => ipcRenderer.invoke("terminal:attach", cwd, cols, rows),
-		detach: (id) => ipcRenderer.send("terminal:detach", id),
+		list: (cwd) => ipcRenderer.invoke("terminal:list", cwd),
+		open: (cwd, cols, rows) => ipcRenderer.invoke("terminal:open", cwd, cols, rows),
+		attach: (id, cols, rows) => ipcRenderer.invoke("terminal:attach", id, cols, rows),
+		detach: (id, epoch) => ipcRenderer.send("terminal:detach", id, epoch),
 		// `send`, not `invoke`: keystrokes must not wait for a round trip to echo.
 		write: (id, data) => ipcRenderer.send("terminal:write", id, data),
 		resize: (id, cols, rows) => ipcRenderer.send("terminal:resize", id, cols, rows),

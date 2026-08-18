@@ -43,6 +43,7 @@ export function PaneHeader({
 	draggable,
 	carried,
 	hideTitle,
+	title,
 	canMaximize,
 	onDragStart,
 	onMove,
@@ -67,6 +68,8 @@ export function PaneHeader({
 	 * above a transcript that also says so is a third copy of the same fact.
 	 */
 	hideTitle?: boolean;
+	/** Drawn in place of the name, for a panel whose header is a control. */
+	title?: React.ReactNode;
 	/** Panels can fill the dock; the conversation already is what the dock is showing. */
 	canMaximize?: boolean;
 	onDragStart: (event: React.PointerEvent<HTMLElement>) => void;
@@ -112,10 +115,19 @@ export function PaneHeader({
 			 */
 			className="drag-region group/header relative flex shrink-0 items-center gap-1.5 pr-1.5"
 		>
-			{!hideTitle && icon && <span className="flex shrink-0 items-center text-ink-faint">{icon}</span>}
-			<span className="min-w-0 flex-1 truncate text-detail text-ink-muted select-none">
-				{hideTitle ? "" : label}
-			</span>
+			{!hideTitle && !title && icon && (
+				<span className="flex shrink-0 items-center text-ink-faint">{icon}</span>
+			)}
+			{/*
+			 * A panel may put a control here instead of its name — the terminal's tab strip does,
+			 * because once a pane holds several of something, choosing between them *is* the title.
+			 */}
+			{title ?? (
+				<span className="min-w-0 flex-1 truncate text-detail text-ink-muted select-none">
+					{hideTitle ? "" : label}
+				</span>
+			)}
+			{title && <span className="min-w-0 flex-1" />}
 
 			{/*
 			 * The grip: a short bar near the top edge, centred, and the only thing that moves the pane.
