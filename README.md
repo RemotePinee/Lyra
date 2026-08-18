@@ -8,7 +8,7 @@
   <a href=".nvmrc"><img src="https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg" alt="Node ≥ 24"></a>
 </p>
 
-一个自带模型配置的独立 通用型agent。桌面端用 Electron，移动端用 React Native，两端共用同一份会话数据。
+一个自带模型配置的独立通用型agent。桌面端用 Electron，移动端用 React Native，两端共用同一份会话数据。
 
 不是 Claude Code 或 Codex 等的前端壳 —— agent 内核、工具集、skill 与 MCP 全部从零开始实现，模型完全由你自己配， 随性所欲配置插件， 扩展能力。
 
