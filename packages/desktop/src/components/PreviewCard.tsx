@@ -2,6 +2,7 @@ import { ExternalLink, Maximize2, Minimize2, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { IconButton } from "./IconButton.tsx";
+import { useDock } from "../dock/store.ts";
 import { useSide } from "../sideStore.ts";
 
 export interface PreviewInfo {
@@ -102,7 +103,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 	 * default height.
 	 */
 	const survey = useRef({ settled: false, tallest: 0, adjustments: 0, timer: null as ReturnType<typeof setTimeout> | null });
-	const openTab = useSide((s) => s.openTab);
+	const openPane = useDock((s) => s.open);
 	const openPreview = useSide((s) => s.openPreview);
 
 	/*
@@ -249,7 +250,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					type="button"
 					onClick={() => {
 						openPreview(preview);
-						openTab("browser");
+						openPane("browser");
 					}}
 					className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-2"
 				>
@@ -300,7 +301,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 					tipSide="top"
 					onClick={() => {
 						openPreview(preview);
-						openTab("browser");
+						openPane("browser");
 					}}
 				/>
 			</div>

@@ -28,6 +28,15 @@ export interface RunningApp {
 	home: string;
 	/** One expression in the renderer. Promises are awaited; the value comes back by value. */
 	evaluate<T>(expression: string): Promise<T>;
+	/**
+	 * One DevTools protocol call, for the things the page cannot do to itself.
+	 *
+	 * Resizing is the case this exists for. `window.resizeTo` is ignored for an ordinary Electron
+	 * window, and the layout's breakpoints are driven by `window.innerWidth` — so without
+	 * `Emulation.setDeviceMetricsOverride` the narrow layout is simply not reachable from a test,
+	 * which would leave the half of the dock that only exists below 760px unverified.
+	 */
+	send<T>(method: string, params?: Record<string, unknown>): Promise<T>;
 	stop(): Promise<void>;
 }
 
@@ -78,12 +87,23 @@ export async function startApp({
 	app.on("error", (error) => output.push(`spawn failed: ${error.message}`));
 
 	const target = await waitForWindow(port, output);
-	const evaluate = <T>(expression: string) => evaluateOn<T>(target, expression);
+	const evaluate = <T>(expression: string) =>
+		call<T>(target, "Runtime.evaluate", {
+			expression,
+			awaitPromise: true,
+			returnByValue: true,
+			userGesture: true,
+		}).then((result) => {
+			const answer = result as { exceptionDetails?: { text: string }; result?: { value: T } };
+			if (answer.exceptionDetails) throw new Error(answer.exceptionDetails.text);
+			return answer.result?.value as T;
+		});
 	await waitForShell(evaluate);
 
 	return {
 		home,
 		evaluate,
+		send: <T>(method: string, params?: Record<string, unknown>) => call<T>(target, method, params ?? {}),
 		stop: async () => {
 			if (app.pid) {
 				try {
@@ -138,8 +158,8 @@ async function waitForShell(evaluate: <T>(expression: string) => Promise<T>): Pr
 	throw new Error(`the shell never rendered. What was on screen:\n${last}`);
 }
 
-/** One expression, one socket. Slower than keeping it open, and far easier to reason about. */
-async function evaluateOn<T>(target: string, expression: string): Promise<T> {
+/** One call, one socket. Slower than keeping it open, and far easier to reason about. */
+async function call<T>(target: string, method: string, params: Record<string, unknown>): Promise<T> {
 	const socket = new WebSocket(target);
 	try {
 		await new Promise((resolve, reject) => {
@@ -150,21 +170,15 @@ async function evaluateOn<T>(target: string, expression: string): Promise<T> {
 			socket.addEventListener("message", (event) => {
 				const message = JSON.parse(String(event.data));
 				if (message.id !== 1) return;
-				if (message.result?.exceptionDetails) reject(new Error(message.result.exceptionDetails.text));
-				else resolve(message.result?.result?.value as T);
+				if (message.error) reject(new Error(`${method}: ${message.error.message}`));
+				else resolve(message.result as T);
 			});
 			// Generous, because a test that waits out a toast's lifetime is one expression that
 			// deliberately takes ten seconds — and a timeout shorter than that would call it a
 			// failure rather than a wait.
-			setTimeout(() => reject(new Error(`evaluate timed out: ${expression.slice(0, 60)}`)), 40_000);
+			setTimeout(() => reject(new Error(`${method} timed out`)), 40_000);
 		});
-		socket.send(
-			JSON.stringify({
-				id: 1,
-				method: "Runtime.evaluate",
-				params: { expression, awaitPromise: true, returnByValue: true, userGesture: true },
-			}),
-		);
+		socket.send(JSON.stringify({ id: 1, method, params }));
 		return await answer;
 	} finally {
 		socket.close();

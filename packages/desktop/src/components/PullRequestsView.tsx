@@ -13,7 +13,6 @@ import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import type { PullRequestDetail as Detail } from "../../electron/ipc-types.ts";
 import { useLayout } from "../layout.tsx";
-import { toolbarContentLeft } from "./WindowToolbar.tsx";
 import { useApp } from "../store.ts";
 import { PullRequestDetail, type PrTab } from "./pr/PullRequestDetail.tsx";
 import { PullRequestList } from "./pr/PullRequestList.tsx";
@@ -24,9 +23,16 @@ import { usePullRequests } from "./pr/usePullRequests.ts";
 const LIST_WIDTH = 300;
 
 export function PullRequestsView() {
-	const { compact, navOpen, nativeFullScreen } = useLayout();
-	const toolbarLeft = toolbarContentLeft(navOpen, nativeFullScreen);
-	const listWidth = LIST_WIDTH + toolbarLeft;
+	const { compact } = useLayout();
+	/*
+	 * No allowance for a toolbar above this view any more.
+	 *
+	 * It used to start its content past the traffic lights and the sidebar toggle, because it drew
+	 * its own controls into the window's top 44px. It is a pane in the dock now: the pane's title
+	 * bar owns that row and makes whatever room the lights need, and this begins below it. The
+	 * allowance left behind would have been a hundred-odd pixels of blank left margin.
+	 */
+	const listWidth = LIST_WIDTH;
 	/*
 	 * Reviewing happens in two postures, and the list is only wanted in one of them.
 	 *
@@ -121,7 +127,6 @@ export function PullRequestsView() {
 			loading={pr.loading}
 			error={pr.error}
 			onRefresh={pr.refresh}
-			toolbarLeft={toolbarLeft}
 		/>
 	);
 
@@ -142,7 +147,6 @@ export function PullRequestsView() {
 				onOpenChat={openChat}
 				expanded={expanded}
 				onToggleExpanded={() => setExpanded((open) => !open)}
-				toolbarLeft={expanded ? toolbarLeft : 0}
 				tab={tab}
 				onTab={setTab}
 			/>

@@ -1,10 +1,19 @@
 /**
- * The button beside the traffic lights: show or hide the sidebar.
+ * Where the first window control sits, measured from the window's left edge.
  *
- * Its own component because it has two homes. Normally it sits in the window's toolbar, over
- * whatever is at the top-left. But a full-screen panel reaches that corner, and a button
- * floating over a card it does not belong to reads as a mistake — so in that one case the panel
- * puts it at the head of its own tab strip instead, where it sits in a row with the tabs.
+ * The three traffic lights are 12pt wide on a 20pt pitch starting at x=16, so they end at 68.5;
+ * 78 leaves the ~10pt gap the reference screenshots have, and 70 put the button flush against the
+ * green one.
+ *
+ * It used to be shared with the side panel's tab strip, which took this row over whenever the
+ * panel reached the window's left edge — and the two answered the same question with 78 and 88,
+ * ten pixels being small enough to look like a rendering wobble and large enough to see. The dock
+ * ended that handover: the sidebar or the toolbar owns this corner, always.
+ */
+export const WINDOW_CONTROLS_LEFT = 78;
+
+/**
+ * The button beside the traffic lights: show or hide the sidebar.
  *
  * Back and forward used to live here too. There is nothing to go back to: this is one window
  * with panes, not a stack of pages, so both were permanently inert.
@@ -38,7 +47,13 @@ export function ToolbarButton({
 }: {
 	children: React.ReactNode;
 	label: string;
-	onClick: () => void;
+	/**
+	 * The event is passed on for the callers that anchor a popover to this button.
+	 *
+	 * Optional to receive: a handler written `() => …` ignores it, which is what every other
+	 * caller does.
+	 */
+	onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 	active?: boolean;
 }) {
 	return (

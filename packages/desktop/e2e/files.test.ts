@@ -113,11 +113,21 @@ function ui<T>(body: string): Promise<T> {
 	return app.evaluate<T>(`(async () => { ${UI} const P = ${JSON.stringify(project)}; ${body} })()`);
 }
 
-/** Open the panel on the files tab, with the project's own tree showing. */
+/**
+ * Open the files pane, with the project's own tree showing.
+ *
+ * Two clicks now: the dock's panel menu, then the row for the files pane. There is no tab strip
+ * any more — every panel is a pane in the dock, and which panes exist is chosen from that menu.
+ */
 async function openFilePanel(): Promise<void> {
 	await ui(`
-		const tab = [...document.querySelectorAll("button")].find((b) => b.innerText.trim().startsWith("文件"));
-		if (!document.querySelector("[data-ly-tree]")) { tab?.click(); await wait(500); }
+		if (!document.querySelector("[data-ly-tree]")) {
+			document.querySelector('button[aria-label="面板"]').click();
+			await wait(120);
+			const item = [...document.querySelectorAll('[role="menuitem"]')].find((b) => b.innerText.trim().startsWith("文件"));
+			item?.click();
+			await wait(600);
+		}
 		if (!row("/src")) await wait(500);
 		if (!row("src/main.ts")) { click(row("/src")); await wait(500); }
 	`);
@@ -216,93 +226,67 @@ test("the clipboard round-trips through the main process", async () => {
 });
 
 /** What the layout check reads off the window, plus the steps it took to get there. */
-interface Measured {
-	window: number;
-	panel: number;
-	tree: number;
-	search: number;
-	trace: string[];
-}
-
-test("the file filter is as wide as the tree it filters, not as wide as the panel", async () => {
+test("opening a file gives it a pane of its own, beside the tree rather than inside it", async () => {
 	/*
-	 * It used to sit above both panes and stretch the full width of the panel — tolerable at 380px
-	 * and absurd once the panel is opened to full screen, where a control acting on a 232px list
-	 * was over a thousand pixels wide.
+	 * The tree and the open file used to be two halves of one panel, with their own breakpoint and
+	 * their own draggable seam — one component reimplementing, for two boxes only, what the dock
+	 * does for every pane. As two panes they can be split either way, resized, closed or made full
+	 * screen independently, and the tree gets the whole panel when nothing is open.
 	 */
-	const measured = await app.evaluate<Measured>(`(async () => {
-		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-		const button = (label) => [...document.querySelectorAll("button")].find((b) => b.innerText.trim().startsWith(label));
-		const width = (el) => (el ? el.getBoundingClientRect().width : 0);
-		const panelWidth = () => width(document.querySelector(".ly-panel"));
+	await openFilePanel();
 
-		/*
-		 * A note at each step, carried into the failure message.
-		 *
-		 * A width that comes out wrong says nothing about *when* it went wrong — whether the panel
-		 * never opened, opened and stayed narrow, or opened and then reflowed. Reading that off the
-		 * trace is what turned "the filter is 93% of the panel" into a renderer that had stopped
-		 * delivering resize notifications while the window was covered.
-		 */
-		const trace = [];
-		const snap = (tag) => trace.push(tag + ": panel=" + Math.round(panelWidth()) +
-			" col=" + Math.round(width(document.querySelector("[data-ly-tree-column]"))) +
-			" handle=" + Boolean(document.querySelector("[aria-label=调整文件树宽度]")) +
-			" tree=" + Boolean(document.querySelector("[data-ly-tree]")));
+	const before = await app.evaluate<string[]>(`[...document.querySelectorAll("[data-dock-pane]")].map((el) => el.dataset.dockPane)`);
+	assert.ok(before.includes("files"), "the tree is open");
+	assert.ok(!before.includes("file"), "and nothing has been opened in it yet");
 
-		snap("start");
-		button("文件")?.click();
-		await wait(400);
-		snap("tab clicked");
-		// The toolbar mounts with the panel, so the first press can land before the button exists.
-		for (let attempt = 0; attempt < 4 && panelWidth() < 600; attempt++) {
-			document.querySelector("button[aria-label=全屏显示]")?.click();
-			await wait(500);
-			snap("expand " + attempt);
-		}
-		/*
-		 * Then wait for the two columns, not just for the width.
-		 *
-		 * The panel's width changes on the frame the button is pressed; whether the tree and the
-		 * file sit side by side is decided by a ResizeObserver inside the panel, which lands after.
-		 * Measuring in between reads the stacked layout — where the tree column *is* the panel, so
-		 * the assertion below would be comparing a thing to itself. The drag handle only exists in
-		 * the side-by-side form, which makes it the signal to wait for.
-		 */
-		for (let attempt = 0; attempt < 10 && !document.querySelector("[aria-label=调整文件树宽度]"); attempt++) {
-			await wait(200);
-		}
-		snap("settled");
+	// Click a file in the tree — the ordinary way anyone opens one.
+	await ui(`
+		const target = row("README.md") ?? row("src/main.ts");
+		if (!target) throw new Error("no file to open");
+		click(target);
+		await wait(700);
+	`);
 
+	const opened = await app.evaluate<{
+		panes: string[];
+		files: { left: number; top: number; width: number; height: number } | null;
+		file: { left: number; top: number; width: number; height: number } | null;
+		hasEditor: boolean;
+		closable: boolean;
+	}>(`(() => {
+		const box = (kind) => {
+			const el = document.querySelector('[data-dock-pane="' + kind + '"]');
+			if (!el) return null;
+			const b = el.getBoundingClientRect();
+			return { left: b.left, top: b.top, width: b.width, height: b.height };
+		};
+		const header = document.querySelector('[data-dock-header="file"]');
 		return {
-			window: window.innerWidth,
-			panel: panelWidth(),
-			tree: width(document.querySelector("[data-ly-tree-column]")),
-			search: width(document.querySelector(".ly-panel input")?.parentElement),
-			trace,
+			panes: [...document.querySelectorAll("[data-dock-pane]")].map((el) => el.dataset.dockPane),
+			files: box("files"),
+			file: box("file"),
+			// The file's contents, rather than the tree's: proof it landed in the new pane.
+			hasEditor: Boolean(document.querySelector('[data-dock-pane="file"] .ly-cm, [data-dock-pane="file"] .ly-markdown')),
+			closable: Boolean(header && [...header.querySelectorAll("button")].some((b) => (b.getAttribute("aria-label") ?? "").startsWith("关闭"))),
 		};
 	})()`);
 
-	assert.ok(
-		measured.panel > 600,
-		`the panel did not open full screen (${measured.panel}px in a ${measured.window}px window)`,
-	);
-	assert.ok(measured.search > 0, "no filter was found in the panel");
-	assert.ok(
-		measured.search <= measured.tree,
-		`the filter (${measured.search}px) is wider than the tree column (${measured.tree}px)`,
-	);
-	assert.ok(
-		measured.search < measured.panel / 2,
-		`the filter is ${Math.round((measured.search / measured.panel) * 100)}% of the panel: ${JSON.stringify(measured)}`,
-	);
-});
+	assert.ok(opened.panes.includes("file"), "the file opened a pane of its own");
+	assert.ok(opened.files && opened.file, "and both panes are on screen");
+	// Two panes, not one box inside another: they do not overlap.
+	const [tree, file] = [opened.files!, opened.file!];
+	const apart = file.left >= tree.left + tree.width - 1 || tree.left >= file.left + file.width - 1 ||
+		file.top >= tree.top + tree.height - 1 || tree.top >= file.top + file.height - 1;
+	assert.ok(apart, `the panes sit apart: tree ${JSON.stringify(tree)}, file ${JSON.stringify(file)}`);
+	assert.ok(opened.hasEditor, "and the file's contents are in the new pane");
+	assert.ok(opened.closable, "which can be closed like any other pane");
 
-// --- the same operations, through the tree rather than through the API ---------------------------
-//
-// The calls above prove the main process does the right thing. These prove the panel asks it to:
-// that the menu item is wired to the operation, that the inline field commits what was typed, and
-// that the tree and the pane beside it agree with the disk afterwards.
+	// The tree no longer holds a viewer of its own.
+	const insideTree = await app.evaluate<boolean>(
+		`Boolean(document.querySelector('[data-dock-pane="files"] .ly-cm, [data-dock-pane="files"] .ly-markdown'))`,
+	);
+	assert.equal(insideTree, false, "the tree pane is only a tree now");
+});
 
 test("新建文件 puts a field in the tree, and Enter creates what was typed", async () => {
 	await openFilePanel();

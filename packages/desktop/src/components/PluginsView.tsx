@@ -23,7 +23,6 @@ import type { BundleKind, Skill } from "@lyra/core";
 import { Blocks, Cable, ChevronDown, RefreshCw, Settings as SettingsIcon, Sparkles, Store } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 import { MenuBody, MenuItem, Popover, usePopover } from "./Popover.tsx";
 import { Scroller } from "./Scroller.tsx";
@@ -34,7 +33,6 @@ import { CatalogCard } from "./plugins/CatalogCard.tsx";
 import { PluginDetail } from "./plugins/PluginDetail.tsx";
 import { RegistrySources } from "./plugins/RegistrySources.tsx";
 import { groupByCategory, isEnabled, isInstalled, UNFILED, useCatalog } from "./plugins/useCatalog.ts";
-import { toolbarContentLeft } from "./WindowToolbar.tsx";
 import { RollingText } from "./RollingText.tsx";
 
 /**
@@ -57,8 +55,6 @@ type Tab = "plugins" | "mcp" | "skills";
 type Scope = "public" | "personal";
 
 export function PluginsView() {
-	const { navOpen, nativeFullScreen } = useLayout();
-	const toolbarLeft = toolbarContentLeft(navOpen, nativeFullScreen);
 	const setView = useApp((s) => s.setView);
 	const setSettingsSection = useApp((s) => s.setSettingsSection);
 	const setComposerDraft = useApp((s) => s.setComposerDraft);
@@ -190,7 +186,6 @@ export function PluginsView() {
 		<div className="-mt-11 flex min-h-0 flex-1 flex-col">
 			<header
 				className="relative z-50 flex h-11 shrink-0 items-center gap-1 px-3"
-				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
 			>
 				<div className="no-drag flex items-center gap-1">
 					{(

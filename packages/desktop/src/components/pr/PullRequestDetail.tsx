@@ -32,7 +32,6 @@ export function PullRequestDetail({
 	onOpenChat,
 	expanded,
 	onToggleExpanded,
-	toolbarLeft,
 	tab,
 	onTab,
 }: {
@@ -52,7 +51,6 @@ export function PullRequestDetail({
 	 * Transitioned alongside it, or the tabs would jump to their new place while the column they
 	 * sit in was still moving.
 	 */
-	toolbarLeft: number;
 	/**
 	 * Lifted, because the review bar below this belongs to two of these tabs and not the third.
 	 * 摘要 and 代码 are things you form an opinion about; 聊天 has a field of its own, and stacking
@@ -94,7 +92,6 @@ export function PullRequestDetail({
 			 */}
 			<header
 				className="relative z-50 flex h-11 shrink-0 items-center gap-1 px-3 transition-[padding-left] duration-[var(--ly-t-base)] ease-out"
-				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
 			>
 				{/*
 				 * Expanded, the list is gone and with it the only thing saying which pull request this

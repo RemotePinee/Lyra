@@ -1,12 +1,13 @@
 /**
- * The window: a navigation pane, a conversation, and a panel beside it.
+ * The window: a navigation pane, and a dock holding everything else.
  *
- * What is left here is the arrangement and the order things are mounted in. How the three panes
- * divide the width is in `usePanelLayout`, the top edge and its buttons are in `WindowToolbar` —
- * both of which are mostly rules that were learned the hard way and are worth reading on their own.
+ * What is left here is the arrangement and the order things are mounted in. How the dock divides
+ * itself is in `dock/`, the top edge and its buttons are in `WindowToolbar` — both of which are
+ * mostly rules that were learned the hard way and are worth reading on their own.
  */
 
 import { useEffect, useState } from "react";
+import { CalendarClock, GitPullRequest, MessageSquare, Puzzle } from "lucide-react";
 import { BootScreen, MIN_BOOT_MS } from "./components/BootScreen.tsx";
 import { Conversation, ConversationSkeleton } from "./components/Conversation.tsx";
 import { EmptyState } from "./components/EmptyState.tsx";
@@ -15,19 +16,18 @@ import { InputMenu } from "./components/InputMenu.tsx";
 import { Toaster } from "./components/toast/Toaster.tsx";
 import { PluginsView } from "./components/PluginsView.tsx";
 import { PullRequestsView } from "./components/PullRequestsView.tsx";
-import { ResizeHandle } from "./components/ResizeHandle.tsx";
 import { ScheduledView } from "./components/ScheduledView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
-import { SidePanel } from "./components/SidePanel.tsx";
 import { SettingsShell } from "./components/settings/SettingsShell.tsx";
-import { DragBand, PanelControls, UpdateSlot, WindowButtons } from "./components/WindowToolbar.tsx";
-import { LayoutProvider, NavPane, SidePane, useLayout } from "./layout.tsx";
+import { DragBand, PanelMenu, UpdateSlot, WindowButtons } from "./components/WindowToolbar.tsx";
+import { DockView } from "./dock/DockView.tsx";
+import { LayoutProvider, NavPane, useLayout, useSidebarFit } from "./layout.tsx";
+import { sessionTitle } from "./sessionTitle.ts";
 import { useShortcuts } from "./shortcuts.ts";
 import { useSide } from "./sideStore.ts";
 import { useApp } from "./store.ts";
 import { useTrayCommands } from "./tray-commands.ts";
 import { applyAppearance, watchSystemTheme } from "./theme.ts";
-import { usePanelLayout } from "./usePanelLayout.ts";
 
 export function App() {
 	const ready = useApp((s) => s.ready);
@@ -108,63 +108,51 @@ function Shell() {
 	return <ChatShell />;
 }
 
-function ChatShell() {
+/**
+ * What the conversation pane is called, and what it is showing.
+ *
+ * The pull request list, the plugin catalogue and the schedule are not conversations, but they
+ * occupy the same pane: they are the main thread of whatever you are doing, and giving them a
+ * pane of their own would mean the dock rearranged itself every time you glanced at a review.
+ * The pane keeps its place and changes what is in it — which is exactly what it did before the
+ * dock existed, when it was the `main` column.
+ */
+function useMainPane() {
 	const view = useApp((s) => s.view);
+	const meta = useApp((s) => s.meta);
 	const messages = useApp((s) => s.messages);
 	const loadingSession = useApp((s) => s.loadingSession);
+
+	if (view === "pull-requests") {
+		return { title: "拉取请求", icon: <GitPullRequest size={12.5} strokeWidth={1.8} />, body: <PullRequestsView /> };
+	}
+	if (view === "plugins") {
+		return { title: "插件", icon: <Puzzle size={12.5} strokeWidth={1.8} />, body: <PluginsView /> };
+	}
+	if (view === "scheduled") {
+		return { title: "计划任务", icon: <CalendarClock size={12.5} strokeWidth={1.8} />, body: <ScheduledView /> };
+	}
+	return {
+		title: sessionTitle(meta?.title),
+		icon: <MessageSquare size={12.5} strokeWidth={1.8} />,
+		body: messages.length > 0 ? <Conversation /> : loadingSession ? <ConversationSkeleton /> : <EmptyState />,
+	};
+}
+
+function ChatShell() {
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const workspace = useApp((s) => s.workspace);
-	const { compact, navOpen, nativeFullScreen, bounds, setPanelWidth, resetPanelWidth, toggleNav, dismissNav } =
-		useLayout();
-
-	const panelOpen = useSide((s) => s.panelOpen);
-	const expanded = useSide((s) => s.expanded);
-	const reopenPanel = useSide((s) => s.reopenPanel);
-	const closePanel = useSide((s) => s.closePanel);
-	const toggleTab = useSide((s) => s.toggleTab);
-	const toggleExpanded = useSide((s) => s.toggleExpanded);
+	const { compact, navOpen, nativeFullScreen, toggleNav, dismissNav } = useLayout();
 	const attach = useSide((s) => s.attach);
-
-	const { panelWidth, panelLayoutWidth, panelMax, sidebarWidth, sidebarDrawn, sidebarMax, fullScreen, panelHostsControls, openPanel } =
-		usePanelLayout();
-
-	/*
-	 * The right-hand panel belongs to the workspace, not to the window.
-	 *
-	 * Everything in it — the repository, the terminal, the file tree — is about the project you are
-	 * working in. Pull requests and the schedule are not in a project at all: a review is of someone
-	 * else's branch, in a repository this machine may never have cloned. So the panel is not merely
-	 * empty on those screens, it is meaningless, and its toggle should not be offered.
-	 *
-	 * Hidden rather than closed. A panel the user had open is theirs; leaving `panelOpen` untouched
-	 * means it comes back exactly as it was when they return to the conversation.
-	 */
-	const panelApplies = view === "chat";
+	const { drawn: sidebarDrawn, max: sidebarMax } = useSidebarFit();
+	const main = useMainPane();
 
 	// The side chat reads the session it is attached to, so it follows whichever one is open.
 	useEffect(() => {
 		void attach(activeSessionId);
 	}, [activeSessionId, attach]);
 
-	// Two full-window panels cannot share one window; the newest one wins.
-	useEffect(() => {
-		if (compact && navOpen) closePanel();
-	}, [compact, navOpen, closePanel]);
-
-	useShortcuts({
-		compact,
-		navOpen,
-		panelOpen,
-		expanded,
-		activeSessionId,
-		workspace,
-		toggleNav,
-		dismissNav,
-		closePanel,
-		toggleExpanded,
-		openPanel,
-		toggleTab,
-	});
+	useShortcuts({ compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav });
 
 	return (
 		<div className="ly-shell relative flex h-full overflow-hidden">
@@ -186,88 +174,36 @@ function ChatShell() {
 			 * the window buttons — is a `no-drag` hole, and holes only stay open if nothing
 			 * re-covers them.
 			 */}
-			<DragBand />
+			<DragBand navOpen={navOpen && !compact} sidebarWidth={sidebarDrawn} />
 
 			<main className="ly-opaque relative flex min-w-0 flex-1 flex-col">
-				{/* Space for the window toolbar, which is rendered last so its no-drag holes stick. */}
-				<div className="h-[44px] shrink-0" />
-
-				<div className="relative flex min-h-0 flex-1">
-					<div className="flex min-w-0 flex-1 flex-col">
-						{view === "pull-requests" ? (
-							<PullRequestsView />
-						) : view === "plugins" ? (
-							<PluginsView />
-						) : view === "scheduled" ? (
-							<ScheduledView />
-						) : messages.length > 0 ? (
-							<Conversation />
-						) : loadingSession ? (
-							<ConversationSkeleton />
-						) : (
-							<EmptyState />
-						)}
-					</div>
-				</div>
+				{/*
+				 * The dock, holding the conversation and every panel alongside it, up to the window's
+				 * top edge.
+				 *
+				 * There is no toolbar row above it. The first row of panes *is* the window's top row:
+				 * their title bars are 44px and sit on the traffic lights' line, and the controls that
+				 * used to need a strip of their own now ride on the conversation's own title bar. A
+				 * separate row cost the height twice — once for the toolbar, once for the titles under
+				 * it — and put the buttons on a different line from the panes they act on.
+				 */}
+				<DockView
+					title={main.title}
+					icon={main.icon}
+					actions={<PanelMenu />}
+					renderConversation={() => main.body}
+				/>
 			</main>
 
-			{panelApplies && (
-				<PanelControls
-					compact={compact}
-					navOpen={navOpen}
-					panelOpen={panelOpen}
-					expanded={expanded}
-					onToggleExpanded={toggleExpanded}
-					onTogglePanel={() => (panelOpen ? closePanel() : openPanel(() => reopenPanel()))}
-				/>
-			)}
-
-			{/*
-			 * Being last in the DOM costs nothing in the wide layout: the toolbar is absolute and
-			 * takes no part in the flex row, so this is still the third and rightmost item.
-			 */}
-			<SidePane
-				width={panelWidth}
-				layoutWidth={panelLayoutWidth}
-				open={panelOpen && panelApplies}
-				fullScreen={fullScreen}
-				offset={navOpen ? sidebarWidth : 0}
-				/*
-				 * Beside the pane rather than inside it — the pane clips, and this straddles its edge.
-				 *
-				 * Not in compact or full screen, where the panel covers the column rather than
-				 * sharing it: there is no boundary between two things to move. Nor while closed —
-				 * the pane is still mounted then, and an edge with nothing on one side of it is
-				 * not an edge.
-				 */
-				handle={
-					panelOpen && panelApplies && !compact && !fullScreen ? (
-						<ResizeHandle
-							edge="start"
-							width={panelWidth}
-							min={bounds.panel.min}
-							max={panelMax}
-							onResize={setPanelWidth}
-							onReset={resetPanelWidth}
-							label="调整面板宽度"
-						/>
-					) : null
-				}
-			>
-				<SidePanel />
-			</SidePane>
-
-			{/* Always, regardless of who is hosting the window controls today. */}
+			{/* Always, regardless of what the dock is doing. */}
 			<UpdateSlot nativeFullScreen={nativeFullScreen} />
 
-			{(!panelHostsControls || !panelApplies) && (
-				<WindowButtons
-					nativeFullScreen={nativeFullScreen}
-					navOpen={navOpen}
-					compact={compact}
-					onToggleNav={toggleNav}
-				/>
-			)}
+			<WindowButtons
+				nativeFullScreen={nativeFullScreen}
+				navOpen={navOpen}
+				compact={compact}
+				onToggleNav={toggleNav}
+			/>
 		</div>
 	);
 }

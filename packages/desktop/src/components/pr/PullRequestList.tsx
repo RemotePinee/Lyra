@@ -32,7 +32,6 @@ export function PullRequestList({
 	loading,
 	error,
 	onRefresh,
-	toolbarLeft,
 }: {
 	groups: Group[];
 	filter: Filter;
@@ -45,7 +44,6 @@ export function PullRequestList({
 	error: string | null;
 	onRefresh: () => void;
 	/** Left inset that keeps this clear of the window controls; 0 when the sidebar covers them. */
-	toolbarLeft: number;
 }) {
 	const empty = groups.length === 0;
 
@@ -71,7 +69,6 @@ export function PullRequestList({
 				 * lights and the sidebar toggle, which are drawn above it. The filters were both
 				 * overlapping them and unclickable.
 				 */
-				style={{ paddingLeft: toolbarLeft ? toolbarLeft : undefined }}
 			>
 				<div className="no-drag flex items-center gap-0.5">
 					{FILTERS.map((option) => (

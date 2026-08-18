@@ -1,6 +1,6 @@
 import { GitCommitVertical } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useSide } from "../sideStore.ts";
+import { useDock } from "../dock/store.ts";
 import { useApp } from "../store.ts";
 
 /**
@@ -19,7 +19,7 @@ import { useApp } from "../store.ts";
 export function ChangeBar() {
   const workspace = useApp((s) => s.workspace);
   const running = useApp((s) => s.running);
-  const openTab = useSide((s) => s.openTab);
+  const openPane = useDock((s) => s.open);
 
   const [stat, setStat] = useState<{
     added: number;
@@ -55,7 +55,7 @@ export function ChangeBar() {
       <button
         type="button"
         data-ly-tip={`${stat.files} 个文件有未提交的改动 · 点击查看`}
-        onClick={() => openTab("review")}
+        onClick={() => openPane("review")}
         className="ly-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
       >
         <span className="font-mono text-detail text-ok">
@@ -69,7 +69,7 @@ export function ChangeBar() {
       <button
         type="button"
         data-ly-tip="在 Git 面板中查看并提交"
-        onClick={() => openTab("review")}
+        onClick={() => openPane("review")}
         className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
       >
         <GitCommitVertical size={13} strokeWidth={1.8} className="shrink-0" />

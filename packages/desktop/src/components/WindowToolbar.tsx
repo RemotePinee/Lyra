@@ -7,10 +7,13 @@
  * the buttons are separate elements rather than one.
  */
 
-import { Maximize2, Minimize2 } from "lucide-react";
-import { WINDOW_CONTROLS_LEFT } from "./panel/geometry.ts";
-import { RightPanelIcon } from "./RightPanelIcon.tsx";
-import { ToolbarButton, WindowControls } from "./WindowControls.tsx";
+import { Check, MoreVertical } from "lucide-react";
+import { useDock } from "../dock/store.ts";
+import { has } from "../dock/tree.ts";
+import { usePanelDefinitions } from "../panels/definitions.tsx";
+import type { PanelKind } from "../sideStore.ts";
+import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
+import { ToolbarButton, WINDOW_CONTROLS_LEFT, WindowControls } from "./WindowControls.tsx";
 import { UpdateBadge } from "./UpdateBadge.tsx";
 
 /** Left offset of the first toolbar button, when there are traffic lights to clear. */
@@ -26,27 +29,11 @@ const TOOLBAR_LEFT = WINDOW_CONTROLS_LEFT;
 const TOOLBAR_LEFT_FULLSCREEN = 12;
 
 /**
- * Where a view's own toolbar content may start.
- *
- * The top 44px belongs to the window: the traffic lights, then the sidebar toggle. A view that
- * puts its own controls up there — the pull request list does — has to begin after both, or its
- * buttons land underneath ones that are drawn at a higher layer and simply stop responding.
- *
- * Only when the sidebar is closed. Open, it covers this corner itself and the view starts well
- * to the right of it.
- */
-export function toolbarContentLeft(navOpen: boolean, nativeFullScreen: boolean): number {
-	if (navOpen) return 0;
-	// The toggle is 28 wide, plus the same ~10 gap the lights get.
-	return (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + 28 + 10;
-}
-
-/**
  * Where the update chip sits: just past the sidebar toggle, on the toolbar's line.
  *
- * Its own slot rather than a child of `WindowButtons`, because that block is not always rendered —
- * when the side panel is open it hosts the window controls itself and `WindowButtons` disappears
- * entirely. An announcement that comes and goes with an unrelated panel is not an announcement.
+ * Its own slot rather than a child of `WindowButtons`, so an announcement never comes and goes
+ * with something unrelated to it. That used to happen literally: `WindowButtons` disappeared
+ * whenever the side panel took the window's corner, and took the update chip with it.
  *
  * Unaffected by whether the sidebar is open, unlike `toolbarContentLeft`: this lands *inside* the
  * sidebar's top strip when it is open, which is empty space and exactly where the chip belongs.
@@ -63,79 +50,122 @@ export function UpdateSlot({ nativeFullScreen }: { nativeFullScreen: boolean }) 
 }
 
 /**
- * The draggable band.
+ * The strip of window that can be dragged to move it.
  *
- * Deliberately below the panel: a full-width band above it would intercept every click meant for
- * the panel's own title bar — which is exactly what it did to the sidebar toggle in compact, where
- * the panel covers the window.
- */
-export function DragBand() {
-	return <div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]" />;
-}
-
-/**
- * The panel controls, above the panel rather than behind it.
+ * As wide as the navigation and no wider, which is a change: it used to span the window. The dock
+ * now reaches the top edge, and every pane's title bar is up there — a full-width band would claim
+ * all of them, so pressing a pane's title would move the window instead of the pane.
  *
- * Separate from the band, and only as wide as they are. The panel sits at z-50 and, now that it
- * stays mounted, occupies the right of the window whenever it is open — which put these
- * underneath it, invisible and unclickable. Floating them over it is also what keeps them still:
- * the panel's title bar has the room for them, so they land in the same place whether it is open
- * or not.
+ * With the navigation closed it shrinks to the corner the traffic lights need, which is the only
+ * part of that row that is still the window's rather than a pane's.
  */
-export function PanelControls({
-	compact,
-	navOpen,
-	panelOpen,
-	expanded,
-	onToggleExpanded,
-	onTogglePanel,
-}: {
-	compact: boolean;
-	navOpen: boolean;
-	panelOpen: boolean;
-	expanded: boolean;
-	onToggleExpanded: () => void;
-	onTogglePanel: () => void;
-}) {
+export function DragBand({ navOpen, sidebarWidth }: { navOpen: boolean; sidebarWidth: number }) {
 	return (
-		<div className="pointer-events-none absolute inset-x-0 top-0 z-[60] h-[44px]">
-			<div className="no-drag toolbar-right pointer-events-auto absolute top-0 flex h-[44px] items-center gap-0.5">
-				{/*
-				 * One control, in one place, for both directions.
-				 *
-				 * This used to disappear when the panel opened, on the grounds that the panel's own
-				 * title bar carries a close button in roughly this spot. Roughly is the problem: the
-				 * panel insets itself by six pixels and draws a border, so the button landed a few
-				 * pixels off from where it had just been and the eye caught every open and close as
-				 * a jump. Now it only hands over when the panel genuinely covers this corner.
-				 */}
-				{!(compact && navOpen) && (
-					<>
-						{/*
-						 * Only means something with a panel to expand. Placed to the left of the
-						 * toggle so that appearing and disappearing never shifts the button beside it.
-						 */}
-						{panelOpen && !compact && (
-							<ToolbarButton label={expanded ? "退出全屏（Esc）" : "全屏显示"} onClick={onToggleExpanded}>
-								{expanded ? <Minimize2 size={12.5} strokeWidth={1.9} /> : <Maximize2 size={12.5} strokeWidth={1.9} />}
-							</ToolbarButton>
-						)}
-						<ToolbarButton label={panelOpen ? "收起面板" : "展开面板"} onClick={onTogglePanel}>
-							<RightPanelIcon active={panelOpen} />
-						</ToolbarButton>
-					</>
-				)}
-			</div>
-		</div>
+		<div
+			className="drag-region absolute top-0 left-0 z-40 h-[44px]"
+			style={{ width: navOpen ? sidebarWidth : WINDOW_CONTROLS_LEFT }}
+		/>
 	);
 }
 
 /**
- * The window's own controls, while something of the window is still visible behind them.
+ * The panels that get a button of their own, in the order they sit in.
  *
- * When the panel reaches the left edge it hosts these itself, inside its tab strip. Floating them
- * over its card instead left three buttons sitting in a surface they had nothing to do with, and
- * pushed the first tab 172px inward to get out of their way.
+ * A shortlist, not the whole registry. These are the three you reach for while working — a shell,
+ * a page, the diff — and reaching for them through two clicks of a menu is two clicks too many.
+ * Everything else, including anything a plugin contributes, is in the menu beside them, which is
+ * also where these three appear when they cannot be opened.
+ */
+const QUICK: PanelKind[] = ["terminal", "browser", "review"];
+
+/**
+ * Which panels are in the window: three buttons and a menu.
+ *
+ * Rendered *inside the conversation pane's own title bar* rather than in a toolbar of its own.
+ * A toolbar cost a whole row of the window and put these buttons on a different line from the pane
+ * titles they act on — two strips where the reference has one.
+ *
+ * This is also all that is left of what used to be three separate controls: a panel toggle, a
+ * full-screen toggle, and the tab strip's add button. The dock removed the questions they answered
+ * — there is no panel to open or collapse, and no full screen distinct from a pane being large.
+ */
+export function PanelMenu() {
+	const menu = usePopover();
+	const definitions = usePanelDefinitions();
+	const tree = useDock((s) => s.tree);
+	const open = useDock((s) => s.open);
+	const close = useDock((s) => s.close);
+
+	const toggle = (kind: PanelKind) => (has(tree, kind) ? close(kind) : open(kind));
+
+	return (
+		<>
+			<div className="flex items-center gap-0.5">
+				{QUICK.map((kind) => {
+					const def = definitions.find((entry) => entry.kind === kind);
+					// Absent rather than disabled when it cannot be opened: a row of greyed buttons
+					// is a row of things you have to read before you can ignore them. The menu still
+					// lists them, with the reason.
+					if (!def || def.unavailable) return null;
+					return (
+						<ToolbarButton
+							key={kind}
+							label={`${def.label} ${def.shortcut}`}
+							active={has(tree, kind)}
+							onClick={() => toggle(kind)}
+						>
+							<def.icon size={13} strokeWidth={1.9} />
+						</ToolbarButton>
+					);
+				})}
+
+				{/* The overflow mark every toolbar uses for "the rest of it". */}
+				<ToolbarButton label="面板" onClick={menu.toggle} active={menu.open}>
+					<MoreVertical size={15} strokeWidth={2} />
+				</ToolbarButton>
+			</div>
+
+			{menu.open && (
+				<Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="end" width="default">
+					<MenuBody>
+						<MenuLabel>面板</MenuLabel>
+						{definitions.map((def) => {
+							const shown = has(tree, def.kind);
+							return (
+								<MenuItem
+									key={def.kind}
+									icon={<def.icon size={13.5} strokeWidth={1.8} />}
+									hint={def.shortcut}
+									disabled={Boolean(def.unavailable)}
+									title={def.unavailable}
+									// A tick, not a highlight: this is a set of things that are either
+									// in the window or not, and every row is independently either.
+									trailing={shown ? <Check size={13} strokeWidth={2.2} className="shrink-0 text-ink" /> : undefined}
+									onClick={() => {
+										if (shown) close(def.kind);
+										else open(def.kind);
+										menu.close();
+									}}
+								>
+									{def.label}
+								</MenuItem>
+							);
+						})}
+					</MenuBody>
+				</Popover>
+			)}
+		</>
+	);
+}
+
+/**
+ * The window's own controls: the traffic lights' neighbour, and nothing else.
+ *
+ * Unconditional now. This used to be rendered only when no panel was covering the window's corner,
+ * because in that case the panel drew its own copy inside its tab strip — a handover that had to
+ * be delayed by exactly the length of the panel's slide, or the buttons appeared riding its edge
+ * and swept 450px across the window. The dock puts every pane below the toolbar, so the corner is
+ * the sidebar's or the toolbar's and never changes hands.
  */
 export function WindowButtons({
 	nativeFullScreen,

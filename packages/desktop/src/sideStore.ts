@@ -9,12 +9,20 @@
 
 import type { AgentEvent, Message, QueuedTask, UserContent } from "@lyra/core";
 import { create } from "zustand";
+import { useDock } from "./dock/store.ts";
 import { summarizeToolCall } from "./toolSummary.ts";
 import type { ToolRun } from "./store.ts";
 import { settleTail } from "./transcript.ts";
 
-/** What can occupy a panel tab. One of each at a time — two diffs of one worktree is not a thing. */
-export type PanelKind = "files" | "chat" | "terminal" | "review" | "browser" | "tasks" | "trajectory";
+/**
+ * What can occupy a pane. One of each at a time — two diffs of one worktree is not a thing.
+ *
+ * `chat` here is the *side* chat, a second conversation you can run beside the main one. The main
+ * thread is `conversation`, which the dock adds to this set; the two names are close and the
+ * things are not, which is worth the sentence. `files` is the tree and `file` is whichever one of
+ * them is open — two panes, because they are two things you arrange separately.
+ */
+export type PanelKind = "files" | "file" | "chat" | "terminal" | "review" | "browser" | "tasks" | "trajectory";
 
 /** Just enough of a preview for the panel to load it; the card owns the full record. */
 interface BrowserPreview {
@@ -25,25 +33,6 @@ interface BrowserPreview {
 }
 
 interface SideState {
-	/**
-	 * The panel is a tab strip, not a single slot.
-	 *
-	 * Several things are open at once and you flick between them, the way you would between
-	 * browser tabs. A dropdown that swapped the panel's contents made every switch cost two
-	 * clicks and lost the sense that the other thing is still there.
-	 */
-	tabs: PanelKind[];
-	activeTab: PanelKind | null;
-	/**
-	 * Visible or not, kept apart from `tabs`.
-	 *
-	 * Collapsing the panel is "give me the width back", not "throw this away" — so the tabs
-	 * survive it and come back on the next open. Closing a tab's ✕ is the one that discards.
-	 */
-	panelOpen: boolean;
-	/** Second width, for when a diff needs more room than the default 520. */
-	expanded: boolean;
-
 	/** The session this state belongs to, so a late event from the previous one is discarded. */
 	sessionId: string | null;
 	messages: Message[];
@@ -53,8 +42,6 @@ interface SideState {
 	pending: Message | null;
 	tasks: QueuedTask[];
 
-	/** Focus this kind, adding a tab for it if there is not one already. */
-	openTab(kind: PanelKind): void;
 	/**
 	 * A command the user asked to run, waiting for the terminal to pick it up.
 	 *
@@ -75,20 +62,6 @@ interface SideState {
 	browserTarget: { kind: "preview"; preview: BrowserPreview } | { kind: "url"; url: string } | null;
 	openPreview(preview: BrowserPreview): void;
 	openUrl(url: string): void;
-	/** Discard a tab. Closing the last one puts the panel away. */
-	closeTab(kind: PanelKind): void;
-	/**
-	 * Show the panel again with whatever it held last.
-	 *
-	 * Deliberately opens empty when there is nothing to restore — the chooser is the panel's
-	 * real first screen, not a fallback. Guessing a tab means guessing wrong half the time and
-	 * making you close something you did not ask for.
-	 */
-	reopenPanel(): void;
-	closePanel(): void;
-	/** Shortcut behaviour: focus it, or put the panel away if it is already the one in front. */
-	toggleTab(kind: PanelKind): void;
-	toggleExpanded(): void;
 
 	/** Point at a session and pull whatever conversation it already has. */
 	attach(sessionId: string | null): Promise<void>;
@@ -109,11 +82,7 @@ const EMPTY = {
 };
 
 export const useSide = create<SideState>((set, get) => ({
-	tabs: [],
-	activeTab: null,
-	panelOpen: false,
 	browserTarget: null,
-	expanded: false,
 	sessionId: null,
 	...EMPTY,
 
@@ -122,46 +91,11 @@ export const useSide = create<SideState>((set, get) => ({
 	pendingCommand: null,
 	runInTerminal: (command) => {
 		set({ pendingCommand: command });
-		get().openTab("terminal");
+		// Make sure there is a terminal to pick it up. `open` focuses one that already exists
+		// rather than adding a second, so a command run twice does not split the dock in two.
+		useDock.getState().open("terminal");
 	},
 	commandTaken: () => set({ pendingCommand: null }),
-
-	openTab: (kind) => {
-		const tabs = get().tabs.includes(kind) ? get().tabs : [...get().tabs, kind];
-		set({ tabs, activeTab: kind, panelOpen: true });
-	},
-
-	/**
-	 * Discard a tab. The panel stays.
-	 *
-	 * Closing the last one lands on the chooser rather than dismissing the panel. `✕` closes a
-	 * tab and `◨` puts the panel away; if `✕` sometimes did both, the same gesture would mean
-	 * two different things depending on how many tabs happened to be open.
-	 */
-	closeTab: (kind) => {
-		const tabs = get().tabs.filter((t) => t !== kind);
-		// Land on a neighbour rather than on nothing: closing the front tab should reveal what
-		// was behind it, not send you back to the chooser with something still open.
-		const wasActive = get().activeTab === kind;
-		set({ tabs, activeTab: tabs.length === 0 ? null : wasActive ? tabs[tabs.length - 1] : get().activeTab });
-	},
-
-	reopenPanel: () => {
-		const tabs = get().tabs;
-		set({ panelOpen: true, activeTab: tabs.length > 0 ? (get().activeTab ?? tabs[0]) : null });
-	},
-
-	closePanel: () => set({ panelOpen: false }),
-
-	toggleTab: (kind) => {
-		if (get().panelOpen && get().activeTab === kind) {
-			set({ panelOpen: false });
-			return;
-		}
-		get().openTab(kind);
-	},
-
-	toggleExpanded: () => set({ expanded: !get().expanded }),
 
 	async attach(sessionId) {
 		if (get().sessionId === sessionId) return;

@@ -5,10 +5,11 @@
  * which is exactly the property that lets a plugin replace one.
  */
 
-import { Folder, GitCompare, Globe, History, ListTodo, MessageCirclePlus, SquareTerminal } from "lucide-react";
+import { FileText, Folder, GitCompare, Globe, History, ListTodo, MessageCirclePlus, SquareTerminal } from "lucide-react";
 
 import { BrowserPanel } from "../components/BrowserPanel.tsx";
 import { FileBrowser } from "../components/FileBrowser.tsx";
+import { FilePanel } from "../components/FilePanel.tsx";
 import { GitPanel } from "../components/git/GitPanel.tsx";
 import { SideChat } from "../components/SideChat.tsx";
 import { TaskPanel } from "../components/TaskPanel.tsx";
@@ -23,6 +24,21 @@ const needsSession = (state: { session: boolean }) => (state.session ? undefined
 
 const BUILTIN_PANELS: PanelDefinition[] = [
 	{ kind: "files", label: "文件", icon: Folder, shortcut: "⌘P", unavailable: needsWorkspace, render: FileBrowser },
+	/*
+	 * The open file, beside the tree rather than inside it.
+	 *
+	 * Opened by clicking a file rather than from the menu, most of the time — but it is listed
+	 * there like any other pane, because once you have closed it the menu is how you say you want
+	 * it back without having to find a file to click.
+	 */
+	{
+		kind: "file",
+		label: "文件内容",
+		icon: FileText,
+		shortcut: "⌥⌘P",
+		unavailable: needsWorkspace,
+		render: FilePanel,
+	},
 	{
 		kind: "chat",
 		label: "侧边聊天",

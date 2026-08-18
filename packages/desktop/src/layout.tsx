@@ -4,14 +4,9 @@
  * The window can be dragged from full screen down to 380pt, and the shell has to change shape
  * along the way rather than just squeezing. Three modes:
  *
- *   wide     ≥1180  sidebar pushes the content; the side panel sits beside the transcript
- *   regular  ≥760   sidebar pushes the content; the side panel sits beside it too, narrower
- *   compact  <760   sidebar becomes a full-window drawer; the side panel takes the window
- *
- * The side panel never overlays a dimmed transcript. Its entire reason to exist is watching
- * one thing while working in the other, and a scrim says the opposite — that what is behind it
- * has been set aside. Above `compact` it always takes width from the content rather than
- * covering it, and gets narrow enough that there is content left to take it from.
+ *   wide     ≥1180  sidebar pushes the content; the dock has room for panes side by side
+ *   regular  ≥760   sidebar still pushes; the dock is tighter but still divides
+ *   compact  <760   sidebar becomes a full-window drawer; the dock shows one pane at a time
  *
  * The mode lives in one place so behaviour (drawer vs push) and styling (paddings, card
  * columns) can never disagree — a phone-shaped window wearing desktop paddings was the
@@ -21,11 +16,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { PANEL_DEFAULT, PANEL_MAX, PANEL_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout-widths.ts";
+import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout-widths.ts";
 
 /** Below this the sidebar and a readable content column no longer fit side by side. */
 const COMPACT_MAX = 760;
-/** Above this the review panel can sit beside the transcript without starving either. */
+/** Above this the dock can hold panes beside the conversation without starving either. */
 const WIDE_MIN = 1180;
 
 export type LayoutMode = "compact" | "regular" | "wide";
@@ -46,21 +41,20 @@ export interface LayoutValue {
 	/** Whether the navigation pane is showing, in whichever form this mode uses. */
 	navOpen: boolean;
 	/**
-	 * Pane widths, as the user last dragged them.
+	 * The sidebar's width, as the user last dragged it.
 	 *
-	 * These are the *preferred* widths and are clamped only to their own sensible bounds. What
-	 * actually fits also depends on the window and on what else is open, so the layout narrows
-	 * them further at render time without overwriting the preference — drag the window in and
-	 * back out, and the panes return to the widths that were asked for.
+	 * A *preference*, clamped only to its own sensible bounds. What actually fits also depends on
+	 * the window, so the layout narrows it further at render time without overwriting this — drag
+	 * the window in and back out, and the sidebar returns to the width that was asked for.
+	 *
+	 * There used to be a second one here for the right-hand panel. The dock divides itself in
+	 * shares and remembers them per project, so there is no single width left to keep.
 	 */
 	sidebarWidth: number;
-	panelWidth: number;
 	setSidebarWidth: (next: number) => void;
-	setPanelWidth: (next: number) => void;
 	resetSidebarWidth: () => void;
-	resetPanelWidth: () => void;
-	/** The bounds the handles enforce, so callers do not restate them. */
-	bounds: { sidebar: { min: number; max: number }; panel: { min: number; max: number } };
+	/** The bounds the handle enforces, so callers do not restate them. */
+	bounds: { sidebar: { min: number; max: number } };
 	/**
 	 * The window is in macOS native full screen, so the traffic lights are not drawn.
 	 *
@@ -85,11 +79,9 @@ export interface LayoutValue {
 }
 
 /**
- * Pane widths the user has set by dragging, and the bounds they are kept inside.
- *
- * Persisted in `localStorage` rather than in Settings: this is a per-window preference with no
- * meaning on the phone, and reading it synchronously on the first render is what stops the panes
- * jumping from their defaults to the saved widths a frame later.
+ * The sidebar's width, persisted in `localStorage` rather than in Settings: a per-window
+ * preference with no meaning on the phone. Reading it synchronously on the first render is what
+ * stops the pane jumping from its default to the saved width a frame later.
  */
 
 const LayoutContext = createContext<LayoutValue | null>(null);
@@ -105,10 +97,6 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 	const [sidebarWidth, setSidebarWidthState] = useState(() =>
 		storedWidth("dw:sidebar-width", SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX),
 	);
-	const [panelWidth, setPanelWidthState] = useState(() =>
-		storedWidth("dw:panel-width", PANEL_DEFAULT, PANEL_MIN, PANEL_MAX),
-	);
-
 	/*
 	 * Written on every frame of the drag, deliberately.
 	 *
@@ -122,14 +110,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 		window.localStorage.setItem("dw:sidebar-width", String(Math.round(clamped)));
 	}, []);
 
-	const setPanelWidth = useCallback((next: number) => {
-		const clamped = Math.min(PANEL_MAX, Math.max(PANEL_MIN, next));
-		setPanelWidthState(clamped);
-		window.localStorage.setItem("dw:panel-width", String(Math.round(clamped)));
-	}, []);
-
 	const resetSidebarWidth = useCallback(() => setSidebarWidth(SIDEBAR_DEFAULT), [setSidebarWidth]);
-	const resetPanelWidth = useCallback(() => setPanelWidth(PANEL_DEFAULT), [setPanelWidth]);
 
 	/*
 	 * Freeze transitions for the duration of a drag.
@@ -202,15 +183,9 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 			navOpen: compact ? drawerOpen : pushOpen,
 			nativeFullScreen,
 			sidebarWidth,
-			panelWidth,
 			setSidebarWidth,
-			setPanelWidth,
 			resetSidebarWidth,
-			resetPanelWidth,
-			bounds: {
-				sidebar: { min: SIDEBAR_MIN, max: SIDEBAR_MAX },
-				panel: { min: PANEL_MIN, max: PANEL_MAX },
-			},
+			bounds: { sidebar: { min: SIDEBAR_MIN, max: SIDEBAR_MAX } },
 			toggleNav,
 			dismissNav,
 			collapseNav,
@@ -223,11 +198,8 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 			pushOpen,
 			nativeFullScreen,
 			sidebarWidth,
-			panelWidth,
 			setSidebarWidth,
-			setPanelWidth,
 			resetSidebarWidth,
-			resetPanelWidth,
 			toggleNav,
 			dismissNav,
 			collapseNav,
@@ -241,6 +213,42 @@ export function useLayout(): LayoutValue {
 	const value = useContext(LayoutContext);
 	if (!value) throw new Error("useLayout must be used inside <LayoutProvider>");
 	return value;
+}
+
+/** What the dock keeps for itself before the sidebar is allowed any more of the window. */
+const CONTENT_MIN = 420;
+
+/**
+ * How wide the sidebar is actually drawn, which is not always how wide it was set to be.
+ *
+ * `sidebarWidth` is a *preference* — what it was last dragged to, remembered across launches. What
+ * fits is a different question, and it changes with the window. Clamping here rather than writing
+ * the smaller number back is what keeps the preference intact: widen the window again and the
+ * sidebar returns to what it was, because nothing overwrote it.
+ *
+ * This is all that survives of `usePanelLayout`. The rest of that file existed to arbitrate
+ * between a conversation column and a side panel that could squeeze it, cover it, or take the
+ * whole window — three modes, two widths and a delayed handover of the window's own buttons. The
+ * dock replaced that with a tree, and a tree divides itself.
+ */
+export function useSidebarFit(): { drawn: number; max: number } {
+	const { width, sidebarWidth, bounds } = useLayout();
+	const drawn = Math.max(bounds.sidebar.min, Math.min(sidebarWidth, width - CONTENT_MIN));
+	return {
+		/**
+		 * Kept even while the sidebar is closed.
+		 *
+		 * A closed sidebar slides out; it does not shrink. Handed a width of zero it would have
+		 * nothing to slide, so `marginLeft: -0` would move it nowhere and it would simply stop
+		 * existing between one frame and the next. Reserving nothing in the row is the frame's job.
+		 */
+		drawn,
+		/**
+		 * Never below the floor — a ceiling under the floor would leave the drag handle unable to
+		 * move in either direction on a window too small for both panes.
+		 */
+		max: Math.max(bounds.sidebar.min, Math.min(bounds.sidebar.max, width - CONTENT_MIN)),
+	};
 }
 
 /**
@@ -290,4 +298,4 @@ export function useFocusTrap(ref: React.RefObject<HTMLElement | null>, active: b
 	}, [ref, active]);
 }
 
-export { NavPane, SidePane } from "./panes.tsx";
+export { NavPane } from "./panes.tsx";

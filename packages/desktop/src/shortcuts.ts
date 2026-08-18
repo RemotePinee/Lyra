@@ -6,128 +6,100 @@
  * a list is how those get noticed.
  *
  * What each one needs arrives as a parameter rather than being reached for, so this can be read
- * without knowing how the shell stores its state.
+ * without knowing how the shell stores its state. The dock is the exception and is reached for
+ * directly: every panel shortcut means the same thing to it — "put this pane in front, or take it
+ * away" — and threading eight identical callbacks through the shell to say so taught nobody
+ * anything.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useDock } from "./dock/store.ts";
 import type { PanelKind } from "./sideStore.ts";
 
 export interface ShortcutDeps {
 	compact: boolean;
 	navOpen: boolean;
-	panelOpen: boolean;
-	expanded: boolean;
 	activeSessionId: string | null;
 	workspace: unknown;
 	toggleNav(): void;
 	dismissNav(): void;
-	closePanel(): void;
-	toggleExpanded(): void;
-	openPanel(then: () => void): void;
-	toggleTab(kind: PanelKind): void;
 }
 
 export function useShortcuts(deps: ShortcutDeps): void {
-	/*
-	 * `openPanel` is read through a ref rather than listed as a dependency.
-	 *
-	 * The shell rebuilds it on every render, so depending on it would tear down and re-attach the
-	 * key listener that often. The ref is updated each render, so the handler always calls the
-	 * current one — the behaviour a dependency would have given, without the churn.
-	 */
-	const openPanel = useRef(deps.openPanel);
-	openPanel.current = deps.openPanel;
+	const { compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav } = deps;
 
-	const {
-		compact,
-		navOpen,
-		panelOpen,
-		expanded,
-		activeSessionId,
-		workspace,
-		toggleNav,
-		dismissNav,
-		closePanel,
-		toggleExpanded,
-		toggleTab,
-	} = deps;
+	useEffect(() => {
+		/** Open the pane, or put it away if it is already the one in front. */
+		const panel = (kind: PanelKind, allowed: unknown) => {
+			if (allowed) useDock.getState().toggle(kind);
+		};
 
-useEffect(() => {
-  const onKey = (event: KeyboardEvent) => {
-    const mod = event.metaKey || event.ctrlKey;
-    // ⌘B is the conventional shortcut, and it makes the transition easy to feel.
-    if (mod && !event.altKey && event.key.toLowerCase() === "b") {
-      event.preventDefault();
-      toggleNav();
-      return;
-    }
-    /*
-     * `code`, not `key`.
-     *
-     * Option is a dead-key modifier on macOS: ⌥S arrives as "ß", so matching on `key`
-     * would never fire. The physical key is what the shortcut is written as.
-     */
-    if (mod && event.altKey && event.code === "KeyS") {
-      event.preventDefault();
-      if (activeSessionId) openPanel.current(() => toggleTab("chat"));
-      return;
-    }
-    if (mod && event.shiftKey && event.code === "KeyR") {
-      event.preventDefault();
-      if (workspace) openPanel.current(() => toggleTab("review"));
-      return;
-    }
-    if (mod && !event.altKey && !event.shiftKey && event.code === "KeyP") {
-      event.preventDefault();
-      if (workspace) openPanel.current(() => toggleTab("files"));
-      return;
-    }
-    // ⌘L for the trajectory: the log of what actually happened, beside the conversation.
-    if (mod && !event.altKey && !event.shiftKey && event.code === "KeyL") {
-      event.preventDefault();
-      if (activeSessionId) openPanel.current(() => toggleTab("trajectory"));
-      return;
-    }
-    // ⌃` is what every terminal-bearing editor uses, and it is not a ⌘ shortcut.
-    if (event.ctrlKey && !event.metaKey && event.code === "Backquote") {
-      event.preventDefault();
-      if (workspace) openPanel.current(() => toggleTab("terminal"));
-      return;
-    }
-    /*
-     * Escape dismisses whatever is *covering* the conversation, and nothing else.
-     *
-     * A panel sitting beside the transcript is not covering anything, and closing
-     * something you are working alongside is not what Escape means — so at ordinary
-     * widths it does nothing. Full screen is covering it, and steps back one level
-     * rather than closing outright: you asked for more room, not to be rid of the panel.
-     * Popovers stop the event during capture, so an open menu still gets first refusal.
-     */
-    // Anything that already acted on Escape — the editor's find bar, a menu — calls
-    // `preventDefault`. Without this check the same keypress also stepped the panel out
-    // of full screen, so closing a find bar took the window apart with it.
-    if (event.key === "Escape" && !event.defaultPrevented) {
-      if (compact) {
-        if (navOpen) dismissNav();
-        else if (panelOpen) closePanel();
-      } else if (panelOpen && expanded) {
-        toggleExpanded();
-      }
-    }
-  };
-  window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
-}, [
-  compact,
-  navOpen,
-  panelOpen,
-  expanded,
-  toggleNav,
-  dismissNav,
-  closePanel,
-  toggleTab,
-  toggleExpanded,
-  activeSessionId,
-  workspace,
-]);
+		const onKey = (event: KeyboardEvent) => {
+			const mod = event.metaKey || event.ctrlKey;
+			// ⌘B is the conventional shortcut, and it makes the transition easy to feel.
+			if (mod && !event.altKey && event.key.toLowerCase() === "b") {
+				event.preventDefault();
+				toggleNav();
+				return;
+			}
+			/*
+			 * `code`, not `key`.
+			 *
+			 * Option is a dead-key modifier on macOS: ⌥S arrives as "ß", so matching on `key`
+			 * would never fire. The physical key is what the shortcut is written as.
+			 */
+			if (mod && event.altKey && event.code === "KeyS") {
+				event.preventDefault();
+				panel("chat", activeSessionId);
+				return;
+			}
+			if (mod && event.shiftKey && event.code === "KeyR") {
+				event.preventDefault();
+				panel("review", workspace);
+				return;
+			}
+			if (mod && !event.altKey && !event.shiftKey && event.code === "KeyP") {
+				event.preventDefault();
+				panel("files", workspace);
+				return;
+			}
+			// ⌥⌘P for the file itself — the tree's ⌘P with the modifier that means "the other one".
+			if (mod && event.altKey && event.code === "KeyP") {
+				event.preventDefault();
+				panel("file", workspace);
+				return;
+			}
+			// ⌘L for the trajectory: the log of what actually happened, beside the conversation.
+			if (mod && !event.altKey && !event.shiftKey && event.code === "KeyL") {
+				event.preventDefault();
+				panel("trajectory", activeSessionId);
+				return;
+			}
+			// ⌃` is what every terminal-bearing editor uses, and it is not a ⌘ shortcut.
+			if (event.ctrlKey && !event.metaKey && event.code === "Backquote") {
+				event.preventDefault();
+				panel("terminal", workspace);
+				return;
+			}
+			/*
+			 * Escape steps back from whatever is *covering* something, and nothing else.
+			 *
+			 * A pane sitting beside the conversation is not covering anything, and closing
+			 * something you are working alongside is not what Escape means — so in the ordinary
+			 * layout it does nothing at all. A maximised pane is covering the rest of the dock and
+			 * gets restored; the navigation drawer covers the whole window and gets dismissed.
+			 *
+			 * Anything that already acted on Escape — the editor's find bar, a menu, a drag in
+			 * flight — calls `preventDefault` during capture. Without this check the same keypress
+			 * also un-maximised a pane, so closing a find bar took the layout apart with it.
+			 */
+			if (event.key === "Escape" && !event.defaultPrevented) {
+				if (compact && navOpen) dismissNav();
+				else if (useDock.getState().maximized) useDock.setState({ maximized: null });
+			}
+		};
+
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [compact, navOpen, toggleNav, dismissNav, activeSessionId, workspace]);
 }

@@ -6,10 +6,10 @@
  * and the chooser and the add menu all disable the same things for the same stated reason.
  */
 
-import { allPanels, type PanelDefinition } from "../../panels/registry.ts";
-import type { PanelKind } from "../../sideStore.ts";
-import { useApp } from "../../store.ts";
-import "../../panels/builtin.tsx";
+import { allPanels, type PanelDefinition } from "./registry.ts";
+import type { PanelKind } from "../sideStore.ts";
+import { useApp } from "../store.ts";
+import "./builtin.tsx";
 
 /** A panel with its availability already decided, which is all a view needs. */
 export type ResolvedPanel = Omit<PanelDefinition, "unavailable"> & { unavailable?: string };
