@@ -167,6 +167,20 @@ export function createWindow(): void {
 			 * that hangs or crashes takes its own process down and leaves the app alone.
 			 */
 			webviewTag: true,
+			/*
+			 * Keep rendering when the window is covered.
+			 *
+			 * Chromium suspends the rendering lifecycle for an occluded window, and `ResizeObserver`
+			 * is delivered as part of that lifecycle — so a layout that reacts to its own width
+			 * simply stops reacting while another app is in front. It comes back wrong: the boxes
+			 * have their new sizes (layout is still computed on demand) and the component that
+			 * decides between one column and two never hears about it. The file panel expanded
+			 * behind a covered window and stayed in its stacked form at a thousand pixels wide.
+			 *
+			 * This app also streams a transcript and runs terminals in the background, neither of
+			 * which should slow down because something else is in front.
+			 */
+			backgroundThrottling: false,
 			// Read by the preload before the first frame, so the app never opens in the wrong theme.
 			additionalArguments: [`--ly-boot=${encodeURIComponent(JSON.stringify(bootTheme()))}`],
 		},

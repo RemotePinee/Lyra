@@ -4,6 +4,9 @@
  * The renderer can name any path it likes, so every handler here starts by asking whether the path
  * is inside a project the user actually opened. That check is the whole reason these are not just
  * `fs` calls in the renderer.
+ *
+ * The check hands back the *resolved* path and the handlers use that one, so what was verified and
+ * what is opened are the same string — see `resolveInside`.
  */
 
 import { ipcMain } from "electron";
@@ -12,12 +15,14 @@ import { join } from "node:path";
 import type { FileContents, FileEntry } from "../ipc-types.ts";
 
 export interface FilesIpcDeps {
-	insideAProject(target: string): boolean;
+	/** The path, normalised, if it lies in an open project — otherwise null. */
+	projectPath(target: string): string | null;
 }
 
-export function registerFilesIpc({ insideAProject }: FilesIpcDeps): void {
-	ipcMain.handle("files:list", async (_event, dir: string): Promise<FileEntry[]> => {
-		if (!insideAProject(dir)) return [];
+export function registerFilesIpc({ projectPath }: FilesIpcDeps): void {
+	ipcMain.handle("files:list", async (_event, raw: string): Promise<FileEntry[]> => {
+		const dir = projectPath(raw);
+		if (!dir) return [];
 		const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
 		const out = await Promise.all(
 			entries.map(async (entry) => {
@@ -35,8 +40,9 @@ export function registerFilesIpc({ insideAProject }: FilesIpcDeps): void {
 	/** Enough for any source file; past this it is generated output nobody reads in a panel. */
 	const FILE_READ_CAP = 512 * 1024;
 
-	ipcMain.handle("files:read", async (_event, path: string): Promise<FileContents | null> => {
-		if (!insideAProject(path)) return null;
+	ipcMain.handle("files:read", async (_event, raw: string): Promise<FileContents | null> => {
+		const path = projectPath(raw);
+		if (!path) return null;
 		const info = await stat(path).catch(() => null);
 		if (!info?.isFile()) return null;
 
@@ -56,8 +62,9 @@ export function registerFilesIpc({ insideAProject }: FilesIpcDeps): void {
 		};
 	});
 
-	ipcMain.handle("files:write", async (_event, path: string, text: string) => {
-		if (!insideAProject(path)) return { ok: false, error: "该路径不在已打开的项目内" };
+	ipcMain.handle("files:write", async (_event, raw: string, text: string) => {
+		const path = projectPath(raw);
+		if (!path) return { ok: false, error: "该路径不在已打开的项目内" };
 		try {
 			await writeFile(path, text, "utf8");
 			return { ok: true };

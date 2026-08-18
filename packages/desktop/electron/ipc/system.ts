@@ -10,7 +10,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { lyraHome } from "@lyra/core";
-import { ipcMain, shell } from "electron";
+import { clipboard, ipcMain, shell } from "electron";
 import { appIcon } from "../app-icon.ts";
 
 const execFileAsync = promisify(execFile);
@@ -42,4 +42,15 @@ export function registerSystemIpc(): void {
 	ipcMain.handle("system:platform", async () => process.platform);
 
 	ipcMain.handle("system:appIcon", async (_event, appName: string): Promise<string | null> => appIcon(appName));
+
+	/*
+	 * The clipboard, from here rather than from `navigator.clipboard`.
+	 *
+	 * Reading it in the renderer needs the `clipboard-read` permission, which nothing in this app
+	 * grants — so a paste item in a context menu would work under the dev server, where the
+	 * permission is waived, and quietly do nothing in the packaged app. Writing goes the same way
+	 * only so that both halves are one mechanism.
+	 */
+	ipcMain.handle("clipboard:read", async () => clipboard.readText());
+	ipcMain.handle("clipboard:write", async (_event, text: string) => clipboard.writeText(text));
 }

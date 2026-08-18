@@ -68,6 +68,21 @@ export interface FileEntry {
 	size: number;
 }
 
+/**
+ * What came of a create, rename, copy or delete.
+ *
+ * One shape for all of them so the panel has one thing to handle. `code` is what makes a failure
+ * actionable rather than merely reported: `exists` is the one the caller can retry after asking
+ * whether to replace, and the panel's replace prompt keys off exactly that.
+ */
+export interface FileOpResult {
+	ok: boolean;
+	/** What the operation produced: the file created, the path renamed to, the free name found. */
+	path?: string;
+	error?: string;
+	code?: "exists" | "denied" | "descendant" | "invalid";
+}
+
 export interface FileContents {
 	text: string;
 	/** True when the file was longer than the read cap and only its head is here. */

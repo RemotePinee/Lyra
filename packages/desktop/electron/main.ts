@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { spawn as spawnPty, type IPty } from "node-pty";
 import { app, BrowserWindow, protocol } from "electron";
 import {
@@ -60,7 +60,9 @@ import {
 	getOrCreateSession,
 	sessions,
 } from "./session-hub.ts";
+import { resolveInside } from "./file-ops.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
+import { registerFileOpsIpc } from "./ipc/file-ops.ts";
 import { rescueLegacyWorkspaces } from "./scratch.ts";
 import { applySettings, loadAppSettings, onSettingsChanged } from "./app-settings.ts";
 import { registerServicesIpc } from "./ipc/services.ts";
@@ -102,21 +104,28 @@ import { createTray, destroyTray, hasTray, type TrayCommand } from "./tray.ts";
 const BROWSER_PARTITION = "persist:ly-browser";
 
 /**
- * Whether a path is inside a project the user has opened.
+ * A path inside a project the user has opened, normalised — or null.
  *
  * The file panel exists to look at what you are working on. Without this check the renderer
  * could ask for any path on the disk, which is a materially different capability from the one
  * the panel advertises — and one the agent's own file tools gate behind approvals.
  *
- * Module scope because both the IPC handlers and the media protocol need it, and they must
+ * Module scope because the IPC handlers and the media protocol both need it, and they must
  * agree: a boundary enforced in one of two doorways is not a boundary.
  *
- * Compared with a trailing separator so `/work/app-secrets` cannot pass as `/work/app`.
+ * `resolveInside` returns the resolved path so callers do their IO against the string that was
+ * actually checked — see the note there on why comparing the raw one let `..` walk out.
  */
-function insideAProject(target: string): boolean {
-	return (settings?.projects ?? []).some(
-		(project) => target === project.path || target.startsWith(project.path + sep),
+function projectPath(target: string): string | null {
+	return resolveInside(
+		target,
+		(settings?.projects ?? []).map((project) => project.path),
 	);
+}
+
+/** The predicate form, for the doorways that only need a yes or no. */
+function insideAProject(target: string): boolean {
+	return projectPath(target) !== null;
 }
 
 /*
@@ -414,7 +423,8 @@ function registerIpc(): void {
 
 	registerSideChatIpc({ sideChats, sessions, settings: () => settings, ensureSession: (id: string) => ensureLiveSession(id), broadcastSideChat });
 
-	registerFilesIpc({ insideAProject });
+	registerFilesIpc({ projectPath });
+	registerFileOpsIpc({ projectPath });
 
 	registerTerminalIpc({ terminals, spawnPty, insideAProject, window: () => getWindow() });
 	registerUpdateIpc();

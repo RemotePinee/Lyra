@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { LyraApi } from "./ipc-types.ts";
 
 /**
@@ -126,6 +126,26 @@ const api: LyraApi = {
 		 * its case, and encoding it whole means a Windows `C:\` or a space survives too.
 		 */
 		mediaUrl: (path) => `ly-media://f/${encodeURIComponent(path)}`,
+		create: (dir, name, kind) => ipcRenderer.invoke("files:create", dir, name, kind),
+		rename: (from, to, overwrite) => ipcRenderer.invoke("files:rename", from, to, overwrite),
+		copy: (from, to, overwrite) => ipcRenderer.invoke("files:copy", from, to, overwrite),
+		trash: (paths) => ipcRenderer.invoke("files:trash", paths),
+		remove: (paths) => ipcRenderer.invoke("files:remove", paths),
+		uniquePath: (dir, name) => ipcRenderer.invoke("files:uniquePath", dir, name),
+		exists: (path) => ipcRenderer.invoke("files:exists", path),
+		importInto: (sources, dir) => ipcRenderer.invoke("files:import", sources, dir),
+		/*
+		 * The only thing in this bridge that is not an IPC call.
+		 *
+		 * `webUtils` lives in the preload and nowhere else, and a drop handler cannot await: by the
+		 * time a promise resolved the `DataTransfer` has been emptied. So the path is read here,
+		 * synchronously, and everything after it goes over IPC like the rest.
+		 */
+		pathForDrop: (file) => webUtils.getPathForFile(file),
+	},
+	clipboard: {
+		read: () => ipcRenderer.invoke("clipboard:read"),
+		write: (text) => ipcRenderer.invoke("clipboard:write", text),
 	},
 	terminal: {
 		create: (cwd, cols, rows) => ipcRenderer.invoke("terminal:create", cwd, cols, rows),

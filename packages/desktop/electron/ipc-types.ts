@@ -32,6 +32,7 @@ import type {
 	PullRequestDetail,
 	FileContents,
 	FileEntry,
+	FileOpResult,
 	ProviderTestResult,
 	PullRequestSummary,
 	RefDiff,
@@ -136,6 +137,45 @@ export interface LyraApi {
 		 * IPC — a 40MB clip would otherwise have to become a 55MB string first.
 		 */
 		mediaUrl(path: string): string;
+
+		/*
+		 * Changing files, not just reading them.
+		 *
+		 * Every one of these is confined to the open project the same way reading is, and every one
+		 * reports what happened as data — see `FileOpResult`. Implemented in `ipc/file-ops.ts`.
+		 */
+		create(dir: string, name: string, kind: "file" | "directory"): Promise<FileOpResult>;
+		/** Rename or move; the two are the same call with a different parent. */
+		rename(from: string, to: string, overwrite?: boolean): Promise<FileOpResult>;
+		copy(from: string, to: string, overwrite?: boolean): Promise<FileOpResult>;
+		/** To the OS trash, where it can be put back. */
+		trash(paths: string[]): Promise<FileOpResult>;
+		/** Permanently. Deliberately a different call from `trash`, not a flag on it. */
+		remove(paths: string[]): Promise<FileOpResult>;
+		/** A name nothing in `dir` uses yet — `report copy.md` — for duplicating and pasting. */
+		uniquePath(dir: string, name: string): Promise<FileOpResult>;
+		exists(path: string): Promise<boolean>;
+		/** Copy paths in from outside the app; only the destination is inside the project. */
+		importInto(sources: string[], dir: string): Promise<FileOpResult>;
+		/**
+		 * The path behind a dropped `File`.
+		 *
+		 * `File.path` was removed in Electron 32; `webUtils.getPathForFile` is what replaced it,
+		 * and it only exists in the preload. Synchronous, because a drop handler has to read the
+		 * transfer list before the event returns.
+		 */
+		pathForDrop(file: File): string;
+	};
+	/**
+	 * The system clipboard, for text.
+	 *
+	 * Through the main process rather than `navigator.clipboard`, whose read half needs a
+	 * permission prompt that never arrives in a packaged app — so paste in a context menu would
+	 * work in dev and silently do nothing once shipped.
+	 */
+	clipboard: {
+		read(): Promise<string>;
+		write(text: string): Promise<void>;
 	};
 	/** A real pseudo-terminal, one per tab. */
 	terminal: {
