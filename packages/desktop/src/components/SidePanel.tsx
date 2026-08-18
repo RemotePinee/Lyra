@@ -14,6 +14,7 @@
 import { Check } from "lucide-react";
 import { useLayout } from "../layout.tsx";
 import { useSide } from "../sideStore.ts";
+import { useAtWindowEdge } from "../usePanelLayout.ts";
 import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
 import { renderPanel, usePanelDefinitions } from "./panel/definitions.tsx";
 import { CARD_RADIUS, PANEL_INSET } from "./panel/geometry.ts";
@@ -25,17 +26,16 @@ export function SidePanel() {
 	const activeTab = useSide((s) => s.activeTab);
 	const openTab = useSide((s) => s.openTab);
 	const closeTab = useSide((s) => s.closeTab);
-	const expanded = useSide((s) => s.expanded);
 	const { compact, navOpen, nativeFullScreen, toggleNav } = useLayout();
 	const adder = usePopover();
 	const definitions = usePanelDefinitions();
 
 	/*
-	 * True when this panel's left edge is the window's left edge, which is the only time the
-	 * window's controls are over the tab strip: compact covers the whole window, and full screen
-	 * reaches the edge as soon as the sidebar is out of the way.
+	 * True when this panel's left edge *is* the window's left edge — which is the only time the
+	 * window's controls belong in the tab strip, and is not true for the fifth of a second the
+	 * panel spends travelling there. See `useAtWindowEdge`.
 	 */
-	const atWindowEdge = compact || (expanded && !navOpen);
+	const atWindowEdge = useAtWindowEdge();
 
 	return (
 		// One inset for both layouts: the corner geometry only works out at this value.

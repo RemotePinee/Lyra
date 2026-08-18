@@ -24,21 +24,31 @@ const CARD_BORDER = 1;
 export const TAB_RADIUS = CARD_RADIUS - CARD_BORDER - PANEL_INSET;
 
 /**
- * Room the traffic lights need, measured from the tab strip's own left edge.
+ * Where the first window control sits, measured from the *window's* left edge.
  *
- * Only the lights. The three toolbar buttons that follow them are rendered by the strip itself
- * when it comes to the window's edge, so they take their space in the flow rather than needing it
- * reserved.
+ * The three lights are 12pt wide on a 20pt pitch starting at x=16, so they end at 68.5; 78 leaves
+ * the ~10pt gap the reference screenshots have, and 70 put the button flush against the green one.
  *
- * 83, not the 69 the nominal geometry gives (three 12pt lights on a 20pt pitch from x=16). Those
- * numbers are what macOS documents, not what it draws: the rendered group runs several points
- * wider, and there is no API to ask. Being a few points generous costs nothing; being a few points
- * short clips the first control.
+ * One number, shared with the toolbar, because the toolbar and the tab strip take turns drawing
+ * this exact row — the panel hosts it once its left edge is the window's — and they were answering
+ * the same question with 78 and 88. Ten pixels is small enough to look like a rendering wobble and
+ * large enough to see, which is the worst size for a handover to be off by.
+ */
+export const WINDOW_CONTROLS_LEFT = 78;
+
+/** How far the card's content starts inside the pane: the inset it draws, plus its border. */
+const CARD_OFFSET = PANEL_INSET + CARD_BORDER;
+
+/**
+ * The same place, expressed as padding on the strip, which begins `CARD_OFFSET` in.
+ *
+ * Only the lights are reserved for. The toolbar buttons that follow them are rendered by the strip
+ * itself, so they take their space in the flow.
  *
  * Dropped entirely in native full screen, where macOS takes the lights away — the inset would then
  * be holding a gap open around nothing.
  */
-export const TRAFFIC_LIGHT_INSET = 83;
+export const TRAFFIC_LIGHT_INSET = WINDOW_CONTROLS_LEFT - CARD_OFFSET;
 
 /** macOS puts its window controls top-left; Windows and Linux put theirs on the right. */
 export const MAC = navigator.userAgent.includes("Mac");

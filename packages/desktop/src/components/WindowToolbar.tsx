@@ -8,18 +8,13 @@
  */
 
 import { Maximize2, Minimize2 } from "lucide-react";
+import { WINDOW_CONTROLS_LEFT } from "./panel/geometry.ts";
 import { RightPanelIcon } from "./RightPanelIcon.tsx";
 import { ToolbarButton, WindowControls } from "./WindowControls.tsx";
 import { UpdateBadge } from "./UpdateBadge.tsx";
 
-/**
- * Left offset of the first toolbar button, when there are traffic lights to clear.
- *
- * The three lights are 12pt wide on a 20pt pitch starting at x=16, so they end at 68.5. Starting
- * at 78 leaves the ~10pt gap the reference screenshots have; 70 put the button flush against the
- * green light.
- */
-const TOOLBAR_LEFT = 78;
+/** Left offset of the first toolbar button, when there are traffic lights to clear. */
+const TOOLBAR_LEFT = WINDOW_CONTROLS_LEFT;
 
 /**
  * And where it goes when there are none.

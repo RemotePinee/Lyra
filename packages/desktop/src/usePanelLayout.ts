@@ -17,7 +17,7 @@
  * around 200px, where a sentence wraps every four characters.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLayout } from "./layout.tsx";
 import { useSide } from "./sideStore.ts";
 
@@ -33,6 +33,40 @@ const CONTENT_MIN = 420;
  */
 const CHAT_PEEK = 120;
 
+/** Matches `--ly-t-base`; the panel is where it is going one beat after it is told to go there. */
+const SLIDE_MS = 220;
+
+/**
+ * Whether the panel's left edge *is* the window's left edge — not whether it is on its way there.
+ *
+ * The two used to be the same value, and the handover of the window's own buttons was tied to it:
+ * the moment full screen was asked for, the toolbar's copy unmounted and the panel's tab strip
+ * grew its own. But the panel was still 479px away at that instant, so the buttons appeared riding
+ * its edge and swept 450px leftwards over the next fifth of a second. That sweep is most of what
+ * reads as the transition being broken.
+ *
+ * Arriving is delayed by exactly the slide; leaving is not, because the corner is uncovered on the
+ * first frame out. Seeded from the current value so a window that opens already covered does not
+ * play a handover it has no business playing.
+ */
+export function useAtWindowEdge(): boolean {
+	const { compact, navOpen } = useLayout();
+	const expanded = useSide((s) => s.expanded);
+	const target = compact || (expanded && !navOpen);
+	const [settled, setSettled] = useState(target);
+
+	useEffect(() => {
+		if (!target) {
+			setSettled(false);
+			return;
+		}
+		const id = window.setTimeout(() => setSettled(true), SLIDE_MS);
+		return () => window.clearTimeout(id);
+	}, [target]);
+
+	return settled;
+}
+
 export function usePanelLayout() {
 	const {
 		compact,
@@ -46,6 +80,8 @@ export function usePanelLayout() {
 	} = useLayout();
 	const panelOpen = useSide((s) => s.panelOpen);
 	const expanded = useSide((s) => s.expanded);
+	/** Settled, not requested — see `useAtWindowEdge`. Both sides of the handover read this one. */
+	const atWindowEdge = useAtWindowEdge();
 
 	/**
 	 * Full-screen: the panel takes the conversation's whole column.
@@ -77,10 +113,8 @@ export function usePanelLayout() {
 	 * Clamping here rather than writing the smaller number back keeps it a preference. Widen the
 	 * window again and the sidebar returns to what it was, because nothing overwrote it.
 	 */
-	const sidebarActual =
-		navOpen && !compact
-			? Math.max(bounds.sidebar.min, Math.min(sidebarWidth, width - CONTENT_MIN - panelReserve))
-			: 0;
+	const sidebarDrawn = Math.max(bounds.sidebar.min, Math.min(sidebarWidth, width - CONTENT_MIN - panelReserve));
+	const sidebarActual = navOpen && !compact ? sidebarDrawn : 0;
 
 	const available = width - sidebarActual;
 
@@ -109,7 +143,7 @@ export function usePanelLayout() {
 	 * away. In every other layout something of the window is still up there and they stay in the
 	 * toolbar. Exactly one of the two renders them, so they never double up.
 	 */
-	const panelHostsControls = panelOpen && (compact || (fullScreen && !navOpen));
+	const panelHostsControls = panelOpen && atWindowEdge;
 
 	/**
 	 * Opening the panel puts the sidebar away when all three cannot fit.
@@ -149,8 +183,17 @@ export function usePanelLayout() {
 		panelLayoutWidth,
 		/** Whether it is currently lying over the conversation rather than beside it. */
 		panelOverlays: panelWidth > panelLayoutWidth,
-		/** The clamped width to render the sidebar at — see `sidebarActual`. */
+		/** What the row reserves for it: the clamped width while it is open, nothing while it is not. */
 		sidebarWidth: sidebarActual,
+		/**
+		 * The clamped width to *draw* it at, which it keeps even while closed.
+		 *
+		 * A closed sidebar slides out; it does not shrink. Handing the pane a width of zero left it
+		 * with nothing to slide, so `marginLeft: -0` moved it nowhere and it simply stopped existing
+		 * between one frame and the next — opening it was the same jump in reverse. Reserving nothing
+		 * in the row is the frame's job, and it does that with the negative margin.
+		 */
+		sidebarDrawn,
 		/**
 		 * The most the resize handle may give it.
 		 *

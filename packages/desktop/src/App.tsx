@@ -106,7 +106,7 @@ function ChatShell() {
 	const toggleExpanded = useSide((s) => s.toggleExpanded);
 	const attach = useSide((s) => s.attach);
 
-	const { panelWidth, panelLayoutWidth, panelMax, sidebarWidth, sidebarMax, fullScreen, panelHostsControls, openPanel } =
+	const { panelWidth, panelLayoutWidth, panelMax, sidebarWidth, sidebarDrawn, sidebarMax, fullScreen, panelHostsControls, openPanel } =
 		usePanelLayout();
 
 	/*
@@ -149,7 +149,7 @@ function ChatShell() {
 
 	return (
 		<div className="ly-shell relative flex h-full overflow-hidden">
-			<NavPane width={sidebarWidth} maxWidth={sidebarMax} label="侧边栏">
+			<NavPane width={sidebarDrawn} maxWidth={sidebarMax} label="侧边栏">
 				<Sidebar />
 			</NavPane>
 

@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ResizeHandle } from "./components/ResizeHandle.tsx";
 import { useFocusTrap, useLayout } from "./layout.tsx";
+import { paneWidth, rowReserve } from "./pane-geometry.ts";
 
 /**
  * The shell's navigation pane, in whichever form the window can afford.
@@ -228,73 +229,84 @@ export function SidePane({
 			 * that resolved to white, which read as a rendering glitch rather than as an entrance.
 			 * Sliding alone is also simply the truer gesture: the panel arrives from the edge.
 			 *
-			 * Beside the content the sliding belongs to the frame below, which is what carries the
-			 * reserved width. This one carries its *drawn* width and hangs off the frame's right
-			 * edge, so the two differ by exactly how far it reaches over the conversation.
+			 * It slides itself out in both forms. Closing used to be the frame's job — a negative
+			 * margin that dragged the pane off with it — which only worked while the pane was laid out
+			 * inside the frame, and it no longer is: the frame holds space in the row and nothing else.
 			 */
-			style={
-				covering
-					? {
-							// Right-anchored like the other form, so only the width differs between them.
-							width: compact ? "100%" : `calc(100% - ${offset}px)`,
-							transform: open ? "none" : "translateX(100%)",
-						}
-					: { width }
-			}
+			style={{
+				// Right-anchored in both forms, so the only thing that differs between them is a width.
+				width: paneWidth({ compact, fullScreen, width, offset }),
+				transform: open ? "none" : "translateX(100%)",
+			}}
 		>
 			{children}
 		</aside>
 	);
 
 	const reserved = layoutWidth ?? width;
-	/** How far the pane's left edge sits beyond the frame's, which is where the handle belongs. */
-	const overhang = width - reserved;
+	/**
+	 * What the row gives up to the panel — which full screen does not change.
+	 *
+	 * Full screen means the panel is laid *over* the conversation, not that the conversation is
+	 * squeezed away; the whole reason it covers rather than collapses is that a transcript reflowed
+	 * to nothing and back loses its wrapping and its scroll position. Releasing the reserved width on
+	 * the way in released exactly that: the column re-laid itself out at full width in a single frame
+	 * while the panel was still 120px short of covering it, so entering full screen showed a strip of
+	 * freshly re-wrapped conversation, and leaving it showed the same strip snap back. That strip is
+	 * the flicker.
+	 *
+	 * Holding the width steady means neither transition touches the row at all. The panel widens over
+	 * a column that does not move, and narrows off one that is exactly where it was left.
+	 */
+	const held = rowReserve({ open, compact, reserved });
 
 	/*
-	 * The frame is always rendered, even when it reserves nothing.
+	 * The frame is a spacer, and only a spacer.
 	 *
-	 * It used to be skipped while covering — `if (covering) return pane` — which put the pane at a
-	 * different depth in the tree depending on the form. React cannot reconcile those two as the same
-	 * element, so switching to full screen unmounted the pane and mounted a new one: every transition
-	 * on it was moot, because a transition belongs to an element and this was a different element.
-	 * That is what made the expand button snap.
+	 * It was `display: contents` while covering, which is what kept the pane at one depth in the tree
+	 * — React reconciles by position, and a pane that changes depth is unmounted and remounted,
+	 * taking every transition on it with it. A width of zero keeps the depth just as well and has the
+	 * property `contents` could never have: zero is a number, and numbers interpolate.
 	 *
-	 * `display: contents` makes the frame take part in nothing while covering — no box, no width, no
-	 * effect on the row — while keeping the pane in one place in the tree. Same node throughout.
+	 * Deliberately not positioned. The pane is `absolute` against the shell in both forms, so its
+	 * `100%` is the window in both forms; a `relative` frame would make itself the containing block,
+	 * and `calc(100% - offset)` would then resolve against a box that is sometimes zero wide.
 	 */
 	return (
 		<div
-			className={
-				covering
-					? "contents"
-					: `relative z-50 shrink-0 ${
-							snap ? "transition-none" : "transition-[margin-right,width] duration-[var(--ly-t-base)] ease-out"
-						}`
-			}
-			style={covering ? undefined : { width: reserved, marginRight: open ? 0 : -reserved }}
+			className={`shrink-0 ${snap ? "transition-none" : "transition-[width] duration-[var(--ly-t-base)] ease-out"}`}
+			style={{ width: held }}
 		>
 			{pane}
 
 			{/*
 			 * A zero-width rail on the pane's left edge, for the handle to be positioned against.
 			 *
-			 * The handle knows how to straddle the edge of whatever contains it, and while the panel
-			 * is beside the conversation that edge is the frame's. Once it overlaps, the two part
-			 * company — the frame stops where the conversation's floor is, the pane carries on past
-			 * it — and a handle still pinned to the frame would sit in the middle of the panel it is
-			 * supposed to be the boundary of. Pinning it to a rail that tracks the overhang keeps it
-			 * on the seam in both modes, with no second set of rules for the second mode.
+			 * Measured from the window's right edge rather than the frame's, because those two stopped
+			 * being the same thing: past the point where the conversation reaches its floor the frame
+			 * stops growing and the pane carries on, and a handle pinned to the frame would sit in the
+			 * middle of the panel it is supposed to be the boundary of. The pane's drawn width is that
+			 * distance in both cases, with no second rule for the second one.
 			 */}
-			{handle && (
-				<div
-					className={`absolute inset-y-0 w-0 ${
-						snap ? "transition-none" : "transition-[left] duration-[var(--ly-t-base)] ease-out"
-					}`}
-					style={{ left: -overhang }}
-				>
-					{handle}
-				</div>
-			)}
+			<div
+				className={`absolute inset-y-0 w-0 ${
+					snap ? "transition-none" : "transition-[right] duration-[var(--ly-t-base)] ease-out"
+				}`}
+				/*
+				 * The same expression as the pane's width, so the rail is on the pane's edge on every
+				 * frame rather than only on the last one.
+				 *
+				 * The handle itself comes and goes — there is no seam to drag while the panel covers
+				 * the column — and the rail used to come and go with it. Mounting fresh meant it had no
+				 * previous value to animate from, so on the way out of full screen it appeared at once
+				 * at the edge the panel was still 120px away from reaching: a `col-resize` strip inside
+				 * the panel for the length of the transition. Keeping the rail and letting the handle be
+				 * the thing that appears costs an empty zero-width div and nothing else.
+				 */
+				style={{ right: covering ? `calc(100% - ${compact ? 0 : offset}px)` : width }}
+			>
+				{handle}
+			</div>
 		</div>
 	);
 }
