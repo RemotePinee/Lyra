@@ -504,12 +504,15 @@ test("a toast goes on its own once nothing is holding it", async () => {
 	assert.equal(gone.later, 0, "it is still there, so nothing would ever clear a stack of them");
 });
 
-test("the tree and the file are a pair: side by side, and full screen together", async () => {
+test("the tree and the file are a pair: stacked together, side by side full screen", async () => {
 	/*
 	 * They are one tool between them — a tree with nothing open is a list, and a file with no tree
-	 * is one file you cannot leave. So the file opens *beside* the tree rather than wherever new
+	 * is one file you cannot leave. So the file opens *against* the tree rather than wherever new
 	 * panes go, and making either full screen brings the other: the point of enlarging a file is to
 	 * read it properly, which is no use if you then cannot reach the next one.
+	 *
+	 * Stacked while they share a column, because splitting a column again leaves a tree too narrow
+	 * for a filename. Side by side once they have the dock to themselves.
 	 */
 	await openFilePanel();
 	await ui(`
@@ -519,18 +522,22 @@ test("the tree and the file are a pair: side by side, and full screen together",
 		await wait(700);
 	`);
 
-	const beside = await app.evaluate<Record<string, { left: number; top: number; width: number }>>(`(() => {
+	const beside = await app.evaluate<Record<string, { left: number; top: number; width: number; height: number }>>(`(() => {
 		const out = {};
 		for (const el of document.querySelectorAll("[data-dock-pane]")) {
 			if (getComputedStyle(el).display === "none") continue;
 			const b = el.getBoundingClientRect();
-			out[el.dataset.dockPane] = { left: b.left, top: b.top, width: b.width };
+			out[el.dataset.dockPane] = { left: b.left, top: b.top, width: b.width, height: b.height };
 		}
 		return out;
 	})()`);
 	assert.ok(beside.files && beside.file, "both are open");
-	assert.ok(beside.file.left > beside.files.left, "the file is to the right of the tree");
-	assert.ok(Math.abs(beside.file.top - beside.files.top) < 2, "and on the same row, not stacked under it");
+	assert.ok(Math.abs(beside.file.left - beside.files.left) < 2, "the file is in the tree's column");
+	assert.ok(beside.file.top > beside.files.top, "under it, rather than beside it in a narrower column");
+	assert.ok(
+		Math.abs(beside.file.height - beside.files.height) < 4,
+		`and evenly, since you are looking at both: ${Math.round(beside.files.height)} / ${Math.round(beside.file.height)}`,
+	);
 
 	// Full screen from the file's own header.
 	const maximise = `(async () => {
@@ -540,7 +547,7 @@ test("the tree and the file are a pair: side by side, and full screen together",
 	})()`;
 	await app.evaluate(maximise);
 
-	const full = await app.evaluate<{ visible: string[]; span: number; dock: number; files: number; file: number }>(`(() => {
+	const full = await app.evaluate<{ visible: string[]; span: number; dock: number; files: number; file: number; side: boolean }>(`(() => {
 		const visible = [];
 		const width = {};
 		let left = Infinity;
@@ -554,7 +561,15 @@ test("the tree and the file are a pair: side by side, and full screen together",
 			right = Math.max(right, b.right);
 		}
 		const dock = document.querySelector("[data-dock-panes]").getBoundingClientRect();
-		return { visible, span: right - left, dock: dock.width, files: width.files ?? 0, file: width.file ?? 0 };
+		const boxes = ["files", "file"].map((k) => document.querySelector('[data-dock-pane="' + k + '"]').getBoundingClientRect());
+		return {
+			visible,
+			span: right - left,
+			dock: dock.width,
+			files: width.files ?? 0,
+			file: width.file ?? 0,
+			side: Math.abs(boxes[0].top - boxes[1].top) < 2 && boxes[1].left > boxes[0].left,
+		};
 	})()`);
 	assert.deepEqual(full.visible.sort(), ["file", "files"], "the pair fills the dock, and nothing else is drawn");
 	assert.ok(Math.abs(full.span - full.dock) < 4, "between them they cover it");

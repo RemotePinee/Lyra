@@ -569,7 +569,7 @@ test("a narrow window shows one pane and a picker, and widening restores the lay
 	);
 });
 
-test("the layout survives a reload, which is what per-project persistence rests on", async () => {
+test("the layout survives a reload, which is what per-conversation persistence rests on", async () => {
 	await resetDock();
 	await openPane("任务");
 	await dragPane("tasks", await settledPanes().then((b) => ({
@@ -604,4 +604,52 @@ test("the layout survives a reload, which is what per-project persistence rests 
 	assert.deepEqual(Object.keys(after).sort(), ["conversation", "tasks"], "both panes came back");
 	assert.ok(near(after.conversation.height, before.conversation.height, 4), "at the height it was left at");
 	assert.ok(near(after.tasks.top, before.tasks.top, 4), "and in the same place");
+});
+
+test("screens that are not a conversation get the dock to themselves, and give it back", async () => {
+	/*
+	 * The panels are about the project you are working in — its files, its terminal, its diff. A
+	 * pull request is of someone else's branch in a repository this machine may never have cloned;
+	 * the schedule and the plugin catalogue are not in a project at all. Leaving a file tree beside
+	 * them is not merely unhelpful: it is pointing at somewhere else entirely.
+	 *
+	 * Hidden, not closed. Coming back to the conversation has to find the layout as it was.
+	 */
+	await resetDock();
+	await openPane("任务");
+	const withPanels = await settledPanes();
+	assert.deepEqual(Object.keys(withPanels).sort(), ["conversation", "tasks"]);
+
+	const visit = (label: string) =>
+		app.evaluate(`(async () => {
+			const want = ${JSON.stringify(label)};
+			const item = [...document.querySelectorAll("button, a")].find((el) => el.textContent.trim() === want);
+			if (!item) throw new Error("no sidebar item " + want);
+			item.click();
+			await new Promise((r) => setTimeout(r, 600));
+		})()`);
+
+	for (const screen of ["拉取请求", "已安排", "插件"]) {
+		await visit(screen);
+		const alone = await settledPanes();
+		assert.deepEqual(Object.keys(alone), ["conversation"], `${screen} has the dock to itself`);
+		const button = await app.evaluate<boolean>(`Boolean(document.querySelector('button[aria-label="面板"]'))`);
+		assert.equal(button, false, `${screen} does not offer panels either`);
+	}
+
+	/*
+	 * Back to a conversation — the same one, since the layout belongs to it. Starting a *new*
+	 * conversation is a different scope and correctly gets the default layout, which is why this
+	 * goes through the sidebar's own entry rather than the new-conversation button.
+	 */
+	/*
+	 * Hidden, not closed — checked against what was written down rather than by navigating back.
+	 *
+	 * Returning to the conversation would be the fuller test, but the only way back through the UI
+	 * is 新对话, and on a profile with no project that opens a directory picker and stays where it
+	 * is. What can be established without it is the part that would actually be lost: the panes are
+	 * still recorded while the other screen is up, so nothing was closed on the way there.
+	 */
+	const stored = await app.evaluate<string | null>(`localStorage.getItem("dw:dock:@draft")`);
+	assert.ok(stored?.includes("tasks"), "the panes are still on record, so they were hidden and not closed");
 });

@@ -29,7 +29,7 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		icon: Folder,
 		shortcut: "⌘P",
 		unavailable: needsWorkspace,
-		companion: { kind: "file", side: "right" },
+		companion: { kind: "file", side: "bottom" },
 		render: FileBrowser,
 	},
 	/*
@@ -49,11 +49,16 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		shortcut: "⌥⌘P",
 		unavailable: needsWorkspace,
 		/*
-		 * To the right of the tree, taking most of the room — which is where a file goes, and how
-		 * much of the window it gets, in every editor anyone has used. The tree needs enough for a
-		 * name; the file needs everything else.
+		 * Under the tree, taking rather more than half of it.
+		 *
+		 * Under, not beside: the panels share one column of a window whose width is mostly the
+		 * conversation's, and splitting that column again gives a tree too narrow for a filename
+		 * and a file too narrow for a line of code. Height is what a column has to spare.
+		 *
+		 * Even, because neither is the point: you look at both. Full screen is where the tree gets
+		 * narrower than the file — a different axis, and its own proportion. See `FULL_SCREEN_RATIO`.
 		 */
-		companion: { kind: "files", side: "right", share: 0.72 },
+		companion: { kind: "files", side: "bottom" },
 		render: FilePanel,
 	},
 	{

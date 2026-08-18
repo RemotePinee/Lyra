@@ -1,11 +1,14 @@
 /**
- * Remembering the layout, per project.
+ * Remembering the layout, per conversation.
  *
- * Per project because the shape of the work differs: a codebase wants the terminal and the diff
- * open, a writing project wants the plan, and carrying one arrangement into the other means
- * rebuilding it by hand on every switch. `localStorage` for the same reason the pane widths use
- * it — this is a per-window preference, and reading it synchronously on the first render is what
- * stops the dock painting the default layout for a frame before the saved one arrives.
+ * Per conversation rather than per project, because that is the grain the work actually has: one
+ * conversation is debugging and wants the terminal and the diff, the next is reading and wants the
+ * file tree, and they are frequently in the same repository. Sharing one arrangement across a
+ * project meant every switch either carried the wrong panes along or had to be rebuilt by hand.
+ *
+ * `localStorage` for the same reason the pane widths use it — this is a per-window preference, and
+ * reading it synchronously on the first render is what stops the dock painting the default layout
+ * for a frame before the saved one arrives.
  *
  * Everything that comes back out of storage is treated as hostile. It may have been written by an
  * older version, may name a panel that no longer exists, may have been hand-edited, and may not
@@ -28,7 +31,13 @@ const VERSION = 1;
  */
 const SAVE_DELAY = 120;
 
-export const storageKey = (workspace: string | null | undefined): string => `dw:dock:${workspace || "@scratch"}`;
+/**
+ * Where one conversation's layout is kept.
+ *
+ * `@draft` covers the conversation that has not been sent yet and so has no id — see `adopt`,
+ * which hands that layout over the moment one is assigned rather than letting it be forgotten.
+ */
+export const storageKey = (session: string | null | undefined): string => `dw:dock:${session || "@draft"}`;
 
 /**
  * Rebuild a tree from unknown data, dropping whatever cannot be trusted.

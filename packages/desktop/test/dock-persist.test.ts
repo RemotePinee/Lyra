@@ -39,12 +39,14 @@ test("a layout survives being written and read back exactly", () => {
 	assert.deepEqual(roundTrip(tree), tree);
 });
 
-test("the key is per project, and project-less sessions share one of their own", () => {
-	assert.equal(storageKey("/Users/me/code/lyra"), "dw:dock:/Users/me/code/lyra");
-	assert.notEqual(storageKey("/a"), storageKey("/b"));
-	assert.equal(storageKey(null), "dw:dock:@scratch");
-	assert.equal(storageKey(undefined), "dw:dock:@scratch");
-	assert.equal(storageKey(""), "dw:dock:@scratch", "an empty path is not a project either");
+test("the key is per conversation, and the unsent one has a key of its own", () => {
+	assert.equal(storageKey("s-1a2b"), "dw:dock:s-1a2b");
+	assert.notEqual(storageKey("s-a"), storageKey("s-b"), "two conversations do not share a layout");
+	// No id yet means the conversation has not been sent. `adopt` hands this layout over to the
+	// real key the moment one is assigned, so arranging panes before the first message is not lost.
+	assert.equal(storageKey(null), "dw:dock:@draft");
+	assert.equal(storageKey(undefined), "dw:dock:@draft");
+	assert.equal(storageKey(""), "dw:dock:@draft", "an empty id is not a conversation either");
 });
 
 test("anything that is not a tree falls back to the default layout", () => {

@@ -24,6 +24,7 @@ import {
 	pathTo,
 	remove,
 	resize,
+	type Axis,
 	type DockNode,
 	type DropAt,
 	type DropSide,
@@ -68,9 +69,16 @@ interface DockState {
 	 * number. Deriving it from the tree instead means clamping against a row that also holds the
 	 * conversation, and a boundary that barely moves.
 	 */
-	maximized: { panes: PaneKind[]; ratio: number } | null;
+	maximized: { panes: PaneKind[]; ratio: number; axis: Axis } | null;
+	/**
+	 * The pair's split while full screen has it on the *other* axis from the dock.
+	 *
+	 * Kept here rather than in the tree, which only has room for one number per boundary and is
+	 * already holding the one for the axis the panes actually live on.
+	 */
+	crossRatio: number;
 	drag: DragState | null;
-	/** The project this tree belongs to, so switching saves the old one under the right key. */
+	/** The conversation this tree belongs to, so switching saves the old one under the right key. */
 	scope: string | null;
 	/**
 	 * Whether `adopt` has ever run.
@@ -107,13 +115,15 @@ interface DockState {
 	toggleMaximized(kind: PaneKind, partner?: PaneKind): void;
 	/** Move the boundary inside a maximised pair. The first pane's share of the two. */
 	setMaximizedRatio(ratio: number): void;
+	/** Tell the store which way the pair ended up being split, which only the renderer knows. */
+	setMaximizedAxis(axis: Axis): void;
 	reset(): void;
 
 	beginDrag(drag: DragState): void;
 	dragTo(pointer: { x: number; y: number }, at: DropAt | null): void;
 	endDrag(cancelled?: boolean): void;
 
-	/** Point the dock at a project, saving whatever the last one had. */
+	/** Point the dock at a conversation, saving whatever the last one had. */
 	adopt(scope: string | null, allowed: PaneKind[]): void;
 }
 
@@ -157,6 +167,16 @@ function withShare(tree: DockNode, kind: PaneKind | null, share: number | undefi
 
 /** How small either half of a maximised pair may get, as a share of the two. */
 const PAIR_MIN = 0.15;
+
+/**
+ * How a pair divides the dock when full screen turns it on its side.
+ *
+ * A tree and a file stacked in a column open even — you are looking at both. Laid side by side
+ * they are an editor, and an editor gives the tree a column and the file the rest. The two are
+ * different numbers about different axes, so they are remembered separately: writing one into the
+ * other is not remembering a size, it is overwriting a different one.
+ */
+const FULL_SCREEN_RATIO = 0.3;
 
 /**
  * The boundary between two adjacent panes, named the way `resize` needs it.
@@ -227,6 +247,7 @@ export const useDock = create<DockState>((set, get) => {
 		tree: defaultTree(),
 		focused: "conversation",
 		maximized: null,
+		crossRatio: FULL_SCREEN_RATIO,
 		drag: null,
 		scope: null,
 		adopted: false,
@@ -316,7 +337,27 @@ export const useDock = create<DockState>((set, get) => {
 			// one. Ordered by the tree so it reads the way the panes are laid out.
 			const together = partner && has(tree, partner) && areAdjacent(tree, kind, partner);
 			const panes = together ? kinds(tree).filter((each) => each === kind || each === partner) : [kind];
-			set({ maximized: { panes, ratio: ratioOf(tree, panes) } });
+			// The axis is provisional: the renderer decides it from how much room there is, and
+			// says so. Seeded from the tree so the first frame is not a guess.
+			const seam = seamOf(tree, panes);
+			const split = seam && nodeAt(tree, seam.path);
+			const axis: Axis = split?.type === "split" ? split.dir : "row";
+			set({ maximized: { panes, ratio: ratioOf(tree, panes), axis } });
+		},
+
+		/**
+		 * The renderer decides the axis — it is the only thing that knows how much room there is —
+		 * and turning the pair on its side changes which remembered proportion applies.
+		 */
+		setMaximizedAxis: (axis) => {
+			const { maximized, tree, crossRatio } = get();
+			if (!maximized || maximized.axis === axis) return;
+			const seam = seamOf(tree, maximized.panes);
+			const split = seam && nodeAt(tree, seam.path);
+			const docked = split?.type === "split" ? split.dir : axis;
+			// Back on the panes' own axis, the tree's own split is the answer; across it, the
+			// proportion this pair was last given on that axis.
+			set({ maximized: { ...maximized, axis, ratio: axis === docked ? ratioOf(tree, maximized.panes) : crossRatio } });
 		},
 
 		setMaximizedRatio: (ratio) => {
@@ -329,8 +370,12 @@ export const useDock = create<DockState>((set, get) => {
 		/**
 		 * Leave full screen, keeping whatever the boundary was dragged to.
 		 *
-		 * Written back scaled: the pair filled the dock and now goes back to holding part of a row,
-		 * so the ratio between them is preserved rather than the numbers.
+		 * Written back scaled: the pair filled the dock and now holds part of a row again, so what
+		 * is preserved is the ratio between them rather than the numbers.
+		 *
+		 * Only when the axis matches. Full screen puts a stacked pair side by side, and how wide
+		 * you made the tree there says nothing about how tall you want it back in its column —
+		 * writing one into the other is not remembering a size, it is overwriting a different one.
 		 */
 		restore: () => {
 			const { tree, maximized } = get();
@@ -341,6 +386,12 @@ export const useDock = create<DockState>((set, get) => {
 			if (!seam) return;
 			const split = nodeAt(tree, seam.path);
 			if (split?.type !== "split") return;
+			// Across the panes' own axis there is nowhere in the tree to put it, so it is kept for
+			// the next time full screen turns them that way.
+			if (split.dir !== maximized.axis) {
+				set({ crossRatio: maximized.ratio });
+				return;
+			}
 			const pair = (split.sizes[seam.index] ?? 0) + (split.sizes[seam.index + 1] ?? 0);
 			const next = resize(tree, seam.path, seam.index, maximized.ratio * pair, MIN_FRACTION * pair);
 			set({ tree: next });
@@ -372,10 +423,26 @@ export const useDock = create<DockState>((set, get) => {
 		},
 
 		adopt: (scope, allowed) => {
-			if (get().adopted && get().scope === scope) return;
-			// The outgoing project's pending write must land under its own key, before the key
-			// changes — otherwise its layout is saved as the incoming project's.
+			const { adopted, scope: leaving, tree } = get();
+			if (adopted && leaving === scope) return;
+			// The outgoing conversation's pending write must land under its own key, before the key
+			// changes — otherwise its layout is saved as the incoming one's.
 			flushTree();
+
+			/*
+			 * A draft that has just been given an id keeps the layout it was arranged with.
+			 *
+			 * The panes are opened while the conversation is still unsent — that is when you set up
+			 * to work — and it gets its id the moment the first message is stored. Reading the new
+			 * key there would find nothing and reset the dock, throwing away an arrangement made
+			 * seconds earlier.
+			 */
+			if (adopted && scope && leaving === null) {
+				set({ scope, drag: null });
+				save(scope, tree);
+				return;
+			}
+
 			const stored = readTree(storageKey(scope), allowed);
 			set({
 				scope,

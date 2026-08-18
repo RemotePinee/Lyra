@@ -123,19 +123,28 @@ function useMainPane() {
 	const messages = useApp((s) => s.messages);
 	const loadingSession = useApp((s) => s.loadingSession);
 
+	/*
+	 * `solo` marks the screens that are not a conversation in a project.
+	 *
+	 * The panels are all about the project you are working in — its files, its terminal, its diff.
+	 * A pull request is of someone else's branch in a repository this machine may never have
+	 * cloned; the schedule and the plugin catalogue are not in a project at all. So the panes are
+	 * not merely empty on those screens, they are about somewhere else, and they step aside.
+	 */
 	if (view === "pull-requests") {
-		return { title: "拉取请求", icon: <GitPullRequest size={12.5} strokeWidth={1.8} />, body: <PullRequestsView /> };
+		return { title: "拉取请求", icon: <GitPullRequest size={12.5} strokeWidth={1.8} />, body: <PullRequestsView />, solo: true };
 	}
 	if (view === "plugins") {
-		return { title: "插件", icon: <Puzzle size={12.5} strokeWidth={1.8} />, body: <PluginsView /> };
+		return { title: "插件", icon: <Puzzle size={12.5} strokeWidth={1.8} />, body: <PluginsView />, solo: true };
 	}
 	if (view === "scheduled") {
-		return { title: "计划任务", icon: <CalendarClock size={12.5} strokeWidth={1.8} />, body: <ScheduledView /> };
+		return { title: "计划任务", icon: <CalendarClock size={12.5} strokeWidth={1.8} />, body: <ScheduledView />, solo: true };
 	}
 	return {
 		title: sessionTitle(meta?.title),
 		icon: <MessageSquare size={12.5} strokeWidth={1.8} />,
 		body: messages.length > 0 ? <Conversation /> : loadingSession ? <ConversationSkeleton /> : <EmptyState />,
+		solo: false,
 	};
 }
 
@@ -190,7 +199,9 @@ function ChatShell() {
 				<DockView
 					title={main.title}
 					icon={main.icon}
-					actions={<PanelMenu />}
+					// No panel controls on a screen the panels do not belong to.
+					actions={main.solo ? undefined : <PanelMenu />}
+					solo={main.solo}
 					renderConversation={() => main.body}
 				/>
 			</main>

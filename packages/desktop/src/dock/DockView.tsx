@@ -14,7 +14,7 @@
  * you make the window small.
  */
 
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { useLayout } from "../layout.tsx";
 import { WINDOW_CONTROLS_LEFT } from "../components/WindowControls.tsx";
@@ -22,7 +22,7 @@ import { useApp } from "../store.ts";
 import { renderPanel, usePanelDefinitions } from "../panels/definitions.tsx";
 import { CollapsedBar, type CollapsedItem } from "./CollapsedBar.tsx";
 import { pct } from "./css.ts";
-import { HEADER_PAD, paneFloor } from "./geometry.ts";
+import { HEADER_PAD, PANEL_MIN_WIDTH_PX, paneFloor } from "./geometry.ts";
 import { DockPane } from "./DockPane.tsx";
 import { Splitter } from "./Splitter.tsx";
 import { fitTree, layoutPanes, layoutSplitters, type Box, type SplitterBox } from "./layout.ts";
@@ -46,6 +46,7 @@ export function DockView({
 	title,
 	icon,
 	actions,
+	solo,
 	renderConversation,
 }: {
 	/** The conversation's title, which is the session's rather than a fixed word. */
@@ -53,6 +54,18 @@ export function DockView({
 	icon?: React.ReactNode;
 	/** The window's panel controls, which ride on the conversation's own title bar. */
 	actions?: React.ReactNode;
+	/**
+	 * Show the main pane by itself, whatever else is open.
+	 *
+	 * For the screens that are not a conversation in a project — the pull request list, the
+	 * schedule, the plugin catalogue. A file tree and a terminal beside a list of someone else's
+	 * branches are not merely unhelpful, they are about a different place entirely: the repository
+	 * in the tree is not the repository being reviewed.
+	 *
+	 * Hidden rather than closed, and the tree is left alone. The panes come back exactly as they
+	 * were the moment the conversation does.
+	 */
+	solo?: boolean;
 	renderConversation: () => React.ReactNode;
 }) {
 	const tree = useDock((s) => s.tree);
@@ -60,7 +73,6 @@ export function DockView({
 	const maximized = useDock((s) => s.maximized);
 	const { compact, navOpen, nativeFullScreen } = useLayout();
 	const definitions = usePanelDefinitions();
-	const workspace = useApp((s) => s.workspace);
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { carried, start, landed } = useDockDrag(containerRef);
@@ -81,7 +93,7 @@ export function DockView({
 	 */
 	const allowed = useRef<PaneKind[]>([]);
 	allowed.current = ["conversation", ...definitions.map((def) => def.kind)];
-	const path = workspace?.path ?? null;
+	const session = useApp((s) => s.activeSessionId);
 	useLayoutEffect(() => {
 		/*
 		 * Adopting a layout is not a movement, so it does not animate.
@@ -89,19 +101,19 @@ export function DockView({
 		 * The panes animate between arrangements because one arrangement became another and the
 		 * eye should be able to follow it. Loading a stored layout is not that: nothing moved, this
 		 * is simply where things are. Left to transition it read as the window assembling itself —
-		 * every launch began with the default layout and slid into the saved one, and every project
-		 * switch slid from the last project's arrangement into this one's, as though the panes had
-		 * travelled between two unrelated places.
+		 * every launch began with the default layout and slid into the saved one, and every switch
+		 * between conversations slid from the last one's arrangement into this one's, as though the
+		 * panes had travelled between two unrelated places.
 		 */
 		document.documentElement.dataset.dockSettling = "";
-		useDock.getState().adopt(path, allowed.current);
+		useDock.getState().adopt(session, allowed.current);
 		const frame = requestAnimationFrame(() => {
 			requestAnimationFrame(() => {
 				delete document.documentElement.dataset.dockSettling;
 			});
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [path]);
+	}, [session]);
 
 	/*
 	 * The tree as stored, and the tree as it should be drawn at this window size.
@@ -123,17 +135,31 @@ export function DockView({
 	 * the identity. Two panes and a ratio need none of it: the boundary moves the ratio, and the
 	 * ratio is written back into the tree when full screen ends.
 	 *
-	 * The axis comes from how the panes are actually arranged, so a pair stacked in the dock stays
-	 * stacked when it fills it.
+	 * Side by side when the dock is wide enough for both, stacked when it is not — rather than
+	 * keeping whatever arrangement they had. A pair of panels sharing a column is stacked because
+	 * the column is narrow; full screen is exactly the moment that stops being true, and a tree
+	 * beside a file is the arrangement every editor uses. On a window too narrow for two usable
+	 * columns it stays stacked, because the reason for stacking is back.
 	 */
-	const focus = compact ? null : maximized;
-	const stacked =
-		focus && focus.panes.length === 2
-			? (() => {
-					const [first, second] = focus.panes.map((kind) => laid.find((box) => box.kind === kind));
-					return Boolean(first && second && Math.abs(first.left - second.left) < 1e-6);
-				})()
-			: false;
+	/*
+	 * Showing one pane by itself covers two cases with the same machinery: a maximised pane, and a
+	 * screen that is not a conversation at all. The second one outranks the first — leaving a
+	 * maximised terminal on screen over the plugin catalogue would be the same mistake twice.
+	 */
+	const solitary: typeof maximized = solo ? { panes: ["conversation"], ratio: 1, axis: "row" } : null;
+	const focus = compact ? null : (solitary ?? maximized);
+	const stacked = Boolean(focus && focus.panes.length === 2 && (!size || size.width < PANEL_MIN_WIDTH_PX * 2));
+	/*
+	 * Tell the store which way it went.
+	 *
+	 * The decision is the renderer's — it is the only thing that knows how much room there is —
+	 * and the store needs it on the way out, to know whether the ratio it is holding describes the
+	 * same axis the panes are going back to.
+	 */
+	useEffect(() => {
+		// Not for the solitary case, which is a screen standing alone rather than a pair with an axis.
+		if (maximized && !solo) useDock.getState().setMaximizedAxis(stacked ? "col" : "row");
+	}, [maximized, solo, stacked]);
 
 	const focusBox = (kind: PaneKind): Box | null => {
 		if (!focus) return null;
