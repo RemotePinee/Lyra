@@ -1,0 +1,228 @@
+/**
+ * What an index is allowed to say about an installable thing.
+ *
+ * This type crosses three boundaries — the app that installs from it, the worker that serves it,
+ * and the site that browses it — so it lives here rather than in any one of them. It used to live
+ * in `@lyra/core`, where the worker could not reach it; two copies of a contract are two contracts,
+ * and the one nobody compiles is the one that drifts.
+ *
+ * The shape is deliberately additive over what the file-based registry already published. Every
+ * field the platform introduces is optional, because an index sitting in somebody's GitHub repo is
+ * still a valid registry and always will be — the platform is a better source for the same thing,
+ * not a replacement format.
+ */
+
+/**
+ * The three things a registry can offer, distinguished by where they land and what starts them.
+ *
+ * A plugin is a directory of skills the app loads. An MCP bundle is a server declaration that also
+ * has to be written into settings and launched. A skill collection is a directory of `SKILL.md`
+ * folders and nothing else — no manifest, no process, so it goes straight into the skills directory
+ * where loose skills already live.
+ */
+export type BundleKind = "plugin" | "mcp" | "skill";
+
+/** Every kind, in the order the UI lists them. Exported so nothing has to re-type the union. */
+export const BUNDLE_KINDS: readonly BundleKind[] = ["plugin", "mcp", "skill"];
+
+export function isBundleKind(value: unknown): value is BundleKind {
+	return value === "plugin" || value === "mcp" || value === "skill";
+}
+
+/**
+ * Where an entry stands with the platform.
+ *
+ * `pending` is the queue an author's submission lands in. `delisted` is not `rejected`: a rejected
+ * entry never shipped, a delisted one did and is still installed on people's machines, so it keeps
+ * answering downloads while disappearing from the catalogue.
+ */
+export type EntryStatus = "pending" | "approved" | "rejected" | "delisted";
+
+export function isEntryStatus(value: unknown): value is EntryStatus {
+	return value === "pending" || value === "approved" || value === "rejected" || value === "delisted";
+}
+
+export interface RegistryEntry {
+	/** Directory name it installs as; also its identity within a registry. */
+	id: string;
+	name: string;
+	description?: string;
+	/** Git URL the bundle is cloned from — still the fallback when a tarball cannot be had. */
+	repository: string;
+	/** Sub-path within the repository, for registries that ship many bundles in one repo. */
+	path?: string;
+	author?: string;
+	homepage?: string;
+	/** Absolute URL; the browser renders it directly, so it must be http(s) or a data URL. */
+	logo?: string;
+	brandColor?: string;
+	category?: string;
+	/**
+	 * What the index says this is; corrected against the clone at install time.
+	 *
+	 * Inferred where it is absent, because no existing index declares it: an entry naming an npm
+	 * `package` is how an MCP server is distributed, and nothing else in the format implies one.
+	 */
+	kind: BundleKind;
+	/** The npm package an MCP server is published as, when the bundle wraps one. */
+	package?: string;
+	version?: string;
+	license?: string;
+
+	/*
+	 * Everything below this line only a platform can answer, and every one of them is optional.
+	 *
+	 * A plain index in a git repo knows where a bundle lives and nothing else — it has no download
+	 * to count, no build to hash, no moment it was last looked at. An app reading one of those must
+	 * work exactly as before, so none of this may ever be required to install something.
+	 */
+
+	/** A built, normalised archive of exactly this bundle. Absent for entries nobody has built. */
+	tarball?: string;
+	/** Hex SHA-256 of the tarball. Downloading without one of these is trusting the transport. */
+	sha256?: string;
+	/** Bytes, so a client can show progress and refuse something implausible before fetching it. */
+	size?: number;
+	/** ISO date the platform last saw a change upstream. */
+	updatedAt?: string;
+	/** Cumulative installs. A popularity signal, not a fact about the bundle. */
+	downloads?: number;
+	/** How many skills the archive actually holds, counted at build time rather than claimed. */
+	skillCount?: number;
+	/** How many MCP servers its `.mcp.json` declares, likewise counted. */
+	serverCount?: number;
+	/** The upstream commit this version was built from, so a build can be reproduced. */
+	commit?: string;
+}
+
+/**
+ * One entry of an index, or null if it is not one.
+ *
+ * Exported for the tests: what an index is allowed to say is a contract with people who do not have
+ * this codebase, and a contract that is only exercised over the network is a contract nobody checks
+ * until it is already broken in production.
+ *
+ * Every alias accepted here exists because some index in the wild uses it. Being liberal costs a
+ * line each; being strict costs the entries of everyone who guessed a reasonable synonym.
+ */
+export function normalise(item: unknown): RegistryEntry | null {
+	if (!item || typeof item !== "object") return null;
+	const raw = item as Record<string, unknown>;
+
+	const repository = pick(raw, "repository", "repo", "url", "git");
+	const name = pick(raw, "name", "title", "displayName");
+	if (!repository || !name) return null;
+	// Only ever cloned from, never opened in a browser, but a non-git scheme has no business here.
+	if (!/^(https:\/\/|git@)/i.test(repository)) return null;
+
+	const id = pick(raw, "id", "slug") ?? slugOf(name);
+	if (!/^[a-z0-9._-]+$/i.test(id)) return null;
+
+	const logo = pick(raw, "logo", "icon", "iconUrl");
+	const tarball = pick(raw, "tarball", "dist");
+	const declared = pick(raw, "kind", "type");
+	const packageName = pick(raw, "package", "npm");
+	return {
+		id,
+		name,
+		repository,
+		description: pick(raw, "description", "summary", "shortDescription"),
+		path: pick(raw, "path", "subpath"),
+		author: pick(raw, "author", "developerName", "owner"),
+		homepage: pick(raw, "homepage", "websiteURL", "website"),
+		// A logo is rendered as an <img src>; anything but http(s) could be a `javascript:` URL.
+		logo: logo && /^https?:\/\//i.test(logo) ? logo : undefined,
+		brandColor: pick(raw, "brandColor", "color"),
+		category: pick(raw, "category"),
+		/*
+		 * Taken from the index when it says, inferred only when it does not.
+		 *
+		 * The inference is a fallback for indexes written before `kind` existed: naming an npm
+		 * `package` is how an MCP server is distributed, and nothing else in the format implies one.
+		 * A skill collection is never inferred — it has no distinguishing field, so an index that
+		 * wants one has to say so.
+		 */
+		kind: isBundleKind(declared) ? declared : packageName ? "mcp" : "plugin",
+		package: packageName,
+		version: pick(raw, "version"),
+		license: pick(raw, "license"),
+		// Same rule as the logo, and a stronger reason: this one gets downloaded and unpacked.
+		tarball: tarball && /^https:\/\//i.test(tarball) ? tarball : undefined,
+		sha256: hex64(pick(raw, "sha256", "integrity", "shasum")),
+		size: positive(raw.size),
+		updatedAt: pick(raw, "updatedAt", "updated_at", "modified"),
+		downloads: positive(raw.downloads),
+		skillCount: positive(raw.skillCount ?? raw.skill_count),
+		serverCount: positive(raw.serverCount ?? raw.server_count),
+		commit: pick(raw, "commit", "sha", "commitSha"),
+	};
+}
+
+/** The index document itself, in either of the two shapes found in the wild. */
+export interface RegistryIndex {
+	name?: string;
+	updatedAt?: string;
+	entries: RegistryEntry[];
+}
+
+/**
+ * Read an index document into entries, dropping the ones that are not entries.
+ *
+ * Accepts `{ plugins: [...] }`, `{ collections: [...] }`, `{ entries: [...] }` or a bare array. A
+ * skill index lists collections and a plugin index lists plugins; the two deserve different words
+ * in the file and are identical from here, so accepting all of them keeps one reader rather than
+ * several that drift.
+ */
+export function readIndex(raw: unknown): RegistryIndex {
+	const container = raw as { plugins?: unknown; collections?: unknown; entries?: unknown } | null;
+	const list = Array.isArray(raw) ? raw : (container?.plugins ?? container?.collections ?? container?.entries);
+	if (!Array.isArray(list)) throw new Error("市场索引格式不对：应为数组或 { plugins: [] } / { collections: [] }");
+
+	const meta = (Array.isArray(raw) ? {} : raw) as Record<string, unknown>;
+	return {
+		name: typeof meta.name === "string" ? meta.name : undefined,
+		updatedAt: typeof meta.updatedAt === "string" ? meta.updatedAt : undefined,
+		entries: list.flatMap((item) => {
+			const entry = normalise(item);
+			return entry ? [entry] : [];
+		}),
+	};
+}
+
+/** A name turned into something usable as a directory and a URL segment. */
+export function slugOf(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, "-")
+		.replace(/^-|-$/g, "");
+}
+
+/**
+ * Whether a string may be an entry id.
+ *
+ * It becomes a directory name on someone's disk and a path segment in a URL, so the answer is
+ * narrower than "any slug": no dots leading anywhere (`..` climbs out of the plugins directory),
+ * no separators, and short enough to survive every filesystem.
+ */
+export function isValidId(id: string): boolean {
+	if (!id || id.length > 64) return false;
+	if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) return false;
+	return !id.includes("..");
+}
+
+function pick(raw: Record<string, unknown>, ...keys: string[]): string | undefined {
+	for (const key of keys) {
+		const value = raw[key];
+		if (typeof value === "string" && value.trim()) return value.trim();
+	}
+	return undefined;
+}
+
+function positive(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** A SHA-256 or nothing — a hash that is not one would fail the comparison anyway, later and worse. */
+function hex64(value: string | undefined): string | undefined {
+	return value && /^[a-f0-9]{64}$/i.test(value) ? value.toLowerCase() : undefined;
+}

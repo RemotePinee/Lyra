@@ -9,6 +9,30 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "registry-api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "-C",
+        "../Lyra-Registry",
+        "--filter",
+        "@lyra/registry-api",
+        "dev"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "registry-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "-C",
+        "../Lyra-Registry",
+        "--filter",
+        "@lyra/registry-web",
+        "dev"
+      ],
+      "port": 5173
     }
   ]
 }

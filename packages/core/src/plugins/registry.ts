@@ -11,67 +11,36 @@
  * are markdown, MCP servers are declarations the user still has to enable.
  */
 
-import { execFile } from "node:child_process";
 import type { Dirent } from "node:fs";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
+
+import { normalisePath, readIndex } from "@lyra/registry-shared";
+import type { BundleKind, RegistryEntry } from "@lyra/registry-shared";
 
 import type { McpServerConfig } from "../mcp/client.ts";
 import { lyraHome } from "../session/store.ts";
+import { fetchBundle } from "./fetch-bundle.ts";
 import { inspectBundle } from "./loader.ts";
 
-const run = promisify(execFile);
-
-/**
- * Which of the two things an entry is.
+/*
+ * What an entry is and what an index may say about one now live in `@lyra/registry-shared`.
  *
- * A registry may declare it, and the catalogue shows what it declared — but the word is only ever
- * a claim until the bundle is on disk, so `installEntry` reads the clone and files it by what it
- * found. An index that says "plugin" about a directory holding one `.mcp.json` is wrong, and
- * seven of the nine entries in the collection this was built against said exactly that.
- */
-/**
- * The three things a registry can offer, distinguished by where they land and what starts them.
+ * They were defined here, which was right while the app was the only thing that read an index. It
+ * stopped being right when the platform started serving them: the worker cannot import from a
+ * package that reaches for `node:child_process` on line one, so it would have needed its own copy
+ * — and two copies of a contract are two contracts, with the one nobody compiles doing the drifting.
  *
- * A plugin is a directory of skills the app loads. An MCP bundle is a server declaration that also
- * has to be written into settings and launched. A skill collection is a directory of `SKILL.md`
- * folders and nothing else — no manifest, no process, so it goes straight into the skills directory
- * where loose skills already live rather than being wrapped in a bundle that would say nothing.
+ * Re-exported rather than replaced at every call site: the renderer imports these from `@lyra/core`
+ * in a dozen places, and moving a type is not a reason to touch a dozen files.
  */
-export type BundleKind = "plugin" | "mcp" | "skill";
+export type { BundleKind, RegistryEntry } from "@lyra/registry-shared";
+export { normalise } from "@lyra/registry-shared";
 
 /** How long a registry has to answer before we give up on it. */
 const FETCH_TIMEOUT_MS = 10_000;
 /** A registry index has no business being larger than this; anything more is a mistake or an attack. */
 const MAX_INDEX_BYTES = 2_000_000;
-
-export interface RegistryEntry {
-	/** Directory name it installs as; also its identity within a registry. */
-	id: string;
-	name: string;
-	description?: string;
-	/** Git URL the bundle is cloned from. */
-	repository: string;
-	/** Sub-path within the repository, for registries that ship many bundles in one repo. */
-	path?: string;
-	author?: string;
-	homepage?: string;
-	/** Absolute URL; the browser renders it directly, so it must be http(s) or a data URL. */
-	logo?: string;
-	brandColor?: string;
-	category?: string;
-	/**
-	 * What the index says this is; corrected against the clone at install time.
-	 *
-	 * Inferred where it is absent, because no existing index declares it: an entry naming an npm
-	 * `package` is how an MCP server is distributed, and nothing else in the format implies one.
-	 */
-	kind: BundleKind;
-	/** The npm package an MCP server is published as, when the bundle wraps one. */
-	package?: string;
-	version?: string;
-}
 
 export interface Registry {
 	url: string;
@@ -100,28 +69,9 @@ export async function fetchRegistry(url: string, signal?: AbortSignal): Promise<
 	if (size > MAX_INDEX_BYTES) throw new Error("市场索引过大");
 
 	const raw: unknown = await response.json();
-	/*
-	 * `plugins` or `collections`, whichever the index used.
-	 *
-	 * A skill index lists collections and a plugin index lists plugins, and the two are different
-	 * enough to deserve different words in the file — but identical from here: a list of things with
-	 * an id, a name and somewhere to clone from. Accepting both keeps one fetcher rather than two
-	 * that would drift.
-	 */
-	const container = raw as { plugins?: unknown; collections?: unknown };
-	const list = Array.isArray(raw) ? raw : (container?.plugins ?? container?.collections ?? []);
-	if (!Array.isArray(list)) throw new Error("市场索引格式不对：应为数组或 { plugins: [] } / { collections: [] }");
-
-	return {
-		url,
-		name: (!Array.isArray(raw) && typeof (raw as { name?: unknown }).name === "string"
-			? (raw as { name: string }).name
-			: hostOf(url)) as string,
-		entries: list.flatMap((item) => {
-			const entry = normalise(item);
-			return entry ? [entry] : [];
-		}),
-	};
+	const index = readIndex(raw);
+	// An index that did not name itself is known by where it was fetched from, which is at least true.
+	return { url, name: index.name ?? hostOf(url), entries: index.entries };
 }
 
 /** Where each kind of bundle lives once installed. */
@@ -142,11 +92,12 @@ export interface Installed {
 }
 
 /**
- * Install an entry by cloning it, then filing it by what it turned out to be.
+ * Install an entry, then file it by what it turned out to be.
  *
- * `git` rather than a tarball fetch: every one of these lives in a repository already, a shallow
- * clone is one command, and it leaves the user something they can `git pull` later without any
- * update mechanism of ours.
+ * How the files arrive is `fetchBundle`'s problem: a verified archive when the registry publishes
+ * one, a shallow clone otherwise or when the download fails. The two differ in one way that
+ * matters here — an archive was built for this entry and is already rooted at its sub-path, while
+ * a clone is the whole repository and has to be descended into.
  *
  * Everything lands in staging first — including the case with no `path`, which used to clone
  * straight to its destination. It cannot go straight there any more, because where it belongs is
@@ -160,7 +111,9 @@ export interface Installed {
  * like a checkout of the whole collection, is thrown away.
  */
 export async function installEntry(entry: RegistryEntry, registryName?: string): Promise<Installed> {
-	const inner = entry.path ? subPath(entry.path) : "";
+	// Shared with the platform, so that a path it accepted when building an archive is the same path
+	// this refuses to clone into. Two implementations of "cannot climb out" is one too many.
+	const inner = normalisePath(entry.path);
 	if (inner === null) throw new Error(`插件路径不合法：${entry.path}`);
 
 	for (const kind of ["plugin", "mcp"] as const) {
@@ -188,10 +141,17 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 	await rm(staging, { recursive: true, force: true });
 
 	try {
-		await run("git", ["clone", "--depth", "1", entry.repository, staging], { timeout: 60_000 });
+		const fetched = await fetchBundle(entry, staging);
 
-		const source = inner ? join(staging, inner) : staging;
-		if (inner && !(await stat(source).catch(() => null))?.isDirectory()) {
+		/*
+		 * An archive is already the bundle; a clone is the repository it lives in.
+		 *
+		 * The platform applies `path` when it builds, so descending into it again would look for
+		 * `plugins/context7/plugins/context7` and find nothing. Getting this backwards is silent in
+		 * one direction and a confusing "no such directory" in the other.
+		 */
+		const source = fetched.via === "tarball" || !inner ? staging : join(staging, inner);
+		if (fetched.via === "git" && inner && !(await stat(source).catch(() => null))?.isDirectory()) {
 			throw new Error(`仓库里没有 ${entry.path} 这个目录`);
 		}
 
@@ -246,15 +206,6 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 	}
 }
 
-/** A repo-relative directory, or null for anything absolute or climbing out of the checkout. */
-function subPath(raw: string): string | null {
-	const trimmed = raw.replace(/^\/+|\/+$/g, "");
-	if (!trimmed) return null;
-	const parts = trimmed.split("/");
-	if (parts.some((part) => part === ".." || part === "." || part === "")) return null;
-	return parts.join("/");
-}
-
 /**
  * Drop an installed bundle, whichever of the two directories it lives in.
  *
@@ -284,79 +235,6 @@ export async function uninstallEntry(id: string): Promise<void> {
 			await rm(join(skills, entry.name), { recursive: true, force: true });
 		}
 	}
-}
-
-/**
- * One entry of an index, or null if it is not one.
- *
- * Exported for the tests: what an index is allowed to say is a contract with people who do not have
- * this codebase, and a contract that is only exercised over the network is a contract nobody checks
- * until it is already broken in production.
- */
-export function normalise(item: unknown): RegistryEntry | null {
-	if (!item || typeof item !== "object") return null;
-	const raw = item as Record<string, unknown>;
-
-	const repository = pick(raw, "repository", "repo", "url", "git");
-	const name = pick(raw, "name", "title", "displayName");
-	if (!repository || !name) return null;
-	// Only ever cloned from, never opened in a browser, but a non-git scheme has no business here.
-	if (!/^(https:\/\/|git@)/i.test(repository)) return null;
-
-	const id = pick(raw, "id", "slug") ?? slugOf(name);
-	if (!/^[a-z0-9._-]+$/i.test(id)) return null;
-
-	const logo = pick(raw, "logo", "icon", "iconUrl");
-	const declared = pick(raw, "kind", "type");
-	const packageName = pick(raw, "package", "npm");
-	return {
-		id,
-		name,
-		repository,
-		description: pick(raw, "description", "summary", "shortDescription"),
-		path: pick(raw, "path", "subpath"),
-		author: pick(raw, "author", "developerName", "owner"),
-		homepage: pick(raw, "homepage", "websiteURL", "website"),
-		// A logo is rendered as an <img src>; anything but http(s) could be a `javascript:` URL.
-		logo: logo && /^https?:\/\//i.test(logo) ? logo : undefined,
-		brandColor: pick(raw, "brandColor", "color"),
-		category: pick(raw, "category"),
-		/*
-		 * Declared if the index bothered to; otherwise inferred from the npm package.
-		 *
-		 * Publishing an MCP server means publishing an npm package and naming it in a `.mcp.json`
-		 * — a plugin, which is markdown in a directory, has no package to name. The guess is only
-		 * for the browsing view; the clone settles it.
-		 */
-		/*
-		 * Taken from the index when it says, inferred only when it does not.
-		 *
-		 * The inference is a fallback for indexes written before `kind` existed: naming an npm
-		 * `package` is how an MCP server is distributed, and nothing else in the format implies one.
-		 * A skill collection is never inferred — it has no distinguishing field, so an index that
-		 * wants one has to say so.
-		 */
-		kind:
-			declared === "mcp" || declared === "plugin" || declared === "skill"
-				? declared
-				: packageName
-					? "mcp"
-					: "plugin",
-		package: packageName,
-		version: pick(raw, "version"),
-	};
-}
-
-function pick(raw: Record<string, unknown>, ...keys: string[]): string | undefined {
-	for (const key of keys) {
-		const value = raw[key];
-		if (typeof value === "string" && value.trim()) return value.trim();
-	}
-	return undefined;
-}
-
-function slugOf(name: string): string {
-	return name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function hostOf(url: string): string {

@@ -14,3 +14,9 @@ allowBuilds:
   # Installs the git hook binary; the hooks are what keep lint and typecheck from being optional.
   lefthook: true
   koffi: false
+  # Unpacks the workerd binary. It is what `wrangler dev` runs the registry Worker on locally,
+  # so without this the platform can only be tested by deploying it.
+  workerd: true
+
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types@5.20260818.1'
