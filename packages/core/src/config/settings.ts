@@ -145,9 +145,9 @@ export interface Settings {
 	 *
 	 * Ours is preset. The argument against shipping one was that it would point at a collection
 	 * whose contents we neither control nor can promise will stay — true of somebody else's list,
-	 * and not of `kittors/Lyra-Plugins`, which is maintained alongside this app and whose entries
-	 * are re-checked against their upstreams every day. A fresh install with no sources at all is
-	 * an empty shop with no way to know a shop exists.
+	 * and not of the registry maintained alongside this app, whose entries are rebuilt from their
+	 * upstreams every day. A fresh install with no sources at all is an empty shop with no way to
+	 * know a shop exists.
 	 */
 	pluginRegistries: string[];
 	/**
@@ -173,13 +173,45 @@ export interface Settings {
 	};
 }
 
-/** The index this app maintains: plugins and MCP servers, re-checked against upstream daily. */
-export const DEFAULT_PLUGIN_REGISTRY =
-	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/registry.json";
+/**
+ * Where the preset sources point.
+ *
+ * The registry is a platform now rather than a JSON file in a git repository, and the difference
+ * shows up in three places a user notices: it is not `raw.githubusercontent.com`, which returns 429
+ * often enough that the marketplace used to fail to load; its entries carry a built archive and a
+ * SHA-256, so installing is a verified download rather than a clone that depends on the upstream
+ * being reachable; and it counts what is inside each bundle, so the catalogue can say how many
+ * skills something has before it is installed.
+ *
+ * The path is `/v1/index` because that endpoint answers in the *old* file format. A copy of the app
+ * that predates any of this can be pointed here and simply work.
+ */
+const REGISTRY_ORIGIN = "https://lyra-registry.gj7nrhnb9j.workers.dev";
 
-/** The same repository's other list: collections of skills. */
-export const DEFAULT_SKILL_REGISTRY =
-	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/skills.json";
+/** Plugins and MCP servers. */
+export const DEFAULT_PLUGIN_REGISTRY = `${REGISTRY_ORIGIN}/v1/index`;
+
+/** The same catalogue's skill collections, which the app configures as a separate source. */
+export const DEFAULT_SKILL_REGISTRY = `${REGISTRY_ORIGIN}/v1/index?kind=skill`;
+
+/**
+ * Sources that were preset by an older version and should move with it.
+ *
+ * A user who never touched the setting is still pointed at the file-based index, which is the one
+ * that gets rate-limited — leaving them there means the fix ships and nobody gets it. Only these
+ * exact strings are replaced; anything a user added themselves is theirs.
+ */
+export const SUPERSEDED_REGISTRIES: Record<string, string> = {
+	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/registry.json": DEFAULT_PLUGIN_REGISTRY,
+	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/skills.json": DEFAULT_SKILL_REGISTRY,
+};
+
+/** Rewrite the preset sources in a stored list, leaving everything else alone. */
+export function migrateRegistries(urls: string[]): string[] {
+	const moved = urls.map((url) => SUPERSEDED_REGISTRIES[url] ?? url);
+	// A user who had both the old and the new would otherwise end up with the new one twice.
+	return [...new Set(moved)];
+}
 
 export const DEFAULT_SETTINGS: Settings = {
 	version: 1,
@@ -229,8 +261,16 @@ export async function loadSettings(): Promise<Settings> {
 			 * the user's: never having been asked, versus having removed every source deliberately.
 			 * `??` distinguishes them exactly.
 			 */
-			pluginRegistries: parsed.pluginRegistries ?? [DEFAULT_PLUGIN_REGISTRY],
-			skillRegistries: parsed.skillRegistries ?? [DEFAULT_SKILL_REGISTRY],
+			/*
+			 * Read through the rename, so an existing install moves off the file-based index.
+			 *
+			 * Anyone who never touched this setting is still pointed at `raw.githubusercontent.com`,
+			 * which is the address that returns 429 — shipping the replacement without this would mean
+			 * the fix reaches only new installs. Only the two strings we ourselves preset are rewritten;
+			 * see `SUPERSEDED_REGISTRIES`.
+			 */
+			pluginRegistries: migrateRegistries(parsed.pluginRegistries ?? [DEFAULT_PLUGIN_REGISTRY]),
+			skillRegistries: migrateRegistries(parsed.skillRegistries ?? [DEFAULT_SKILL_REGISTRY]),
 			providers: parsed.providers ?? [],
 			mcpServers: parsed.mcpServers ?? [],
 			projects: parsed.projects ?? [],
