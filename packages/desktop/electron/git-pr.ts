@@ -29,19 +29,18 @@ const PER_BUCKET = 30;
  * urgency, and it decides which relation a pull request keeps when it qualifies for two.
  */
 const BUCKETS = [
-	{ relation: "reviewing", flag: "--review-requested=@me" },
-	{ relation: "authored", flag: "--author=@me" },
-	{ relation: "reviewed", flag: "--reviewed-by=@me" },
+	{ relation: "reviewing", query: "is:pr is:open review-requested:@me" },
+	{ relation: "authored", query: "is:pr is:open author:@me" },
+	{ relation: "reviewed", query: "is:pr is:open reviewed-by:@me" },
 ] as const;
 
-const SEARCH_FIELDS = "number,title,author,repository,state,isDraft,url,createdAt,updatedAt,commentsCount";
+type Relation = (typeof BUCKETS)[number]["relation"];
 
 export async function listMyPullRequests(): Promise<{ pullRequests: PullRequestSummary[]; error?: string }> {
 	let buckets: PullRequestSummary[][];
 	try {
-		buckets = await Promise.all(
-			BUCKETS.map(async ({ relation, flag }) => (await search(flag)).map((pr) => toSummary(pr, relation))),
-		);
+		const found = await searchAll();
+		buckets = BUCKETS.map(({ relation }) => found[relation].map((pr) => toSummary(pr, relation)));
 	} catch (error) {
 		return { pullRequests: [], error: describe(error) };
 	}
@@ -59,20 +58,84 @@ export async function listMyPullRequests(): Promise<{ pullRequests: PullRequestS
 	return { pullRequests: [...seen.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) };
 }
 
-async function search(flag: string): Promise<RawSearchItem[]> {
+/**
+ * All three buckets in one GraphQL query, which is the whole reason this is not `gh search prs`.
+ *
+ * `gh search prs` goes to the REST search endpoint, and GitHub rate-limits that one far harder
+ * than the rest of the API: **30 requests per minute**, separate from and much smaller than the
+ * ordinary hourly budget. Three buckets meant three of those thirty spent on every refresh, so a
+ * few visits to this screen in quick succession — open it, refresh, come back — ran the list into
+ * "API rate limit exceeded" while nothing else on the machine was anywhere near a limit.
+ *
+ * GraphQL charges against the hourly budget instead (5,000 points an hour, and a query like this
+ * one costs single digits), and aliases let all three searches travel in a single request. Same
+ * three questions, one round trip, a budget that is not realistically reachable by a person
+ * clicking refresh.
+ */
+const SEARCH_QUERY = `
+query($reviewing: String!, $authored: String!, $reviewed: String!, $n: Int!) {
+  reviewing: search(query: $reviewing, type: ISSUE, first: $n) { nodes { ...row } }
+  authored:  search(query: $authored,  type: ISSUE, first: $n) { nodes { ...row } }
+  reviewed:  search(query: $reviewed,  type: ISSUE, first: $n) { nodes { ...row } }
+}
+fragment row on PullRequest {
+  number
+  title
+  url
+  state
+  isDraft
+  createdAt
+  updatedAt
+  author { login }
+  repository { nameWithOwner }
+  comments { totalCount }
+}`;
+
+async function searchAll(): Promise<Record<Relation, RawSearchItem[]>> {
 	const { stdout } = await execFileAsync(
 		"gh",
-		["search", "prs", flag, "--state=open", "--limit", String(PER_BUCKET), "--json", SEARCH_FIELDS],
+		[
+			"api", "graphql",
+			"-f", `query=${SEARCH_QUERY}`,
+			...BUCKETS.flatMap(({ relation, query }) => ["-f", `${relation}=${query}`]),
+			"-F", `n=${PER_BUCKET}`,
+		],
 		{ maxBuffer: 8 * 1024 * 1024 },
 	);
-	return JSON.parse(stdout) as RawSearchItem[];
+
+	const body = JSON.parse(stdout) as {
+		data?: Record<string, { nodes?: (SearchNode | null)[] } | null>;
+		errors?: { message?: string }[];
+	};
+	/*
+	 * A GraphQL error arrives with a 200 and an `errors` array, so it has to be looked for rather
+	 * than caught. Rate limiting is exactly this shape, which is the failure this function exists
+	 * to avoid — reporting it as an empty list would be the worst of both.
+	 */
+	if (body.errors?.length) throw new Error(body.errors.map((e) => e.message).filter(Boolean).join("; "));
+
+	const out = {} as Record<Relation, RawSearchItem[]>;
+	for (const { relation } of BUCKETS) {
+		out[relation] = (body.data?.[relation]?.nodes ?? [])
+			// `type: ISSUE` also matches issues, which come back as empty nodes and are dropped.
+			.filter((node): node is SearchNode => Boolean(node && typeof node.number === "number"))
+			// The comment count is the one field GraphQL shapes differently to the rest of this
+			// file, so it is flattened here rather than followed inwards.
+			.map(({ comments, ...node }) => ({ ...node, commentsCount: comments?.totalCount ?? 0 }));
+	}
+	return out;
+}
+
+/** One row as GraphQL returns it, before the comment count is flattened. */
+interface SearchNode extends Omit<RawSearchItem, "commentsCount"> {
+	comments?: { totalCount?: number } | null;
 }
 
 interface RawSearchItem {
 	number: number;
 	title: string;
-	author?: { login?: string };
-	repository?: { nameWithOwner?: string };
+	author?: { login?: string } | null;
+	repository?: { nameWithOwner?: string } | null;
 	state?: string;
 	isDraft?: boolean;
 	url: string;
@@ -309,5 +372,10 @@ export function describe(error: unknown): string {
 	if (message.includes("not logged") || message.includes("authentication")) return "gh 未登录，请先运行 gh auth login";
 	if (message.includes("Could not resolve to a Repository")) return "找不到这个仓库，或者没有访问权限";
 	if (message.includes("ENOTFOUND") || message.includes("network")) return "连不上 GitHub";
+	// Says what to do about it. The unedited message is a paragraph about REST quotas that does not
+	// mention how long the wait is, and this list refreshes on its own anyway.
+	if (message.includes("rate limit") || message.includes("secondary rate")) {
+		return "GitHub 暂时限流了，过一会儿会自动恢复";
+	}
 	return message.split("\n")[0].slice(0, 200);
 }

@@ -111,8 +111,10 @@ export function PullRequestList({
 			</div>
 
 			<Scroller className="flex-1" contentClassName="px-2 pb-3">
+				{/* `break-words`: these messages carry URLs and unspaced identifiers, and a long one
+				    with nowhere to break widens the card past the pane it sits in. */}
 				{error && (
-					<p className="mx-1 mt-2 rounded-[9px] border border-accent/35 bg-accent/8 px-3 py-2 text-detail leading-relaxed text-accent">
+					<p className="mx-1 mt-2 break-words rounded-[9px] border border-accent/35 bg-accent/8 px-3 py-2 text-detail leading-relaxed text-accent">
 						{error}
 					</p>
 				)}

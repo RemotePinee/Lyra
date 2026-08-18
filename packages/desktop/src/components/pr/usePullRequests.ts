@@ -57,6 +57,16 @@ function readCache(): PullRequestSummary[] {
 	}
 }
 
+/**
+ * When the list last came back, shared by every mount of this hook.
+ *
+ * Module scope on purpose: the point is to survive the hook, since what triggers a needless fetch
+ * is leaving this screen and coming back — which unmounts it. Not persisted, because a fetch on
+ * the first visit after launch is one worth making.
+ */
+let lastFetch = 0;
+const FRESH_MS = 60_000;
+
 function writeCache(items: PullRequestSummary[]): void {
 	try {
 		localStorage.setItem(CACHE_KEY, JSON.stringify(items));
@@ -141,7 +151,10 @@ export function usePullRequests() {
 	const [detailError, setDetailError] = useState<string | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 
-	const refresh = useCallback(async () => {
+	const refresh = useCallback(async ({ stale = false } = {}) => {
+		// Reopening the screen is not a reason to ask again. The list is a few dozen pull requests
+		// that change over hours, and coming back to it a few seconds later already has the answer.
+		if (stale && Date.now() - lastFetch < FRESH_MS) return;
 		setLoading(true);
 		try {
 			const result = await window.lyra.git.myPullRequests();
@@ -160,13 +173,14 @@ export function usePullRequests() {
 			setItems(result.pullRequests);
 			writeCache(result.pullRequests);
 			setError(result.error ?? null);
+			lastFetch = Date.now();
 		} finally {
 			setLoading(false);
 		}
 	}, []);
 
 	useEffect(() => {
-		void refresh();
+		void refresh({ stale: true });
 	}, [refresh]);
 
 	/*
@@ -240,7 +254,7 @@ export function usePullRequests() {
 		detail,
 		detailError,
 		detailLoading,
-		refresh,
+		refresh: useCallback(() => void refresh(), [refresh]),
 		/** Re-read the open one, for after a comment or a review lands. */
 		refreshDetail: useCallback(() => setSelected((current) => (current ? { ...current } : null)), []),
 	};
