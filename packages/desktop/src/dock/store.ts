@@ -11,17 +11,22 @@
  */
 
 import { create } from "zustand";
+import { MIN_FRACTION } from "./geometry.ts";
 import { flushTree, readTree, storageKey, writeTree } from "./persist.ts";
 import {
 	defaultTree,
 	has,
 	insert,
 	kinds,
+	areAdjacent,
 	move,
+	nodeAt,
+	pathTo,
 	remove,
 	resize,
 	type DockNode,
 	type DropAt,
+	type DropSide,
 	type PaneKind,
 } from "./tree.ts";
 
@@ -50,8 +55,20 @@ interface DockState {
 	tree: DockNode;
 	/** Which pane the collapsed (narrow-window) form is showing. */
 	focused: PaneKind;
-	/** A pane drawn over the whole dock — what is left of the old `expanded`. */
-	maximized: PaneKind | null;
+	/**
+	 * What is filling the dock, and how the room is divided when it is a pair.
+	 *
+	 * A pair, because the file tree and the open file are one tool between them: enlarging half of
+	 * it to read something leaves you unable to reach the next thing.
+	 *
+	 * `ratio` is the first pane's share *of the two*, held here rather than derived from the tree.
+	 * It is read from the tree on the way in and written back on the way out, so a width dragged
+	 * full screen survives leaving it and a width dragged in the ordinary layout survives entering
+	 * it — but while full screen is on, the two panes fill the dock and their split is its own
+	 * number. Deriving it from the tree instead means clamping against a row that also holds the
+	 * conversation, and a boundary that barely moves.
+	 */
+	maximized: { panes: PaneKind[]; ratio: number } | null;
 	drag: DragState | null;
 	/** The project this tree belongs to, so switching saves the old one under the right key. */
 	scope: string | null;
@@ -66,16 +83,30 @@ interface DockState {
 	 */
 	adopted: boolean;
 
-	/** Open a pane, or focus it if it is already open. */
-	open(kind: PaneKind): void;
+	/**
+	 * Open a pane, or focus it if it is already open.
+	 *
+	 * `beside` is where it belongs when it has a declared partner — see `companion` on
+	 * `PanelDefinition`. Passed in rather than looked up, because the registry knows about React
+	 * components and this store deliberately does not.
+	 */
+	open(kind: PaneKind, beside?: { kind: PaneKind; side: DropSide; share?: number }): void;
 	close(kind: PaneKind): void;
 	toggle(kind: PaneKind): void;
 	moveTo(kind: PaneKind, at: DropAt): void;
+	/** Leave full screen. Separate from the toggle, for the callers that only ever want out. */
+	restore(): void;
 	/** Preview a drop, always derived from the layout without the carried pane. */
 	preview(rest: DockNode, kind: PaneKind, at: DropAt | null): void;
-	setShare(path: number[], index: number, fraction: number): void;
+	/**
+	 * Move one boundary. `floor` is how small either side may get, defaulting to the tree's own —
+	 * see `resize`, and the caller in `DockView` that scales it for a maximised pair.
+	 */
+	setShare(path: number[], index: number, fraction: number, floor?: number): void;
 	focus(kind: PaneKind): void;
-	toggleMaximized(kind: PaneKind): void;
+	toggleMaximized(kind: PaneKind, partner?: PaneKind): void;
+	/** Move the boundary inside a maximised pair. The first pane's share of the two. */
+	setMaximizedRatio(ratio: number): void;
 	reset(): void;
 
 	beginDrag(drag: DragState): void;
@@ -100,6 +131,62 @@ function defaultDrop(tree: DockNode): DropAt {
 	return { side: "bottom", kind: others[others.length - 1] };
 }
 
+/**
+ * Give a freshly opened pane the share its panel asked for.
+ *
+ * `insert` halves whatever it splits, which is the right default and the wrong one for a pair: a
+ * file tree wants a column and the file wants the rest. Expressed as *this pane's* share of the
+ * two, so a panel declares how much room it needs without knowing which side it landed on.
+ */
+function withShare(tree: DockNode, kind: PaneKind | null, share: number | undefined): DockNode {
+	if (!kind || share === undefined) return tree;
+	const path = pathTo(tree, kind);
+	// No parent to divide: it is the only pane there, and there is nothing to share with.
+	if (!path || path.length === 0) return tree;
+	const parent = path.slice(0, -1);
+	const at = path[path.length - 1];
+	const split = nodeAt(tree, parent);
+	if (split?.type !== "split") return tree;
+
+	// `resize` names a boundary by the child on its near side, so ask for the near one's share.
+	const near = at === 0 ? 0 : at - 1;
+	const pair = (split.sizes[near] ?? 0) + (split.sizes[near + 1] ?? 0);
+	const mine = at === near ? share : 1 - share;
+	return resize(tree, parent, near, mine * pair);
+}
+
+/** How small either half of a maximised pair may get, as a share of the two. */
+const PAIR_MIN = 0.15;
+
+/**
+ * The boundary between two adjacent panes, named the way `resize` needs it.
+ *
+ * Null unless they really are siblings — which `areAdjacent` has already established by the time
+ * anything calls this, but stating it here keeps the function honest on its own.
+ */
+function seamOf(tree: DockNode, panes: PaneKind[]): { path: number[]; index: number } | null {
+	const [one, other] = panes;
+	const first = pathTo(tree, one);
+	const second = pathTo(tree, other);
+	if (!first || !second || first.length !== second.length) return null;
+	const parent = first.slice(0, -1);
+	if (parent.join() !== second.slice(0, -1).join()) return null;
+	const near = Math.min(first[first.length - 1], second[second.length - 1]);
+	return { path: parent, index: near };
+}
+
+/** What the first of a pair currently holds, as a share of the two. Half for anything else. */
+function ratioOf(tree: DockNode, panes: PaneKind[]): number {
+	if (panes.length !== 2) return 0.5;
+	const seam = seamOf(tree, panes);
+	if (!seam) return 0.5;
+	const split = nodeAt(tree, seam.path);
+	if (split?.type !== "split") return 0.5;
+	const near = split.sizes[seam.index] ?? 0;
+	const far = split.sizes[seam.index + 1] ?? 0;
+	return near + far > 0 ? near / (near + far) : 0.5;
+}
+
 /** Persist, unless the dock has not been pointed at a project yet. */
 function save(scope: string | null, tree: DockNode): void {
 	writeTree(storageKey(scope), tree);
@@ -118,10 +205,19 @@ export const useDock = create<DockState>((set, get) => {
 		const present = kinds(tree);
 		set({
 			tree,
-			// A pane that left the tree cannot go on being the focused or maximised one; the
-			// conversation is the one thing guaranteed to still be there.
+			// A pane that left the tree cannot go on being the focused one; the conversation is the
+			// one thing guaranteed to still be there.
 			focused: present.includes(focused) ? focused : "conversation",
-			maximized: maximized && present.includes(maximized) ? maximized : null,
+			/*
+			 * Full screen is dropped by any change to the shape of the tree.
+			 *
+			 * It is a path, and a path means something different — or nothing — once panes have
+			 * moved: closing a pane can collapse the split it was in, and the same indexes then
+			 * lead somewhere unrelated. Checking that the node still exists is not enough, because
+			 * a node existing at those indexes is exactly what happens when it is the wrong one.
+			 * Leaving full screen is a mild surprise; showing the wrong pane full screen is not.
+			 */
+			maximized: maximized && tree === get().tree ? maximized : null,
 			...extra,
 		});
 		if (persist) save(scope, tree);
@@ -135,7 +231,7 @@ export const useDock = create<DockState>((set, get) => {
 		scope: null,
 		adopted: false,
 
-		open: (kind) => {
+		open: (kind, beside) => {
 			const tree = get().tree;
 			// Already open: bring it to attention rather than doing nothing, which is what the
 			// narrow layout and the keyboard both need from this.
@@ -143,7 +239,12 @@ export const useDock = create<DockState>((set, get) => {
 				set({ focused: kind });
 				return;
 			}
-			commit(insert(tree, kind, defaultDrop(tree)), { focused: kind });
+			// Beside its partner when it has one and the partner is here; otherwise wherever new
+			// panes go. A file opening under the tree instead of next to it is the difference
+			// between a file browser and two unrelated panels.
+			const paired = beside && has(tree, beside.kind);
+			const at = paired ? { side: beside.side, kind: beside.kind } : defaultDrop(tree);
+			commit(withShare(insert(tree, kind, at), paired ? kind : null, beside?.share), { focused: kind });
 		},
 
 		close: (kind) => commit(remove(get().tree, kind)),
@@ -186,8 +287,8 @@ export const useDock = create<DockState>((set, get) => {
 
 		// Not through `commit`: this runs on every frame of a splitter drag, and the pane set is
 		// unchanged by definition — a resize cannot orphan the focused pane.
-		setShare: (path, index, fraction) => {
-			const tree = resize(get().tree, path, index, fraction);
+		setShare: (path, index, fraction, floor) => {
+			const tree = resize(get().tree, path, index, fraction, floor);
 			set({ tree });
 			save(get().scope, tree);
 		},
@@ -198,7 +299,53 @@ export const useDock = create<DockState>((set, get) => {
 			if (get().focused !== kind) set({ focused: kind });
 		},
 
-		toggleMaximized: (kind) => set({ maximized: get().maximized === kind ? null : kind }),
+		/**
+		 * Fill the dock with this pane — or with the pair it belongs to, when it has one here.
+		 *
+		 * `pairPath` only answers when the two are genuinely adjacent, so a tree and a file dragged
+		 * to opposite ends of the window enlarge one at a time like anything else.
+		 */
+		toggleMaximized: (kind, partner) => {
+			const { tree, maximized } = get();
+			if (!has(tree, kind)) return;
+			if (maximized?.panes.includes(kind)) {
+				get().restore();
+				return;
+			}
+			// The pair, when there is one and it is genuinely beside this pane; otherwise just this
+			// one. Ordered by the tree so it reads the way the panes are laid out.
+			const together = partner && has(tree, partner) && areAdjacent(tree, kind, partner);
+			const panes = together ? kinds(tree).filter((each) => each === kind || each === partner) : [kind];
+			set({ maximized: { panes, ratio: ratioOf(tree, panes) } });
+		},
+
+		setMaximizedRatio: (ratio) => {
+			const maximized = get().maximized;
+			if (!maximized) return;
+			// Clamped in the frame the user is looking at, where the pair fills the dock.
+			set({ maximized: { ...maximized, ratio: Math.min(1 - PAIR_MIN, Math.max(PAIR_MIN, ratio)) } });
+		},
+
+		/**
+		 * Leave full screen, keeping whatever the boundary was dragged to.
+		 *
+		 * Written back scaled: the pair filled the dock and now goes back to holding part of a row,
+		 * so the ratio between them is preserved rather than the numbers.
+		 */
+		restore: () => {
+			const { tree, maximized } = get();
+			if (!maximized) return;
+			set({ maximized: null });
+			if (maximized.panes.length !== 2) return;
+			const seam = seamOf(tree, maximized.panes);
+			if (!seam) return;
+			const split = nodeAt(tree, seam.path);
+			if (split?.type !== "split") return;
+			const pair = (split.sizes[seam.index] ?? 0) + (split.sizes[seam.index + 1] ?? 0);
+			const next = resize(tree, seam.path, seam.index, maximized.ratio * pair, MIN_FRACTION * pair);
+			set({ tree: next });
+			save(get().scope, next);
+		},
 
 		reset: () => commit(defaultTree(), { focused: "conversation", maximized: null }),
 

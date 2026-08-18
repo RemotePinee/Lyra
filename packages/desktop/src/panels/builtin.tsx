@@ -23,13 +23,24 @@ const needsCwd = (state: { cwd: boolean }) => (state.cwd ? undefined : "先打�
 const needsSession = (state: { session: boolean }) => (state.session ? undefined : "先开始一个对话");
 
 const BUILTIN_PANELS: PanelDefinition[] = [
-	{ kind: "files", label: "文件", icon: Folder, shortcut: "⌘P", unavailable: needsWorkspace, render: FileBrowser },
+	{
+		kind: "files",
+		label: "文件",
+		icon: Folder,
+		shortcut: "⌘P",
+		unavailable: needsWorkspace,
+		companion: { kind: "file", side: "right" },
+		render: FileBrowser,
+	},
 	/*
 	 * The open file, beside the tree rather than inside it.
 	 *
 	 * Opened by clicking a file rather than from the menu, most of the time — but it is listed
 	 * there like any other pane, because once you have closed it the menu is how you say you want
 	 * it back without having to find a file to click.
+	 *
+	 * Paired with the tree in both directions: between them they are a file browser, and either
+	 * one alone is half a tool.
 	 */
 	{
 		kind: "file",
@@ -37,6 +48,12 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		icon: FileText,
 		shortcut: "⌥⌘P",
 		unavailable: needsWorkspace,
+		/*
+		 * To the right of the tree, taking most of the room — which is where a file goes, and how
+		 * much of the window it gets, in every editor anyone has used. The tree needs enough for a
+		 * name; the file needs everything else.
+		 */
+		companion: { kind: "files", side: "right", share: 0.72 },
 		render: FilePanel,
 	},
 	{

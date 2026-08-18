@@ -13,6 +13,7 @@
 
 import type { ComponentType } from "react";
 import type { GitCompare } from "lucide-react";
+import type { DropSide } from "../dock/tree.ts";
 import type { PanelKind } from "../sideStore.ts";
 
 interface PanelAvailability {
@@ -36,6 +37,34 @@ export interface PanelDefinition {
 	shortcut: string;
 	/** Why it cannot be opened right now, given the current state. */
 	unavailable?(state: PanelAvailability): string | undefined;
+	/**
+	 * A panel this one belongs beside, and which side of it.
+	 *
+	 * Two panels are a *pair* when neither is much use alone: a file tree with nothing open is a
+	 * list, and an open file without the tree is one file with no way to reach the next. The dock
+	 * has no other notion of related panes — everything else is independent, and arranging it is
+	 * the user's business.
+	 *
+	 * Declaring it buys two things. Opening this panel puts it beside its partner rather than
+	 * wherever new panels go, so a tree and a file land as a tree *and* a file. And making either
+	 * one full screen brings the other, because "show me this properly" means the pair when the
+	 * pair is what you are working in.
+	 *
+	 * Only honoured while the two are actually adjacent. Drag them apart and they are two ordinary
+	 * panes again — a full screen that quietly swallowed half the window because of a relationship
+	 * declared in a file nobody has read would be worse than not having the feature at all.
+	 */
+	companion?: {
+		kind: PanelKind;
+		side: DropSide;
+		/**
+		 * How much of the pair this panel takes when it opens beside its partner.
+		 *
+		 * Halves are the wrong default for a browser: a file tree needs enough width for a name and
+		 * an editor needs the rest. Absent, the two split evenly like any other new pane.
+		 */
+		share?: number;
+	};
 	render: ComponentType;
 }
 

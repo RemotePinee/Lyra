@@ -14,6 +14,7 @@
 import { Folder } from "lucide-react";
 import { useEffect } from "react";
 import { useDock } from "../dock/store.ts";
+import { companionOf } from "../panels/definitions.tsx";
 import { FileTree } from "./files/FileTree.tsx";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { useApp } from "../store.ts";
@@ -55,7 +56,7 @@ export function FileBrowser() {
 				 * clicking through a folder does not stack up editors — and if it was closed, the
 				 * click that needs it is what brings it back.
 				 */
-				useDock.getState().open("file");
+				useDock.getState().open("file", companionOf("file"));
 			}}
 			onMoved={(from, to) => useOpenFile.getState().moved(from, to)}
 			onRemoved={(paths) => useOpenFile.getState().removed(paths)}

@@ -21,9 +21,12 @@ import {
 	insert,
 	kinds,
 	leafOf,
+	areAdjacent,
 	move,
+	nodeAt,
 	normalize,
 	pathTo,
+	pruneTo,
 	remove,
 	resize,
 	type Axis,
@@ -292,4 +295,60 @@ test("resizing through a path that leads nowhere changes nothing", () => {
 	const tree = insert(defaultTree(), "terminal", { side: "right", kind: "conversation" });
 	assert.equal(resize(tree, [4, 1], 0, 0.6), tree);
 	assert.equal(resize(tree, [], 7, 0.6), tree, "and neither does a handle that does not exist");
+});
+
+test("panes side by side are adjacent, even as two of three in one row", () => {
+	// conversation | files | file — the shape opening a file actually produces.
+	let tree = insert(defaultTree(), "files", { side: "right", kind: "conversation" });
+	tree = insert(tree, "file", { side: "right", kind: "files" });
+	assert.deepEqual(kinds(tree), ["conversation", "files", "file"]);
+	assert.equal(areAdjacent(tree, "files", "file"), true);
+	assert.equal(areAdjacent(tree, "conversation", "files"), true);
+	assert.equal(areAdjacent(tree, "conversation", "file"), false, "with something in between");
+});
+
+test("panes with something between them are not adjacent", () => {
+	/*
+	 * Dragged apart, a declared pair is two ordinary panes. Treating them as a pair anyway would
+	 * mean full screen occasionally swallowing whatever sat between them.
+	 */
+	let tree = insert(defaultTree(), "files", { side: "left", kind: "conversation" });
+	tree = insert(tree, "file", { side: "right", kind: "conversation" });
+	assert.deepEqual(kinds(tree), ["files", "conversation", "file"]);
+	assert.equal(areAdjacent(tree, "files", "file"), false);
+});
+
+test("a pane is not adjacent to one that is not there", () => {
+	const tree = insert(defaultTree(), "files", { side: "right", kind: "conversation" });
+	assert.equal(areAdjacent(tree, "files", "file"), false);
+});
+
+test("pruning to a pair keeps their order and their proportions", () => {
+	let tree = insert(defaultTree(), "files", { side: "right", kind: "conversation" });
+	tree = insert(tree, "file", { side: "right", kind: "files" });
+	// The file's share of the row is doubled, so the pair is 1:2 between themselves.
+	tree = resize(tree, [], 1, 0.1);
+
+	const pair = pruneTo(tree, new Set<PaneKind>(["files", "file"]));
+	assert.ok(pair);
+	assert.deepEqual(kinds(pair!), ["files", "file"], "the tree is still left of the file");
+	const split = pair as DockSplit;
+	// Re-shared to fill the dock, keeping the ratio they had between them.
+	assert.ok(Math.abs(split.sizes[0] + split.sizes[1] - 1) < 1e-6);
+	assert.ok(split.sizes[1] > split.sizes[0], "and the file is still the larger of the two");
+});
+
+test("pruning to one pane gives that pane, and to none gives nothing", () => {
+	let tree = insert(defaultTree(), "files", { side: "right", kind: "conversation" });
+	tree = insert(tree, "file", { side: "right", kind: "files" });
+	assert.deepEqual(pruneTo(tree, new Set<PaneKind>(["file"])), leafOf("file"));
+	assert.equal(pruneTo(tree, new Set<PaneKind>(["terminal"])), null);
+});
+
+test("nodeAt walks a path, and refuses one that leads nowhere", () => {
+	const tree = insert(defaultTree(), "files", { side: "right", kind: "conversation" });
+	assert.deepEqual(nodeAt(tree, [0]), leafOf("conversation"));
+	assert.deepEqual(nodeAt(tree, []), tree);
+	assert.equal(nodeAt(tree, [5]), null);
+	assert.equal(nodeAt(tree, [0, 0]), null, "a leaf has no children to walk into");
 });

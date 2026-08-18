@@ -44,6 +44,17 @@ export function Splitter({
 	 */
 	const dragging = useRef(false);
 	/**
+	 * The callback, held rather than depended on.
+	 *
+	 * It is rebuilt on every render of the dock, and resizing re-renders the dock — so listing it
+	 * as a dependency tore the window listeners down and put them back on every frame of a drag.
+	 * Which mostly worked, and intermittently did not: the drag would take the first move and then
+	 * stop responding, because a `pointermove` arriving between the teardown and the re-attach has
+	 * nothing listening for it.
+	 */
+	const report = useRef(onResize);
+	report.current = onResize;
+	/**
 	 * Where along the seam the grip sits, in pixels from the strip's start.
 	 *
 	 * Null until the pointer arrives, so nothing is drawn on a boundary nobody is reaching for.
@@ -90,7 +101,7 @@ export function Splitter({
 			if (!dragging.current) return;
 			const container = containerRef.current?.getBoundingClientRect();
 			if (!container) return;
-			onResize(shareFromPointer(current.current, row ? event.clientX : event.clientY, container));
+			report.current(shareFromPointer(current.current, row ? event.clientX : event.clientY, container));
 			// The grip travels along the seam with the pointer, so it stays under the hand.
 			const box = track.current?.getBoundingClientRect();
 			if (box) {
@@ -120,7 +131,7 @@ export function Splitter({
 			window.removeEventListener("pointerup", stop);
 			window.removeEventListener("pointercancel", stop);
 		};
-	}, [active, row, onResize, containerRef]);
+	}, [active, row, containerRef]);
 
 	return (
 		<div

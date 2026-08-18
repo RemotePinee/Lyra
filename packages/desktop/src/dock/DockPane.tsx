@@ -117,12 +117,15 @@ export function DockPane({
 			 * trick as a rearrangement, and it means a maximised terminal is the same terminal.
 			 */
 			/*
-			 * Panels are drawn above the conversation, which is what makes the pixel floors work:
-			 * when the conversation is widened back up to something readable, its neighbour keeps
-			 * its own box and ends up *over* it rather than being pushed away. See `enforceMinimums`.
+			 * Panels sit above the conversation, and the splitters sit above both.
+			 *
+			 * Full screen used to raise its pane higher than everything — a hangover from when it
+			 * meant "cover the others". It prunes the layout now, so the panes it is not showing
+			 * are `display: none` and there is nothing to cover; the only thing the extra layer
+			 * achieved was burying the splitter, which made a maximised pair impossible to resize.
 			 */
 			className={`ly-dock-pane group/pane absolute flex min-w-0 flex-col ${
-				carried ? "ly-dock-pane-carried" : maximized ? "z-30" : floats ? "z-10" : "z-0"
+				carried ? "ly-dock-pane-carried" : floats ? "z-10" : "z-0"
 			} ${landing ? "ly-dock-pane-landing" : ""} ${hidden ? "hidden" : ""}`}
 		>
 			{/*

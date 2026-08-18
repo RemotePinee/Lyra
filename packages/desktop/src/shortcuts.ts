@@ -95,7 +95,7 @@ export function useShortcuts(deps: ShortcutDeps): void {
 			 */
 			if (event.key === "Escape" && !event.defaultPrevented) {
 				if (compact && navOpen) dismissNav();
-				else if (useDock.getState().maximized) useDock.setState({ maximized: null });
+				else useDock.getState().restore();
 			}
 		};
 

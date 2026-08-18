@@ -292,6 +292,64 @@ export function move(tree: DockNode, kind: PaneKind, at: DropAt): DockNode {
 	return insert(base, kind, at);
 }
 
+/** The node a path leads to, or null if it does not lead anywhere. */
+export function nodeAt(tree: DockNode, path: number[]): DockNode | null {
+	let node: DockNode = tree;
+	for (const step of path) {
+		if (node.type !== "split") return null;
+		const child = node.children[step];
+		if (!child) return null;
+		node = child;
+	}
+	return node;
+}
+
+/**
+ * Whether two panes are sitting next to each other, with nothing in between.
+ *
+ * "Next to" means siblings in the same split, one immediately after the other. It deliberately
+ * does not mean "somewhere in the same subtree": a tree and a file with the conversation between
+ * them are two ordinary panes that happen to be related on paper, and treating them as a pair
+ * would occasionally throw half the window into full screen for a reason nobody watching could
+ * reconstruct.
+ *
+ * There is no subtree to point at even when they *are* adjacent — a pair of siblings in a row of
+ * three is not a node. Which is why full screen is expressed as a set of panes rather than a path;
+ * see `pruneTo`.
+ */
+export function areAdjacent(tree: DockNode, one: PaneKind, other: PaneKind): boolean {
+	if (tree.type === "leaf") return false;
+	const at = tree.children.findIndex((child) => child.type === "leaf" && child.kind === one);
+	const beside = tree.children.findIndex((child) => child.type === "leaf" && child.kind === other);
+	if (at >= 0 && beside >= 0 && Math.abs(at - beside) === 1) return true;
+	return tree.children.some((child) => areAdjacent(child, one, other));
+}
+
+/**
+ * The tree with everything except these panes cut away.
+ *
+ * What full screen renders. Keeping the structure rather than rebuilding it is what makes a
+ * maximised pair look like it did before — the tree stays on the left of the file because that is
+ * where the split it is in puts it — and `normalize` re-shares the sizes so the two fill the dock
+ * in the proportion they already had.
+ *
+ * Returns null when none of them are in the tree.
+ */
+export function pruneTo(node: DockNode, keep: Set<PaneKind>): DockNode | null {
+	if (node.type === "leaf") return keep.has(node.kind) ? node : null;
+
+	const children: DockNode[] = [];
+	const sizes: number[] = [];
+	node.children.forEach((child, i) => {
+		const next = pruneTo(child, keep);
+		if (!next) return;
+		children.push(next);
+		sizes.push(node.sizes[i] ?? 0);
+	});
+	if (children.length === 0) return null;
+	return normalize({ type: "split", dir: node.dir, children, sizes });
+}
+
 function replaceAt(node: DockNode, path: number[], change: (node: DockNode) => DockNode): DockNode {
 	if (path.length === 0) return change(node);
 	if (node.type !== "split") return node;
@@ -312,8 +370,20 @@ function replaceAt(node: DockNode, path: number[], change: (node: DockNode) => D
  *
  * Not normalised on the way out: this runs on every frame of a drag, the sum is preserved by
  * construction, and `balance` would re-share the very values the drag is setting.
+ *
+ * `floor` is how small either side may get, as a share of the whole split — and it is a parameter
+ * because the default is wrong in one case. While a pair is full screen the two of them fill the
+ * dock, but in the tree they may hold a fifth of a row; a floor of 8% *of the row* is then 40% of
+ * what is on screen, and the boundary barely moves. The caller that knows the pair is on its own
+ * passes a floor scaled to match.
  */
-export function resize(tree: DockNode, path: number[], index: number, fraction: number): DockNode {
+export function resize(
+	tree: DockNode,
+	path: number[],
+	index: number,
+	fraction: number,
+	floor: number = MIN_FRACTION,
+): DockNode {
 	return replaceAt(tree, path, (node) => {
 		if (node.type !== "split") return node;
 		const near = node.sizes[index];
@@ -322,12 +392,12 @@ export function resize(tree: DockNode, path: number[], index: number, fraction: 
 		const pair = near + far;
 		const sizes = [...node.sizes];
 		// Too little room for both floors — the only stable answer is halves.
-		if (pair < 2 * MIN_FRACTION) {
+		if (pair < 2 * floor) {
 			sizes[index] = pair / 2;
 			sizes[index + 1] = pair / 2;
 			return { ...node, sizes };
 		}
-		sizes[index] = Math.min(pair - MIN_FRACTION, Math.max(MIN_FRACTION, fraction));
+		sizes[index] = Math.min(pair - floor, Math.max(floor, fraction));
 		sizes[index + 1] = pair - sizes[index];
 		return { ...node, sizes };
 	});

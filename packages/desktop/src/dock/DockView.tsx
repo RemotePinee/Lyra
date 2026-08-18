@@ -25,7 +25,7 @@ import { pct } from "./css.ts";
 import { HEADER_PAD, paneFloor } from "./geometry.ts";
 import { DockPane } from "./DockPane.tsx";
 import { Splitter } from "./Splitter.tsx";
-import { fitTree, layoutPanes, layoutSplitters, type Box } from "./layout.ts";
+import { fitTree, layoutPanes, layoutSplitters, type Box, type SplitterBox } from "./layout.ts";
 import { useDock } from "./store.ts";
 import type { PaneKind } from "./tree.ts";
 import { useBoxSize } from "./useBoxSize.ts";
@@ -56,7 +56,7 @@ export function DockView({
 	renderConversation: () => React.ReactNode;
 }) {
 	const tree = useDock((s) => s.tree);
-	const focused = useDock((s) => s.focused);
+	const focusedPane = useDock((s) => s.focused);
 	const maximized = useDock((s) => s.maximized);
 	const { compact, navOpen, nativeFullScreen } = useLayout();
 	const definitions = usePanelDefinitions();
@@ -112,8 +112,84 @@ export function DockView({
 	 * returns the layout to them rather than to whatever a narrow window forced.
 	 */
 	const fitted = compact || !size ? tree : fitTree(tree, size, paneFloor);
-	const boxes = layoutPanes(fitted);
-	const splitters = compact ? [] : layoutSplitters(fitted);
+	const laid = layoutPanes(fitted);
+
+	/*
+	 * Full screen: the chosen panes split the dock between them, and nothing else is drawn.
+	 *
+	 * Laid out here rather than by pruning the tree and re-running the layout. Pruning produced a
+	 * second tree whose boundaries had to be matched back to the real one before a drag could act
+	 * on them, and every part of that translation was a place to be wrong — the value, the floor,
+	 * the identity. Two panes and a ratio need none of it: the boundary moves the ratio, and the
+	 * ratio is written back into the tree when full screen ends.
+	 *
+	 * The axis comes from how the panes are actually arranged, so a pair stacked in the dock stays
+	 * stacked when it fills it.
+	 */
+	const focus = compact ? null : maximized;
+	const stacked =
+		focus && focus.panes.length === 2
+			? (() => {
+					const [first, second] = focus.panes.map((kind) => laid.find((box) => box.kind === kind));
+					return Boolean(first && second && Math.abs(first.left - second.left) < 1e-6);
+				})()
+			: false;
+
+	const focusBox = (kind: PaneKind): Box | null => {
+		if (!focus) return null;
+		const at = focus.panes.indexOf(kind);
+		if (at < 0) return null;
+		if (focus.panes.length === 1) return WHOLE;
+		const share = at === 0 ? focus.ratio : 1 - focus.ratio;
+		const offset = at === 0 ? 0 : focus.ratio;
+		return stacked
+			? { left: 0, top: offset, width: 1, height: share }
+			: { left: offset, top: 0, width: share, height: 1 };
+	};
+
+	const boxes = focus ? laid.filter((box) => focus.panes.includes(box.kind)) : laid;
+
+	/*
+	 * One boundary while full screen, none when a single pane fills it.
+	 *
+	 * Given the geometry of what is drawn and a `share` that already is the ratio, so the splitter
+	 * needs no special case: what it reports back is the new ratio.
+	 */
+	const focusSeam: SplitterBox | null =
+		focus && focus.panes.length === 2
+			? {
+					path: [],
+					index: 0,
+					dir: stacked ? "col" : "row",
+					share: focus.ratio,
+					pair: 1,
+					split: WHOLE,
+					left: stacked ? 0 : focus.ratio,
+					top: stacked ? focus.ratio : 0,
+					width: stacked ? 1 : 0,
+					height: stacked ? 0 : 1,
+				}
+			: null;
+
+	/**
+	 * Apply a boundary drag.
+	 *
+	 * While full screen the reported share *is* the ratio between the two panes on screen;
+	 * otherwise it names a boundary in the tree.
+	 *
+	 * Read from the store rather than from a variable captured above. A drag holds this callback
+	 * for its whole length, so a captured value is one from before the drag — and full screen is
+	 * exactly the case being distinguished. Getting that wrong sent every full-screen drag into
+	 * the other branch, where it moved a boundary that was not on screen: nothing appeared to
+	 * happen at all.
+	 */
+	const applyShare = (share: number, handle: SplitterBox) => {
+		const dock = useDock.getState();
+		if (dock.maximized) dock.setMaximizedRatio(share);
+		else dock.setShare(handle.path, handle.index, share);
+	};
+
+	const splitters = compact ? [] : focus ? (focusSeam ? [focusSeam] : []) : layoutSplitters(fitted);
 
 	/*
 	 * The order panes are *mounted* in, which is not the order they are laid out in.
@@ -166,17 +242,26 @@ export function DockView({
 
 	return (
 		<div className="ly-dock relative flex min-h-0 min-w-0 flex-1 flex-col">
-			{compact && <CollapsedBar items={items} focused={focused} onFocus={(kind) => useDock.getState().focus(kind)} />}
+			{compact && <CollapsedBar items={items} focused={focusedPane} onFocus={(kind) => useDock.getState().focus(kind)} />}
 
 			{/* Marked so the drop geometry can be measured from outside — see `e2e/dock.test.ts`. */}
 			<div ref={containerRef} data-dock-panes className="relative min-h-0 min-w-0 flex-1">
 				{splitters.map((handle) => (
 					<Splitter
-						key={`${handle.path.join(".")}:${handle.index}`}
+						/*
+						 * The full-screen boundary is its own component, never a reused one.
+						 *
+						 * It is a synthesised handle, not one from the tree, and its path happens to
+						 * collide with the dock's first real boundary — so React kept the old
+						 * instance alive across the switch, complete with the listeners and refs
+						 * belonging to a boundary that no longer exists. The drag simply never
+						 * started.
+						 */
+						key={focus ? "maximised-seam" : `${handle.path.join(".")}:${handle.index}`}
 						handle={handle}
 						containerRef={containerRef}
-						onResize={(share) => useDock.getState().setShare(handle.path, handle.index, share)}
-						onEven={() => useDock.getState().setShare(handle.path, handle.index, handle.pair / 2)}
+						onResize={(share) => applyShare(share, handle)}
+						onEven={() => applyShare(0.5, handle)}
 					/>
 				))}
 
@@ -212,14 +297,15 @@ export function DockView({
 					})()}
 
 				{order.current.map((kind) => {
-					const laid = boxes.find((box) => box.kind === kind);
-					// Not in the tree and not in the air either: it was closed, and is gone.
-					if (!laid && carried?.kind !== kind) return null;
+					const placed = boxes.find((box) => box.kind === kind);
+					// Outside a full screen, or closed altogether. Kept mounted either way — hidden
+					// below — unless it is genuinely gone from the tree.
+					if (!placed && carried?.kind !== kind && !present.includes(kind)) return null;
 					const { label, icon } = describe(kind);
 					// Collapsed and maximised are the same geometry — the whole dock — which is why
 					// neither needs a second component or a second code path. A carried pane's box is
 					// ignored entirely; it is positioned against the window, not against the dock.
-					const box = compact || maximized === kind ? WHOLE : (laid ?? WHOLE);
+					const box = compact ? WHOLE : (focusBox(kind) ?? placed ?? WHOLE);
 					return (
 						<DockPane
 							key={kind}
@@ -227,16 +313,18 @@ export function DockView({
 							box={box}
 							label={label}
 							icon={icon}
-							maximized={maximized === kind}
+							maximized={Boolean(focus) && Boolean(placed)}
 							carried={carried?.kind === kind ? carried.rect : null}
 							landing={carried?.kind === kind && carried.landing}
-							hidden={compact && kind !== focused}
+							hidden={compact ? kind !== focusedPane : !placed}
 							draggable={!compact}
 							onDragStart={(event) => start(kind, event)}
 							onMove={(side) => useDock.getState().moveTo(kind, { side, kind: null })}
 							actions={kind === "conversation" ? actions : undefined}
 							inset={corner === kind ? TRAFFIC_LIGHTS : 0}
-							onToggleMaximized={() => useDock.getState().toggleMaximized(kind)}
+							onToggleMaximized={() =>
+								useDock.getState().toggleMaximized(kind, definitions.find((def) => def.kind === kind)?.companion?.kind)
+							}
 							onClose={kind === "conversation" ? undefined : () => useDock.getState().close(kind)}
 							onFocus={() => useDock.getState().focus(kind)}
 							onLanded={landed}

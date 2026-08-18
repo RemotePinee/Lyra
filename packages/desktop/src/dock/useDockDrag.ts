@@ -207,6 +207,15 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 					return;
 				}
 				moving.current = true;
+				/*
+				 * Leave full screen first.
+				 *
+				 * A drag needs somewhere to aim, and full screen is precisely the state in which
+				 * the rest of the layout cannot be seen. Restoring on the first movement shows the
+				 * whole dock as the pane lifts, which is the only way the drop regions mean
+				 * anything.
+				 */
+				useDock.getState().restore();
 				// Freezes the panes' box transitions and stops the pointer reaching pane contents.
 				document.documentElement.dataset.dockDragging = "";
 				useDock.getState().beginDrag({

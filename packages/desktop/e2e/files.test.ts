@@ -503,3 +503,201 @@ test("a toast goes on its own once nothing is holding it", async () => {
 	assert.equal(gone.atFirst, 1);
 	assert.equal(gone.later, 0, "it is still there, so nothing would ever clear a stack of them");
 });
+
+test("the tree and the file are a pair: side by side, and full screen together", async () => {
+	/*
+	 * They are one tool between them — a tree with nothing open is a list, and a file with no tree
+	 * is one file you cannot leave. So the file opens *beside* the tree rather than wherever new
+	 * panes go, and making either full screen brings the other: the point of enlarging a file is to
+	 * read it properly, which is no use if you then cannot reach the next one.
+	 */
+	await openFilePanel();
+	await ui(`
+		const target = row("README.md") ?? row("src/main.ts");
+		if (!target) throw new Error("no file to open");
+		click(target);
+		await wait(700);
+	`);
+
+	const beside = await app.evaluate<Record<string, { left: number; top: number; width: number }>>(`(() => {
+		const out = {};
+		for (const el of document.querySelectorAll("[data-dock-pane]")) {
+			if (getComputedStyle(el).display === "none") continue;
+			const b = el.getBoundingClientRect();
+			out[el.dataset.dockPane] = { left: b.left, top: b.top, width: b.width };
+		}
+		return out;
+	})()`);
+	assert.ok(beside.files && beside.file, "both are open");
+	assert.ok(beside.file.left > beside.files.left, "the file is to the right of the tree");
+	assert.ok(Math.abs(beside.file.top - beside.files.top) < 2, "and on the same row, not stacked under it");
+
+	// Full screen from the file's own header.
+	const maximise = `(async () => {
+		const header = document.querySelector('[data-dock-header="file"]');
+		[...header.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? "").startsWith("全屏") || (b.getAttribute("aria-label") ?? "").startsWith("退出全屏")).click();
+		await new Promise((r) => setTimeout(r, 600));
+	})()`;
+	await app.evaluate(maximise);
+
+	const full = await app.evaluate<{ visible: string[]; span: number; dock: number; files: number; file: number }>(`(() => {
+		const visible = [];
+		const width = {};
+		let left = Infinity;
+		let right = -Infinity;
+		for (const el of document.querySelectorAll("[data-dock-pane]")) {
+			if (getComputedStyle(el).display === "none") continue;
+			visible.push(el.dataset.dockPane);
+			const b = el.getBoundingClientRect();
+			width[el.dataset.dockPane] = b.width;
+			left = Math.min(left, b.left);
+			right = Math.max(right, b.right);
+		}
+		const dock = document.querySelector("[data-dock-panes]").getBoundingClientRect();
+		return { visible, span: right - left, dock: dock.width, files: width.files ?? 0, file: width.file ?? 0 };
+	})()`);
+	assert.deepEqual(full.visible.sort(), ["file", "files"], "the pair fills the dock, and nothing else is drawn");
+	assert.ok(Math.abs(full.span - full.dock) < 4, "between them they cover it");
+	/*
+	 * The file takes most of the room, as it does in every editor. Checked here rather than in the
+	 * ordinary layout, where a narrow dock puts both of them on their 300px floor and the ratio
+	 * cannot be seen.
+	 */
+	assert.ok(full.file > full.files, `the file is the larger of the two: ${Math.round(full.files)} / ${Math.round(full.file)}`);
+
+	// And back.
+	await app.evaluate(maximise);
+	const restored = await app.evaluate<string[]>(`
+		[...document.querySelectorAll("[data-dock-pane]")].filter((el) => getComputedStyle(el).display !== "none").map((el) => el.dataset.dockPane)
+	`);
+	assert.ok(restored.includes("conversation"), "the conversation is back");
+});
+
+test("the boundary inside a maximised pair can still be dragged", async () => {
+	/*
+	 * Full screen used to raise its panes above everything, which buried the splitter between them
+	 * — a maximised tree and file could not be resized at all. The panes it is not showing are
+	 * hidden outright, so there was never anything for the extra layer to cover.
+	 *
+	 * The share also has to be translated on the way back. The focused layout re-shares the pair to
+	 * fill the dock, so what is read off the handle sums to 1 there and to less than that in the
+	 * tree being stored.
+	 */
+	await openFilePanel();
+	await ui(`
+		const target = row("README.md") ?? row("src/main.ts");
+		click(target);
+		await wait(700);
+	`);
+	await app.evaluate(`(async () => {
+		const header = document.querySelector('[data-dock-header="file"]');
+		[...header.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? "").startsWith("全屏")).click();
+		await new Promise((r) => setTimeout(r, 600));
+	})()`);
+
+	const widths = () =>
+		app.evaluate<Record<string, number>>(`(() => {
+			const out = {};
+			for (const el of document.querySelectorAll("[data-dock-pane]")) {
+				if (getComputedStyle(el).display === "none") continue;
+				out[el.dataset.dockPane] = el.getBoundingClientRect().width;
+			}
+			return out;
+		})()`);
+
+	const before = await widths();
+	assert.ok(before.files && before.file, "the pair is what is on screen");
+
+	// The seam has to be reachable: nothing may be drawn over it.
+	const onTop = await app.evaluate<string | null>(`(() => {
+		const h = document.querySelector('[data-dock-panes] [role="separator"][aria-orientation="vertical"]');
+		if (!h) return null;
+		const b = h.getBoundingClientRect();
+		const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+		return el ? el.getAttribute("role") : null;
+	})()`);
+	assert.equal(onTop, "separator", "the splitter is what the pointer would land on");
+
+	await app.evaluate(`(async () => {
+		const handle = document.querySelector('[data-dock-panes] [role="separator"][aria-orientation="vertical"]');
+		const b = handle.getBoundingClientRect();
+		const x = b.left + b.width / 2;
+		const y = b.top + b.height / 2;
+		const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+		handle.dispatchEvent(new PointerEvent("pointerdown", {
+			pointerId: 12, isPrimary: true, bubbles: true, cancelable: true, clientX: x, clientY: y, buttons: 1,
+		}));
+		await frame();
+		await frame();
+		for (let step = 1; step <= 8; step++) {
+			window.dispatchEvent(new PointerEvent("pointermove", {
+				pointerId: 12, isPrimary: true, bubbles: true, clientX: x - (240 * step) / 8, clientY: y, buttons: 1,
+			}));
+			await frame();
+		}
+		window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 12, isPrimary: true, bubbles: true, clientX: x - 240, clientY: y, buttons: 0 }));
+		await new Promise((r) => setTimeout(r, 500));
+	})()`);
+
+	const after = await widths();
+	assert.ok(
+		after.files < before.files - 100,
+		`the tree narrowed: ${Math.round(before.files)} to ${Math.round(after.files)} (file ${Math.round(before.file)} to ${Math.round(after.file)})`,
+	);
+	assert.ok(after.file > before.file + 100, "and the file took the room");
+	assert.ok(
+		Math.abs(after.files + after.file - (before.files + before.file)) < 4,
+		"between them they still fill the dock",
+	);
+
+	await app.evaluate(`(async () => {
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		await new Promise((r) => setTimeout(r, 400));
+	})()`);
+});
+
+test("dragged apart, the pair is two ordinary panes again", async () => {
+	/*
+	 * The pairing is declared in the registry, but honouring it regardless of where the panes have
+	 * been moved would mean full screen occasionally swallowing whatever sits between them.
+	 */
+	await openFilePanel();
+	await ui(`
+		const target = row("README.md") ?? row("src/main.ts");
+		click(target);
+		await wait(700);
+	`);
+
+	// Send the file to the far left, putting the conversation between it and the tree.
+	await app.evaluate(`(async () => {
+		const grip = document.querySelector('[data-dock-grip="file"]');
+		grip.focus();
+		grip.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true, bubbles: true, cancelable: true }));
+		await new Promise((r) => setTimeout(r, 600));
+	})()`);
+
+	const order = await app.evaluate<string[]>(`
+		[...document.querySelectorAll("[data-dock-pane]")]
+			.filter((el) => getComputedStyle(el).display !== "none")
+			.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+			.map((el) => el.dataset.dockPane)
+	`);
+	assert.deepEqual(order, ["file", "conversation", "files"], "they are no longer neighbours");
+
+	await app.evaluate(`(async () => {
+		const header = document.querySelector('[data-dock-header="file"]');
+		[...header.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? "").startsWith("全屏")).click();
+		await new Promise((r) => setTimeout(r, 600));
+	})()`);
+
+	const visible = await app.evaluate<string[]>(`
+		[...document.querySelectorAll("[data-dock-pane]")].filter((el) => getComputedStyle(el).display !== "none").map((el) => el.dataset.dockPane)
+	`);
+	assert.deepEqual(visible, ["file"], "so full screen is just the one pane");
+
+	// Leave the dock as it was found: these two tests are the only ones here that rearrange it.
+	await app.evaluate(`(async () => {
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		await new Promise((r) => setTimeout(r, 400));
+	})()`);
+});
