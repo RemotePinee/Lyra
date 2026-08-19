@@ -32,9 +32,22 @@ const EVERY_MS = 6 * 60 * 60 * 1000;
 type Stage =
 	| { at: "idle" }
 	| { at: "downloading"; percent: number }
+	/** Downloaded, and being unpacked — which ending it is going to have is not known yet. */
+	| { at: "preparing" }
 	| { at: "staged" }
 	| { at: "opened" }
 	| { at: "failed"; error: string };
+
+/** What the confirming button says at each stage. Flat, because a nested ternary this deep reads
+    as a puzzle rather than as five cases. */
+const LABELS: Record<Stage["at"], string> = {
+	idle: "下载安装",
+	downloading: "下载中",
+	preparing: "准备中",
+	staged: "立即重启",
+	opened: "重新打开安装器",
+	failed: "重试",
+};
 
 export function UpdateBadge() {
 	const [info, setInfo] = useState<Info | null>(null);
@@ -65,9 +78,16 @@ export function UpdateBadge() {
 	// Progress arrives from the main process, which is the only place that can see the stream.
 	useEffect(() => {
 		return window.lyra.updates.onProgress(({ received, total, done }) => {
-			// `opened` provisionally: `install` upgrades it to `staged` if the update can be swapped
-			// in, which is only known once the download call returns.
-			setStage(done ? { at: "opened" } : { at: "downloading", percent: total > 0 ? received / total : 0 });
+			/*
+			 * The last chunk means downloaded, not finished — and certainly not which ending this
+			 * is going to have.
+			 *
+			 * This used to guess `opened` here and let `install` correct it to `staged` a moment
+			 * later, so the dialog said 重新打开安装器 for as long as unpacking took and then
+			 * changed its mind in front of the reader. Guessing the *wrong* one was not the mistake;
+			 * guessing at all was, when the answer arrives on its own a moment later.
+			 */
+			setStage(done ? { at: "preparing" } : { at: "downloading", percent: total > 0 ? received / total : 0 });
 		});
 	}, []);
 
@@ -80,9 +100,8 @@ export function UpdateBadge() {
 			setStage({ at: "failed", error: result.error ?? "下载失败" });
 			return;
 		}
-		// The progress listener already moved this to `opened` on the last chunk; correct it when
-		// what actually happened was a staged update waiting to be swapped in.
-		if (result.relaunch) setStage({ at: "staged" });
+		// Now it is known: an update we can swap in, or an installer the OS has been handed.
+		setStage(result.relaunch ? { at: "staged" } : { at: "opened" });
 	};
 
 	return (
@@ -161,6 +180,7 @@ export function UpdateBadge() {
 								</div>
 							</div>
 						)}
+						{stage.at === "preparing" && <p className="mb-3 text-detail text-ink-muted">正在准备…</p>}
 						{stage.at === "staged" && (
 							<p className="mb-3 text-detail text-ok">已下载完成。重启 Lyra 即可用上新版本，正在进行的对话会中断。</p>
 						)}
@@ -189,17 +209,11 @@ export function UpdateBadge() {
 							{info.asset ? (
 								<button
 									type="button"
-									disabled={stage.at === "downloading"}
+									disabled={stage.at === "downloading" || stage.at === "preparing"}
 									onClick={() => void (stage.at === "staged" ? window.lyra.updates.relaunch() : install())}
 									className="h-[32px] rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-50"
 								>
-									{stage.at === "staged"
-										? "立即重启"
-										: stage.at === "opened"
-											? "重新打开安装器"
-											: stage.at === "failed"
-												? "重试"
-												: "下载安装"}
+									{LABELS[stage.at]}
 								</button>
 							) : (
 								<button
