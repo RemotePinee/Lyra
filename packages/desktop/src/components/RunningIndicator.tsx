@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useCountUp } from "./useCountUp.ts";
 import { moodFor, phraseFor } from "./thinking-words.ts";
 import { useApp } from "../store.ts";
 
@@ -46,6 +47,8 @@ export function RunningIndicator() {
 	const last = messages[messages.length - 1];
 	const live = last?.role === "assistant" && last.stopReason === "pending" ? last.usage.total : 0;
 	const total = tokens + live;
+	// Travelled to, not jumped to: usage lands per message, so this moves in steps of thousands.
+	const counted = useCountUp(total);
 
 	const [toolName, summary] = doing.split("\u0000");
 	const elapsed = startedAt ? now - startedAt : 0;
@@ -63,7 +66,9 @@ export function RunningIndicator() {
 			{total > 0 && (
 				<>
 					<span className="text-ink-faint">·</span>
-					<span className="tabular-nums">{formatTokens(total)} tokens</span>
+					{/* `tabular-nums` matters more while it is moving: without it the glyph widths
+					    change every frame and the whole line shuffles sideways as the number climbs. */}
+					<span className="tabular-nums">{formatTokens(Math.round(counted))} tokens</span>
 				</>
 			)}
 			{/*
