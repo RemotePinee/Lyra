@@ -12,6 +12,24 @@
  */
 export const WINDOW_CONTROLS_LEFT = 78;
 
+/** A toolbar button, and the gap after it. Shared so what sits beside one can clear it. */
+export const TOOLBAR_BUTTON = 28;
+export const TOOLBAR_GAP = 10;
+
+/**
+ * How much of the window's top-left corner belongs to the window rather than to the content.
+ *
+ * The traffic lights *and* the sidebar toggle: with the sidebar closed, that toggle is the only
+ * way back to it, and it floats over whatever the dock has put in that corner. A pane that only
+ * cleared the lights drew its own title straight underneath the button — the terminal's first tab
+ * ended up on top of it, so the tab was hard to read and the button, still there and still
+ * working, looked like it had gone.
+ *
+ * Here rather than in `WindowToolbar`, which the dock would otherwise have to import — and that
+ * file reaches into the dock's own store, so the two would depend on each other.
+ */
+export const TOOLBAR_RESERVED = WINDOW_CONTROLS_LEFT + TOOLBAR_BUTTON + TOOLBAR_GAP;
+
 /**
  * The button beside the traffic lights: show or hide the sidebar.
  *

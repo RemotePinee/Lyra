@@ -17,7 +17,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { useLayout } from "../layout.tsx";
-import { WINDOW_CONTROLS_LEFT } from "../components/WindowControls.tsx";
+import { TOOLBAR_RESERVED } from "../components/WindowControls.tsx";
 import { useApp } from "../store.ts";
 import { renderPanel, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
 import { CollapsedBar, type CollapsedItem } from "./CollapsedBar.tsx";
@@ -34,13 +34,18 @@ import { useDockDrag } from "./useDockDrag.ts";
 const WHOLE: Box = { left: 0, top: 0, width: 1, height: 1 };
 
 /**
- * How far a pane's title must start in when it is the one covering the traffic lights.
+ * How far a pane's title must start in when it is the one holding the window's corner.
  *
- * `WINDOW_CONTROLS_LEFT` is measured from the window's edge. A pane at the left edge is flush with
- * it, so what stands between the two is the card's border and the header's own padding — subtract
+ * What it has to leave clear is the traffic lights *and* the sidebar toggle beside them.
+ * `TOOLBAR_RESERVED` is measured from the window's edge; a pane at the left edge is flush with it,
+ * so what stands between the two is the card's border and the header's own padding — subtract
  * those and what is left is the extra the header has to add.
+ *
+ * The toggle used not to be counted, and with the sidebar closed it is the only way back — so the
+ * pane in that corner drew its title over the one control that would have undone the thing that
+ * put it there.
  */
-const TRAFFIC_LIGHTS = WINDOW_CONTROLS_LEFT - HEADER_PAD - 1;
+const CORNER_RESERVED = TOOLBAR_RESERVED - HEADER_PAD - 1;
 
 export function DockView({
 	title,
@@ -348,7 +353,7 @@ export function DockView({
 							onMove={(side) => useDock.getState().moveTo(kind, { side, kind: null })}
 							actions={kind === "conversation" ? actions : undefined}
 							title={kind === "conversation" ? undefined : renderPanelHeader(kind)}
-							inset={corner === kind ? TRAFFIC_LIGHTS : 0}
+							inset={corner === kind ? CORNER_RESERVED : 0}
 							onToggleMaximized={() =>
 								useDock.getState().toggleMaximized(kind, definitions.find((def) => def.kind === kind)?.companion?.kind)
 							}

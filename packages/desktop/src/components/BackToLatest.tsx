@@ -5,9 +5,14 @@
  * the way — and while a turn is streaming, "all the way" keeps moving. So a button, floating just
  * above the composer where the last message would be.
  *
- * It is mounted whether or not it is shown, and animates on the two properties that read as
- * arriving from below: a small rise and a fade. Mounting it on demand would have it appear at full
+ * It is mounted whether or not it is shown. Mounting it on demand would have it appear at full
  * opacity in its final position, which is the same picture as a layout glitch.
+ *
+ * Arriving and leaving are not mirror images. It rises a little on the way in, because it has come
+ * from the bottom of the transcript and that is where it points. On the way out it stays put and
+ * dissolves: it goes because you *arrived* at the bottom, and a button that drops away at the end
+ * of a scroll reads as one last lurch downwards — the jump the button exists to save you from,
+ * performed as its parting gesture.
  *
  * `pointer-events` follow visibility — an invisible button that still swallows clicks over the
  * transcript is worse than no button.
@@ -18,9 +23,28 @@ import { ArrowDown } from "lucide-react";
 export function BackToLatest({ show, unread, onClick }: { show: boolean; unread: boolean; onClick: () => void }) {
 	return (
 		<div
-			className={`pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out ${
-				show ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
-			}`}
+			className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center"
+			style={
+				show
+					? {
+							transform: "translateY(0)",
+							opacity: 1,
+							transition: "opacity var(--ly-t-base) var(--ly-e-out), transform var(--ly-t-base) var(--ly-e-out)",
+						}
+					: {
+							/*
+							 * It drops back to its starting position only *after* it has faded.
+							 *
+							 * The offset has to be here, or there is nothing to rise from next time. But
+							 * moving while still visible is the lurch this is avoiding, so the transform
+							 * has no duration and a delay as long as the fade: by the time it happens the
+							 * button is already invisible, and it is simply waiting where it began.
+							 */
+							transform: "translateY(6px)",
+							opacity: 0,
+							transition: "opacity var(--ly-t-quick) var(--ly-e-out), transform 0s var(--ly-t-quick)",
+						}
+			}
 		>
 			<button
 				type="button"

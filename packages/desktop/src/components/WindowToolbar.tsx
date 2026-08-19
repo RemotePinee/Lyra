@@ -13,11 +13,13 @@ import { has } from "../dock/tree.ts";
 import { usePanelDefinitions } from "../panels/definitions.tsx";
 import type { PanelKind } from "../sideStore.ts";
 import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
-import { ToolbarButton, WINDOW_CONTROLS_LEFT, WindowControls } from "./WindowControls.tsx";
+import { ToolbarButton, TOOLBAR_BUTTON, TOOLBAR_GAP, WINDOW_CONTROLS_LEFT, WindowControls } from "./WindowControls.tsx";
 import { UpdateBadge } from "./UpdateBadge.tsx";
 
 /** Left offset of the first toolbar button, when there are traffic lights to clear. */
 const TOOLBAR_LEFT = WINDOW_CONTROLS_LEFT;
+
+
 
 /**
  * And where it goes when there are none.
@@ -42,7 +44,7 @@ export function UpdateSlot({ nativeFullScreen }: { nativeFullScreen: boolean }) 
 	return (
 		<div
 			className="no-drag absolute top-0 z-[61] flex h-[44px] items-center"
-			style={{ left: (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + 28 + 10 }}
+			style={{ left: (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + TOOLBAR_BUTTON + TOOLBAR_GAP }}
 		>
 			<UpdateBadge />
 		</div>
