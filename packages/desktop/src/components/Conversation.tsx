@@ -286,7 +286,17 @@ export function Conversation() {
             ) : (
               /* Keyed on the first call, not the position: inserting anything above must not
                * make React tear this run down and build it again. */
-              <ToolRunGroup key={`run-${run.calls[0]?.block.id ?? index}`} calls={run.calls} />
+              <ToolRunGroup
+                key={`run-${run.calls[0]?.block.id ?? index}`}
+                calls={run.calls}
+                /*
+                 * The last run of a turn still in progress keeps its highlight moving.
+                 *
+                 * Only the last: an earlier group is finished no matter what the turn is doing,
+                 * and gliding all of them would say several things are happening at once.
+                 */
+                trailing={running && index === visibleRuns.length - 1}
+              />
             ),
           )}
 

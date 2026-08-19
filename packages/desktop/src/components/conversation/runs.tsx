@@ -103,13 +103,23 @@ function isLive(run: ToolRunState | undefined, stopReason: AssistantMessage["sto
  * unevenness — the same kind of work looked like two different things depending on how many
  * calls happened to fall together, and the boundary moved as the model chose to batch or not.
  */
-const ToolRunGroup = function ToolRun({ calls }: { calls: Call[] }) {
+const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trailing?: boolean }) {
   /*
    * Primitives, not the map.
    *
    * A selector returning an object builds a new one every time and so always looks changed; a
    * number is compared by value, so this re-renders when what it shows changes and not when some
    * other card emits a line of output.
+   */
+  /*
+   * `trailing` is the last run of a turn that has not finished.
+   *
+   * The glide used to depend on `liveCount` alone — whether a call in this group was executing
+   * right now — and that is not the same question. Between two tool calls the model is thinking:
+   * every call has returned, the count is zero, and the run is still very much going, so the line
+   * stopped moving several times a turn while the spinner below it kept spinning. The run is what
+   * is running, not the individual call, and this group keeps taking on the calls of the replies
+   * that follow it.
    */
   const liveCount = useApp(
     (s) => calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason)).length,
@@ -136,7 +146,7 @@ const ToolRunGroup = function ToolRun({ calls }: { calls: Call[] }) {
   ));
 
   return (
-    <ToolGroup summary={summary} added={added} removed={removed} running={liveCount > 0}>
+    <ToolGroup summary={summary} added={added} removed={removed} running={liveCount > 0 || trailing}>
       {cards}
     </ToolGroup>
   );

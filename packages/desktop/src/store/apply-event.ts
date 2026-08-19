@@ -29,7 +29,21 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
    */
   {
     const current = get().activity[sessionId] ?? null;
-    const next = nextActivity(event, current);
+    const settled = nextActivity(event, current);
+    /*
+     * A conversation you are watching cannot finish unread.
+     *
+     * `visibleActivity` hides `done` for the conversation on screen, which looked like enough —
+     * but hiding is not clearing. The mark stayed in the map, and the instant you clicked away it
+     * became a conversation you had never looked at, complete with the dot. Sitting through a
+     * turn and then being told you missed it is the opposite of what the mark is for.
+     *
+     * Only the finished states. `running` and `waiting` are about what is still to come and are
+     * worth carrying out of the conversation with you.
+     */
+    const finished = settled === "done" || settled === "failed";
+    const next = finished && sessionId === get().activeSessionId ? null : settled;
+
     if (next !== current) {
       const activity = { ...get().activity };
       if (next) activity[sessionId] = next;

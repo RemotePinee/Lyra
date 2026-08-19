@@ -73,20 +73,23 @@ export function ToolGroup({
 				 * spinner here. One mark per statement: a spinner beside a moving line is the same
 				 * fact told twice, and the pair of them is what made a long run feel busy.
 				 *
-				 * Keyed on the text so a change is a new element: the old one is gone and the new
-				 * one fades in, which reads as a change rather than as a flicker.
-				 */}
-				{/*
-				 * Two elements, because they are two animations.
+				 * Two elements, because they are two animations — and in this order, because only
+				 * one of them may restart.
 				 *
 				 * `animation` is one property: a second class does not add to the first, it replaces
-				 * it. With both on one span the fade-in won and the glide never ran — while the
-				 * transparent text it relies on stayed, so the line was coloured by a gradient that
-				 * was standing still. The entrance belongs to the outer element, the glide to the
-				 * text inside it.
+				 * it. So the glide and the entrance cannot share a span.
+				 *
+				 * Which one gets the key is the whole of how this reads. The key was on the outer
+				 * span, so every time the sentence gained a clause — "读取文件 8 个" becoming "读取
+				 * 文件 9 个" — React replaced the element the glide was running on, and the highlight
+				 * jumped back to the start. During a busy run that is several restarts a second,
+				 * which is a flicker, not a sweep. The glide belongs to the line, which persists for
+				 * as long as the run does; the fade belongs to the words, which are what changed.
 				 */}
-				<span key={summary} className="ly-fade-in min-w-0 truncate">
-					<span className={running ? "ly-glide" : undefined}>{summary}</span>
+				<span className={`min-w-0 truncate ${running ? "ly-glide" : ""}`}>
+					<span key={summary} className="ly-fade-in">
+						{summary}
+					</span>
 				</span>
 				{(added ?? 0) + (removed ?? 0) > 0 && (
 					<span className="shrink-0 font-mono text-caption">
