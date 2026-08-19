@@ -35,13 +35,22 @@ async function stubOpen(root: string): Promise<{ env: NodeJS.ProcessEnv; opened:
 /** A pid that is certainly gone, so the script's wait loop falls straight through. */
 const DEPARTED = 999999;
 
+/**
+ * The swap runs a bash script and uses `ditto`, so these only mean anything on macOS.
+ *
+ * Skipped rather than made portable: this is the macOS install path specifically — the other
+ * platforms hand their installer to the OS and have nothing of this shape to test. Windows CI
+ * caught them within two minutes of being written, which is the whole reason it is in the matrix.
+ */
+const macOnly = { skip: process.platform === "darwin" ? false : "只在 macOS 上有这条更新路径" };
+
 test("the bundle to replace is worked out from the running executable", () => {
 	assert.equal(installedAppBundle("/Applications/Lyra.app/Contents/MacOS/Lyra"), "/Applications/Lyra.app");
 	assert.equal(installedAppBundle("/Users/me/Desktop/Lyra.app/Contents/MacOS/Lyra"), "/Users/me/Desktop/Lyra.app");
 	assert.equal(installedAppBundle("/usr/local/bin/lyra"), null, "not a bundle at all");
 });
 
-test("the new copy goes in, the old one is cleared away, and the app is launched again", async () => {
+test("the new copy goes in, the old one is cleared away, and the app is launched again", macOnly, async () => {
 	const root = await mkdtemp(join(tmpdir(), "swap-test-"));
 	const target = join(root, "Lyra.app");
 	const staged = join(root, "new", "Lyra.app");
@@ -61,7 +70,7 @@ test("the new copy goes in, the old one is cleared away, and the app is launched
 	await rm(root, { recursive: true, force: true });
 });
 
-test("an install that fails puts the old app back rather than leaving nothing", async () => {
+test("an install that fails puts the old app back rather than leaving nothing", macOnly, async () => {
 	const root2 = await mkdtemp(join(tmpdir(), "swap-fail-"));
 	const target2 = join(root2, "Lyra.app");
 	await mkdir(join(target2, "Contents"), { recursive: true });
