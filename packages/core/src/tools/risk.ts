@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { withinOrIs } from "../platform.ts";
 import { SAFE, risky, scratchRoots, underScratchRoot, wipesScratchRoot, type RiskVerdict } from "./risk-shared.ts";
 import { NEVER_UNATTENDED, PROTECTED_PATH, RISKY_SUBCOMMANDS } from "./risk-tables.ts";
@@ -83,7 +84,7 @@ function judgeSingle(command: string, contained = false, cwd?: string): RiskVerd
 					t === ".." ||
 					bareGlob(t) ||
 					wipesScratchRoot(t, cwd) ||
-					(t.startsWith("/") && !underScratchRoot(t, cwd)),
+					(isAbsolute(t) && !underScratchRoot(t, cwd)),
 			);
 			const climbs = targets.some((t) => t.split("/").includes(".."));
 			if (targets.length === 0 || reckless || climbs || !contained) return risky("递归删除目录");
@@ -99,7 +100,7 @@ function judgeSingle(command: string, contained = false, cwd?: string): RiskVerd
 		if (/\s-[a-zA-Z]*f/.test(command) && /[*?]/.test(command)) {
 			const targets = command.split(/\s+/).slice(1).filter((word) => !word.startsWith("-"));
 			const outside = targets.some(
-				(t) => t.startsWith("~") || wipesScratchRoot(t, cwd) || (t.startsWith("/") && !underScratchRoot(t, cwd)),
+				(t) => t.startsWith("~") || wipesScratchRoot(t, cwd) || (isAbsolute(t) && !underScratchRoot(t, cwd)),
 			);
 			if (outside || !contained) return risky("强制删除通配匹配的文件");
 		}
@@ -181,7 +182,15 @@ function staysInside(command: string, cwd: string): boolean {
 		if (!match) continue;
 		const target = match[1].replace(/^['"]|['"]$/g, "");
 		if (target.startsWith("~") || target === "-" || /[$`]/.test(target)) return false;
-		if (target.startsWith("/")) {
+		/*
+		 * `isAbsolute`, so this recognises `C:\…` as well as `/…`.
+		 *
+		 * With `startsWith("/")` every Windows path fell straight past every one of these checks —
+		 * so `rm -rf C:\Users\…\Temp` was not merely misjudged, it was never judged at all. A
+		 * classifier that answers "safe" because it did not recognise the shape of the path is the
+		 * worst failure mode available to it.
+		 */
+		if (isAbsolute(target)) {
 			if (withinOrIs(root, target)) continue;
 			/*
 			 * A scratch directory is somewhere work legitimately happens, not somewhere it escaped
