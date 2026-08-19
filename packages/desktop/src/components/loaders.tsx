@@ -13,31 +13,28 @@
  * was written from scratch with `linear` and evenly spaced geometry, and read as mechanical for
  * precisely that reason.
  *
- * The motion is in `styles.css` — see the Loading section. Both take their colour from
- * `currentColor`, so they belong to whatever they are placed in.
+ * The motion is in `styles.css` — see the Loading section. The dots take their colour from
+ * `currentColor` and so belong to whatever they are placed in; the breathing one walks the palette
+ * itself, because the colour is carrying meaning there rather than matching a surround.
  */
 
 /**
- * Six dots going round, each breathing on its own.
+ * A pulse leaving a still centre, walking through the palette as it goes.
  *
- * For the sidebar. The container turns every 2.5s and the dots pulse every 2.0s; those do not
- * divide evenly, so the figure never repeats — which matters for something that may be on screen
- * for the length of a long turn.
+ * For the sidebar. Nothing rotates and nothing travels, which is what makes it bearable at the
+ * edge of vision — there may be several rows working at once, and a column of spinners all coming
+ * round at their own rates is a column that will not let you read anything else.
+ *
+ * The colour walk (accent → info → violet, 2.4s) is what says how long it has been going: a glance
+ * says alive, a second look says *still* alive, without anything speeding up or getting louder.
  */
-export function ChaseLoader({ size = 14, className = "" }: { size?: number; className?: string }) {
+export function BreatheLoader({ size = 14, className = "" }: { size?: number; className?: string }) {
 	return (
-		<span
-			aria-hidden
-			className={`ly-chase block shrink-0 ${className}`}
-			style={{ width: size, height: size }}
-		>
-			{/* Six, positioned entirely by the animation's delays — see `.ly-chase` in styles.css. */}
-			<span />
-			<span />
-			<span />
-			<span />
-			<span />
-			<span />
+		<span aria-hidden className={`ly-breathe shrink-0 ${className}`} style={{ width: size, height: size }}>
+			{/* Two rings half a period apart, so one is always on its way out; `b` is the core. */}
+			<i />
+			<i />
+			<b />
 		</span>
 	);
 }

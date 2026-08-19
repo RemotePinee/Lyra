@@ -1,6 +1,6 @@
 import type { SessionActivity } from "@lyra/core/activity";
 
-import { ChaseLoader } from "./loaders.tsx";
+import { BreatheLoader } from "./loaders.tsx";
 
 const LABEL: Record<SessionActivity, string> = {
 	running: "正在执行",
@@ -33,14 +33,14 @@ export function SessionStatus({ activity }: { activity: SessionActivity | null }
 		>
 			{activity === "running" ? (
 				/*
-				 * Filling the slot rather than sitting inside it.
+				 * Just inside the slot, not filling it.
 				 *
-				 * This was an 11px spinner in a 14px space, which was right for an arc — an arc is
-				 * legible at any size. Six dots are not: at 11px each is under 3px and they close
-				 * into a smudge. Given the whole slot they are just large enough to read as
-				 * separate things going round, which is the entire point of the shape.
+				 * The rings expand to the full width at the end of each breath, so a loader given
+				 * the whole 14px would touch its neighbours at the top of every cycle. At 12px the
+				 * widest ring still clears the row, and the core — which is what you actually read
+				 * at a glance — stays the size of the dots the other states use.
 				 */
-				<ChaseLoader size={14} />
+				<BreatheLoader size={12} />
 			) : activity === "waiting" ? (
 				/*
 				 * The only state that is asking for something, so the only one that moves.

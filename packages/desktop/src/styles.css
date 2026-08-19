@@ -829,94 +829,99 @@
  * stay legible at 11px. In the transcript the indicator says "your turn is running" and sits at
  * the head of a line of text, where three dots read as a sentence continuing.
  *
- * Both are from SpinKit (tobiasahlin), whose numbers are worth copying rather than reinventing:
- * every one of its animations is on a sine curve, and the good ones layer two periods that do not
- * divide into each other — which is what stops a loop from looking like a loop. An earlier pass at
- * this used `linear` and evenly-spaced geometry, and read as mechanical for exactly that reason.
+ * Both take their easing from SpinKit (tobiasahlin), whose numbers are worth copying rather than
+ * reinventing: every one of its animations is on a sine curve rather than `linear`. An earlier
+ * pass at this was written from scratch with linear timing and evenly-spaced geometry, and read as
+ * mechanical for exactly that reason.
  * ------------------------------------------------------------------------- */
 
 /*
- * `sk-chase`: six dots around a circle, each also pulsing on its own.
+ * A pulse leaving a still centre, cycling through the palette as it goes.
  *
- * The container turns every 2.5s and each dot breathes every 2.0s. Because those do not divide
- * evenly the pattern never repeats — the same trick the Material spinner uses, and the reason this
- * survives being looked at for minutes at a time.
+ * For the sidebar, where a row may sit working for a long time in a column of other rows. Nothing
+ * rotates and nothing travels, which is what makes it bearable at the edge of vision — a spinner
+ * there pulls the eye every time it comes round, and there may be several of them.
+ *
+ * The colour is the part that says how long it has been going. One breath is 2.4s and the hue
+ * moves accent → info → violet → accent across it, so a glance tells you it is alive and a longer
+ * look tells you it is *still* alive — without anything getting faster or louder. All three are
+ * already in the palette; this introduces no new colour, it walks the ones there are.
  */
-@keyframes ly-chase-turn {
-  100% {
-    transform: rotate(360deg);
+@keyframes ly-breathe-wave {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.55;
   }
-}
-
-@keyframes ly-chase-orbit {
-  80%,
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes ly-chase-breathe {
-  0%,
   100% {
     transform: scale(1);
-  }
-  50% {
-    transform: scale(0.42);
+    opacity: 0;
   }
 }
 
-.ly-chase {
+@keyframes ly-breathe-core {
+  0%,
+  100% {
+    transform: scale(0.62);
+    background: var(--color-accent);
+  }
+  33% {
+    transform: scale(0.86);
+    background: var(--color-info);
+  }
+  66% {
+    transform: scale(0.72);
+    background: var(--color-violet);
+  }
+}
+
+@keyframes ly-breathe-hue {
+  0%,
+  100% {
+    border-color: var(--color-accent);
+  }
+  33% {
+    border-color: var(--color-info);
+  }
+  66% {
+    border-color: var(--color-violet);
+  }
+}
+
+.ly-breathe {
   position: relative;
-  animation: ly-chase-turn 2.5s linear infinite;
+  display: block;
 }
 
-.ly-chase span {
+/*
+ * The rings and the core share a period but not a curve.
+ *
+ * The wave eases out — it is thrown, and slows as it goes. The colour walk is `ease-in-out`, so it
+ * lingers on each hue rather than sliding evenly between them. Two rings half a period apart, so
+ * there is always one on its way out.
+ */
+.ly-breathe i {
   position: absolute;
   inset: 0;
-  animation: ly-chase-orbit 2s ease-in-out infinite both;
-}
-
-.ly-chase span::before {
-  content: "";
   display: block;
-  /*
-   * A quarter of the dial, which at 11px is a hair over 2.5px.
-   *
-   * Larger and the six of them close into a ring; smaller and they stop being dots. This is the
-   * size at which the shape still reads as "several things going round" at the smallest place it
-   * is used.
-   */
-  width: 26%;
-  height: 26%;
-  margin: 0 auto;
+  border: 1.5px solid var(--color-accent);
   border-radius: 50%;
-  background: currentColor;
-  animation: ly-chase-breathe 2s ease-in-out infinite both;
+  animation:
+    ly-breathe-wave 2.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite,
+    ly-breathe-hue 2.4s ease-in-out infinite;
 }
 
-.ly-chase span:nth-child(1),
-.ly-chase span:nth-child(1)::before {
-  animation-delay: -1.1s;
+.ly-breathe i:nth-of-type(2) {
+  animation-delay: -1.2s;
 }
-.ly-chase span:nth-child(2),
-.ly-chase span:nth-child(2)::before {
-  animation-delay: -1s;
-}
-.ly-chase span:nth-child(3),
-.ly-chase span:nth-child(3)::before {
-  animation-delay: -0.9s;
-}
-.ly-chase span:nth-child(4),
-.ly-chase span:nth-child(4)::before {
-  animation-delay: -0.8s;
-}
-.ly-chase span:nth-child(5),
-.ly-chase span:nth-child(5)::before {
-  animation-delay: -0.7s;
-}
-.ly-chase span:nth-child(6),
-.ly-chase span:nth-child(6)::before {
-  animation-delay: -0.6s;
+
+.ly-breathe b {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 50%;
+  background: var(--color-accent);
+  transform: scale(0.62);
+  animation: ly-breathe-core 2.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
 }
 
 /*
