@@ -33,6 +33,15 @@ export interface ViewerState {
 	index: number;
 	/** Where the thumbnail was, for the open and close animations. */
 	origin: DOMRect | null;
+	/**
+	 * The thumbnail itself, so it can be hidden while its picture is out of it.
+	 *
+	 * The flight is meant to read as *this thumbnail* becoming the full-size picture. Leaving the
+	 * original in place while a copy of it flies away shows two of the same thing at once, which is
+	 * the illusion broken in the most literal way possible. Held only for as long as the viewer is
+	 * open, and restored by the viewer on its way out.
+	 */
+	source: HTMLElement | null;
 }
 
 let state: ViewerState | null = null;
@@ -42,9 +51,14 @@ function emit() {
 	for (const listener of listeners) listener();
 }
 
-export function openViewer(images: ViewerImage[], index: number, origin: DOMRect | null) {
+export function openViewer(
+	images: ViewerImage[],
+	index: number,
+	origin: DOMRect | null,
+	source: HTMLElement | null = null,
+) {
 	if (images.length === 0) return;
-	state = { images, index: Math.max(0, Math.min(index, images.length - 1)), origin };
+	state = { images, index: Math.max(0, Math.min(index, images.length - 1)), origin, source };
 	emit();
 }
 
@@ -57,6 +71,8 @@ export function stepViewer(delta: number) {
 	if (!state) return;
 	const count = state.images.length;
 	// Wraps, because a gallery of three that stops at both ends is a gallery you have to think about.
+	// No origin and no source: stepping is a move between pictures, not an arrival from a thumbnail,
+	// and the one it started from stays hidden until the viewer closes.
 	state = { ...state, index: (state.index + delta + count) % count, origin: null };
 	emit();
 }
@@ -79,5 +95,5 @@ export function useViewer(): ViewerState | null {
  * keep, so making an image openable is one prop and no bookkeeping.
  */
 export function openFromEvent(event: React.MouseEvent<HTMLElement>, images: ViewerImage[], index: number) {
-	openViewer(images, index, event.currentTarget.getBoundingClientRect());
+	openViewer(images, index, event.currentTarget.getBoundingClientRect(), event.currentTarget);
 }

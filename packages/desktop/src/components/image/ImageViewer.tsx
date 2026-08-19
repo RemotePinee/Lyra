@@ -63,6 +63,8 @@ export function ImageViewer() {
 	const [editing, setEditing] = useState(false);
 	const figure = useRef<HTMLDivElement>(null);
 	const origin = useRef<DOMRect | null>(null);
+	/** The thumbnail this came from, hidden while the picture is out of it. */
+	const source = useRef<HTMLElement | null>(null);
 
 	// Held across the closing animation, so the image does not vanish before it has shrunk.
 	const [held, setHeld] = useState<ReturnType<typeof useViewer>>(null);
@@ -124,7 +126,26 @@ export function ImageViewer() {
 		setHeld(state);
 		setLeaving(false);
 		if (state.origin) origin.current = state.origin;
+		if (state.source) source.current = state.source;
 	}, [state]);
+
+	/*
+	 * The thumbnail steps aside for as long as its picture is elsewhere.
+	 *
+	 * Without this the flight is a copy of the thumbnail sailing away from the thumbnail, which
+	 * reads as two objects rather than as one being picked up — and on the way back the picture
+	 * shrinks onto a thumbnail that is already there, so the last frame is the moment two things
+	 * become one. `visibility` rather than `display`: the layout must not move, or the rectangle
+	 * this is flying to stops being where the picture is going.
+	 */
+	useLayoutEffect(() => {
+		const thumbnail = shown ? source.current : null;
+		if (!thumbnail) return;
+		thumbnail.style.visibility = "hidden";
+		return () => {
+			thumbnail.style.visibility = "";
+		};
+	}, [shown]);
 
 	// A different picture is a different thing to be looking at; it arrives at its own size.
 	const src = image?.src;
@@ -210,13 +231,17 @@ export function ImageViewer() {
 		const to = el.getBoundingClientRect();
 		if (to.width === 0 || to.height === 0) return;
 
-		const dx = from.left + from.width / 2 - (to.left + to.width / 2);
-		const dy = from.top + from.height / 2 - (to.top + to.height / 2);
-		const sx = Math.max(from.width / to.width, 0.01);
-		const sy = Math.max(from.height / to.height, 0.01);
-
 		el.style.transition = "none";
-		el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+		el.style.transform = atThumbnail(from, to);
+		/*
+		 * Not quite from nothing, and not quite from solid.
+		 *
+		 * A single scale means the picture starts out filling the thumbnail's square the way the
+		 * thumbnail's own `cover` crop does — which also means the parts the crop cuts off are
+		 * hanging outside it on the first frame. Coming up from mostly-transparent covers that, and
+		 * it gives the arrival somewhere to travel *from* other than pure geometry.
+		 */
+		el.style.opacity = "0.4";
 		void el.offsetWidth;
 		/*
 		 * The value, not the empty string.
@@ -228,6 +253,7 @@ export function ImageViewer() {
 		 */
 		el.style.transition = FLIGHT;
 		el.style.transform = "";
+		el.style.opacity = "1";
 	}, [shown, leaving]);
 
 	/**
@@ -292,12 +318,19 @@ export function ImageViewer() {
 		const from = origin.current;
 		if (el && from) {
 			const to = el.getBoundingClientRect();
-			if (to.width > 0) {
-				const dx = from.left + from.width / 2 - (to.left + to.width / 2);
-				const dy = from.top + from.height / 2 - (to.top + to.height / 2);
-				el.style.transform = `translate(${dx}px, ${dy}px) scale(${Math.max(from.width / to.width, 0.01)}, ${Math.max(from.height / to.height, 0.01)})`;
-			}
-			el.style.opacity = "0";
+			if (to.width > 0) el.style.transform = atThumbnail(from, to);
+			/*
+			 * Fades a little, never out.
+			 *
+			 * This used to go to zero over exactly the time the shrink takes, so the picture was
+			 * invisible about halfway back and the last half of the journey — the half where it
+			 * actually arrives on the thumbnail — played to nobody. What it looked like was the
+			 * picture blinking out, which is precisely the "sudden" being complained about.
+			 *
+			 * It stays visible all the way down instead, and lands on the thumbnail at the moment
+			 * the thumbnail comes back. The mirror of the 0.4 the flight out starts from.
+			 */
+			el.style.opacity = "0.35";
 		}
 
 		window.setTimeout(() => {
@@ -707,6 +740,28 @@ function decode(dataUrl: string): Blob {
 	const bytes = new Uint8Array(binary.length);
 	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 	return new Blob([bytes], { type: "image/png" });
+}
+
+/**
+ * The transform that puts the full-size picture back on its thumbnail.
+ *
+ * **One scale, not two.** The obvious FLIP writes `scale(from.width / to.width, from.height /
+ * to.height)`, and that is right only when the two boxes have the same proportions. These do not:
+ * a thumbnail is a 64px square showing a `cover` crop, and the picture it stands for is usually
+ * wide. Those two ratios differ by half, so the first frame of every flight was the image squashed
+ * to the thumbnail's shape — and the animation's job became un-distorting it. That is the stiffness:
+ * the picture appeared to be stretched into place rather than to travel.
+ *
+ * One ratio keeps it the shape it actually is for the whole flight, and `max` is the one to use —
+ * it matches the `cover` the thumbnail is drawn with, so the picture starts out filling that square
+ * exactly as the thumbnail does, rather than sitting inside it with margins the thumbnail has not
+ * got.
+ */
+function atThumbnail(from: DOMRect, to: DOMRect): string {
+	const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+	const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+	const scale = Math.max(from.width / to.width, from.height / to.height, 0.01);
+	return `translate(${dx}px, ${dy}px) scale(${scale})`;
 }
 
 /** A `data:` URL is already the file; an anchor is the whole of "save as" for one. */
