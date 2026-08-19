@@ -55,6 +55,20 @@ pnpm test        # 190 个单元测试
 并在同一行写明理由；不要去改 `.oxlintrc.json` 把规则关掉，除非你能说清楚这条规则
 对整个仓库都不适用。
 
+## 发版
+
+打 tag 就是发版：推 `v*` 触发 `release.yml`，三平台各自构建，汇总成一个**草稿** release。
+
+**打 tag 之前，先在 GitHub Actions 上手动跑一次 `Release dry run`。** 它跑的东西和 release
+一模一样（三平台 lint/typecheck/test + `pnpm package`），只是不创建 release。绿了再打 tag。
+
+为什么必须这一步：日常的 CI 不打包，而 `pnpm package` 是唯一会执行 electron-builder 的地
+方。0.2.0 第一次发版就栽在这里——`executableName` 在 Linux 上不合法，这个配置错误在仓库里
+待了很久，因为在此之前没有任何一条流程构建过 Linux 包。
+
+版本号在 6 个 package.json 里，要一起改（内部依赖走 `workspace:*`，不受影响）。应用的更新
+检查跳过草稿和预发布，所以构建完还要在 GitHub 上手动 Publish，客户端才看得到。
+
 ## 硬约束
 
 - **缩进 tab**，YAML/JSON 用 2 空格
@@ -63,6 +77,20 @@ pnpm test        # 190 个单元测试
 - **不要动 `docs/`**：那是本地笔记，已经在 `.gitignore` 里
 - **不要提交任何密钥**。模型配置在 `~/.lyra/settings.json`，不在仓库里
 - 改了行为就补测试。规则性的代码（分组、风险判定、去重）尤其要测
+
+## 跨平台
+
+CI 的单元测试跑 Linux 和 Windows；macOS 只在 PR、tag 和手动触发时跑（计费是 Linux 的十倍）。
+
+**Windows 不是「再跑一遍」，它是会以不同方式坏掉的那个平台。** 已经踩过的两种：
+
+- 路径包含判断写成 `` p.startsWith(`${root}/`) ``。Linux/macOS 上对，Windows 上恒假，因为
+  分隔符是 `\`。要判断包含就问 `path.relative()`，别自己拼分隔符。
+- 测试用 `process.env.HOME` 做沙箱。`os.homedir()` 在 Windows 上读的是 `USERPROFILE`，于是
+  沙箱没生效、测试摸到了真实用户目录。两个都要设。
+
+命令文本里的路径是另一回事：`risk.ts` 分析的是 `cd /tmp` 这类字面量，那里的 `/` 是场景本身，
+不要「顺手修掉」。
 
 ## 容易踩的坑
 

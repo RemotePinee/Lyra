@@ -31,7 +31,7 @@
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative as relativePath, resolve } from "node:path";
 import type { McpServerConfig } from "../mcp/client.ts";
 import { loadSkills, type Skill } from "../skills/loader.ts";
 
@@ -423,12 +423,21 @@ function normalizeServer(
 	return null;
 }
 
-/** Resolve a manifest-supplied relative path, refusing anything that escapes the plugin. */
+/**
+ * Resolve a manifest-supplied relative path, refusing anything that escapes the plugin.
+ *
+ * Containment is asked of `path`, not spelled out with a separator. Comparing against
+ * `` `${root}/` `` is right on POSIX and silently wrong on Windows, where the separator is a
+ * backslash — so every containment check answered "escaped", every `.mcp.json` was refused, and
+ * every MCP bundle was misfiled as a plugin. The failure is only visible on Windows, which is
+ * exactly the kind of thing a `/` in a path check hides.
+ */
 function resolveInside(pluginDir: string, relative: string): string | null {
 	if (isAbsolute(relative)) return null;
 	const resolved = resolve(pluginDir, relative);
 	const root = resolve(pluginDir);
-	return resolved === root || resolved.startsWith(`${root}/`) ? resolved : null;
+	const step = relativePath(root, resolved);
+	return step === "" || (!step.startsWith("..") && !isAbsolute(step)) ? resolved : null;
 }
 
 /** One-line summary for the plugin list. */

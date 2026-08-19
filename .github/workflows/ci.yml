@@ -41,10 +41,17 @@ jobs:
     # allowance, and this repository exhausted a month of it in an afternoon of pushes. So macOS
     # runs where a second opinion actually changes a decision (a pull request, a tag, a manual run)
     # and Linux runs everywhere.
+    #
+    # Windows runs everywhere too, despite costing double, because it is the platform that breaks
+    # differently rather than merely again: `\` for a separator, `USERPROFILE` instead of `HOME`,
+    # case-insensitive paths. Every one of those is invisible on the other two and none of them is
+    # the kind of thing anyone catches by reading. Leaving it out of the push matrix is how a
+    # release came to be the first thing that ever ran the tests there — and it failed, on code
+    # that had been green for weeks.
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest","windows-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

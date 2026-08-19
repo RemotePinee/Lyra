@@ -14,21 +14,31 @@ import { test } from "node:test";
 import { migratePreviousHome } from "../src/session/migrate-home.ts";
 
 /**
- * The old home is looked up from the real home directory, so these tests drive it through
- * `HOME` — which is also the one thing that makes them safe to run on a machine that has one.
+ * The old home is looked up from the real home directory, so these tests point that somewhere
+ * temporary — which is also the one thing that makes them safe to run on a machine that has one.
+ *
+ * Both variables, because `os.homedir()` does not read the same one everywhere: `HOME` on Unix,
+ * `USERPROFILE` on Windows. Setting only `HOME` left Windows looking at the actual user's home
+ * directory, where there is no `.deepwise` — so the migration correctly reported that it had
+ * nothing to do, and the test that asked it to move something failed. The sandbox was simply not
+ * in effect, which is the worst way for a test to be wrong: it was still touching a real machine.
  */
+const HOME_VARS = ["HOME", "USERPROFILE"] as const;
+
 async function sandbox(): Promise<{ home: string; previous: string; restore: () => void }> {
 	const root = await mkdtemp(join(tmpdir(), "ly-migrate-"));
-	const realHome = process.env.HOME;
+	const real = HOME_VARS.map((name) => [name, process.env[name]] as const);
 	const realLyraHome = process.env.LYRA_HOME;
-	process.env.HOME = root;
+	for (const name of HOME_VARS) process.env[name] = root;
 	delete process.env.LYRA_HOME;
 	return {
 		home: join(root, ".lyra"),
 		previous: join(root, ".deepwise"),
 		restore: () => {
-			if (realHome === undefined) delete process.env.HOME;
-			else process.env.HOME = realHome;
+			for (const [name, value] of real) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
 			if (realLyraHome !== undefined) process.env.LYRA_HOME = realLyraHome;
 		},
 	};

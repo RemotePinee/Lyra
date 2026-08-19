@@ -4,6 +4,12 @@
 # entitlements, and every workspace dependency copied in whether it is needed at runtime or not.
 appId: dev.lyra.app
 productName: Lyra
+# The binary's own name, which is not always derived from productName.
+#
+# Linux takes it from the package name instead, and this package is called `@lyra/desktop` — so
+# electron-builder produced `@lyradesktop`, refused it as a filename, and failed the AppImage. It
+# only ever mattered on Linux, and nothing built Linux until the first release.
+executableName: Lyra
 copyright: Copyright © 2026 kittors
 
 directories:
