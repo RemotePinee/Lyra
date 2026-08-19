@@ -18,6 +18,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { installedAppBundle, scheduleSwap } from "./install-update.ts";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Unpack with `ditto`, not a library.
+ *
+ * A `.app` is a directory of symlinks, code signatures and extended attributes, and most zip
+ * implementations quietly drop some of that — producing a bundle that unpacks without complaint
+ * and then refuses to launch. `ditto` is what macOS itself uses, and `-x -k` is its zip mode.
+ */
+const unzip = (archive: string, into: string) => execFileAsync("ditto", ["-x", "-k", archive, into]);
 
 import { isNewer } from "../../src/update/version.ts";
 
@@ -61,10 +75,18 @@ function pickAsset(assets: Asset[]): UpdateInfo["asset"] {
 	);
 	const find = (test: (name: string) => boolean) => named.find((a) => test(a.name.toLowerCase()));
 
+	/*
+	 * macOS takes the zip, not the disk image.
+	 *
+	 * A .dmg can only be *opened* — the user mounts it and drags the app across, which is a manual
+	 * install wearing the clothes of an automatic one. The zip contains `Lyra.app` directly, so it
+	 * can be unpacked and swapped in place, and the update becomes what it should be: download,
+	 * relaunch, done. The dmg stays in the release for people installing by hand the first time.
+	 */
 	const match =
 		process.platform === "darwin"
-			? (find((n) => n.endsWith(".dmg") && (arm ? n.includes("arm64") : !n.includes("arm64"))) ??
-				find((n) => n.endsWith(".dmg")))
+			? (find((n) => n.endsWith(".zip") && (arm ? n.includes("arm64") : !n.includes("arm64"))) ??
+				find((n) => n.endsWith(".zip")))
 			: process.platform === "win32"
 				? (find((n) => n.endsWith(".exe")) ?? find((n) => n.endsWith(".msi")))
 				: (find((n) => n.endsWith(".appimage")) ?? find((n) => n.endsWith(".deb")));
@@ -73,6 +95,9 @@ function pickAsset(assets: Asset[]): UpdateInfo["asset"] {
 }
 
 let cached: { at: number; info: UpdateInfo } | null = null;
+
+/** An unpacked update waiting for the user to say when. Cleared once it has been used. */
+let pending: { staged: string; target: string } | null = null;
 
 async function fetchLatest(current: string): Promise<UpdateInfo> {
 	const controller = new AbortController();
@@ -151,7 +176,9 @@ export function registerUpdateIpc(): void {
 	 * percentage is the whole of the feedback. It is written to a temp directory keyed by version so
 	 * a second attempt after a failure does not append to half a file.
 	 */
-	ipcMain.handle("updates:download", async (event, version: string): Promise<{ ok: boolean; error?: string }> => {
+	ipcMain.handle(
+		"updates:download",
+		async (event, version: string): Promise<{ ok: boolean; error?: string; relaunch?: boolean }> => {
 		const info = cached?.info;
 		const asset = info?.asset;
 		if (!asset || info?.latest !== version) return { ok: false, error: "没有找到适用于这台机器的安装包" };
@@ -183,13 +210,56 @@ export function registerUpdateIpc(): void {
 			}
 
 			send({ received: asset.size, total: asset.size, done: true });
-			// The disk image, the installer, the AppImage — whatever it is, the OS knows what to do.
+
+			/*
+			 * A zip on macOS is an update we can actually perform; everything else is an installer.
+			 *
+			 * Unpacking here rather than at relaunch means any failure — a truncated download, a
+			 * bundle that is not what we expected — is reported while the window is still up and
+			 * able to say so. By the time the user presses 立即重启 there is nothing left that can
+			 * go wrong except the swap itself.
+			 */
+			if (process.platform === "darwin" && file.endsWith(".zip")) {
+				const target = installedAppBundle(app.getPath("exe"));
+				if (!target) return { ok: false, error: "这个副本不是从「应用程序」运行的，无法就地更新" };
+
+				const staged = join(dir, "unpacked");
+				await mkdir(staged, { recursive: true });
+				await unzip(file, staged);
+				const bundle = join(staged, `${app.getName()}.app`);
+				if (!(await stat(bundle).catch(() => null))?.isDirectory()) {
+					return { ok: false, error: "下载的更新包里没有找到应用" };
+				}
+
+				pending = { staged: bundle, target };
+				return { ok: true, relaunch: true };
+			}
+
+			// Windows and Linux still hand the file to the OS: those are installers, and on Linux
+			// a .deb needs a privilege this process does not have.
 			await shell.openPath(file);
 			return { ok: true };
 		} catch (error) {
 			await rm(dir, { recursive: true, force: true }).catch(() => {});
 			return { ok: false, error: error instanceof Error ? error.message : "下载失败" };
 		}
+	});
+
+	/**
+	 * Swap in the update and come back up on it.
+	 *
+	 * Separate from `download` so the person decides when: a relaunch in the middle of a turn would
+	 * take the conversation with it. Nothing here can fail in a way worth reporting — the app is
+	 * about to exit — so a scheduling failure simply leaves the update staged for next time.
+	 */
+	ipcMain.handle("updates:relaunch", async () => {
+		if (!pending) return false;
+		await scheduleSwap(pending);
+		pending = null;
+		// `exit`, not `quit`: quitting runs the window-close handlers, and one of them keeps the
+		// app alive in the tray — which would leave the swap script waiting on a pid that never goes.
+		app.exit(0);
+		return true;
 	});
 
 	// Kept for the case where there is no installer for this platform: then the release page is the

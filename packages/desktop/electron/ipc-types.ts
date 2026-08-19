@@ -299,8 +299,16 @@ export interface LyraApi {
 			publishedAt: number | null;
 			asset: { name: string; url: string; size: number } | null;
 		}>;
-		/** Fetches this platform's installer and opens it. Progress arrives on `onProgress`. */
-		download(version: string): Promise<{ ok: boolean; error?: string }>;
+		/**
+		 * Fetches the update and gets it ready. Progress arrives on `onProgress`.
+		 *
+		 * `relaunch: true` means it is staged and the app can swap to it on demand — macOS, where
+		 * the download is the app itself. Without it the file was an installer and has been handed
+		 * to the OS, which is as far as this can take it.
+		 */
+		download(version: string): Promise<{ ok: boolean; error?: string; relaunch?: boolean }>;
+		/** Put the staged update in place and come back up on it. Does not return if it works. */
+		relaunch(): Promise<boolean>;
 		/** Opens the release page in the browser. Refuses anything that is not a github.com URL. */
 		open(url: string): Promise<boolean>;
 		onProgress(listener: (payload: { received: number; total: number; done?: boolean }) => void): () => void;

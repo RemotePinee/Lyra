@@ -202,6 +202,7 @@ const api: LyraApi = {
 	updates: {
 		check: (force) => ipcRenderer.invoke("updates:check", force),
 		download: (version) => ipcRenderer.invoke("updates:download", version),
+		relaunch: () => ipcRenderer.invoke("updates:relaunch"),
 		open: (url) => ipcRenderer.invoke("updates:open", url),
 		onProgress: (listener) => {
 			const handler = (_event: unknown, payload: { received: number; total: number; done?: boolean }) =>

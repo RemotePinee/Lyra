@@ -24,7 +24,17 @@ type Info = Awaited<ReturnType<typeof window.lyra.updates.check>>;
 /** Rechecked this often while the window stays open; the main process caches under it. */
 const EVERY_MS = 6 * 60 * 60 * 1000;
 
-type Stage = { at: "idle" } | { at: "downloading"; percent: number } | { at: "opened" } | { at: "failed"; error: string };
+/**
+ * `staged` is the update unpacked and waiting for a relaunch; `opened` is an installer handed to
+ * the OS. They are different endings and the dialog has to say different things: one offers to
+ * finish the job, the other has already done as much as it can.
+ */
+type Stage =
+	| { at: "idle" }
+	| { at: "downloading"; percent: number }
+	| { at: "staged" }
+	| { at: "opened" }
+	| { at: "failed"; error: string };
 
 export function UpdateBadge() {
 	const [info, setInfo] = useState<Info | null>(null);
@@ -55,6 +65,8 @@ export function UpdateBadge() {
 	// Progress arrives from the main process, which is the only place that can see the stream.
 	useEffect(() => {
 		return window.lyra.updates.onProgress(({ received, total, done }) => {
+			// `opened` provisionally: `install` upgrades it to `staged` if the update can be swapped
+			// in, which is only known once the download call returns.
 			setStage(done ? { at: "opened" } : { at: "downloading", percent: total > 0 ? received / total : 0 });
 		});
 	}, []);
@@ -64,7 +76,13 @@ export function UpdateBadge() {
 	const install = async () => {
 		setStage({ at: "downloading", percent: 0 });
 		const result = await window.lyra.updates.download(info.latest);
-		if (!result.ok) setStage({ at: "failed", error: result.error ?? "下载失败" });
+		if (!result.ok) {
+			setStage({ at: "failed", error: result.error ?? "下载失败" });
+			return;
+		}
+		// The progress listener already moved this to `opened` on the last chunk; correct it when
+		// what actually happened was a staged update waiting to be swapped in.
+		if (result.relaunch) setStage({ at: "staged" });
 	};
 
 	return (
@@ -131,8 +149,11 @@ export function UpdateBadge() {
 								</div>
 							</div>
 						)}
+						{stage.at === "staged" && (
+							<p className="mb-3 text-detail text-ok">已下载完成。重启 Lyra 即可用上新版本，正在进行的对话会中断。</p>
+						)}
 						{stage.at === "opened" && (
-							<p className="mb-3 text-detail text-ok">已下载完成，安装器已经打开。把 Lyra 拖进「应用程序」即可。</p>
+							<p className="mb-3 text-detail text-ok">已下载完成，安装器已经打开，按它的提示装完即可。</p>
 						)}
 						{stage.at === "failed" && <p className="mb-3 text-detail text-danger">{stage.error}</p>}
 
@@ -157,10 +178,16 @@ export function UpdateBadge() {
 								<button
 									type="button"
 									disabled={stage.at === "downloading"}
-									onClick={() => void install()}
+									onClick={() => void (stage.at === "staged" ? window.lyra.updates.relaunch() : install())}
 									className="h-[32px] rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-50"
 								>
-									{stage.at === "opened" ? "重新打开安装器" : stage.at === "failed" ? "重试" : "下载安装"}
+									{stage.at === "staged"
+										? "立即重启"
+										: stage.at === "opened"
+											? "重新打开安装器"
+											: stage.at === "failed"
+												? "重试"
+												: "下载安装"}
 								</button>
 							) : (
 								<button
