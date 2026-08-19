@@ -359,7 +359,17 @@ export function DockView({
 							 * would put it is not a question that has an answer yet.
 							 */
 							hidden={compact ? kind !== focusedPane : !placed && carried?.kind !== kind}
-							draggable={!compact}
+							/*
+							 * No grip when there is nowhere to go.
+							 *
+							 * With one pane in the dock a drag cannot do anything — `useDockDrag` already
+							 * refuses to pick it up, because lifting the only pane leaves no layout to drop
+							 * it into. But the handle was drawn anyway, so a conversation on its own had a
+							 * control above it that does nothing when pressed, and appears whenever the
+							 * pointer is anywhere in the pane. `live` rather than `present` so it does not
+							 * vanish mid-drag, when the carried pane has been lifted out of the tree.
+							 */
+							draggable={!compact && live.length > 1}
 							onDragStart={(event) => start(kind, event)}
 							onMove={(side) => useDock.getState().moveTo(kind, { side, kind: null })}
 							actions={kind === "conversation" ? actions : undefined}

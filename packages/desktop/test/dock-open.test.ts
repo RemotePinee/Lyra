@@ -97,3 +97,28 @@ test("a panel with a declared partner still lands beside it, whatever the column
 
 	assert.deepEqual(columns(tree), [["conversation"], ["terminal", "browser"], ["files", "file"]]);
 });
+
+/**
+ * Whether a pane offers a handle to drag itself by.
+ *
+ * `useDockDrag` already refuses to lift the only pane in the dock — there would be no layout left
+ * to drop it into — but the handle was drawn regardless, so a conversation on its own carried a
+ * control that did nothing when pressed and appeared whenever the pointer entered the pane.
+ */
+const hasGrip = (paneCount: number, compact: boolean) => !compact && paneCount > 1;
+
+test("a lone pane has no grip: there is nowhere for it to go", () => {
+	assert.equal(hasGrip(kinds(defaultTree()).length, false), false, "the default layout is one pane");
+	assert.equal(hasGrip(1, false), false);
+});
+
+test("a second pane makes both of them draggable", () => {
+	assert.equal(hasGrip(kinds(opened("terminal")).length, false), true);
+	assert.equal(hasGrip(2, false), true);
+	assert.equal(hasGrip(6, false), true);
+});
+
+test("the narrow layout has no grips at all, however many panes there are", () => {
+	// One pane is shown at a time there, so a drop target is not a thing that exists.
+	assert.equal(hasGrip(4, true), false);
+});
