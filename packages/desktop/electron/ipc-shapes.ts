@@ -134,6 +134,15 @@ export interface PullRequestSummary {
 	number: number;
 	title: string;
 	author: string;
+	/**
+	 * Where the author's picture is, as GitHub named it — not the picture.
+	 *
+	 * The page never fetches this itself; the main process turns it into a data URL on request.
+	 * Carried per row rather than derived from the login because `github.com/<login>.png` is wrong
+	 * for the accounts that post the most: a bot's picture belongs to the app, not to a user of the
+	 * same name.
+	 */
+	avatarUrl: string | null;
 	state: string;
 	isDraft: boolean;
 	url: string;
@@ -144,6 +153,15 @@ export interface PullRequestSummary {
 	additions: number | null;
 	deletions: number | null;
 	headRefName: string | null;
+	/**
+	 * What CI says about the head commit, in the three outcomes a reviewer acts on.
+	 *
+	 * Null when the repository runs no checks at all, which is a different thing from "none have
+	 * finished" — one draws nothing, the other draws a pending mark.
+	 */
+	checkState: PullRequestCheck["state"] | null;
+	/** GitHub's verdict: `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or null when unasked. */
+	reviewDecision: string | null;
 }
 
 /** One review already left on a pull request. */

@@ -91,10 +91,6 @@ export function LiveToolCard({
   );
 }
 
-/** A call with no record is still going only while the message that made it is unfinished. */
-function isLive(run: ToolRunState | undefined, stopReason: AssistantMessage["stopReason"]): boolean {
-  return run?.status === "running" || (!run && stopReason === "pending");
-}
 
 /**
  * One run of tool work: always a line, never a row of cards.
@@ -112,18 +108,16 @@ const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trai
    * other card emits a line of output.
    */
   /*
-   * `trailing` is the last run of a turn that has not finished.
+   * The glide asks one question: is this the run that is happening now.
    *
-   * The glide used to depend on `liveCount` alone — whether a call in this group was executing
-   * right now — and that is not the same question. Between two tool calls the model is thinking:
-   * every call has returned, the count is zero, and the run is still very much going, so the line
-   * stopped moving several times a turn while the spinner below it kept spinning. The run is what
-   * is running, not the individual call, and this group keeps taking on the calls of the replies
-   * that follow it.
+   * It used to also light up whenever a call in the group counted as live, and that turned out to
+   * mean something else entirely: a call with no recorded result counts as live while its message
+   * is still `pending` — and during a turn the earlier messages are *all* still pending,
+   * so every group in the transcript qualified and the whole conversation shimmered at once. What
+   * was wanted is the single run being worked on, and the answer to that is `trailing`: the last
+   * run of a turn that has not finished. Everything above it is over, whatever its calls look like.
    */
-  const liveCount = useApp(
-    (s) => calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason)).length,
-  );
+
   /*
    * One sentence, growing — never a different sentence while it works.
    *
@@ -146,7 +140,7 @@ const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trai
   ));
 
   return (
-    <ToolGroup summary={summary} added={added} removed={removed} running={liveCount > 0 || trailing}>
+    <ToolGroup summary={summary} added={added} removed={removed} running={Boolean(trailing)}>
       {cards}
     </ToolGroup>
   );

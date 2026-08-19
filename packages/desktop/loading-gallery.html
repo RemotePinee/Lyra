@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh">
+	<head>
+		<meta charset="utf-8" />
+		<title>Lyra · Loading 候选</title>
+		<style>
+			/*
+			 * A page for choosing, not a page for showing off.
+			 *
+			 * Every candidate is rendered at the size it will actually be used — 14px, beside a line
+			 * of running text — because that is the only size at which the decision is real. Each one
+			 * is also shown at 40px so the shape can be judged, but the 14px row is the one that
+			 * counts: several of these look wonderful large and turn to mush small.
+			 */
+			:root {
+				--ink: #1a1c1f;
+				--ink-muted: #5f6470;
+				--ink-faint: #9aa0ab;
+				--line: #e6e8ec;
+				--shell: #ffffff;
+				--card: #f6f7f9;
+				--accent: #339cff;
+				font-synthesis: none;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--ink: #ededed;
+					--ink-muted: #a8adb8;
+					--ink-faint: #6e6e6e;
+					--line: #2a2c30;
+					--shell: #171717;
+					--card: #1e1f22;
+				}
+			}
+			* { box-sizing: border-box; }
+			body {
+				margin: 0;
+				padding: 40px 32px 80px;
+				background: var(--shell);
+				color: var(--ink);
+				font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+			}
+			h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: -0.01em; }
+			.lede { color: var(--ink-muted); margin: 0 0 32px; max-width: 640px; }
+			.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); max-width: 1100px; }
+			.card {
+				border: 1px solid var(--line);
+				border-radius: 14px;
+				padding: 18px 18px 16px;
+				background: var(--card);
+			}
+			.name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+			.note { color: var(--ink-muted); font-size: 12px; line-height: 1.55; margin-bottom: 14px; min-height: 52px; }
+			.stage { display: flex; align-items: center; gap: 20px; padding: 14px 0 4px; border-top: 1px solid var(--line); }
+			.big { width: 40px; height: 40px; display: grid; place-items: center; flex: none; }
+			/* The row that decides it: real size, real neighbours. */
+			.real { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: 12.5px; min-width: 0; }
+			.real .slot { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
+			.dot { color: var(--ink-faint); }
+			.nums { font-variant-numeric: tabular-nums; }
+
+			/* ── 1. 呼吸弧 ─────────────────────────────────────────────
+			   The current spinner, kept honest as a baseline to compare against. */
+			@keyframes spin { to { transform: rotate(360deg); } }
+			.arc { animation: spin 720ms linear infinite; }
+
+			/* ── 2. 游鱼 ───────────────────────────────────────────────
+			   A body that swims: the tail beats and the whole thing drifts along a slow arc.
+			   Two animations on two elements so the beat does not reset when the drift loops. */
+			@keyframes swim-path {
+				0%   { transform: translateX(-28%) rotate(-8deg); }
+				50%  { transform: translateX(28%) rotate(8deg); }
+				100% { transform: translateX(-28%) rotate(-8deg); }
+			}
+			@keyframes tail-beat {
+				0%, 100% { transform: rotate(-16deg); }
+				50%      { transform: rotate(16deg); }
+			}
+			.fish { animation: swim-path 2.4s ease-in-out infinite; transform-origin: 50% 50%; }
+			.fish .tail { animation: tail-beat 380ms ease-in-out infinite; transform-origin: 82% 50%; }
+
+			/* ── 3. 三点接力 ───────────────────────────────────────────
+			   Not three dots fading in turn — one impulse travelling through three, so it reads as
+			   something moving rather than as three things blinking. */
+			@keyframes relay {
+				0%, 70%, 100% { transform: translateY(0) scale(1); opacity: 0.35; }
+				35%           { transform: translateY(-3.2px) scale(1.18); opacity: 1; }
+			}
+			.relay circle { animation: relay 1.05s cubic-bezier(0.33, 0, 0.2, 1) infinite; }
+			.relay circle:nth-child(2) { animation-delay: 0.12s; }
+			.relay circle:nth-child(3) { animation-delay: 0.24s; }
+
+			/* ── 4. 描边环 ─────────────────────────────────────────────
+			   One stroke drawing itself and then releasing, rotating slowly underneath. The two
+			   speeds are deliberately incommensurate so the loop never lands in the same place. */
+			@keyframes draw {
+				0%   { stroke-dashoffset: 56.5; }
+				50%  { stroke-dashoffset: 14; }
+				100% { stroke-dashoffset: 56.5; }
+			}
+			@keyframes turn { to { transform: rotate(360deg); } }
+			.trace { animation: turn 2.1s linear infinite; }
+			.trace circle { stroke-dasharray: 56.5; animation: draw 1.5s ease-in-out infinite; }
+
+			/* ── 5. 涟漪 ───────────────────────────────────────────────
+			   A pulse leaving a still centre. Quiet enough to sit beside text for two minutes —
+			   nothing travels, so it does not pull the eye the way a rotation does. */
+			@keyframes ripple {
+				0%   { r: 2.5; opacity: 0.55; stroke-width: 3; }
+				100% { r: 10; opacity: 0; stroke-width: 1; }
+			}
+			@keyframes core {
+				0%, 100% { r: 2.4; opacity: 1; }
+				50%      { r: 3.1; opacity: 0.7; }
+			}
+			.ripple .wave { animation: ripple 1.6s ease-out infinite; }
+			.ripple .wave:nth-child(2) { animation-delay: 0.53s; }
+			.ripple .wave:nth-child(3) { animation-delay: 1.06s; }
+			.ripple .heart { animation: core 1.6s ease-in-out infinite; }
+
+			/* ── 6. 摆锤 ───────────────────────────────────────────────
+			   Weight and gravity: it falls fast through the middle and hangs at the ends. The one
+			   candidate here with a sense of mass, which reads as effort rather than as waiting. */
+			@keyframes swing {
+				0%, 100% { transform: rotate(-38deg); }
+				50%      { transform: rotate(38deg); }
+			}
+			.pendulum { animation: swing 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite; transform-origin: 50% 18%; }
+
+			footer { margin-top: 40px; color: var(--ink-faint); font-size: 12px; max-width: 640px; }
+			code { background: var(--card); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+			@media (prefers-reduced-motion: reduce) {
+				* { animation: none !important; }
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Loading 候选</h1>
+		<p class="lede">
+			每一个都按<strong>实际使用的 14px</strong> 摆在一行运行文字旁边（右侧那行才是真正要判断的），
+			左边 40px 只是让你看清形状。有几个放大好看、缩小就糊，所以以小的那行为准。
+		</p>
+
+		<div class="grid">
+			<!-- 1 -->
+			<div class="card">
+				<div class="name">1 · 呼吸弧（现在这个）</div>
+				<div class="note">作为基准放在这里。一段弧匀速转圈——最省事，也最没有性格，和任何一个网页的 loading 没有区别。</div>
+				<div class="stage">
+					<div class="big">
+						<svg width="40" height="40" viewBox="0 0 24 24" class="arc">
+							<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink-faint)" stroke-opacity="0.25" stroke-width="3.4" />
+							<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="17 40" />
+						</svg>
+					</div>
+					<div class="real">
+						<span class="slot">
+							<svg width="14" height="14" viewBox="0 0 24 24" class="arc">
+								<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink-faint)" stroke-opacity="0.25" stroke-width="3.4" />
+								<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="17 40" />
+							</svg>
+						</span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- 2 -->
+			<div class="card">
+				<div class="name">2 · 游鱼</div>
+				<div class="note">尾鳍以 380ms 摆动，鱼身沿一条 2.4s 的弧线来回游。两个动画分在两层，所以摆尾不会因为漂移循环而重置——它像在游，不像在闪。</div>
+				<div class="stage">
+					<div class="big">
+						<svg width="40" height="40" viewBox="0 0 24 24">
+							<g class="fish">
+								<path class="tail" d="M17 12 L22 8.5 L21 12 L22 15.5 Z" fill="var(--accent)" opacity="0.75" />
+								<ellipse cx="11" cy="12" rx="7" ry="4.2" fill="var(--accent)" />
+								<circle cx="6.5" cy="10.8" r="0.9" fill="var(--shell)" />
+							</g>
+						</svg>
+					</div>
+					<div class="real">
+						<span class="slot">
+							<svg width="14" height="14" viewBox="0 0 24 24">
+								<g class="fish">
+									<path class="tail" d="M17 12 L22 8.5 L21 12 L22 15.5 Z" fill="var(--accent)" opacity="0.75" />
+									<ellipse cx="11" cy="12" rx="7" ry="4.2" fill="var(--accent)" />
+									<circle cx="6.5" cy="10.8" r="0.9" fill="var(--shell)" />
+								</g>
+							</svg>
+						</span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- 3 -->
+			<div class="card">
+				<div class="name">3 · 三点接力</div>
+				<div class="note">不是三个点轮流淡入淡出，而是一个冲量依次穿过三个点——读起来是「有东西在传递」，不是「三个东西在闪」。最克制的一个。</div>
+				<div class="stage">
+					<div class="big">
+						<svg width="40" height="40" viewBox="0 0 24 24" class="relay">
+							<circle cx="5.5" cy="12" r="2.4" fill="var(--ink)" />
+							<circle cx="12" cy="12" r="2.4" fill="var(--ink)" />
+							<circle cx="18.5" cy="12" r="2.4" fill="var(--ink)" />
+						</svg>
+					</div>
+					<div class="real">
+						<span class="slot">
+							<svg width="14" height="14" viewBox="0 0 24 24" class="relay">
+								<circle cx="5.5" cy="12" r="2.4" fill="var(--ink)" />
+								<circle cx="12" cy="12" r="2.4" fill="var(--ink)" />
+								<circle cx="18.5" cy="12" r="2.4" fill="var(--ink)" />
+							</svg>
+						</span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- 4 -->
+			<div class="card">
+				<div class="name">4 · 描边环</div>
+				<div class="note">一段笔画自己画出来又收回去，底下慢慢转。两个周期（1.5s 与 2.1s）故意不成整数倍，所以循环永远落不到同一个位置，看久了不会觉得在重复。</div>
+				<div class="stage">
+					<div class="big">
+						<svg width="40" height="40" viewBox="0 0 24 24" class="trace">
+							<circle cx="12" cy="12" r="9" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" />
+						</svg>
+					</div>
+					<div class="real">
+						<span class="slot">
+							<svg width="14" height="14" viewBox="0 0 24 24" class="trace">
+								<circle cx="12" cy="12" r="9" fill="none" stroke="var(--accent)" stroke-width="3.4" stroke-linecap="round" />
+							</svg>
+						</span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- 5 -->
+			<div class="card">
+				<div class="name">5 · 涟漪</div>
+				<div class="note">中心不动，一圈圈往外散。没有任何东西在旋转或平移，所以它是这几个里最安静的——一个要在眼角待上两分钟的东西，安静是优点。</div>
+				<div class="stage">
+					<div class="big">
+						<svg width="40" height="40" viewBox="0 0 24 24" class="ripple">
+							<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
+							<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
+							<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
+							<circle class="heart" cx="12" cy="12" fill="var(--accent)" />
+						</svg>
+					</div>
+					<div class="real">
+						<span class="slot">
+							<svg width="14" height="14" viewBox="0 0 24 24" class="ripple">
+								<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
+								<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
+								<circle class="heart" cx="12" cy="12" fill="var(--accent)" />
+							</svg>
+						</span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- 6 -->
+			<div class="card">
+				<div class="name">6 · 摆锤</div>
+				<div class="note">有重量：中间掉得快，两端停一下。这几个里唯一带「质量感」的，读起来像在使劲，而不是在等待。代价是它比其他几个更抓眼睛。</div>
+				<div class="stage">
+					<div class="big">
+						<svg width="40" height="40" viewBox="0 0 24 24">
+							<g class="pendulum">
+								<line x1="12" y1="4.5" x2="12" y2="15" stroke="var(--ink-faint)" stroke-width="1.6" stroke-linecap="round" />
+								<circle cx="12" cy="17" r="3.4" fill="var(--accent)" />
+							</g>
+						</svg>
+					</div>
+					<div class="real">
+						<span class="slot">
+							<svg width="14" height="14" viewBox="0 0 24 24">
+								<g class="pendulum">
+									<line x1="12" y1="4.5" x2="12" y2="15" stroke="var(--ink-faint)" stroke-width="2" stroke-linecap="round" />
+									<circle cx="12" cy="17" r="3.8" fill="var(--accent)" />
+								</g>
+							</svg>
+						</span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<footer>
+			<p>
+				选好告诉我编号，我把它做成 <code>Spinner</code> 组件替换掉现在的——它只用在两处，换起来很干净。
+				这几个都用 <code>currentColor</code> 或主题变量，深浅色都自动跟随；<code>prefers-reduced-motion</code>
+				下全部静止（系统里开了「减弱动态效果」就不会动）。
+			</p>
+			<p>
+				我的看法：<strong>3（三点接力）</strong> 和 <strong>5（涟漪）</strong> 最适合这个位置——它要在一行文字旁边待上几分钟，
+				安静比好看更重要。<strong>2（游鱼）</strong> 最有性格，但 14px 下细节基本看不清，放大才好看。
+			</p>
+		</footer>
+	</body>
+</html>
