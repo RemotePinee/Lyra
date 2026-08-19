@@ -25,12 +25,35 @@ import { createPortal } from "react-dom";
 
 import { clampZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, zoomAt, type Point } from "./annotate.ts";
 import { AnnotateCanvas, AnnotateToolbar, STAGE_FIT, useAnnotator } from "./Annotator.tsx";
+import { useApp } from "../../store.ts";
 import { closeViewer, stepViewer, useViewer } from "./viewer-store.ts";
 
 /** Matches `--ly-t-base`; kept as a number because the unmount has to be timed against it. */
-const DURATION = 220;
+const DURATION = 260;
+
+/**
+ * The same curve as `--ly-e-out`, spelled out because these transitions are written in JS.
+ *
+ * A picture flying from a thumbnail to the middle of the screen is the most conspicuous motion in
+ * the app, and the browser's `ease-out` is a shallow curve that spends its whole length slowing
+ * down — which at this size reads as the image being dragged rather than released. This one leaves
+ * quickly and settles late, which is what makes it feel like the picture was let go of.
+ */
+const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+/** The flight's transition, as a string: FLIP has to restore this exact value after suppressing it. */
+const FLIGHT = `transform ${DURATION}ms ${EASE}, opacity ${DURATION}ms ${EASE}`;
 
 const CENTRED: Point = { x: 0, y: 0 };
+
+/**
+ * How long the outgoing half of a step takes, and how far it travels.
+ *
+ * Shorter than the flight: this is a step sideways through a set, not an arrival, and matching
+ * the open animation made the arrows feel like they were loading something.
+ */
+const SLIDE_OUT = 120;
+const SLIDE_SHIFT = 44;
 
 export function ImageViewer() {
 	const state = useViewer();
@@ -57,21 +80,29 @@ export function ImageViewer() {
 	const [view, setView] = useState<{ zoom: number; offset: Point }>({ zoom: 1, offset: CENTRED });
 	const { zoom, offset } = view;
 	const [panning, setPanning] = useState(false);
+	/** Which way the picture is moving, and whether it is on its way out or in. */
+	const [slide, setSlide] = useState<{ dir: number; phase: "out" | "in" } | null>(null);
+	const sliding = useRef(0);
 	const [spacing, setSpacing] = useState(false);
 	const grab = useRef<{ x: number; y: number; from: Point } | null>(null);
 
 	/*
-	 * Decoded as soon as the picture is on screen, not when 标注 is pressed.
+	 * Decoded once the picture has landed — not when 标注 is pressed, and not during the flight.
 	 *
-	 * Deferring it saved a decode and cost a flash: the canvas mounts before the source has loaded,
-	 * and a canvas with no width attribute is 300×150, so pressing 标注 replaced the picture with a
-	 * small white box for as long as the decode took. Preparing it while it is merely being looked at
-	 * means the natural size is already known when the canvas appears and the swap is invisible.
+	 * Deferring it to the button saved a decode and cost a flash: the canvas mounts before the
+	 * source has loaded, and a canvas with no width attribute is 300×150, so pressing 标注 replaced
+	 * the picture with a small white box for as long as the decode took.
 	 *
-	 * The cost is one decode of an image the browser has already decoded for the `<img>`, and a
-	 * mosaic source a ninetieth of its width.
+	 * Doing it immediately fixed that and cost something worse. Decoding a screenshot and painting
+	 * it into a canvas is main-thread work measured in tens of milliseconds, and it started on the
+	 * very frame the opening animation did — so the picture juddered its way to the middle of the
+	 * screen every single time, which is the one moment the whole component exists to make smooth.
+	 *
+	 * So: after the flight. By the time anyone has read the picture and reached for 标注 it is long
+	 * ready, and nothing competes with the animation.
 	 */
-	const annotator = useAnnotator(image?.src ?? "");
+	const [decodable, setDecodable] = useState(false);
+	const annotator = useAnnotator(decodable || editing ? (image?.src ?? "") : "");
 
 	const resetView = useCallback(() => setView({ zoom: 1, offset: CENTRED }), []);
 
@@ -87,6 +118,30 @@ export function ImageViewer() {
 	useEffect(() => {
 		resetView();
 	}, [src, resetView]);
+
+	useEffect(() => {
+		if (!shown) {
+			setDecodable(false);
+			return;
+		}
+		const timer = window.setTimeout(() => setDecodable(true), DURATION + 80);
+		return () => window.clearTimeout(timer);
+	}, [shown, src]);
+
+	/*
+	 * The neighbours, fetched while this one is being looked at.
+	 *
+	 * Stepping swaps `src` on an element already on screen, so an undecoded neighbour shows as a
+	 * blank frame in the middle of the slide. Asking for them now means the swap is instant — and
+	 * they are already in memory as data URLs, so this costs a decode and no network at all.
+	 */
+	useEffect(() => {
+		if (!shown || shown.images.length < 2) return;
+		for (const delta of [1, -1]) {
+			const next = shown.images[(shown.index + delta + shown.images.length) % shown.images.length];
+			if (next) new Image().src = next.src;
+		}
+	}, [shown]);
 
 	/*
 	 * Closed means closed, however it was closed.
@@ -132,6 +187,7 @@ export function ImageViewer() {
 			// Arrived without a source rectangle — an arrow key rather than a click. Nothing to fly
 			// from, so it simply appears.
 			el.style.transform = "";
+			el.style.transition = FLIGHT;
 			return;
 		}
 		const to = el.getBoundingClientRect();
@@ -145,9 +201,46 @@ export function ImageViewer() {
 		el.style.transition = "none";
 		el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
 		void el.offsetWidth;
-		el.style.transition = "";
+		/*
+		 * The value, not the empty string.
+		 *
+		 * This used to clear the inline property and let a class supply the transition. Moving the
+		 * transition inline — to put it on the app's own curve — made that clear the only
+		 * declaration there was, so the picture arrived at full size on the very first frame: no
+		 * flight at all, and nothing in the styles to suggest why.
+		 */
+		el.style.transition = FLIGHT;
 		el.style.transform = "";
 	}, [shown, leaving]);
+
+	/**
+	 * Step to the next picture, with the movement that says which way it went.
+	 *
+	 * Two halves either side of the swap: the outgoing picture leaves towards the side it is
+	 * going, the incoming one arrives from the opposite edge. Without this the image was simply
+	 * replaced between frames, which reads as the same picture changing rather than as a move
+	 * through a set — and gave no clue that the arrows do opposite things.
+	 *
+	 * Held in a ref as well as state because the swap is scheduled: a second press mid-flight must
+	 * cancel the first rather than queue behind it.
+	 */
+	const step = useCallback(
+		(delta: number) => {
+			if (leaving) return;
+			window.clearTimeout(sliding.current);
+			setSlide({ dir: delta, phase: "out" });
+			sliding.current = window.setTimeout(() => {
+				stepViewer(delta);
+				setSlide({ dir: delta, phase: "in" });
+				// One frame at the far edge, then release: the transition needs a start it has
+				// actually rendered, or the two writes coalesce and it appears without moving.
+				requestAnimationFrame(() => requestAnimationFrame(() => setSlide(null)));
+			}, SLIDE_OUT);
+		},
+		[leaving],
+	);
+
+	useEffect(() => () => window.clearTimeout(sliding.current), []);
 
 	const dismiss = useCallback(() => {
 		if (leaving) return;
@@ -175,6 +268,7 @@ export function ImageViewer() {
 			if (el) {
 				el.style.transform = "";
 				el.style.opacity = "";
+				el.style.transition = FLIGHT;
 			}
 			closeViewer();
 		}, DURATION);
@@ -224,8 +318,8 @@ export function ImageViewer() {
 				return;
 			}
 			if (editing) return;
-			if (event.key === "ArrowLeft") stepViewer(-1);
-			if (event.key === "ArrowRight") stepViewer(1);
+			if (event.key === "ArrowLeft") step(-1);
+			if (event.key === "ArrowRight") step(1);
 		};
 		const onUp = (event: KeyboardEvent) => {
 			if (event.code === "Space") setSpacing(false);
@@ -241,7 +335,7 @@ export function ImageViewer() {
 			window.removeEventListener("keyup", onUp);
 			window.removeEventListener("blur", release);
 		};
-	}, [shown, editing, dismiss, annotator]);
+	}, [shown, editing, dismiss, annotator, step]);
 
 	if (!shown || !image) return null;
 
@@ -249,6 +343,14 @@ export function ImageViewer() {
 	// Dragging pans only when the drag cannot mean anything else: while not editing, or while space
 	// is held. Otherwise a drag on the canvas is a stroke, which is what it should be.
 	const canPan = spacing || (!editing && zoom > 1);
+
+	/*
+	 * Out towards the direction of travel, in from the opposite edge.
+	 *
+	 * `dir` is +1 for the next picture, so the one leaving moves left and its replacement waits on
+	 * the right — the movement a row of images makes when you walk along it.
+	 */
+	const slideShift = slide ? (slide.phase === "out" ? -slide.dir : slide.dir) * SLIDE_SHIFT : 0;
 
 	const startPan = (event: React.PointerEvent) => {
 		if (!canPan || event.button !== 0) return;
@@ -307,14 +409,26 @@ export function ImageViewer() {
 				aria-label="关闭预览"
 				tabIndex={-1}
 				onClick={dismiss}
-				className="absolute inset-0 cursor-default bg-black/72 transition-opacity duration-[var(--ly-t-base)] ease-out"
-				style={{ opacity: open ? 1 : 0 }}
+				className="absolute inset-0 cursor-default bg-black/72"
+				style={{ opacity: open ? 1 : 0, transition: `opacity ${DURATION}ms ${EASE}` }}
 			/>
 
 			<div
 				ref={figure}
-				className="relative transition-[transform,opacity] duration-[var(--ly-t-base)] ease-out"
-				style={{ transformOrigin: "center" }}
+				className="relative"
+				style={{
+					transformOrigin: "center",
+					transition: FLIGHT,
+					/*
+					 * Its own compositor layer, for the whole time it is on screen.
+					 *
+					 * Scaling a screenshot from thumbnail to full size repaints it every frame unless
+					 * the layer is promoted, and promoting it *as* the animation starts costs the
+					 * first few frames to do so — which is exactly where the judder was. Declared
+					 * rather than switched, because this element only exists while the viewer is open.
+					 */
+					willChange: "transform, opacity",
+				}}
 			>
 				<div
 					onPointerDown={startPan}
@@ -324,11 +438,24 @@ export function ImageViewer() {
 					onDoubleClick={() => (zoom === 1 ? zoomTo(2) : resetView())}
 					className={canPan ? (panning ? "cursor-grabbing" : "cursor-grab") : undefined}
 					style={{
-						transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+						/*
+						 * Pan, zoom and the sideways step, in one transform.
+						 *
+						 * The step is a shift away from centre and back: `out` is the picture leaving
+						 * towards where it is going, `in` is the next one waiting at the far edge for
+						 * the frame before it is released.
+						 */
+						transform: `translate(${offset.x + slideShift}px, ${offset.y}px) scale(${zoom})`,
+						opacity: slide ? 0 : 1,
 						transformOrigin: "center",
 						// Not while dragging: a transition on a per-frame update is a picture that
-						// arrives where the pointer was a moment ago.
-						transition: panning ? "none" : `transform ${DURATION}ms ease-out`,
+						// arrives where the pointer was a moment ago. And not on the frame the next
+						// picture is parked at the edge, or it slides in from wherever the last one left.
+						transition:
+							panning || slide?.phase === "in"
+								? "none"
+								: `transform ${slide ? SLIDE_OUT : DURATION}ms ${EASE}, opacity ${slide ? SLIDE_OUT : DURATION}ms ${EASE}`,
+						willChange: "transform",
 					}}
 				>
 					{editing ? (
@@ -354,8 +481,8 @@ export function ImageViewer() {
 
 			{/* Controls fade in after the image has arrived, so nothing competes with the flight. */}
 			<div
-				className="pointer-events-none absolute inset-0 transition-opacity duration-[var(--ly-t-base)]"
-				style={{ opacity: open ? 1 : 0 }}
+				className="pointer-events-none absolute inset-0"
+				style={{ opacity: open ? 1 : 0, transition: `opacity ${DURATION}ms ${EASE}` }}
 			>
 				{!editing && (
 					<div className="pointer-events-auto absolute top-4 right-4 flex items-center gap-1">
@@ -402,12 +529,12 @@ export function ImageViewer() {
 				{shown.images.length > 1 && !editing && (
 					<>
 						<div className="pointer-events-auto absolute top-1/2 left-4 -translate-y-1/2">
-							<ViewerButton label="上一张 ←" onClick={() => stepViewer(-1)}>
+							<ViewerButton label="上一张 ←" onClick={() => step(-1)}>
 								<ChevronLeft size={18} strokeWidth={1.9} />
 							</ViewerButton>
 						</div>
 						<div className="pointer-events-auto absolute top-1/2 right-4 -translate-y-1/2">
-							<ViewerButton label="下一张 →" onClick={() => stepViewer(1)}>
+							<ViewerButton label="下一张 →" onClick={() => step(1)}>
 								<ChevronRight size={18} strokeWidth={1.9} />
 							</ViewerButton>
 						</div>
@@ -428,14 +555,15 @@ export function ImageViewer() {
 						 * Replace where that is possible, save a copy where it is not.
 						 *
 						 * An image already sent is part of the record and rewriting it in place would
-						 * change what was said. Handing back a file is the honest version of "keep this"
-						 * for one of those — and it is a real outcome rather than a save button that
-						 * quietly does nothing.
+						 * change what was said. So the marked-up copy goes to the clipboard: the next
+						 * thing anyone does with an annotated screenshot is paste it somewhere, and a
+						 * file in the downloads folder is that same errand with two more steps. 另存为
+						 * is still there for when a file is what you actually wanted.
 						 */
 						const dataUrl = annotator.render();
 						if (!dataUrl) return;
 						if (image.onReplace) image.onReplace(dataUrl);
-						else download(dataUrl);
+						else void toClipboard(dataUrl);
 						setEditing(false);
 						dismiss();
 					}}
@@ -474,6 +602,40 @@ function ViewerButton({
 			{children}
 		</button>
 	);
+}
+
+/**
+ * The marked-up copy, ready to paste.
+ *
+ * PNG because that is what `ClipboardItem` takes and what every paste target understands. Falls
+ * back to saving a file if the clipboard refuses — which it does when the window is not focused,
+ * and losing the annotation to a permissions rule would be the worst of the options.
+ */
+async function toClipboard(dataUrl: string) {
+	try {
+		await navigator.clipboard.write([new ClipboardItem({ "image/png": decode(dataUrl) })]);
+		useApp.getState().notify("已复制到剪贴板，可以直接粘贴");
+	} catch {
+		// The clipboard refuses while the window is not focused, and refuses entirely on some
+		// platforms. Losing the annotation to that would be the worst of the outcomes.
+		download(dataUrl);
+		useApp.getState().notify("剪贴板不可用，已改为下载", "warn");
+	}
+}
+
+/**
+ * A `data:` URL to a `Blob`, by hand.
+ *
+ * `fetch(dataUrl)` is the tidy way to do this and it does not work here: the renderer's content
+ * policy rejects `data:` as a fetch target, so every copy failed with `TypeError: Failed to fetch`
+ * and fell through to the download it was meant to replace. `atob` has no such opinion.
+ */
+function decode(dataUrl: string): Blob {
+	const comma = dataUrl.indexOf(",");
+	const binary = atob(dataUrl.slice(comma + 1));
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+	return new Blob([bytes], { type: "image/png" });
 }
 
 /** A `data:` URL is already the file; an anchor is the whole of "save as" for one. */

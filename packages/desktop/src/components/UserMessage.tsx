@@ -144,28 +144,46 @@ export function UserMessage({
             {text}
           </p>
         )}
-        {images.map((block, i) => (
-          /*
-           * Openable, but not replaceable: this one has already been sent. The viewer notices the
-           * missing `onReplace` and offers the annotated copy as a new attachment instead of
-           * silently rewriting a message that is part of the record.
-           */
-          <button
-            key={i}
-            type="button"
-            aria-label="预览图片"
-            onClick={(event) =>
-              openFromEvent(
-                event,
-                images.map((img) => ({ src: `data:${img.mimeType};base64,${img.data}` })),
-                i,
-              )
-            }
-            className="mt-2 block overflow-hidden rounded-lg border border-line transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90"
-          >
-            <img src={`data:${block.mimeType};base64,${block.data}`} alt="" className="max-h-[240px]" />
-          </button>
-        ))}
+        {/*
+         * Thumbnails in a row, not a stack of full-size pictures.
+         *
+         * What a sent image needs to do here is say which image it was; looking at it properly is
+         * a click away, and the viewer is much better at it than a message bubble. At full height
+         * three screenshots pushed the reply that followed them off the screen — the picture took
+         * the space, and the conversation lost it.
+         */}
+        {images.length > 0 && (
+          <div className={`flex flex-wrap gap-1.5 ${text ? "mt-2" : ""}`}>
+            {images.map((block, i) => (
+              /*
+               * Openable, but not replaceable: this one has already been sent. The viewer notices
+               * the missing `onReplace` and offers the annotated copy for the clipboard instead of
+               * silently rewriting a message that is part of the record.
+               */
+              <button
+                key={i}
+                type="button"
+                aria-label="预览图片"
+                onClick={(event) =>
+                  openFromEvent(
+                    event,
+                    images.map((img) => ({ src: `data:${img.mimeType};base64,${img.data}` })),
+                    i,
+                  )
+                }
+                className="block h-[64px] w-[64px] shrink-0 overflow-hidden rounded-lg border border-line transition-[opacity,transform] duration-[var(--ly-t-quick)] hover:opacity-88 active:scale-[0.97]"
+              >
+                {/* `cover`: a row of equal squares reads as a set. Letterboxed thumbnails of mixed
+                    aspect ratios read as a layout that gave up. */}
+                <img
+                  src={`data:${block.mimeType};base64,${block.data}`}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Editing is the one thing a sent message offers that a reply does not. */}

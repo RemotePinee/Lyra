@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { BackToLatest } from "./BackToLatest.tsx";
 import { Composer } from "./Composer.tsx";
@@ -86,6 +86,61 @@ export function Conversation() {
     setMissed(false);
   }, [messages, toolRunCount]);
 
+  /**
+   * Ride down to the newest message, on a curve, without being interrupted on the way.
+   *
+   * `scrollTo({ behavior: "smooth" })` was two problems. It aims at a fixed offset, and a reply
+   * still streaming grows the page underneath it — so it arrived somewhere that was no longer the
+   * bottom. And `pinnedToBottom` was set on the click, which let the layout effect below snap
+   * `scrollTop` to the end mid-flight: the jump the button exists to avoid, performed by the
+   * button. Both are fixed by owning the animation: the target is re-read every frame, and being
+   * pinned is the *result* of arriving rather than a decision taken up front.
+   *
+   * The curve is the same shape as `--ly-e-out`, which everything else in the app decelerates on.
+   */
+  const glide = useRef(0);
+  const gliding = useRef(false);
+  const glideToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    cancelAnimationFrame(glide.current);
+    const from = el.scrollTop;
+    const started = performance.now();
+    const DURATION = 420;
+    gliding.current = true;
+
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - started) / DURATION);
+      const eased = 1 - (1 - progress) ** 3;
+      const target = el.scrollHeight - el.clientHeight;
+      el.scrollTop = from + (target - from) * eased;
+      if (progress < 1) {
+        glide.current = requestAnimationFrame(step);
+        return;
+      }
+      gliding.current = false;
+      pinnedToBottom.current = true;
+      setAway(false);
+      setMissed(false);
+    };
+    glide.current = requestAnimationFrame(step);
+  }, []);
+
+  useEffect(() => () => cancelAnimationFrame(glide.current), []);
+
+  /*
+   * Sending puts you back at the bottom, wherever you had scrolled to.
+   *
+   * Reading back through a conversation and then asking something is ordinary, and the reply to
+   * it arrives at the end — so staying where you were means watching a screen on which nothing
+   * appears to happen. Your own message is the one thing you can be certain you want to see.
+   */
+  const pending = useApp((s) => s.pendingUserMessage);
+  useLayoutEffect(() => {
+    if (!pending) return;
+    glideToBottom();
+  }, [pending, glideToBottom]);
+
   /*
    * Arrived while away. Separate from the effect above because that one returns early when not
    * pinned — which is exactly the case this needs to notice.
@@ -120,7 +175,16 @@ export function Conversation() {
   const visibleRuns = hidden > 0 ? allRuns.slice(hidden) : allRuns;
 
   return (
-    <div ref={column} className="relative flex min-h-0 flex-1 flex-col">
+    <div ref={column} className="flex min-h-0 flex-1 flex-col">
+      {/*
+       * The transcript and the button that scrolls it, in a box of their own.
+       *
+       * This used to be the same box as the composer, and `bottom` measured from the bottom of
+       * *that* — so the button sat inside the field you type in rather than above the last
+       * message. What it offers is about the transcript, so the transcript is what it is
+       * positioned against.
+       */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
       {/*
        * Over the transcript when there is room beside it, in the column when there is not.
        *
@@ -149,6 +213,9 @@ export function Conversation() {
         scrollRef={scrollRef}
         contentClassName={compact ? "px-4" : "px-8"}
         onScroll={(el) => {
+          // Every frame of `glideToBottom` fires this; letting it decide anything mid-flight is
+          // what made the button flicker and the pin land early.
+          if (gliding.current) return;
           const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           pinnedToBottom.current = atBottom;
           setAway(!atBottom);
@@ -241,26 +308,18 @@ export function Conversation() {
       </Scroller>
 
       {/*
-       * Above the composer, over the transcript's last few pixels.
+       * Over the transcript's last few pixels, not in the flow.
        *
-       * Inside the same relative box as the Scroller rather than in the flow: a button that took a
-       * row of its own would push the transcript up by its own height the moment it appeared, and
-       * a control offering to move you should not itself move the thing it is about.
+       * A button that took a row of its own would push the transcript up by its own height the
+       * moment it appeared, and a control offering to move you should not itself move the thing
+       * it is about.
        */}
       <BackToLatest
         show={away}
         unread={missed}
-        onClick={() => {
-          const el = scrollRef.current;
-          if (!el) return;
-          el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-          // Set now rather than waiting for the scroll handler: a smooth scroll fires `scroll`
-          // all the way down, and the button would sit there flickering until it arrived.
-          pinnedToBottom.current = true;
-          setAway(false);
-          setMissed(false);
-        }}
+        onClick={glideToBottom}
       />
+      </div>
 
       {/*
        * Approvals sit directly above the composer.

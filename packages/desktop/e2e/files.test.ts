@@ -676,6 +676,24 @@ test("dragged apart, the pair is two ordinary panes again", async () => {
 	 * The pairing is declared in the registry, but honouring it regardless of where the panes have
 	 * been moved would mean full screen occasionally swallowing whatever sits between them.
 	 */
+
+	/*
+	 * From an empty dock, because this asserts on the *whole* row of panes.
+	 *
+	 * The layout is remembered, and these tests share one profile — so a panel opened by an earlier
+	 * test is still there when this one runs, and the assertion failed on a pane it never mentioned.
+	 * Closing them here states the precondition instead of inheriting it.
+	 */
+	await app.evaluate(`(async () => {
+		for (let guard = 0; guard < 12; guard++) {
+			const close = document.querySelector('[data-dock-header]:not([data-dock-header="conversation"]) button[aria-label^="关闭"]');
+			if (!close) break;
+			close.click();
+			await new Promise((r) => setTimeout(r, 140));
+		}
+		await new Promise((r) => setTimeout(r, 300));
+	})()`);
+
 	await openFilePanel();
 	await ui(`
 		const target = row("README.md") ?? row("src/main.ts");
