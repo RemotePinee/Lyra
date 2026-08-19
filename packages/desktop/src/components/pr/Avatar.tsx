@@ -13,33 +13,30 @@
  * replaces it if one arrives, and nothing about the layout moves either way. A bot with no avatar,
  * a machine with no network and a first paint all look the same, which is what stops this from
  * flickering through a placeholder on every render.
+ *
+ * Everything about *when* it arrives lives in `avatar-cache`, which is shared by every one of
+ * these on screen — see there for why this component no longer fetches anything itself.
  */
 
-import { useEffect, useState } from "react";
+import { useAvatar } from "./avatar-cache.ts";
 
-export function Avatar({ login, size = 18 }: { login: string; size?: number }) {
-	const [src, setSrc] = useState<string | null>(null);
-
-	useEffect(() => {
-		let cancelled = false;
-		setSrc(null);
-		if (!login) return;
-		void window.lyra.git
-			.avatar(login)
-			.then((url) => {
-				if (!cancelled) setSrc(url);
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
-		};
-	}, [login]);
+export function Avatar({
+	login,
+	url,
+	size = 18,
+}: {
+	login: string;
+	/** Where GitHub said the picture is. Absent falls back to the account's own address. */
+	url?: string | null;
+	size?: number;
+}) {
+	const src = useAvatar(login, url);
 
 	return (
 		<span
 			aria-hidden
-			style={{ width: size, height: size }}
-			className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-card text-caption text-ink-faint select-none"
+			style={{ width: size, height: size, fontSize: Math.max(8, Math.round(size * 0.52)) }}
+			className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-card leading-none text-ink-faint select-none"
 		>
 			{src ? (
 				<img src={src} alt="" width={size} height={size} className="h-full w-full object-cover" draggable={false} />

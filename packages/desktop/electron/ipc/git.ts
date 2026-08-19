@@ -7,7 +7,7 @@
  */
 
 import { ipcMain } from "electron";
-import { githubAvatar } from "../avatars.ts";
+import { githubAvatar, githubAvatars } from "../avatars.ts";
 import { findLocalCheckout } from "../git-remote.ts";
 import { generalScratchDir, type PrBrief, prScratchDir, scratchRoots, writePrBrief } from "../scratch.ts";
 import {
@@ -171,6 +171,18 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	 * circle would widen it for every rendered comment body too.
 	 */
 	ipcMain.handle("git:avatar", async (_event, login: string) => githubAvatar(login));
+
+	/*
+	 * The same thing for a whole list, which is how the pull request pane asks.
+	 *
+	 * Capped rather than trusted. The renderer decides how many names to send, and a list that
+	 * somehow grew unbounded would otherwise become an unbounded number of outbound requests — the
+	 * cap is above anything the pane can actually draw (three buckets of thirty) and well below
+	 * anything worth worrying about.
+	 */
+	ipcMain.handle("git:avatars", async (_event, people: { login: string; url?: string | null }[]) =>
+		githubAvatars(Array.isArray(people) ? people.slice(0, 120) : []),
+	);
 
 	/*
 	 * Which of the user's own projects is this repository, if any.

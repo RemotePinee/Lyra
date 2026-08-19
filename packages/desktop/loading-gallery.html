@@ -2,15 +2,17 @@
 <html lang="zh">
 	<head>
 		<meta charset="utf-8" />
-		<title>Lyra · Loading 候选</title>
+		<title>Lyra · Loading 候选（第二轮）</title>
 		<style>
 			/*
-			 * A page for choosing, not a page for showing off.
+			 * 第二轮：照着真实世界里被用了很多年的实现来做。
 			 *
-			 * Every candidate is rendered at the size it will actually be used — 14px, beside a line
-			 * of running text — because that is the only size at which the decision is real. Each one
-			 * is also shown at 40px so the shape can be judged, but the 14px row is the one that
-			 * counts: several of these look wonderful large and turn to mush small.
+			 * 第一轮是我凭空画的，结果几乎全是匀速 + 几何形状，也就是「机械」。翻了 SpinKit
+			 * (tobiasahlin)、Material/MUI 的 indeterminate circular、Vercel Geist 之后，有一条
+			 * 规律很清楚：好看的那些没有一个用 linear，而且它们往往让两个动画以不同的周期和不同
+			 * 的缓动叠在一起——正是那个「对不齐」让循环看不出是循环。
+			 *
+			 * 每个候选都按实际使用的 14px 摆在一行运行文字旁边，那一行才是判断依据。
 			 */
 			:root {
 				--ink: #1a1c1f;
@@ -20,7 +22,6 @@
 				--shell: #ffffff;
 				--card: #f6f7f9;
 				--accent: #339cff;
-				font-synthesis: none;
 			}
 			@media (prefers-color-scheme: dark) {
 				:root {
@@ -34,130 +35,186 @@
 			}
 			* { box-sizing: border-box; }
 			body {
-				margin: 0;
-				padding: 40px 32px 80px;
-				background: var(--shell);
-				color: var(--ink);
+				margin: 0; padding: 40px 32px 80px;
+				background: var(--shell); color: var(--ink);
 				font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
 			}
 			h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: -0.01em; }
-			.lede { color: var(--ink-muted); margin: 0 0 32px; max-width: 640px; }
-			.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); max-width: 1100px; }
-			.card {
-				border: 1px solid var(--line);
-				border-radius: 14px;
-				padding: 18px 18px 16px;
-				background: var(--card);
-			}
-			.name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-			.note { color: var(--ink-muted); font-size: 12px; line-height: 1.55; margin-bottom: 14px; min-height: 52px; }
-			.stage { display: flex; align-items: center; gap: 20px; padding: 14px 0 4px; border-top: 1px solid var(--line); }
+			.lede { color: var(--ink-muted); margin: 0 0 28px; max-width: 680px; }
+			.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); max-width: 1120px; }
+			.card { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--card); }
+			.name { font-weight: 600; font-size: 13px; }
+			.src { color: var(--ink-faint); font-size: 11.5px; margin: 2px 0 8px; }
+			.note { color: var(--ink-muted); font-size: 12px; line-height: 1.55; margin-bottom: 14px; min-height: 56px; }
+			.stage { display: flex; align-items: center; gap: 20px; padding: 14px 0 2px; border-top: 1px solid var(--line); }
 			.big { width: 40px; height: 40px; display: grid; place-items: center; flex: none; }
-			/* The row that decides it: real size, real neighbours. */
-			.real { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: 12.5px; min-width: 0; }
-			.real .slot { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
+			.real { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: 12.5px; }
+			.slot { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
 			.dot { color: var(--ink-faint); }
 			.nums { font-variant-numeric: tabular-nums; }
 
-			/* ── 1. 呼吸弧 ─────────────────────────────────────────────
-			   The current spinner, kept honest as a baseline to compare against. */
-			@keyframes spin { to { transform: rotate(360deg); } }
-			.arc { animation: spin 720ms linear infinite; }
+			/* ── A. 三点流动 ─────────────────────────────────────────
+			   SpinKit `sk-flow` 的做法：三点缩放而非淡入淡出，延迟 -0.30s / -0.15s，
+			   周期 1.4s。相邻两点永远处在波的不同位置，所以读起来是一道波穿过去。
+			   相比第一轮的「接力」，这个换成了正弦缓动，起落更软。 */
+			@keyframes flow {
+				0%, 80%, 100% { transform: scale(0.3); opacity: 0.35; }
+				40%           { transform: scale(1); opacity: 1; }
+			}
+			.flow span {
+				display: block; width: 27%; aspect-ratio: 1; border-radius: 50%;
+				background: currentColor;
+				animation: flow 1.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite both;
+			}
+			.flow { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 100%; color: var(--ink); }
+			.flow span:nth-child(1) { animation-delay: -0.30s; }
+			.flow span:nth-child(2) { animation-delay: -0.15s; }
 
-			/* ── 2. 游鱼 ───────────────────────────────────────────────
-			   A body that swims: the tail beats and the whole thing drifts along a slow arc.
-			   Two animations on two elements so the beat does not reset when the drift loops. */
-			@keyframes swim-path {
-				0%   { transform: translateX(-28%) rotate(-8deg); }
-				50%  { transform: translateX(28%) rotate(8deg); }
-				100% { transform: translateX(-28%) rotate(-8deg); }
+			/* ── B. Material 弧 ──────────────────────────────────────
+			   MUI 的 indeterminate circular，数值照抄：旋转 1.4s linear，弧长 1.4s
+			   ease-in-out，dasharray 1→100，dashoffset 0 → -15 → -120。
+			   两个动画同周期、不同缓动，所以弧一边被拉长一边被从尾巴拽走——这是它
+			   看起来不机械的全部原因。 */
+			@keyframes mui-rotate { 100% { transform: rotate(360deg); } }
+			@keyframes mui-dash {
+				0%   { stroke-dasharray: 1px, 200px; stroke-dashoffset: 0; }
+				50%  { stroke-dasharray: 100px, 200px; stroke-dashoffset: -15px; }
+				100% { stroke-dasharray: 100px, 200px; stroke-dashoffset: -120px; }
 			}
-			@keyframes tail-beat {
-				0%, 100% { transform: rotate(-16deg); }
-				50%      { transform: rotate(16deg); }
-			}
-			.fish { animation: swim-path 2.4s ease-in-out infinite; transform-origin: 50% 50%; }
-			.fish .tail { animation: tail-beat 380ms ease-in-out infinite; transform-origin: 82% 50%; }
+			.mui { animation: mui-rotate 1.4s linear infinite; }
+			.mui circle { animation: mui-dash 1.4s ease-in-out infinite; }
 
-			/* ── 3. 三点接力 ───────────────────────────────────────────
-			   Not three dots fading in turn — one impulse travelling through three, so it reads as
-			   something moving rather than as three things blinking. */
-			@keyframes relay {
-				0%, 70%, 100% { transform: translateY(0) scale(1); opacity: 0.35; }
-				35%           { transform: translateY(-3.2px) scale(1.18); opacity: 1; }
+			/* ── C. 声波 ─────────────────────────────────────────────
+			   SpinKit `sk-wave`：五条竖线纵向缩放 0.4→1，延迟每条差 0.1s，1.2s 一轮。
+			   唯一一个「有内容感」的——像在听什么东西，而不是在转圈。 */
+			@keyframes wave {
+				0%, 40%, 100% { transform: scaleY(0.4); opacity: 0.45; }
+				20%           { transform: scaleY(1); opacity: 1; }
 			}
-			.relay circle { animation: relay 1.05s cubic-bezier(0.33, 0, 0.2, 1) infinite; }
-			.relay circle:nth-child(2) { animation-delay: 0.12s; }
-			.relay circle:nth-child(3) { animation-delay: 0.24s; }
+			.wave { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 100%; color: var(--ink); }
+			.wave span {
+				display: block; width: 13%; height: 100%; border-radius: 999px;
+				background: currentColor;
+				animation: wave 1.2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+			}
+			.wave span:nth-child(1) { animation-delay: -1.2s; }
+			.wave span:nth-child(2) { animation-delay: -1.1s; }
+			.wave span:nth-child(3) { animation-delay: -1.0s; }
+			.wave span:nth-child(4) { animation-delay: -0.9s; }
+			.wave span:nth-child(5) { animation-delay: -0.8s; }
 
-			/* ── 4. 描边环 ─────────────────────────────────────────────
-			   One stroke drawing itself and then releasing, rotating slowly underneath. The two
-			   speeds are deliberately incommensurate so the loop never lands in the same place. */
-			@keyframes draw {
-				0%   { stroke-dashoffset: 56.5; }
-				50%  { stroke-dashoffset: 14; }
-				100% { stroke-dashoffset: 56.5; }
+			/* ── D. 呼吸 ─────────────────────────────────────────────
+			   SpinKit `sk-pulse` 的思路，但留一个不动的芯：一圈扩散淡出，中心始终在。
+			   `cubic-bezier(0.455, 0.03, 0.515, 0.955)` 是正弦，所以扩散是「推」出去的，
+			   不是匀速摊开。这几个里最安静的。 */
+			@keyframes breathe-out {
+				0%   { transform: scale(0.35); opacity: 0.7; }
+				100% { transform: scale(1); opacity: 0; }
 			}
-			@keyframes turn { to { transform: rotate(360deg); } }
-			.trace { animation: turn 2.1s linear infinite; }
-			.trace circle { stroke-dasharray: 56.5; animation: draw 1.5s ease-in-out infinite; }
+			@keyframes breathe-core {
+				0%, 100% { transform: scale(0.72); }
+				50%      { transform: scale(0.9); }
+			}
+			.breathe { position: relative; width: 100%; height: 100%; color: var(--accent); }
+			.breathe i, .breathe b {
+				position: absolute; inset: 0; border-radius: 50%; display: block;
+			}
+			.breathe i {
+				border: 1.5px solid currentColor;
+				animation: breathe-out 1.8s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+			}
+			.breathe i:nth-of-type(2) { animation-delay: -0.9s; }
+			.breathe b {
+				background: currentColor; transform: scale(0.72);
+				animation: breathe-core 1.8s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+			}
 
-			/* ── 5. 涟漪 ───────────────────────────────────────────────
-			   A pulse leaving a still centre. Quiet enough to sit beside text for two minutes —
-			   nothing travels, so it does not pull the eye the way a rotation does. */
-			@keyframes ripple {
-				0%   { r: 2.5; opacity: 0.55; stroke-width: 3; }
-				100% { r: 10; opacity: 0; stroke-width: 1; }
+			/* ── E. 追逐 ─────────────────────────────────────────────
+			   SpinKit `sk-chase`：六个点绕圈，容器 2.5s 转一圈，每个点自己 2.0s 缩放。
+			   两个周期不成倍数（2.5 / 2.0），所以图案永远不重复——和 Material 那条是
+			   同一个手法。 */
+			@keyframes chase-spin { 100% { transform: rotate(360deg); } }
+			@keyframes chase-dot-spin { 80%, 100% { transform: rotate(360deg); } }
+			@keyframes chase-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.4); } }
+			.chase { position: relative; width: 100%; height: 100%; animation: chase-spin 2.5s linear infinite; color: var(--ink); }
+			.chase span { position: absolute; inset: 0; animation: chase-dot-spin 2s ease-in-out infinite both; }
+			.chase span::before {
+				content: ""; display: block; width: 25%; height: 25%; border-radius: 50%;
+				background: currentColor; margin: 0 auto;
+				animation: chase-pulse 2s ease-in-out infinite both;
 			}
-			@keyframes core {
-				0%, 100% { r: 2.4; opacity: 1; }
-				50%      { r: 3.1; opacity: 0.7; }
-			}
-			.ripple .wave { animation: ripple 1.6s ease-out infinite; }
-			.ripple .wave:nth-child(2) { animation-delay: 0.53s; }
-			.ripple .wave:nth-child(3) { animation-delay: 1.06s; }
-			.ripple .heart { animation: core 1.6s ease-in-out infinite; }
+			.chase span:nth-child(1), .chase span:nth-child(1)::before { animation-delay: -1.1s; }
+			.chase span:nth-child(2), .chase span:nth-child(2)::before { animation-delay: -1.0s; }
+			.chase span:nth-child(3), .chase span:nth-child(3)::before { animation-delay: -0.9s; }
+			.chase span:nth-child(4), .chase span:nth-child(4)::before { animation-delay: -0.8s; }
+			.chase span:nth-child(5), .chase span:nth-child(5)::before { animation-delay: -0.7s; }
+			.chase span:nth-child(6), .chase span:nth-child(6)::before { animation-delay: -0.6s; }
 
-			/* ── 6. 摆锤 ───────────────────────────────────────────────
-			   Weight and gravity: it falls fast through the middle and hangs at the ends. The one
-			   candidate here with a sense of mass, which reads as effort rather than as waiting. */
-			@keyframes swing {
-				0%, 100% { transform: rotate(-38deg); }
-				50%      { transform: rotate(38deg); }
+			/* ── F. 折叠 ─────────────────────────────────────────────
+			   SpinKit `sk-fold`：四个方块依次翻折，2.4s 一轮，延迟差 0.3s。
+			   有立体感和材质感，是最「有设计」的一个，代价是也最抢眼。 */
+			@keyframes fold {
+				0%, 10%  { transform: perspective(140px) rotateX(-180deg); opacity: 0; }
+				25%, 75% { transform: perspective(140px) rotateX(0deg); opacity: 1; }
+				90%, 100%{ transform: perspective(140px) rotateY(180deg); opacity: 0; }
 			}
-			.pendulum { animation: swing 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite; transform-origin: 50% 18%; }
+			.fold { position: relative; width: 100%; height: 100%; transform: rotateZ(45deg); color: var(--accent); }
+			.fold span { position: absolute; width: 50%; height: 50%; }
+			.fold span::before {
+				content: ""; display: block; width: 100%; height: 100%; background: currentColor;
+				transform-origin: 100% 100%;
+				animation: fold 2.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite both;
+			}
+			.fold span:nth-child(1) { top: 0; left: 0; }
+			.fold span:nth-child(2) { top: 0; left: 50%; transform: rotateZ(90deg); }
+			.fold span:nth-child(3) { top: 50%; left: 50%; transform: rotateZ(180deg); }
+			.fold span:nth-child(4) { top: 50%; left: 0; transform: rotateZ(270deg); }
+			.fold span:nth-child(2)::before { animation-delay: 0.3s; }
+			.fold span:nth-child(3)::before { animation-delay: 0.6s; }
+			.fold span:nth-child(4)::before { animation-delay: 0.9s; }
 
-			footer { margin-top: 40px; color: var(--ink-faint); font-size: 12px; max-width: 640px; }
+			footer { margin-top: 36px; color: var(--ink-faint); font-size: 12px; max-width: 700px; }
+			footer a { color: var(--ink-muted); }
 			code { background: var(--card); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
-			@media (prefers-reduced-motion: reduce) {
-				* { animation: none !important; }
-			}
+			@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 		</style>
 	</head>
 	<body>
-		<h1>Loading 候选</h1>
+		<h1>Loading 候选 · 第二轮</h1>
 		<p class="lede">
-			每一个都按<strong>实际使用的 14px</strong> 摆在一行运行文字旁边（右侧那行才是真正要判断的），
-			左边 40px 只是让你看清形状。有几个放大好看、缩小就糊，所以以小的那行为准。
+			这一轮照着真实世界用了很多年的实现来做，每张卡都标了出处。翻完一圈有一条规律很清楚：
+			<strong>好看的那些没有一个用 linear</strong>，而且常让两个动画以不同周期、不同缓动叠在一起——
+			正是那个「对不齐」让循环看不出是循环。第一轮我凭空画，几乎全是匀速加几何，所以机械。
 		</p>
 
 		<div class="grid">
-			<!-- 1 -->
 			<div class="card">
-				<div class="name">1 · 呼吸弧（现在这个）</div>
-				<div class="note">作为基准放在这里。一段弧匀速转圈——最省事，也最没有性格，和任何一个网页的 loading 没有区别。</div>
+				<div class="name">A · 三点流动</div>
+				<div class="src">SpinKit <code>sk-flow</code></div>
+				<div class="note">你选中的那个方向，换成正弦缓动：三点缩放而非闪烁，相邻两点永远在波的不同位置，读起来是一道波穿过去。起落比第一轮软很多。</div>
+				<div class="stage">
+					<div class="big"><div class="flow"><span></span><span></span><span></span></div></div>
+					<div class="real">
+						<span class="slot"><div class="flow"><span></span><span></span><span></span></div></span>
+						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="card">
+				<div class="name">B · Material 弧</div>
+				<div class="src">MUI indeterminate circular（数值照抄）</div>
+				<div class="note">弧一边被拉长、一边被从尾巴拽走。旋转 1.4s linear，弧长 1.4s ease-in-out——同周期不同缓动，这是它不机械的全部原因。业界被用得最多的一个。</div>
 				<div class="stage">
 					<div class="big">
-						<svg width="40" height="40" viewBox="0 0 24 24" class="arc">
-							<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink-faint)" stroke-opacity="0.25" stroke-width="3.4" />
-							<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="17 40" />
+						<svg width="40" height="40" viewBox="22 22 44 44" class="mui">
+							<circle cx="44" cy="44" r="19" fill="none" stroke="var(--accent)" stroke-width="4.5" stroke-linecap="round" />
 						</svg>
 					</div>
 					<div class="real">
 						<span class="slot">
-							<svg width="14" height="14" viewBox="0 0 24 24" class="arc">
-								<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink-faint)" stroke-opacity="0.25" stroke-width="3.4" />
-								<circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="17 40" />
+							<svg width="14" height="14" viewBox="22 22 44 44" class="mui">
+								<circle cx="44" cy="44" r="19" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" />
 							</svg>
 						</span>
 						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
@@ -165,129 +222,53 @@
 				</div>
 			</div>
 
-			<!-- 2 -->
 			<div class="card">
-				<div class="name">2 · 游鱼</div>
-				<div class="note">尾鳍以 380ms 摆动，鱼身沿一条 2.4s 的弧线来回游。两个动画分在两层，所以摆尾不会因为漂移循环而重置——它像在游，不像在闪。</div>
+				<div class="name">C · 声波</div>
+				<div class="src">SpinKit <code>sk-wave</code></div>
+				<div class="note">五条竖线依次起伏，每条差 0.1s。唯一一个有「内容感」的——像在听什么，而不是在转圈。14px 下五条略密，可以减到四条。</div>
 				<div class="stage">
-					<div class="big">
-						<svg width="40" height="40" viewBox="0 0 24 24">
-							<g class="fish">
-								<path class="tail" d="M17 12 L22 8.5 L21 12 L22 15.5 Z" fill="var(--accent)" opacity="0.75" />
-								<ellipse cx="11" cy="12" rx="7" ry="4.2" fill="var(--accent)" />
-								<circle cx="6.5" cy="10.8" r="0.9" fill="var(--shell)" />
-							</g>
-						</svg>
-					</div>
+					<div class="big"><div class="wave"><span></span><span></span><span></span><span></span><span></span></div></div>
 					<div class="real">
-						<span class="slot">
-							<svg width="14" height="14" viewBox="0 0 24 24">
-								<g class="fish">
-									<path class="tail" d="M17 12 L22 8.5 L21 12 L22 15.5 Z" fill="var(--accent)" opacity="0.75" />
-									<ellipse cx="11" cy="12" rx="7" ry="4.2" fill="var(--accent)" />
-									<circle cx="6.5" cy="10.8" r="0.9" fill="var(--shell)" />
-								</g>
-							</svg>
-						</span>
+						<span class="slot"><div class="wave"><span></span><span></span><span></span><span></span><span></span></div></span>
 						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
 					</div>
 				</div>
 			</div>
 
-			<!-- 3 -->
 			<div class="card">
-				<div class="name">3 · 三点接力</div>
-				<div class="note">不是三个点轮流淡入淡出，而是一个冲量依次穿过三个点——读起来是「有东西在传递」，不是「三个东西在闪」。最克制的一个。</div>
+				<div class="name">D · 呼吸</div>
+				<div class="src">SpinKit <code>sk-pulse</code> 的思路 + 不动的芯</div>
+				<div class="note">一圈圈被「推」出去而不是匀速摊开，中心始终在。没有任何东西旋转或平移，是这几个里最安静的——一个要在眼角待几分钟的东西，安静是优点。</div>
 				<div class="stage">
-					<div class="big">
-						<svg width="40" height="40" viewBox="0 0 24 24" class="relay">
-							<circle cx="5.5" cy="12" r="2.4" fill="var(--ink)" />
-							<circle cx="12" cy="12" r="2.4" fill="var(--ink)" />
-							<circle cx="18.5" cy="12" r="2.4" fill="var(--ink)" />
-						</svg>
-					</div>
+					<div class="big"><div class="breathe"><i></i><i></i><b></b></div></div>
 					<div class="real">
-						<span class="slot">
-							<svg width="14" height="14" viewBox="0 0 24 24" class="relay">
-								<circle cx="5.5" cy="12" r="2.4" fill="var(--ink)" />
-								<circle cx="12" cy="12" r="2.4" fill="var(--ink)" />
-								<circle cx="18.5" cy="12" r="2.4" fill="var(--ink)" />
-							</svg>
-						</span>
+						<span class="slot"><div class="breathe"><i></i><i></i><b></b></div></span>
 						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
 					</div>
 				</div>
 			</div>
 
-			<!-- 4 -->
 			<div class="card">
-				<div class="name">4 · 描边环</div>
-				<div class="note">一段笔画自己画出来又收回去，底下慢慢转。两个周期（1.5s 与 2.1s）故意不成整数倍，所以循环永远落不到同一个位置，看久了不会觉得在重复。</div>
+				<div class="name">E · 追逐</div>
+				<div class="src">SpinKit <code>sk-chase</code></div>
+				<div class="note">六个点绕圈：容器 2.5s 转一圈，每个点自己 2.0s 缩放。两个周期不成倍数，所以图案永远不重复——和 Material 那条是同一个手法，但更有机。</div>
 				<div class="stage">
-					<div class="big">
-						<svg width="40" height="40" viewBox="0 0 24 24" class="trace">
-							<circle cx="12" cy="12" r="9" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" />
-						</svg>
-					</div>
+					<div class="big"><div class="chase"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
 					<div class="real">
-						<span class="slot">
-							<svg width="14" height="14" viewBox="0 0 24 24" class="trace">
-								<circle cx="12" cy="12" r="9" fill="none" stroke="var(--accent)" stroke-width="3.4" stroke-linecap="round" />
-							</svg>
-						</span>
+						<span class="slot"><div class="chase"><span></span><span></span><span></span><span></span><span></span><span></span></div></span>
 						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
 					</div>
 				</div>
 			</div>
 
-			<!-- 5 -->
 			<div class="card">
-				<div class="name">5 · 涟漪</div>
-				<div class="note">中心不动，一圈圈往外散。没有任何东西在旋转或平移，所以它是这几个里最安静的——一个要在眼角待上两分钟的东西，安静是优点。</div>
+				<div class="name">F · 折叠</div>
+				<div class="src">SpinKit <code>sk-fold</code></div>
+				<div class="note">四个方块依次翻折，有立体感和材质感，是最「有设计」的一个。代价是也最抢眼——放在一行安静的状态文字旁边可能过了。</div>
 				<div class="stage">
-					<div class="big">
-						<svg width="40" height="40" viewBox="0 0 24 24" class="ripple">
-							<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
-							<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
-							<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
-							<circle class="heart" cx="12" cy="12" fill="var(--accent)" />
-						</svg>
-					</div>
+					<div class="big"><div class="fold"><span></span><span></span><span></span><span></span></div></div>
 					<div class="real">
-						<span class="slot">
-							<svg width="14" height="14" viewBox="0 0 24 24" class="ripple">
-								<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
-								<circle class="wave" cx="12" cy="12" fill="none" stroke="var(--accent)" />
-								<circle class="heart" cx="12" cy="12" fill="var(--accent)" />
-							</svg>
-						</span>
-						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
-					</div>
-				</div>
-			</div>
-
-			<!-- 6 -->
-			<div class="card">
-				<div class="name">6 · 摆锤</div>
-				<div class="note">有重量：中间掉得快，两端停一下。这几个里唯一带「质量感」的，读起来像在使劲，而不是在等待。代价是它比其他几个更抓眼睛。</div>
-				<div class="stage">
-					<div class="big">
-						<svg width="40" height="40" viewBox="0 0 24 24">
-							<g class="pendulum">
-								<line x1="12" y1="4.5" x2="12" y2="15" stroke="var(--ink-faint)" stroke-width="1.6" stroke-linecap="round" />
-								<circle cx="12" cy="17" r="3.4" fill="var(--accent)" />
-							</g>
-						</svg>
-					</div>
-					<div class="real">
-						<span class="slot">
-							<svg width="14" height="14" viewBox="0 0 24 24">
-								<g class="pendulum">
-									<line x1="12" y1="4.5" x2="12" y2="15" stroke="var(--ink-faint)" stroke-width="2" stroke-linecap="round" />
-									<circle cx="12" cy="17" r="3.8" fill="var(--accent)" />
-								</g>
-							</svg>
-						</span>
+						<span class="slot"><div class="fold"><span></span><span></span><span></span><span></span></div></span>
 						Nearly there… <span class="dot">·</span> <span class="nums">2m 23s</span> <span class="dot">·</span> <span class="nums">69.6k tokens</span>
 					</div>
 				</div>
@@ -296,13 +277,16 @@
 
 		<footer>
 			<p>
-				选好告诉我编号，我把它做成 <code>Spinner</code> 组件替换掉现在的——它只用在两处，换起来很干净。
-				这几个都用 <code>currentColor</code> 或主题变量，深浅色都自动跟随；<code>prefers-reduced-motion</code>
-				下全部静止（系统里开了「减弱动态效果」就不会动）。
+				出处：<a href="https://github.com/tobiasahlin/SpinKit">SpinKit</a>（tobiasahlin，CSS 加载动画里最经典的一套）、
+				<a href="https://mui.com/material-ui/react-progress/">MUI CircularProgress</a>（Material 的 indeterminate 实现）、
+				<a href="https://github.com/ConnorAtherton/loaders.css">loaders.css</a>、
+				<a href="https://github.com/loadingio/css-spinner">loadingio/css-spinner</a>。
+				这几个都用 <code>currentColor</code> 或主题变量，深浅色自动跟随；系统开了「减弱动态效果」时全部静止。
 			</p>
 			<p>
-				我的看法：<strong>3（三点接力）</strong> 和 <strong>5（涟漪）</strong> 最适合这个位置——它要在一行文字旁边待上几分钟，
-				安静比好看更重要。<strong>2（游鱼）</strong> 最有性格，但 14px 下细节基本看不清，放大才好看。
+				我的看法：<strong>A（三点流动）</strong>是你已经认可的方向，只是把缓动换软了，最稳；
+				<strong>B（Material 弧）</strong>如果你想保留「圆形」的形态但不要机械感，这是业界验证最充分的一个；
+				<strong>D（呼吸）</strong>最安静。<strong>C</strong> 有性格但 14px 下五条偏密，<strong>F</strong> 最好看也最抢眼。
 			</p>
 		</footer>
 	</body>

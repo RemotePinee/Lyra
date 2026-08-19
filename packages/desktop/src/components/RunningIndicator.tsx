@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FlowLoader } from "./loaders.tsx";
 import { useCountUp } from "./useCountUp.ts";
 import { moodFor, phraseFor } from "./thinking-words.ts";
 import { useApp } from "../store.ts";
@@ -56,7 +57,7 @@ export function RunningIndicator() {
 
 	return (
 		<div className="ly-enter mb-2.5 flex items-center gap-2 text-detail text-ink-muted">
-			<Spinner />
+			<FlowLoader />
 			{/* Keyed on the words so one fades in as the other goes, rather than swapping in place. */}
 			<span key={phrase} className="ly-fade-in">
 				{phrase}…
@@ -90,40 +91,6 @@ export function RunningIndicator() {
 	);
 }
 
-/**
- * The working mark: one hairline arc, sweeping.
- *
- * Deliberately monochrome. This sits beside a running count of seconds and tokens, and a
- * coloured mark there competes with the transcript for attention every time the agent works —
- * which is most of the time. Inheriting the text colour also means it reads as part of the line
- * it belongs to rather than as a badge stuck on the front of it.
- */
-export function Spinner({ size = 14, className = "" }: { size?: number; className?: string }) {
-	/*
-	 * Both numbers were picked at 14px, which is the only size that matters — it is what sits
-	 * beside the running clock. A 2.2 stroke measured about 1.3 device-independent pixels once
-	 * the viewBox scaled down, and the arc simply vanished into the track; 3.4 is the weight
-	 * where the two are still legibly different at that size. The arc covers a bit under a
-	 * third, enough to read as a segment sweeping rather than as a dot going round.
-	 */
-	const circumference = 2 * Math.PI * 9;
-	return (
-		<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className={`ly-spin shrink-0 ${className}`}>
-			<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3.4" className="text-ink-faint/25" />
-			<circle
-				cx="12"
-				cy="12"
-				r="9"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="3.4"
-				strokeLinecap="round"
-				strokeDasharray={`${circumference * 0.3} ${circumference}`}
-				className="text-ink-muted"
-			/>
-		</svg>
-	);
-}
 
 function formatElapsed(ms: number): string {
 	const total = Math.max(0, Math.floor(ms / 1000));

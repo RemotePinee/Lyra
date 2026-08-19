@@ -4,14 +4,19 @@
  * A flat list sorted by date answers "what changed recently", which is not the question. The
  * question is "what is waiting on me" — so the groups are the relations, in the order they need
  * attention, and the filter above is the same three answers stated as a choice.
+ *
+ * Each group folds. Two of the three are usually background — what you already reviewed, what you
+ * are waiting on — and a heading you can close is what lets somebody make this pane about the one
+ * bucket they came for without losing the others. The state is kept, because it is a preference
+ * about how you work rather than about this visit.
  */
 
-import { GitPullRequest, RefreshCw, Search } from "lucide-react";
+import { ChevronRight, RefreshCw, Search } from "lucide-react";
+import { useState } from "react";
 import type { PullRequestSummary } from "../../../electron/ipc-types.ts";
-import { relativeTime } from "../git/relative-time.ts";
-import { ScrollText } from "../ScrollText.tsx";
 import { Scroller } from "../Scroller.tsx";
-import { Text } from "../Text.tsx";
+import { rowId } from "./pr-cache.ts";
+import { PullRequestRow } from "./PullRequestRow.tsx";
 import { ListSkeleton } from "./PullRequestSkeleton.tsx";
 import type { Filter, Group } from "./usePullRequests.ts";
 
@@ -21,6 +26,18 @@ const FILTERS: { key: Filter; label: string }[] = [
 	{ key: "authored", label: "由我创建" },
 ];
 
+const FOLD_KEY = "lyra.pull-requests.folded.v1";
+
+function readFolded(): Set<string> {
+	try {
+		const raw = localStorage.getItem(FOLD_KEY);
+		const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+		return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : []);
+	} catch {
+		return new Set();
+	}
+}
+
 export function PullRequestList({
 	groups,
 	filter,
@@ -29,6 +46,8 @@ export function PullRequestList({
 	onQuery,
 	selected,
 	onSelect,
+	unseen,
+	touched,
 	loading,
 	error,
 	onRefresh,
@@ -39,13 +58,37 @@ export function PullRequestList({
 	query: string;
 	onQuery: (query: string) => void;
 	selected: { repo: string; number: number } | null;
+	/** Stable by contract — every row is memoised on it. */
 	onSelect: (pr: PullRequestSummary) => void;
+	/** Rows that have moved since they were last opened. */
+	unseen: Set<string>;
+	/** Rows the last refresh changed, highlighted once and then left alone. */
+	touched: Set<string>;
 	loading: boolean;
 	error: string | null;
 	onRefresh: () => void;
-	/** Left inset that keeps this clear of the window controls; 0 when the sidebar covers them. */
 }) {
+	const [folded, setFolded] = useState<Set<string>>(readFolded);
 	const empty = groups.length === 0;
+	/*
+	 * A search sees everything.
+	 *
+	 * A hit inside a closed group is a row the person asked for and cannot see, and the fold is a
+	 * preference about the resting state of the list rather than a filter of its own.
+	 */
+	const searching = query.trim().length > 0;
+
+	const toggle = (key: string) =>
+		setFolded((prev) => {
+			const next = new Set(prev);
+			if (!next.delete(key)) next.add(key);
+			try {
+				localStorage.setItem(FOLD_KEY, JSON.stringify([...next]));
+			} catch {
+				// Nowhere to keep it: the fold still works, it just opens fresh next launch.
+			}
+			return next;
+		});
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -60,16 +103,7 @@ export function PullRequestList({
 			 * takes back only its own few pixels. `relative z-50` to come out from under the drag
 			 * band, which covers the full width at z-40.
 			 */}
-			<div
-				className="relative z-50 flex h-11 shrink-0 items-center px-3"
-				/*
-				 * Clear of the window's own controls when the sidebar is not covering them.
-				 *
-				 * Closed, this column starts at the window's left edge — right on top of the traffic
-				 * lights and the sidebar toggle, which are drawn above it. The filters were both
-				 * overlapping them and unclickable.
-				 */
-			>
+			<div className="relative z-50 flex h-11 shrink-0 items-center px-3">
 				<div className="no-drag flex items-center gap-0.5">
 					{FILTERS.map((option) => (
 						<button
@@ -133,57 +167,84 @@ export function PullRequestList({
 					</p>
 				)}
 
-				{groups.map((group) => (
-					<section key={group.key} className="pt-3 first:pt-1">
-						<div className="px-2 pb-1 text-detail text-ink-faint">{group.label}</div>
-						{group.items.map((pr) => (
-							<Row
-								key={`${pr.repo}#${pr.number}`}
-								pr={pr}
-								active={selected?.repo === pr.repo && selected.number === pr.number}
-								onSelect={() => onSelect(pr)}
+				{groups.map((group) => {
+					const open = searching || !folded.has(group.key);
+					return (
+						<section key={group.key} className="pt-2 first:pt-1">
+							<GroupHeading
+								label={group.label}
+								count={group.items.length}
+								unseen={group.items.reduce((n, pr) => n + (unseen.has(rowId(pr)) ? 1 : 0), 0)}
+								open={open}
+								onToggle={() => toggle(group.key)}
 							/>
-						))}
-					</section>
-				))}
+
+							{/* Unfolds to its own height rather than appearing — same treatment as every
+							    other foldable section in the app. */}
+							<div className="ly-reveal" data-open={open} aria-hidden={!open}>
+								<div>
+									<div>
+										{group.items.map((pr) => (
+											<PullRequestRow
+												key={rowId(pr)}
+												pr={pr}
+												active={selected?.repo === pr.repo && selected.number === pr.number}
+												unseen={unseen.has(rowId(pr))}
+												touched={touched.has(rowId(pr))}
+												onSelect={onSelect}
+											/>
+										))}
+									</div>
+								</div>
+							</div>
+						</section>
+					);
+				})}
 			</Scroller>
 		</div>
 	);
 }
 
-function Row({ pr, active, onSelect }: { pr: PullRequestSummary; active: boolean; onSelect: () => void }) {
+/**
+ * The heading, which is also the fold.
+ *
+ * The count sits at the far end rather than beside the label: down a column of three headings the
+ * numbers line up and can be read as a column, which is what makes "how much is waiting on me"
+ * answerable at a glance. A closed group with unread rows says so, because otherwise folding one
+ * is a way to stop being told about it.
+ */
+function GroupHeading({
+	label,
+	count,
+	unseen,
+	open,
+	onToggle,
+}: {
+	label: string;
+	count: number;
+	unseen: number;
+	open: boolean;
+	onToggle: () => void;
+}) {
 	return (
 		<button
 			type="button"
-			onClick={onSelect}
-			className={`ly-scroll flex w-full gap-2.5 rounded-[9px] px-2 py-2 text-left transition-colors duration-[var(--ly-t-quick)] ${
-				active ? "bg-card-hover" : "hover:bg-card-hover/60"
-			}`}
+			onClick={onToggle}
+			aria-expanded={open}
+			className="group/head flex w-full items-center gap-1 rounded-md px-2 py-1 text-detail text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink-muted"
 		>
-			{/*
-			 * A draft is grey, an open one green — the same two states GitHub draws, because this
-			 * is a list people cross-reference with the web page.
-			 */}
-			<GitPullRequest
-				size={13.5}
-				strokeWidth={1.9}
-				className={`mt-[3px] shrink-0 ${pr.isDraft ? "text-ink-faint" : "text-ok"}`}
+			<span>{label}</span>
+			<ChevronRight
+				size={11}
+				strokeWidth={2.4}
+				className="shrink-0 transition-transform duration-[var(--ly-t-base)] ease-[var(--ly-e-out)]"
+				style={{ transform: open ? "rotate(90deg)" : undefined }}
 			/>
-
-			<div className="min-w-0 flex-1">
-				<div className="flex items-baseline gap-2">
-					<ScrollText text={pr.title} className="min-w-0 flex-1 text-label text-ink" />
-					<Text size="caption" tone="faint" numeric className="shrink-0">
-						{relativeTime(pr.updatedAt)}
-					</Text>
-				</div>
-				<div className="mt-0.5 flex items-center gap-1.5 text-detail text-ink-faint">
-					<ScrollText text={pr.repo} className="min-w-0 shrink truncate" />
-					<span className="shrink-0 font-mono">#{pr.number}</span>
-					{pr.isDraft && <span className="shrink-0 rounded bg-card px-1.5">草稿</span>}
-					{pr.comments > 0 && <span className="shrink-0">{pr.comments} 条评论</span>}
-				</div>
-			</div>
+			<span className="flex-1" />
+			{!open && unseen > 0 && (
+				<span aria-hidden data-ly-tip={`折起来的这 ${unseen} 条有新动静`} className="h-[5px] w-[5px] rounded-full bg-accent" />
+			)}
+			<span className="tabular-nums opacity-60">{count}</span>
 		</button>
 	);
 }

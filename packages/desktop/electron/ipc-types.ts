@@ -381,6 +381,14 @@ export interface LyraApi {
 		 * widening it for a decoration would widen it for rendered comment bodies as well.
 		 */
 		avatar(login: string): Promise<string | null>;
+		/**
+		 * The same, for every face a list is about to draw.
+		 *
+		 * One call rather than one per row: the main process has most of them cached already, and
+		 * the cost that was actually being paid was the IPC round trips, one per avatar per mount.
+		 * `url` is what the search result said; without one the login is turned into an address.
+		 */
+		avatars(people: { login: string; url?: string | null }[]): Promise<Record<string, string | null>>;
 		commentOnPullRequest(repo: string, number: number, body: string): Promise<{ error?: string }>;
 		reviewPullRequest(
 			repo: string,

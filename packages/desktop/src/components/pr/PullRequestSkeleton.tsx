@@ -12,19 +12,23 @@
  * transparent for the first 170ms and never appears at all when the answer beats it.
  */
 
-/** Rows in the list pane, at the two-line height a pull request row actually is. */
+/**
+ * Rows in the list pane, in the shape a pull request row actually has: a mark centred across two
+ * lines, a title, and a shorter line of provenance under it.
+ */
 export function ListSkeleton() {
 	// Uneven, so it reads as a list of titles rather than as a progress bar.
 	const rows = [82, 64, 91, 55, 76, 68];
 
 	return (
-		<div className="ly-defer-in ly-pulse flex flex-col gap-1 px-1 pt-1" aria-busy>
+		<div className="ly-defer-in ly-pulse flex flex-col px-1 pt-1" aria-busy>
+			<div className="mb-1 ml-2 h-[11px] w-[68px] rounded bg-card" />
 			{rows.map((width, index) => (
-				<div key={index} className="flex gap-2.5 rounded-[9px] px-2 py-2">
-					<div className="mt-[3px] h-[13px] w-[13px] shrink-0 rounded bg-card" />
-					<div className="min-w-0 flex-1">
+				<div key={index} className="flex items-center gap-2.5 rounded-[10px] px-2 py-[6px]">
+					<div className="h-[18px] w-[18px] shrink-0 rounded-full bg-card" />
+					<div className="flex min-w-0 flex-1 flex-col gap-[5px]">
 						<div className="h-[13px] rounded bg-card" style={{ width: `${width}%` }} />
-						<div className="mt-[7px] h-[11px] w-[42%] rounded bg-card" />
+						<div className="h-[11px] w-[46%] rounded bg-card" />
 					</div>
 				</div>
 			))}

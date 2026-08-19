@@ -1,6 +1,6 @@
 import type { SessionActivity } from "@lyra/core/activity";
 
-import { Spinner } from "./RunningIndicator.tsx";
+import { ChaseLoader } from "./loaders.tsx";
 
 const LABEL: Record<SessionActivity, string> = {
 	running: "正在执行",
@@ -32,8 +32,15 @@ export function SessionStatus({ activity }: { activity: SessionActivity | null }
 			role={activity ? "img" : undefined}
 		>
 			{activity === "running" ? (
-				// The app's own spinner, so a conversation reads the same here as in its transcript.
-				<Spinner size={11} />
+				/*
+				 * Filling the slot rather than sitting inside it.
+				 *
+				 * This was an 11px spinner in a 14px space, which was right for an arc — an arc is
+				 * legible at any size. Six dots are not: at 11px each is under 3px and they close
+				 * into a smudge. Given the whole slot they are just large enough to read as
+				 * separate things going round, which is the entire point of the shape.
+				 */
+				<ChaseLoader size={14} />
 			) : activity === "waiting" ? (
 				/*
 				 * The only state that is asking for something, so the only one that moves.

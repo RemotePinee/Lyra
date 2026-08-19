@@ -152,7 +152,7 @@ export function toSummary(node: SearchNode, relation: Relation): PullRequestSumm
 	};
 }
 
-export const rowId = (pr: { repo: string; number: number }) => `${pr.repo}#${pr.number}`;
+const rowId = (pr: { repo: string; number: number }) => `${pr.repo}#${pr.number}`;
 
 /**
  * One row per pull request, newest first.

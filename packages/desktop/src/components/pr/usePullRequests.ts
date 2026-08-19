@@ -1,145 +1,65 @@
 /**
- * The pull request list: what is in it, and which of it you are looking at.
+ * The pull request list: what is in it, which of it you are looking at, and keeping both current.
  *
- * Fetching is one call for the whole list and one more for whichever row is open — the list has
- * everything needed to draw a row, and nothing else. Line counts, the description, the checks and
- * the comments all arrive with the detail, because paying for them thirty times to decorate rows
- * nobody clicked is how a list becomes slow to open.
+ * Fetching is one call for the whole list and one more for whichever row is open. The list call
+ * brings everything a row draws — title, author, branch, line counts, CI — because it is one
+ * GraphQL search either way; the description, the comments and the per-check names arrive with the
+ * detail, since paying for those thirty times to decorate rows nobody clicked is how a list
+ * becomes slow to open.
+ *
+ * It refreshes itself. The three rules that make that bearable rather than distracting live next
+ * door in `pr-sync`: an unchanged row keeps its object so nothing re-renders, an unchanged detail
+ * is not swapped in under the reader, and what did change is marked instead of announced.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PullRequestDetail, PullRequestSummary } from "../../../electron/ipc-types.ts";
+import { prefetchAvatars } from "./avatar-cache.ts";
+import { readDetail, readList, readSeen, rowId, writeDetail, writeList, writeSeen } from "./pr-cache.ts";
+import { type Filter, groupFor } from "./pr-groups.ts";
+import { acknowledge, baseline, mergeLists, pruneSeen, sameDetail, sameSeen, unseenOf } from "./pr-sync.ts";
+import { type RefreshReason, useLiveRefresh } from "./useLiveRefresh.ts";
 
-/** Which pull requests the list is narrowed to. Mirrors the relations the search buckets produce. */
-export type Filter = "all" | "reviewing" | "authored";
+export type { Filter, Group } from "./pr-groups.ts";
 
-export interface Group {
-	key: PullRequestSummary["relation"];
-	label: string;
-	items: PullRequestSummary[];
-}
-
-const GROUP_LABELS: Record<PullRequestSummary["relation"], string> = {
-	reviewing: "等你审查",
-	authored: "由我创建",
-	reviewed: "之前已审查",
-};
-
-/** The order the groups appear in, which is the order they need attention. */
-const GROUP_ORDER: PullRequestSummary["relation"][] = ["reviewing", "authored", "reviewed"];
-
-/*
- * Last known list, kept across launches.
+/**
+ * How often the list re-asks while it is on screen.
  *
- * `gh search prs` is three round trips to GitHub and takes seconds — which is fine as the cost of
- * finding out what changed, and not fine as the cost of opening a screen. Without this, every
- * visit started from an empty pane and a spinner, including the visits where nothing had changed
- * and including the first one after a restart.
- *
- * So the list renders from what it saw last and refreshes underneath. Stale-but-there beats
- * blank-but-honest for something you are about to replace in a second either way, and it is what
- * makes reopening the pane feel instant rather than merely fast.
- *
- * `localStorage` rather than a file through IPC: this is a redraw of a remote list, no more
- * authoritative than a browser's back-forward cache, and it should cost nothing to write.
- * Versioned in the key, so a change to the row shape retires the old entry instead of
- * half-rendering it.
+ * The whole search costs one point of a five-thousand-point hourly budget, so the ceiling is not
+ * the API — it is how often a person wants rows moving under them. Slower than a chat window,
+ * faster than the time it takes to wonder whether this is up to date.
  */
-const CACHE_KEY = "lyra.pull-requests.v1";
-
-function readCache(): PullRequestSummary[] {
-	try {
-		const raw = localStorage.getItem(CACHE_KEY);
-		const parsed = raw ? JSON.parse(raw) : null;
-		return Array.isArray(parsed) ? parsed : [];
-	} catch {
-		return [];
-	}
-}
+const POLL_MS = 45_000;
 
 /**
  * When the list last came back, shared by every mount of this hook.
  *
- * Module scope on purpose: the point is to survive the hook, since what triggers a needless fetch
- * is leaving this screen and coming back — which unmounts it. Not persisted, because a fetch on
- * the first visit after launch is one worth making.
+ * Module scope on purpose: what triggers a needless fetch is leaving this screen and coming back,
+ * which unmounts it. Not persisted, because a fetch on the first visit after launch is one worth
+ * making.
  */
 let lastFetch = 0;
-const FRESH_MS = 60_000;
+const FRESH_MS = 20_000;
 
-function writeCache(items: PullRequestSummary[]): void {
-	try {
-		localStorage.setItem(CACHE_KEY, JSON.stringify(items));
-	} catch {
-		// A full or disabled store: the list still works, it just opens cold next time.
-	}
-}
+/** Long enough to be seen, short enough that a row is not still glowing at the next refresh. */
+const FLASH_MS = 1400;
 
-/*
- * The same treatment for whichever ones have been opened.
- *
- * Caching the list alone still left every click on a row costing a round trip, including clicking
- * back to the row you were just on — which is the click most likely to happen while comparing two
- * pull requests, and the one where a spinner is least defensible. A review is read, then
- * re-opened, then read again.
- *
- * Bounded, because a detail carries its description, its reviews and its comment threads, and
- * a session of triage would otherwise grow this without limit. Insertion order is the eviction
- * order: the twenty-four most recently *fetched*, which for a list this size is everything
- * anybody is switching between.
- */
-/*
- * Bumped whenever the shape changes.
- *
- * v1 → v2: checks gained the per-check list. A cache entry written before that has a `checks`
- * object with no `items`, and the section that renders them iterated it — a stored value from
- * yesterday crashed the whole pane today, and it would have kept crashing until someone cleared
- * their storage.
- *
- * That is the standing hazard with any cache of a structure that is still moving: the reader is
- * always newer than the thing it is reading. The version is one half of the answer and the
- * validation on the way out is the other, because a bump only protects against changes somebody
- * remembered to bump for.
- */
-const DETAIL_KEY = "lyra.pull-request-details.v2";
-const DETAIL_LIMIT = 24;
+/** One empty set, so "nothing is highlighted" is the same value every time. */
+const NONE: Set<string> = new Set();
 
-const detailId = (repo: string, number: number) => `${repo}#${number}`;
-
-function readDetails(): Record<string, PullRequestDetail> {
-	try {
-		const raw = localStorage.getItem(DETAIL_KEY);
-		const parsed = raw ? JSON.parse(raw) : null;
-		return parsed && typeof parsed === "object" ? parsed : {};
-	} catch {
-		return {};
-	}
-}
-
-function readDetail(id: string): PullRequestDetail | null {
-	return readDetails()[id] ?? null;
-}
-
-function writeDetail(id: string, detail: PullRequestDetail): void {
-	try {
-		const all = readDetails();
-		// Delete first, so re-fetching an old one moves it to the back of the queue rather than
-		// leaving it next in line to be dropped.
-		delete all[id];
-		all[id] = detail;
-		const keys = Object.keys(all);
-		for (const stale of keys.slice(0, Math.max(0, keys.length - DETAIL_LIMIT))) delete all[stale];
-		localStorage.setItem(DETAIL_KEY, JSON.stringify(all));
-	} catch {
-		// Out of room: drop the whole cache rather than leave a half-written one behind.
-		try {
-			localStorage.removeItem(DETAIL_KEY);
-		} catch {}
-	}
-}
-
-export function usePullRequests() {
-	const [items, setItems] = useState<PullRequestSummary[]>(readCache);
+export function usePullRequests({
+	/**
+	 * Whether landing here should open the first row.
+	 *
+	 * True beside a detail pane, where leaving it blank wastes half the screen on nothing. False
+	 * when the two are stacked and the list *is* the screen — choosing one there is a navigation,
+	 * and doing it on the user's behalf means the pane opens on a pull request nobody asked for.
+	 */
+	autoSelect = true,
+}: { autoSelect?: boolean } = {}) {
+	const [items, setItems] = useState<PullRequestSummary[]>(readList);
+	const [seen, setSeen] = useState<Record<string, string> | null>(readSeen);
+	const [touched, setTouched] = useState<Set<string>>(NONE);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
@@ -150,38 +70,111 @@ export function usePullRequests() {
 	const [detail, setDetail] = useState<PullRequestDetail | null>(null);
 	const [detailError, setDetailError] = useState<string | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
+	/** Bumped to re-read the open one without pretending the selection changed. */
+	const [reload, setReload] = useState(0);
 
-	const refresh = useCallback(async ({ stale = false } = {}) => {
-		// Reopening the screen is not a reason to ask again. The list is a few dozen pull requests
-		// that change over hours, and coming back to it a few seconds later already has the answer.
-		if (stale && Date.now() - lastFetch < FRESH_MS) return;
-		setLoading(true);
-		try {
-			const result = await window.lyra.git.myPullRequests();
-			/*
-			 * A failed refresh keeps what is already on screen.
-			 *
-			 * `gh` reports every failure the same way — an empty list and a message — so replacing
-			 * the rows unconditionally meant one expired token, one flaky network or one rate limit
-			 * wiped a list that was still perfectly good, and did it on a timer nobody asked for.
-			 * The error is worth showing; discarding the answer alongside it is not.
-			 */
-			if (result.error && result.pullRequests.length === 0) {
-				setError(result.error);
-				return;
-			}
-			setItems(result.pullRequests);
-			writeCache(result.pullRequests);
-			setError(result.error ?? null);
-			lastFetch = Date.now();
-		} finally {
-			setLoading(false);
+	/*
+	 * What is on screen right now, readable from a callback that must not be rebuilt.
+	 *
+	 * The refresh runs on a timer created once; it needs the current list to compare against and
+	 * the current selection to decide what counts as read, and depending on either would restart
+	 * the timer on every keystroke in the search field.
+	 */
+	const shown = useRef(items);
+	shown.current = items;
+	const acked = useRef(seen);
+	acked.current = seen;
+	const open = useRef(selected);
+	open.current = selected;
+	const showing = useRef(detail);
+	const flashTimer = useRef(0);
+
+	useEffect(() => () => window.clearTimeout(flashTimer.current), []);
+
+	/** One answer from GitHub, reconciled against what is already here. */
+	const apply = useCallback((incoming: PullRequestSummary[]) => {
+		/*
+		 * Asked for on every answer, not only on a changed one.
+		 *
+		 * A picture that timed out during a cold start is the common case, and it belongs to a row
+		 * that is not going to change again — so tying the retry to the list changing would mean it
+		 * never happens. `avatar-cache` holds the window that stops this being a loop.
+		 */
+		prefetchAvatars(incoming);
+
+		const merged = mergeLists(shown.current, incoming);
+		if (merged.items !== shown.current) {
+			shown.current = merged.items;
+			setItems(merged.items);
+			writeList(merged.items);
+		}
+
+		let next = acked.current === null ? baseline(merged.items) : pruneSeen(acked.current, merged.items);
+		// Whatever is open is being read as this arrives, so it cannot also be unread — otherwise a
+		// comment landing on the pull request you have in front of you marks it as news.
+		const current = open.current;
+		const row = current && merged.items.find((pr) => pr.repo === current.repo && pr.number === current.number);
+		if (row) next = acknowledge(next, row);
+
+		if (!sameSeen(acked.current, next)) {
+			acked.current = next;
+			setSeen(next);
+			writeSeen(next);
+		}
+
+		if (merged.touched.size > 0) {
+			setTouched(merged.touched);
+			window.clearTimeout(flashTimer.current);
+			flashTimer.current = window.setTimeout(() => setTouched(NONE), FLASH_MS);
 		}
 	}, []);
+
+	const refresh = useCallback(
+		async ({ stale = false } = {}) => {
+			// Coming back to this screen is not a reason to ask again. The list is a few dozen pull
+			// requests that change over hours, and returning to it seconds later already has the answer.
+			if (stale && Date.now() - lastFetch < FRESH_MS) return;
+			setLoading(true);
+			try {
+				const result = await window.lyra.git.myPullRequests();
+				/*
+				 * A failed refresh keeps what is already on screen.
+				 *
+				 * `gh` reports every failure the same way — an empty list and a message — so replacing
+				 * the rows unconditionally meant one expired token, one flaky network or one rate limit
+				 * wiped a list that was still perfectly good, and now that this runs on a timer it
+				 * would do it unprompted.
+				 */
+				if (result.error && result.pullRequests.length === 0) {
+					setError(result.error);
+					return;
+				}
+				lastFetch = Date.now();
+				setError(result.error ?? null);
+				apply(result.pullRequests);
+				// The open one is re-read on the same beat, so a pane left on screen is current in both
+				// halves rather than only in the list.
+				if (open.current) setReload((n) => n + 1);
+			} finally {
+				setLoading(false);
+			}
+		},
+		[apply],
+	);
 
 	useEffect(() => {
 		void refresh({ stale: true });
 	}, [refresh]);
+
+	useLiveRefresh(
+		useCallback(
+			(reason: RefreshReason) => {
+				void refresh({ stale: reason === "wake" });
+			},
+			[refresh],
+		),
+		POLL_MS,
+	);
 
 	/*
 	 * The detail for whatever is selected: shown from cache at once, then refreshed underneath.
@@ -195,33 +188,44 @@ export function usePullRequests() {
 	 */
 	useEffect(() => {
 		if (!selected) {
+			showing.current = null;
 			setDetail(null);
 			setDetailError(null);
+			setDetailLoading(false);
 			return;
 		}
 		let cancelled = false;
-		const id = detailId(selected.repo, selected.number);
-		const cached = readDetail(id);
+		const id = rowId(selected);
 
-		setDetail(cached);
+		// Only reach for the cache when what is on screen is not already this pull request: a
+		// periodic re-read must not swap the reader back to an older copy of what they are reading.
+		const already = showing.current;
+		const start = already && rowId(already) === id ? already : readDetail(id);
+		if (start !== already) {
+			showing.current = start;
+			setDetail(start);
+		}
 		setDetailError(null);
-		// Only a pane with nothing in it is loading. With a cached copy up, the header's spinner
-		// carries the refresh and the content stays readable throughout.
-		setDetailLoading(!cached);
+		// Only a pane with nothing in it is loading. With a copy up, the header's spinner carries the
+		// refresh and the content stays readable throughout.
+		setDetailLoading(!start);
 
 		void window.lyra.git
 			.pullRequest(selected.repo, selected.number)
 			.then((result) => {
 				if (cancelled) return;
 				if (result.detail) {
-					setDetail(result.detail);
 					writeDetail(id, result.detail);
+					if (!showing.current || !sameDetail(showing.current, result.detail)) {
+						showing.current = result.detail;
+						setDetail(result.detail);
+					}
 					setDetailError(null);
 					return;
 				}
 				// A failure with something already on screen is reported by leaving it there: the
 				// cached review is still the truth as of the last time anyone could reach GitHub.
-				if (!cached) setDetailError(result.error ?? null);
+				if (!start) setDetailError(result.error ?? null);
 			})
 			.finally(() => {
 				if (!cancelled) setDetailLoading(false);
@@ -229,20 +233,41 @@ export function usePullRequests() {
 		return () => {
 			cancelled = true;
 		};
-	}, [selected]);
+	}, [selected, reload]);
 
 	const groups = useMemo(() => groupFor(items, filter, query), [items, filter, query]);
+	const unseen = useMemo(() => unseenOf(items, seen), [items, seen]);
 
-	/** Selecting the first row on load, so the pane opposite is never blank for no reason. */
 	useEffect(() => {
-		if (selected || groups.length === 0) return;
+		if (!autoSelect || selected || groups.length === 0) return;
 		const first = groups[0].items[0];
+		// Not through `select`: nobody opened this one, so it is not one of the ones you have read.
+		// The next refresh will record it, because by then it has been on screen the whole time.
 		if (first) setSelected({ repo: first.repo, number: first.number });
-	}, [groups, selected]);
+	}, [autoSelect, groups, selected]);
+
+	/**
+	 * Opening a row is what marks it read — locally, and only here.
+	 *
+	 * GitHub has its own notion of read and it belongs to the website; reading a pull request in
+	 * this app should not clear a notification badge somewhere else.
+	 */
+	const select = useCallback((pr: PullRequestSummary) => {
+		setSelected((current) =>
+			current && current.repo === pr.repo && current.number === pr.number ? current : { repo: pr.repo, number: pr.number },
+		);
+		const next = acknowledge(acked.current, pr);
+		if (sameSeen(acked.current, next)) return;
+		acked.current = next;
+		setSeen(next);
+		writeSeen(next);
+	}, []);
 
 	return {
 		items,
 		groups,
+		unseen,
+		touched,
 		error,
 		loading,
 		filter,
@@ -250,28 +275,13 @@ export function usePullRequests() {
 		query,
 		setQuery,
 		selected,
-		setSelected,
+		select,
+		clearSelection: useCallback(() => setSelected(null), []),
 		detail,
 		detailError,
 		detailLoading,
 		refresh: useCallback(() => void refresh(), [refresh]),
 		/** Re-read the open one, for after a comment or a review lands. */
-		refreshDetail: useCallback(() => setSelected((current) => (current ? { ...current } : null)), []),
+		refreshDetail: useCallback(() => setReload((n) => n + 1), []),
 	};
-}
-
-/** Filter, search, then group — in that order, so a search never resurrects a filtered-out row. */
-export function groupFor(items: PullRequestSummary[], filter: Filter, query: string): Group[] {
-	const needle = query.trim().toLowerCase();
-	const matching = items.filter((pr) => {
-		if (filter !== "all" && pr.relation !== filter) return false;
-		if (!needle) return true;
-		return `${pr.title} ${pr.repo} ${pr.author} #${pr.number}`.toLowerCase().includes(needle);
-	});
-
-	return GROUP_ORDER.map((key) => ({
-		key,
-		label: GROUP_LABELS[key],
-		items: matching.filter((pr) => pr.relation === key),
-	})).filter((group) => group.items.length > 0);
 }

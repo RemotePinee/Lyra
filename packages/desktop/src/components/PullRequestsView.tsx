@@ -50,7 +50,9 @@ export function PullRequestsView() {
 	const newSession = useApp((s) => s.newSession);
 	const setComposerDraft = useApp((s) => s.setComposerDraft);
 	const setView = useApp((s) => s.setView);
-	const pr = usePullRequests();
+	// Stacked, the list is the whole screen: opening the first row on arrival would be a navigation
+	// nobody asked for. Side by side, leaving the other half blank is worse.
+	const pr = usePullRequests({ autoSelect: !compact });
 
 	/*
 	 * Open the app's conversation window, already pointed at the right place.
@@ -123,7 +125,9 @@ export function PullRequestsView() {
 			query={pr.query}
 			onQuery={pr.setQuery}
 			selected={pr.selected}
-			onSelect={(item) => pr.setSelected({ repo: item.repo, number: item.number })}
+			onSelect={pr.select}
+			unseen={pr.unseen}
+			touched={pr.touched}
 			loading={pr.loading}
 			error={pr.error}
 			onRefresh={pr.refresh}
@@ -161,7 +165,7 @@ export function PullRequestsView() {
 					<>
 						<button
 							type="button"
-							onClick={() => pr.setSelected(null)}
+							onClick={pr.clearSelection}
 							className="ly-item flex h-9 shrink-0 items-center gap-1.5 px-3 text-label text-ink-muted"
 						>
 							<ArrowLeft size={13.5} strokeWidth={1.9} />

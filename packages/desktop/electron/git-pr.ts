@@ -13,160 +13,59 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { parseUnifiedDiff } from "./diff-parse.ts";
-import type {
-	PullRequestCheck, PullRequestDetail, PullRequestSummary, WorkspaceDiffFile } from "./ipc-shapes.ts";
+import type { PullRequestCheck, PullRequestDetail, PullRequestSummary, WorkspaceDiffFile } from "./ipc-shapes.ts";
+import { BUCKETS, dedupe, parseSearch, PER_BUCKET, SEARCH_QUERY, toSummary } from "./pr-summary.ts";
 
 const execFileAsync = promisify(execFile);
 
-/** Enough to see everything current without turning the list into an archive. */
-const PER_BUCKET = 30;
+/**
+ * A ceiling on any one `gh` call.
+ *
+ * Without it a connection that opens and then says nothing leaves the process alive forever, and
+ * with the list now refreshing on a timer that is not a hang that ends when someone gives up and
+ * closes the screen — it is a `gh` process per minute, each holding a socket, none of them ever
+ * answering the promise the renderer is waiting on.
+ */
+const CALL_TIMEOUT_MS = 30_000;
+
+type ListResult = { pullRequests: PullRequestSummary[]; error?: string };
 
 /**
- * How a pull request relates to you, which is the only sensible way to group the list.
+ * The one search in flight, handed to everyone who asks while it is running.
  *
- * `reviewing` is what is being asked of you now; `authored` is what you are waiting on; `reviewed`
- * is what you have already had a say in and may want to check back on. The order is the order of
- * urgency, and it decides which relation a pull request keeps when it qualifies for two.
+ * The list refreshes itself now — on a timer, when the window comes back, and whenever somebody
+ * presses the arrow — so "two requests for the same answer at the same time" stopped being a
+ * theoretical case. Each one is a `gh` process and a round trip, and the second one cannot return
+ * anything the first will not.
  */
-const BUCKETS = [
-	{ relation: "reviewing", query: "is:pr is:open review-requested:@me" },
-	{ relation: "authored", query: "is:pr is:open author:@me" },
-	{ relation: "reviewed", query: "is:pr is:open reviewed-by:@me" },
-] as const;
+let inFlight: ListResult | Promise<ListResult> | null = null;
 
-type Relation = (typeof BUCKETS)[number]["relation"];
+export function listMyPullRequests(): Promise<ListResult> {
+	if (!inFlight) {
+		inFlight = searchAll().finally(() => {
+			inFlight = null;
+		});
+	}
+	return Promise.resolve(inFlight);
+}
 
-export async function listMyPullRequests(): Promise<{ pullRequests: PullRequestSummary[]; error?: string }> {
-	let buckets: PullRequestSummary[][];
+async function searchAll(): Promise<ListResult> {
 	try {
-		const found = await searchAll();
-		buckets = BUCKETS.map(({ relation }) => found[relation].map((pr) => toSummary(pr, relation)));
+		const { stdout } = await execFileAsync(
+			"gh",
+			[
+				"api", "graphql",
+				"-f", `query=${SEARCH_QUERY}`,
+				...BUCKETS.flatMap(({ relation, query }) => ["-f", `${relation}=${query}`]),
+				"-F", `n=${PER_BUCKET}`,
+			],
+			{ maxBuffer: 8 * 1024 * 1024, timeout: CALL_TIMEOUT_MS },
+		);
+		const found = parseSearch(stdout);
+		return { pullRequests: dedupe(BUCKETS.map(({ relation }) => found[relation].map((pr) => toSummary(pr, relation)))) };
 	} catch (error) {
 		return { pullRequests: [], error: describe(error) };
 	}
-
-	// One row per pull request: the buckets overlap by design — your own can also be one you
-	// reviewed — so the first bucket to claim it wins.
-	const seen = new Map<string, PullRequestSummary>();
-	for (const bucket of buckets) {
-		for (const pr of bucket) {
-			const key = `${pr.repo}#${pr.number}`;
-			if (!seen.has(key)) seen.set(key, pr);
-		}
-	}
-
-	return { pullRequests: [...seen.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) };
-}
-
-/**
- * All three buckets in one GraphQL query, which is the whole reason this is not `gh search prs`.
- *
- * `gh search prs` goes to the REST search endpoint, and GitHub rate-limits that one far harder
- * than the rest of the API: **30 requests per minute**, separate from and much smaller than the
- * ordinary hourly budget. Three buckets meant three of those thirty spent on every refresh, so a
- * few visits to this screen in quick succession — open it, refresh, come back — ran the list into
- * "API rate limit exceeded" while nothing else on the machine was anywhere near a limit.
- *
- * GraphQL charges against the hourly budget instead (5,000 points an hour, and a query like this
- * one costs single digits), and aliases let all three searches travel in a single request. Same
- * three questions, one round trip, a budget that is not realistically reachable by a person
- * clicking refresh.
- */
-const SEARCH_QUERY = `
-query($reviewing: String!, $authored: String!, $reviewed: String!, $n: Int!) {
-  reviewing: search(query: $reviewing, type: ISSUE, first: $n) { nodes { ...row } }
-  authored:  search(query: $authored,  type: ISSUE, first: $n) { nodes { ...row } }
-  reviewed:  search(query: $reviewed,  type: ISSUE, first: $n) { nodes { ...row } }
-}
-fragment row on PullRequest {
-  number
-  title
-  url
-  state
-  isDraft
-  createdAt
-  updatedAt
-  author { login }
-  repository { nameWithOwner }
-  comments { totalCount }
-}`;
-
-async function searchAll(): Promise<Record<Relation, RawSearchItem[]>> {
-	const { stdout } = await execFileAsync(
-		"gh",
-		[
-			"api", "graphql",
-			"-f", `query=${SEARCH_QUERY}`,
-			...BUCKETS.flatMap(({ relation, query }) => ["-f", `${relation}=${query}`]),
-			"-F", `n=${PER_BUCKET}`,
-		],
-		{ maxBuffer: 8 * 1024 * 1024 },
-	);
-
-	const body = JSON.parse(stdout) as {
-		data?: Record<string, { nodes?: (SearchNode | null)[] } | null>;
-		errors?: { message?: string }[];
-	};
-	/*
-	 * A GraphQL error arrives with a 200 and an `errors` array, so it has to be looked for rather
-	 * than caught. Rate limiting is exactly this shape, which is the failure this function exists
-	 * to avoid — reporting it as an empty list would be the worst of both.
-	 */
-	if (body.errors?.length) throw new Error(body.errors.map((e) => e.message).filter(Boolean).join("; "));
-
-	const out = {} as Record<Relation, RawSearchItem[]>;
-	for (const { relation } of BUCKETS) {
-		out[relation] = (body.data?.[relation]?.nodes ?? [])
-			// `type: ISSUE` also matches issues, which come back as empty nodes and are dropped.
-			.filter((node): node is SearchNode => Boolean(node && typeof node.number === "number"))
-			// The comment count is the one field GraphQL shapes differently to the rest of this
-			// file, so it is flattened here rather than followed inwards.
-			.map(({ comments, ...node }) => ({ ...node, commentsCount: comments?.totalCount ?? 0 }));
-	}
-	return out;
-}
-
-/** One row as GraphQL returns it, before the comment count is flattened. */
-interface SearchNode extends Omit<RawSearchItem, "commentsCount"> {
-	comments?: { totalCount?: number } | null;
-}
-
-interface RawSearchItem {
-	number: number;
-	title: string;
-	author?: { login?: string } | null;
-	repository?: { nameWithOwner?: string } | null;
-	state?: string;
-	isDraft?: boolean;
-	url: string;
-	createdAt: string;
-	updatedAt: string;
-	commentsCount?: number;
-}
-
-function toSummary(pr: RawSearchItem, relation: PullRequestSummary["relation"]): PullRequestSummary {
-	return {
-		repo: pr.repository?.nameWithOwner ?? "",
-		number: pr.number,
-		title: pr.title,
-		author: pr.author?.login ?? "unknown",
-		state: (pr.state ?? "open").toUpperCase(),
-		isDraft: pr.isDraft === true,
-		url: pr.url,
-		createdAt: pr.createdAt,
-		updatedAt: pr.updatedAt,
-		comments: pr.commentsCount ?? 0,
-		relation,
-		/*
-		 * Not available from search, and deliberately not fetched to fill the list.
-		 *
-		 * Line counts need a `pr view` per row — thirty round trips to decorate a list nobody has
-		 * clicked yet. They arrive with the detail, which is one request for the row you opened.
-		 */
-		additions: null,
-		deletions: null,
-		headRefName: null,
-	};
 }
 
 const DETAIL_FIELDS = [
@@ -187,6 +86,7 @@ const DETAIL_FIELDS = [
 	"comments",
 	"reviews",
 	"reviewRequests",
+	"reviewDecision",
 	"statusCheckRollup",
 	"commits",
 	"mergeable",
@@ -200,6 +100,7 @@ export async function pullRequestDetail(
 	try {
 		const { stdout } = await execFileAsync("gh", ["pr", "view", String(number), "--repo", repo, "--json", DETAIL_FIELDS], {
 			maxBuffer: 16 * 1024 * 1024,
+			timeout: CALL_TIMEOUT_MS,
 		});
 		return { detail: toDetail(repo, JSON.parse(stdout) as RawDetail) };
 	} catch (error) {
@@ -207,13 +108,22 @@ export async function pullRequestDetail(
 	}
 }
 
-interface RawDetail extends RawSearchItem {
+interface RawDetail {
+	number: number;
+	title: string;
+	url: string;
+	state?: string;
+	isDraft?: boolean;
+	createdAt: string;
+	updatedAt: string;
+	author?: { login?: string } | null;
 	body?: string;
 	additions?: number;
 	deletions?: number;
 	changedFiles?: number;
 	headRefName?: string;
 	baseRefName?: string;
+	reviewDecision?: string | null;
 	comments?: { author?: { login?: string }; body?: string; createdAt?: string }[];
 	reviews?: { author?: { login?: string }; state?: string; body?: string; submittedAt?: string }[];
 	reviewRequests?: { login?: string }[];
@@ -235,9 +145,29 @@ function toDetail(repo: string, raw: RawDetail): PullRequestDetail {
 		body: review.body ?? "",
 		submittedAt: review.submittedAt ?? "",
 	}));
+	const checks = summariseChecks(raw.statusCheckRollup);
 
 	return {
-		...toSummary({ ...raw, repository: { nameWithOwner: repo } }, "authored"),
+		repo,
+		number: raw.number,
+		title: raw.title,
+		author: raw.author?.login ?? "unknown",
+		/*
+		 * `gh pr view` does not carry one, and the row that opened this one does — so the picture is
+		 * already in the renderer's cache by the time this arrives, and asking for it again over a
+		 * second API would be a request for something nobody would see appear.
+		 */
+		avatarUrl: null,
+		state: (raw.state ?? "open").toUpperCase(),
+		isDraft: raw.isDraft === true,
+		url: raw.url,
+		createdAt: raw.createdAt,
+		updatedAt: raw.updatedAt,
+		/** Meaningless for a single pull request; the list is where a relation decides anything. */
+		relation: "authored",
+		reviewDecision: raw.reviewDecision || null,
+		// The same three outcomes the list draws, from the same numbers the section below reports.
+		checkState: checks ? (checks.failed > 0 ? "fail" : checks.pending > 0 ? "pending" : "pass") : null,
 		body: raw.body ?? "",
 		additions: raw.additions ?? 0,
 		deletions: raw.deletions ?? 0,
@@ -261,7 +191,7 @@ function toDetail(repo: string, raw: RawDetail): PullRequestDetail {
 			...(raw.reviewRequests ?? []).map((r) => ({ login: r.login ?? "", state: "REQUESTED" })),
 			...reviews.map((r) => ({ login: r.author, state: r.state })),
 		].filter((r) => r.login),
-		checks: summariseChecks(raw.statusCheckRollup),
+		checks,
 		/*
 		 * Commits, so the timeline can say what was pushed and not only what was said about it.
 		 *
