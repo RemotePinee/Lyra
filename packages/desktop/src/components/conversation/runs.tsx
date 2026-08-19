@@ -1,18 +1,18 @@
 /**
- * Turning a message list into rows the transcript can render.
+ * Drawing the rows that `grouping.ts` decided on.
  *
- * The transcript is not the message list. Consecutive tool calls become one card, a streaming reply
- * is kept out of that grouping until it settles, and a compaction marker interrupts the sequence.
- * All of that is decided here, on plain data, so the rendering has nothing left to decide.
+ * The grouping itself is plain data and lives next door; what is left here is a card that
+ * subscribes to its own tool run and a group that reads the totals across one.
  */
 
 import { memo } from "react";
-import type { AssistantContent, AssistantMessage, Message } from "@lyra/core";
+import type { AssistantContent, AssistantMessage } from "@lyra/core";
 import { PreviewCard, type PreviewInfo } from "../PreviewCard.tsx";
 import { ToolCard } from "../ToolCard.tsx";
 import { describeRun } from "../ToolGroup.tsx";
 import { ToolGroup } from "../ToolGroup.tsx";
 import { useApp, type ToolRun as ToolRunState } from "../../store.ts";
+import type { Call } from "./grouping.ts";
 
 /**
  * How much of a long transcript is mounted at once, and how much each "show more" adds.
@@ -91,86 +91,6 @@ export function LiveToolCard({
   );
 }
 
-/**
- * A message that has something to show, or a run of tool calls with nothing between them.
- *
- * Assistant messages that are nothing but tool calls are plumbing — the model handing off and
- * coming back. Several in a row are one stretch of work, and reading them as one is closer to
- * what happened than reading them as four separate replies.
- */
-export type Run =
-  | { kind: "compaction" }
-  | { kind: "message"; message: Message; index: number }
-  | { kind: "tools"; calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] };
-
-/** The runtime's "carry on" message, recognised by what it says as well as by its flag. */
-export function isNudge(message: Message | undefined): boolean {
-  if (message?.role !== "user") return false;
-  return message.content.some((c) => c.type === "text" && c.text.startsWith("（自动继续）"));
-}
-
-export function runs(messages: Message[], compactions: { at: number }[] = []): Run[] {
-  const out: Run[] = [];
-  // Sorted so the marks can be consumed in order as the transcript is walked.
-  const marks = [...compactions].map((c) => c.at).sort((a, b) => a - b);
-  let nextMark = 0;
-  for (const [index, message] of messages.entries()) {
-    while (nextMark < marks.length && marks[nextMark] === index) {
-      out.push({ kind: "compaction" });
-      nextMark++;
-    }
-    /*
-     * Tool results are not entries in the transcript; they are the contents of a card.
-     *
-     * This is what kept the runs from ever forming. Every call is answered by a `toolResult`
-     * message, and treating those as ordinary messages put one between every pair of calls — so
-     * a run of seven arrived as seven runs of one, and nothing ever reached the threshold to
-     * fold. They render nothing on their own, so passing over them changes only the grouping.
-     */
-    if (message.role === "toolResult") continue;
-    /*
-     * What breaks a run is the model saying something, not the model thinking.
-     *
-     * This asked for messages that were *only* tool calls, which almost none are: a call usually
-     * arrives alongside the reasoning that produced it, and reasoning is folded away anyway. So
-     * the runs never formed and the transcript stayed a column of cards. A message with actual
-     * text is a different matter — that is the model addressing you, and a group should not
-     * swallow it or straddle it.
-     */
-    /*
-     * A message still streaming never joins the run before it.
-     *
-     * Its shape changes as it arrives — text first, then a call, or the reverse — so its grouping
-     * would flip with it, and every run below would be rebuilt and re-measured on the way. That
-     * is what made the transcript jump while the agent worked. It joins when it is finished and
-     * its shape has settled; until then it stands alone and only its own height moves.
-     */
-    const settling = message.role === "assistant" && message.stopReason === "pending";
-    const toolOnly =
-      message.role === "assistant" &&
-      !settling &&
-      message.content.some((block) => block.type === "toolCall") &&
-      !message.content.some((block) => block.type === "text" && block.text.trim());
-
-    if (!toolOnly) {
-      out.push({ kind: "message", message, index });
-      continue;
-    }
-    const calls = message.content
-      .filter((block) => block.type === "toolCall")
-      .map((block) => ({ block, stopReason: message.stopReason }));
-    const last = out[out.length - 1];
-    if (last?.kind === "tools") last.calls.push(...calls);
-    else out.push({ kind: "tools", calls });
-  }
-  // A compaction recorded after the last message still belongs at the end.
-  while (nextMark < marks.length) {
-    out.push({ kind: "compaction" });
-    nextMark++;
-  }
-  return out;
-}
-
 /** A call with no record is still going only while the message that made it is unfinished. */
 function isLive(run: ToolRunState | undefined, stopReason: AssistantMessage["stopReason"]): boolean {
   return run?.status === "running" || (!run && stopReason === "pending");
@@ -183,7 +103,7 @@ function isLive(run: ToolRunState | undefined, stopReason: AssistantMessage["sto
  * unevenness — the same kind of work looked like two different things depending on how many
  * calls happened to fall together, and the boundary moved as the model chose to batch or not.
  */
-const ToolRunGroup = function ToolRun({ calls }: { calls: { block: Extract<AssistantContent, { type: "toolCall" }>; stopReason: AssistantMessage["stopReason"] }[] }) {
+const ToolRunGroup = function ToolRun({ calls }: { calls: Call[] }) {
   /*
    * Primitives, not the map.
    *

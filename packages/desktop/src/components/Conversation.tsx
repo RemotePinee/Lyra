@@ -6,12 +6,8 @@ import { ResumeRow } from "./ResumeRow.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
-import {
-	isNudge,
-	runs,
-	ToolRun as ToolRunGroup,
-	WINDOW_STEP,
-} from "./conversation/runs.tsx";
+import { isNudge, runs } from "./conversation/grouping.ts";
+import { ToolRun as ToolRunGroup, WINDOW_STEP } from "./conversation/runs.tsx";
 import { MessageRow, messageKey } from "./conversation/rows.tsx";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
@@ -283,6 +279,7 @@ export function Conversation() {
                 key={messageKey(run.message, run.index)}
                 message={run.message}
                 index={run.index}
+                upTo={run.upTo}
                 /* A turn the runtime carried straight on from did not end where it stopped. */
                 continued={isNudge(messages[run.index + 1])}
               />

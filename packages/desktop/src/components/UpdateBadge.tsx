@@ -93,10 +93,22 @@ export function UpdateBadge() {
 				data-ly-tip={`有新版本 ${info.latest}`}
 				data-ly-tip-side="bottom"
 				aria-label={`有新版本 ${info.latest}`}
-				// The same 24×24 as the toolbar buttons it stands next to, so it reads as one of them.
-				className="ly-update-dot flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-[7px] transition-colors duration-[var(--ly-t-quick)]"
+				/*
+				 * Says what it is, rather than being a 24px icon among the window controls.
+				 *
+				 * It used to match the toolbar buttons beside it exactly — same size, same shape, no
+				 * text — on the reasoning that it should read as one of them. It did, and that was
+				 * the problem: a new version sat there for a whole release cycle and was reported as
+				 * "there is no update", because nothing about a grey glyph next to the traffic lights
+				 * suggests it is an announcement rather than another control.
+				 *
+				 * A pill with the version in it, in the accent colour. Still small, still out of the
+				 * way, but now it is legible as news.
+				 */
+				className="ly-update-dot flex h-[24px] shrink-0 items-center gap-1 rounded-full px-2 text-detail font-medium whitespace-nowrap transition-opacity duration-[var(--ly-t-quick)]"
 			>
-				<ArrowDownToLine size={13} strokeWidth={2} />
+				<ArrowDownToLine size={12} strokeWidth={2.2} />
+				新版本 {info.latest}
 			</button>
 
 			{open && (

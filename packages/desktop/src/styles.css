@@ -1086,18 +1086,23 @@
 /*
  * The update dot.
  *
- * A pale blue, not a saturated one. It is the only thing on the toolbar that is not about the
- * document, so it has to be findable — but it is also not urgent, and a bright chip carrying a
- * version number announced itself far louder than the news deserves. What is wanted is "there is
- * something", not "look at me".
+ * Solid, with the version written on it.
+ *
+ * This was a 14%-opacity wash behind a bare icon, on the reasoning that a new version is "there is
+ * something", not "look at me". It went too far the other way: a pale glyph the size of a window
+ * control, sitting among the window controls, is indistinguishable from another window control —
+ * and a release went a full cycle with the update sitting there being reported as "I see no
+ * update at all".
+ *
+ * Still small and still out of the way. But an announcement has to be legible as one.
  */
 .ly-update-dot {
-  background: color-mix(in srgb, var(--color-info) 14%, transparent);
-  color: var(--color-info);
+  background: var(--color-info);
+  color: #fff;
 }
 
 .ly-update-dot:hover {
-  background: color-mix(in srgb, var(--color-info) 24%, transparent);
+  opacity: 0.9;
 }
 
 

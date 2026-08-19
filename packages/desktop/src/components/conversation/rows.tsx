@@ -16,7 +16,8 @@ import { UserMessage } from "../UserMessage.tsx";
 import { useApp } from "../../store.ts";
 import { RotateCcw } from "lucide-react";
 import { Text } from "../Text.tsx";
-import { isNudge, LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
+import { isNudge } from "./grouping.ts";
+import { LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
 
 /**
  * Whether this message is where the reply stopped, rather than a pause inside it.
@@ -44,10 +45,20 @@ export function messageKey(message: Message, index: number): string {
 export const MessageRow = memo(function MessageRow({
   message,
   index,
+  upTo,
   continued,
 }: {
   message: Message;
   index: number;
+  /**
+   * How many content blocks belong to this row.
+   *
+   * Calls the model made after its last sentence are not part of the reply — they are the start
+   * of the run below, which the next message's calls join. Drawing them here instead would put a
+   * group inside this row and a second one under it with nothing between them, and every batch
+   * after the first would land in the second.
+   */
+  upTo: number;
   /** The runtime told it to keep going, so this is a pause rather than a finish. */
   continued?: boolean;
 }) {
@@ -71,6 +82,10 @@ export const MessageRow = memo(function MessageRow({
      * side of it is one continuous stretch, and a rule drawn through the middle of it interrupts
      * something that never stopped. The plan already shows what remains, and the transcript reads
      * better without a note about the machinery that kept it going.
+     *
+     * `grouping.ts` passes over these before a row is ever made, so nothing should reach here;
+     * this is the latch rather than the rule. Getting it wrong puts words in someone's mouth,
+     * which is the one failure worth checking for twice.
      */
     if (message.synthetic || isNudge(message)) return null;
     return <UserMessage message={message} index={index} />;
@@ -79,22 +94,26 @@ export const MessageRow = memo(function MessageRow({
   // Tool results are rendered inside their tool card, not as standalone rows.
   if (message.role === "toolResult") return null;
 
-  return <AssistantRow message={message} index={index} continued={continued} />;
+  return <AssistantRow message={message} index={index} upTo={upTo} continued={continued} />;
 });
 
 function AssistantRow({
   message,
   index,
+  upTo,
   continued,
 }: {
   message: AssistantMessage;
   index: number;
+  upTo: number;
   continued?: boolean;
 }) {
   const running = useApp((s) => s.running);
   const retryFrom = useApp((s) => s.retryFrom);
 
-  const text = message.content
+  const own = message.content.slice(0, upTo);
+
+  const text = own
     .filter((block) => block.type === "text")
     .map((block) => (block.type === "text" ? block.text : ""))
     .join("\n\n");
@@ -110,7 +129,7 @@ function AssistantRow({
        * away is a fact about the call, so it has to be decided here rather than by looking at
        * rendered output that no longer knows what it came from.
        */}
-      {segments(message.content).map((segment, position) => {
+      {segments(own).map((segment, position) => {
         if (segment.kind === "block") {
           const { block, index } = segment;
           if (block.type === "thinking") {
