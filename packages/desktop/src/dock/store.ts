@@ -130,16 +130,36 @@ interface DockState {
 /**
  * Where a pane goes when it is opened from the menu rather than dragged.
  *
- * Two rules, and between them they reproduce what the reference app does: the first panel opens
- * as a column beside the conversation, and every one after it stacks under the last. Stacking
- * rather than opening another column is what keeps the conversation from being squeezed thinner
- * with each panel — the column is established once, and then shared.
+ * The first panel opens as a column beside the conversation and the second stacks under it; the
+ * third starts a column of its own, and so on in pairs.
+ *
+ * Stacking rather than opening a column every time is what keeps the conversation from being
+ * squeezed thinner with each panel. But stacking *without limit* is worse: a fourth panel in one
+ * column leaves each of them a couple of rows tall, which is not a terminal or a diff, it is a
+ * hint that one exists. Two is where a pane still holds something worth looking at, so a full
+ * column hands the next panel to a new one.
  */
-function defaultDrop(tree: DockNode): DropAt {
+export function defaultDrop(tree: DockNode): DropAt {
 	const others = kinds(tree).filter((kind) => kind !== "conversation");
 	if (others.length === 0) return { side: "right", kind: null };
-	return { side: "bottom", kind: others[others.length - 1] };
+
+	const last = others[others.length - 1];
+	const path = pathTo(tree, last);
+	const parent = path && path.length > 0 ? nodeAt(tree, path.slice(0, -1)) : null;
+	const column = parent?.type === "split" && parent.dir === "col" ? parent.children.length : 1;
+
+	/*
+	 * A new column goes at the far right of the root, not beside `last`.
+	 *
+	 * Asking for the right of `last` would split the column it sits in and produce a row nested
+	 * inside a column — two panes side by side where one used to be, rather than the new column
+	 * this is trying to open.
+	 */
+	return column >= COLUMN_LIMIT ? { side: "right", kind: null } : { side: "bottom", kind: last };
 }
+
+/** How many panels share one column before the next one starts another. */
+const COLUMN_LIMIT = 2;
 
 /**
  * Give a freshly opened pane the share its panel asked for.
