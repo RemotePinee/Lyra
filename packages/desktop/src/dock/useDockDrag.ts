@@ -59,6 +59,16 @@ interface Held {
 	target: HTMLElement;
 }
 
+/**
+ * The element a pane is drawn in.
+ *
+ * Found rather than held in a ref: the panes are rendered by `DockView` from a list, and threading
+ * a ref out of one of them to here — for a lifetime of a few hundred milliseconds — would put
+ * bookkeeping in every pane to serve the one that is moving.
+ */
+const paneOf = (kind: PaneKind): HTMLElement | null =>
+	document.querySelector<HTMLElement>(`[data-dock-pane="${kind}"]`);
+
 export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): {
 	carried: Carried | null;
 	start: (kind: PaneKind, event: React.PointerEvent<HTMLElement>) => void;
@@ -72,6 +82,10 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 	const landingTimer = useRef<number | undefined>(undefined);
 	/** So the backstop timer and the transition both end the flight the same way. */
 	const settle = useRef<() => void>(() => {});
+	/** How far the pane has been carried from where it was picked up, in pixels. */
+	const offset = useRef({ x: 0, y: 0 });
+	/** Which pane is in the air, for the two things that end a flight and know nothing else. */
+	const flying = useRef<PaneKind | null>(null);
 
 	/** Where a pane is right now, in client coordinates, according to the tree. */
 	const rectOf = useCallback(
@@ -102,10 +116,24 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 	 * The box it flies to is the one the tree already puts it at, so releasing it back to `absolute`
 	 * at the end moves it by nothing.
 	 */
-	const landAt = useCallback((rect: Rect | null) => {
+	const landAt = useCallback((kind: PaneKind, from: Rect, rect: Rect | null) => {
+		flying.current = kind;
 		setCarried((current) => (current ? { ...current, landing: true } : null));
 		requestAnimationFrame(() => {
-			setCarried((current) => (current && rect ? { ...current, rect } : current));
+			/*
+			 * Home is a transform too, so the flight is the same composited property the carry was.
+			 *
+			 * Only the size goes through React, and only once: a pane that lands somewhere narrower
+			 * than it was picked up from has to reach that width, and there is no transform that
+			 * does it without distorting what is inside.
+			 */
+			const flying = paneOf(kind);
+			if (flying && rect) {
+				flying.style.transform = `translate3d(${rect.left - from.left}px, ${rect.top - from.top}px, 0)`;
+			}
+			setCarried((current) =>
+				current && rect ? { ...current, rect: { ...current.rect, width: rect.width, height: rect.height } } : current,
+			);
 			window.clearTimeout(landingTimer.current);
 			landingTimer.current = window.setTimeout(() => settle.current(), LAND_TIMEOUT_MS);
 		});
@@ -121,6 +149,11 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 	 */
 	const landed = useCallback(() => {
 		window.clearTimeout(landingTimer.current);
+		// Back to the dock's own coordinates; the transform has done its job and would now be an
+		// offset from a position that is already correct.
+		const arrived = flying.current ? paneOf(flying.current) : null;
+		if (arrived) arrived.style.transform = "";
+		flying.current = null;
 		/*
 		 * Suppress the dock's own transition for the frame that hands the pane back.
 		 *
@@ -156,7 +189,7 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 			useDock.getState().endDrag(cancelled);
 			// Cancelling restores the tree, so home is where the pane started; otherwise it is
 			// wherever the live rearrangement has already put it. Read after `endDrag` either way.
-			landAt(cancelled ? grabbed.from : rectOf(grabbed.kind));
+			landAt(grabbed.kind, grabbed.from, cancelled ? grabbed.from : rectOf(grabbed.kind));
 		},
 		[landAt, rectOf],
 	);
@@ -227,21 +260,35 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 					before,
 					rest,
 				});
+				/*
+				 * The one render a drag costs: the pane switches to `fixed`, anchored where it was
+				 * picked up. Everything after this is a transform on that element.
+				 */
+				setCarried({ kind: grabbed.kind, rect: grabbed.from, landing: false });
+				offset.current = { x: 0, y: 0 };
 				// Lift it out straight away: the pane is in the air now, and the ones staying put
 				// close over the space it left.
 				useDock.getState().preview(rest, grabbed.kind, null);
 			}
 
-			setCarried({
-				kind: grabbed.kind,
-				rect: {
-					left: event.clientX - grabbed.grip.x,
-					top: event.clientY - grabbed.grip.y,
-					width: grabbed.from.width,
-					height: grabbed.from.height,
-				},
-				landing: false,
-			});
+			/*
+			 * Move it by writing a transform, not by rendering.
+			 *
+			 * This runs on every pointer event, and it used to be a `setState` — so each one
+			 * re-rendered the dock and every panel in it, and each render moved the pane by changing
+			 * `left`/`top`, which lays the window out again. Sixty times a second, with a terminal
+			 * and a file tree on screen, that is the flicker.
+			 *
+			 * The pane is anchored where it was picked up (a single render, at the start) and the
+			 * pointer only ever changes one composited property on one element. Nothing else in the
+			 * app hears about it.
+			 */
+			offset.current = {
+				x: event.clientX - grabbed.grip.x - grabbed.from.left,
+				y: event.clientY - grabbed.grip.y - grabbed.from.top,
+			};
+			const flying = paneOf(grabbed.kind);
+			if (flying) flying.style.transform = `translate3d(${offset.current.x}px, ${offset.current.y}px, 0)`;
 
 			const container = containerRef.current?.getBoundingClientRect();
 			const drag = useDock.getState().drag;

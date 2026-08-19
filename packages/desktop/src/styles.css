@@ -2462,6 +2462,7 @@
  */
 .ly-dock-pane-landing {
   transition:
+    transform var(--ly-t-base) var(--ly-e-out),
     left var(--ly-t-base) var(--ly-e-out),
     top var(--ly-t-base) var(--ly-e-out),
     width var(--ly-t-base) var(--ly-e-out),

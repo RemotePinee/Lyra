@@ -11,6 +11,7 @@
  */
 
 import { create } from "zustand";
+import { sameDrop } from "./drop.ts";
 import { MIN_FRACTION } from "./geometry.ts";
 import { flushTree, readTree, storageKey, writeTree } from "./persist.ts";
 import {
@@ -422,9 +423,22 @@ export const useDock = create<DockState>((set, get) => {
 
 		beginDrag: (drag) => set({ drag }),
 
+		/*
+		 * Only when the landing place changes, which is the only part of this anyone renders from.
+		 *
+		 * `pointer` used to be written every frame, and every frame therefore re-rendered every
+		 * component subscribed to this store — the whole dock, panels and all, sixty times a
+		 * second, to update a number nothing reads. That was most of what "the app flickers while
+		 * dragging" was. The pointer is still kept, because the drag state should describe the
+		 * drag; it just no longer costs a render to keep it current.
+		 */
 		dragTo: (pointer, at) => {
 			const drag = get().drag;
 			if (!drag) return;
+			if (drag.at === at || sameDrop(drag.at, at)) {
+				drag.pointer = pointer;
+				return;
+			}
 			set({ drag: { ...drag, pointer, at } });
 		},
 

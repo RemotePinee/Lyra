@@ -347,7 +347,18 @@ export function DockView({
 							maximized={Boolean(focus) && Boolean(placed)}
 							carried={carried?.kind === kind ? carried.rect : null}
 							landing={carried?.kind === kind && carried.landing}
-							hidden={compact ? kind !== focusedPane : !placed}
+							/*
+							 * A pane in the air is never hidden, whatever the tree says.
+							 *
+							 * While it is carried it has been lifted *out* of the tree, so it has no box
+							 * — and hiding panes with no box is right for every pane except this one.
+							 * The moment the pointer was somewhere that is not a drop target — past the
+							 * edge of the window, most obviously — the card being dragged vanished, and
+							 * came back only if the pointer wandered over a target again. It is
+							 * positioned against the window and follows the pointer; where the tree
+							 * would put it is not a question that has an answer yet.
+							 */
+							hidden={compact ? kind !== focusedPane : !placed && carried?.kind !== kind}
 							draggable={!compact}
 							onDragStart={(event) => start(kind, event)}
 							onMove={(side) => useDock.getState().moveTo(kind, { side, kind: null })}

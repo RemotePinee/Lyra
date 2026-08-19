@@ -95,7 +95,7 @@ export function DockPane({
 			onTransitionEnd={
 				landing
 					? (event) => {
-							if (event.propertyName === "left" && event.target === event.currentTarget) onLanded();
+							if (event.propertyName === "transform" && event.target === event.currentTarget) onLanded();
 						}
 					: undefined
 			}
@@ -110,7 +110,27 @@ export function DockPane({
 			 */
 			style={
 				carried
-					? { position: "fixed", left: carried.left, top: carried.top, width: carried.width, height: carried.height }
+					? {
+							position: "fixed",
+							/*
+							 * Anchored where it was picked up; the pointer moves it with a transform.
+							 *
+							 * `left`/`top` would be the obvious way and it is the wrong one: changing
+							 * them is a layout change, so every frame of a drag laid the window out
+							 * again — with a terminal, a file tree and a diff in it. A transform is
+							 * composited, and the whole drag becomes something the compositor does
+							 * without the main thread.
+							 *
+							 * The transform itself is written straight to this element by the drag —
+							 * see `useDockDrag`. It is not a prop, because a prop means a render per
+							 * frame, and rendering was the other half of the same problem.
+							 */
+							left: carried.left,
+							top: carried.top,
+							width: carried.width,
+							height: carried.height,
+							willChange: "transform",
+						}
 					: { left: pct(box.left), top: pct(box.top), width: pct(box.width), height: pct(box.height) }
 			}
 			/*
