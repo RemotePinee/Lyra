@@ -10,6 +10,10 @@ productName: Lyra
 # electron-builder produced `@lyradesktop`, refused it as a filename, and failed the AppImage. It
 # only ever mattered on Linux, and nothing built Linux until the first release.
 executableName: Lyra
+# Required by the Linux targets, and only by them: .deb and AppImage both record an upstream URL
+# in their metadata and refuse to build without one. Absent, the whole Linux job failed on a field
+# neither macOS nor Windows has ever asked for.
+homepage: https://github.com/kittors/Lyra
 copyright: Copyright © 2026 kittors
 
 directories:

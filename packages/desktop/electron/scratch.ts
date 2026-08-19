@@ -20,7 +20,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { lyraHome } from "@lyra/core";
+import { lyraHome, within } from "@lyra/core";
 
 /** Everything outside this becomes a dash, which also flattens `owner/name` into one segment. */
 const UNSAFE = /[^a-zA-Z0-9._-]+/g;
@@ -169,8 +169,9 @@ export async function rescueLegacyWorkspaces(): Promise<string[]> {
  * that is not ours.
  */
 export async function ensureSessionWorkspace(cwd: string): Promise<boolean> {
-	const roots = scratchRoots().map((root) => (root.endsWith("/") ? root : `${root}/`));
-	if (!roots.some((root) => cwd.startsWith(root))) return false;
+	// `within`, not a hand-built prefix: appending "/" and comparing is correct on Unix and false
+	// for every input on Windows, which would have turned this guard into a blanket refusal there.
+	if (!scratchRoots().some((root) => within(root, cwd))) return false;
 	await mkdir(cwd, { recursive: true });
 	return true;
 }

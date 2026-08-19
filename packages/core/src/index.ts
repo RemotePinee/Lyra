@@ -151,6 +151,7 @@ export {
 } from "./skills/index.ts";
 export * from "./tools/index.ts";
 export { builtinTools, useToolRegistry } from "./tools/index.ts";
+export * from "./platform.ts";
 export * from "./types.ts";
 export {
 	listPreviews,

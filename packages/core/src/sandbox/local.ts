@@ -12,6 +12,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { systemShell } from "../platform.ts";
 import type { Sandbox, SandboxProcess } from "../kernel/services.ts";
 import { confine } from "./backend.ts";
 import type { SandboxMode } from "./policy.ts";
@@ -26,7 +27,7 @@ const QUIET_ENV = { TERM: "dumb", NO_COLOR: "1", GIT_PAGER: "cat", PAGER: "cat" 
 
 export class LocalSandbox implements Sandbox {
 	run(command: string, options: { cwd: string; env?: Record<string, string>; mode?: SandboxMode }): SandboxProcess {
-		const shell = process.env.SHELL || "/bin/bash";
+		const shell = systemShell();
 		const env = { ...process.env, ...QUIET_ENV, ...options.env };
 
 		/*
@@ -39,12 +40,12 @@ export class LocalSandbox implements Sandbox {
 		 */
 		const wrap = options.mode ? confine({ mode: options.mode, workspaceRoot: options.cwd }) : null;
 		const child = wrap
-			? spawn(wrap.command, [...wrap.args, shell, "-c", command], {
+			? spawn(wrap.command, [...wrap.args, shell.file, shell.flag, command], {
 					cwd: options.cwd,
 					// The Windows runner needs `ELECTRON_RUN_AS_NODE`; the others contribute nothing.
 					env: { ...env, ...wrap.env },
 				})
-			: spawn(command, { cwd: options.cwd, shell, env });
+			: spawn(command, { cwd: options.cwd, shell: shell.file, env });
 
 		return {
 			onOutput(listener) {

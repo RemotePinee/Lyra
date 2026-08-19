@@ -7,7 +7,8 @@
  */
 
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { within } from "../platform.ts";
 
 export interface RiskVerdict {
 	risky: boolean;
@@ -79,7 +80,14 @@ export function wipesScratchRoot(target: string, cwd?: string): boolean {
 
 export function underScratchRoot(target: string, cwd?: string): boolean {
 	const path = target.replace(/^['"]|['"]$/g, "");
-	if (!path.startsWith("/")) return false;
-	const roots = scratchRoots(cwd);
-	return roots.some((root) => path.startsWith(`${root}/`) && path !== root);
+	/*
+	 * `isAbsolute`, not `startsWith("/")`.
+	 *
+	 * A scratch root on Windows is `C:\Users\…\Temp`, which does not begin with a slash — so the
+	 * old guard rejected every real path there before any root was even considered, and nothing on
+	 * that platform was ever recognised as scratch. `isAbsolute` accepts both spellings, including
+	 * the `/tmp/...` a model writes into a command regardless of which machine it is on.
+	 */
+	if (!isAbsolute(path)) return false;
+	return scratchRoots(cwd).some((root) => within(root, path));
 }

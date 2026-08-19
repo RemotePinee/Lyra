@@ -11,6 +11,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { systemShell } from "../platform.ts";
 import type { HookConfig } from "../config/settings.ts";
 import type { ToolResult } from "../types.ts";
 
@@ -58,7 +59,7 @@ export async function runHook(
 
 		const child = spawn(hook.command, {
 			cwd,
-			shell: process.env.SHELL || "/bin/bash",
+			shell: systemShell().file,
 			env: {
 				...process.env,
 				DW_TOOL: String(payload.toolName ?? ""),

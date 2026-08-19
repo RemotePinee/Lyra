@@ -3,6 +3,7 @@ import { access, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { scratchHome } from "../runtime/previews.ts";
 import { lyraHome } from "../session/store.ts";
+import { home } from "../platform.ts";
 
 function contains(root: string, absolute: string): boolean {
 	const rel = relative(resolve(root), absolute);
@@ -23,7 +24,7 @@ function contains(root: string, absolute: string): boolean {
  */
 export function resolveWorkspacePath(cwd: string, input: string): string {
 	if (!input || typeof input !== "string") throw new Error("A path is required.");
-	const expanded = input.startsWith("~/") ? input.replace("~", process.env.HOME ?? "~") : input;
+	const expanded = input.startsWith("~/") ? input.replace("~", home()) : input;
 	const absolute = isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
 	if (contains(cwd, absolute) || contains(scratchHome(lyraHome()), absolute)) return absolute;
 	throw new Error(`Path escapes the workspace root (${cwd}): ${input}`);

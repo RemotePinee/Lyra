@@ -7,15 +7,25 @@
  */
 
 import assert from "node:assert/strict";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { isDescendant, resolveInside, splitExtension, uniqueName, validateName } from "../electron/file-ops.ts";
 
-const ROOTS = ["/work/app"];
+/*
+ * Built with `resolve`, not written out.
+ *
+ * `resolveInside` returns a resolved path, and on Windows resolving "/work/app" produces
+ * "D:\\work\\app" — so a literal expectation compared a Unix spelling against a Windows one and
+ * failed on a function that was working perfectly. The path this points at does not exist on any
+ * platform, which is the point: these are rules about strings, not about a filesystem.
+ */
+const ROOT = resolve("/work/app");
+const ROOTS = [ROOT];
 
 test("a path inside a project comes back normalised", () => {
-	assert.equal(resolveInside("/work/app/src/main.ts", ROOTS), "/work/app/src/main.ts");
-	assert.equal(resolveInside("/work/app", ROOTS), "/work/app", "the root itself is inside itself");
-	assert.equal(resolveInside("/work/app/./src/../src/a.ts", ROOTS), "/work/app/src/a.ts");
+	assert.equal(resolveInside(join(ROOT, "src", "main.ts"), ROOTS), join(ROOT, "src", "main.ts"));
+	assert.equal(resolveInside(ROOT, ROOTS), ROOT, "the root itself is inside itself");
+	assert.equal(resolveInside(join(ROOT, ".", "src", "..", "src", "a.ts"), ROOTS), join(ROOT, "src", "a.ts"));
 });
 
 test("traversal cannot survive the check", () => {

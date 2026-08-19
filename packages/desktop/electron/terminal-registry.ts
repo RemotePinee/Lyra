@@ -25,6 +25,7 @@
 
 import type { BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import type { IPty } from "node-pty";
 
 /**
@@ -117,7 +118,9 @@ let clock = 0;
  */
 export function createTerminalRegistry({ terminals, spawnPty, insideAProject, window }: TerminalDeps) {
 	/** Where a terminal for this path actually starts: the project, or home if it is not one. */
-	const resolve = (cwd: string): string => (insideAProject(cwd) ? cwd : process.env.HOME || process.cwd());
+	// `homedir()`, not `process.env.HOME`: Windows spells it `USERPROFILE` and leaves `HOME` unset,
+	// so reading the variable there fell through to the process's own directory.
+	const resolve = (cwd: string): string => (insideAProject(cwd) ? cwd : homedir());
 
 	/** Every shell this directory has, in the order they were opened. */
 	const list = (cwd: string): TerminalTab[] =>

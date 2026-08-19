@@ -1,3 +1,4 @@
+import { withinOrIs } from "../platform.ts";
 import { SAFE, risky, scratchRoots, underScratchRoot, wipesScratchRoot, type RiskVerdict } from "./risk-shared.ts";
 import { NEVER_UNATTENDED, PROTECTED_PATH, RISKY_SUBCOMMANDS } from "./risk-tables.ts";
 import { splitCommands } from "./shell-split.ts";
@@ -181,7 +182,7 @@ function staysInside(command: string, cwd: string): boolean {
 		const target = match[1].replace(/^['"]|['"]$/g, "");
 		if (target.startsWith("~") || target === "-" || /[$`]/.test(target)) return false;
 		if (target.startsWith("/")) {
-			if (target === root || target.startsWith(`${root}/`)) continue;
+			if (withinOrIs(root, target)) continue;
 			/*
 			 * A scratch directory is somewhere work legitimately happens, not somewhere it escaped
 			 * to — and here the root itself counts. `cd /tmp` is working there; `rm -rf /tmp` is
