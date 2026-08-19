@@ -54,7 +54,14 @@ export function ToolGroup({
 	 * every line floating between two paragraphs, belonging to neither.
 	 */
 	return (
-		<div className="mb-2.5">
+		/*
+		 * Marked so a test can count these and read them.
+		 *
+		 * What this component is for is a claim about the transcript as a whole — one line per
+		 * stretch of work, the same line from the first call to the last — and that claim is only
+		 * checkable from outside, against the rows actually on screen.
+		 */
+		<div className="mb-2.5" data-ly-run={running ? "running" : "done"}>
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}

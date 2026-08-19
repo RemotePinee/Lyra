@@ -108,19 +108,25 @@ const ToolRunGroup = function ToolRun({ calls }: { calls: Call[] }) {
    * Primitives, not the map.
    *
    * A selector returning an object builds a new one every time and so always looks changed; a
-   * number and a string are compared by value, so this re-renders when what it shows changes and
-   * not when some other card emits a line of output.
+   * number is compared by value, so this re-renders when what it shows changes and not when some
+   * other card emits a line of output.
    */
   const liveCount = useApp(
     (s) => calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason)).length,
   );
-  const runningLabel = useApp((s) => {
-    const live = calls.filter(({ block, stopReason }) => isLive(s.toolRuns[block.id], stopReason));
-    return live.length === 1 ? (s.toolRuns[live[0].block.id]?.summary ?? "") : "";
-  });
-  const summary = useApp((_s) =>
-    describeRun(calls.map(({ block }) => ({ toolName: block.name, subject: subjectOf(block) }))),
-  );
+  /*
+   * One sentence, growing — never a different sentence while it works.
+   *
+   * A running group used to say what the live call was doing, or "执行 N 个操作" when several
+   * were going at once, and go back to describing itself when they finished. Now that a run
+   * keeps taking on the calls of the replies that follow it, that line is the *same* line all
+   * turn: it would read "读取文件 3 个", then "执行 npm install", then "执行 6 个操作", then
+   * "读取文件 3 个、执行命令 2 个" — one row rewriting itself in two different languages while
+   * you try to read it. Built from the calls alone, it only ever gains a clause. That the run is
+   * still going is said by the highlight gliding along it, which is the one thing a count of
+   * events nobody witnessed was standing in for.
+   */
+  const summary = describeRun(calls.map(({ block }) => ({ toolName: block.name, subject: subjectOf(block) })));
   // Totals across the run, so a fold does not hide how much changed.
   const added = useApp((s) => calls.reduce((n, { block }) => n + diffOf(s.toolRuns[block.id], "added"), 0));
   const removed = useApp((s) => calls.reduce((n, { block }) => n + diffOf(s.toolRuns[block.id], "removed"), 0));
@@ -130,12 +136,7 @@ const ToolRunGroup = function ToolRun({ calls }: { calls: Call[] }) {
   ));
 
   return (
-    <ToolGroup
-      summary={liveCount > 0 ? runningLabel || `执行 ${calls.length} 个操作` : summary}
-      added={added}
-      removed={removed}
-      running={liveCount > 0}
-    >
+    <ToolGroup summary={summary} added={added} removed={removed} running={liveCount > 0}>
       {cards}
     </ToolGroup>
   );

@@ -2,6 +2,11 @@ node_modules/
 dist/
 out/
 build/
+# …except the desktop app's build resources, which are sources, not output: the icon, the tray
+# icons and the entitlements. They were ignored by a rule meant for compiled output, so they
+# existed only on the machine that made them — every CI build shipped Electron's default icon and
+# nobody could see why, because locally it always looked right.
+!packages/desktop/build/
 .expo/
 .turbo/
 *.log
