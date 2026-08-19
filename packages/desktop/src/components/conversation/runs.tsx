@@ -146,14 +146,25 @@ const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trai
   );
 }
 /**
- * A settled group of tool calls never changes again.
+ * A settled group of tool calls never changes again — but whether it is the *current* one does.
  *
  * Compared by what the group is made of rather than by the array it arrives in: the array is
  * rebuilt on every render of the transcript, but the calls in it are the same objects with the
- * same ids, and a group whose calls are unchanged has nothing new to draw. The live group — the
- * one still running — fails this comparison on every event, which is exactly when it should.
+ * same ids, and a group whose calls are unchanged has nothing new to draw.
+ *
+ * `trailing` has to be in here too, and leaving it out is the whole of a bug that survived two
+ * attempts at fixing it. It is the one prop that changes *without the calls changing*: a group
+ * stops being the last one the moment another begins, and stops being live the moment the turn
+ * ends — and in both cases its own calls are exactly as they were. Compared on calls alone, React
+ * was told nothing had changed and skipped the render, so the highlight stayed on every group that
+ * had ever been the last one, and stayed lit after the turn was over.
+ *
+ * It also explains why this twice looked fixed when it was not: switching conversations remounts
+ * these, and a fresh mount never consults a memo comparison. The failure only shows in the one
+ * situation the comparison exists for — a transcript being added to in place.
  */
 export const ToolRun = memo(ToolRunGroup, (before, after) => {
+	if (before.trailing !== after.trailing) return false;
 	if (before.calls.length !== after.calls.length) return false;
 	return before.calls.every(
 		(call, i) => call.block.id === after.calls[i].block.id && call.stopReason === after.calls[i].stopReason,

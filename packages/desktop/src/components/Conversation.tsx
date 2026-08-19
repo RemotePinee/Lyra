@@ -56,6 +56,19 @@ export function Conversation() {
    * cost a render. This is the same fact in state, because a button has to be drawn from it. They
    * are set together and read in different places rather than one deriving the other.
    */
+  /**
+   * The final answer has started arriving.
+   *
+   * Text in the last assistant message while it is still streaming — tool calls and reasoning do
+   * not count, because neither is the thing being waited for. This is the moment the running
+   * indicator stops being informative and starts being noise.
+   */
+  const answering = useMemo(() => {
+    const last = messages[messages.length - 1];
+    if (last?.role !== "assistant" || last.stopReason !== "pending") return false;
+    return last.content.some((block) => block.type === "text" && block.text.trim().length > 0);
+  }, [messages]);
+
   const [away, setAway] = useState(false);
   /** Something arrived while scrolled up, which is the difference between "go down" and "new". */
   const [missed, setMissed] = useState(false);
@@ -301,14 +314,25 @@ export function Conversation() {
           )}
 
           {/*
-           * Present for the whole turn, not between the parts of one.
+           * Present for the whole turn — until the answer starts, at which point it has been
+           * overtaken by what it was standing in for.
            *
-           * It used to appear only when the last message had settled — so it came and went with
-           * every tool call, and its 46px came and went with it, shifting the transcript up and
-           * down all through a turn. A turn either is running or is not; the indicator should
-           * say which, and stay put while it does.
+           * It stays put through the parts of a turn: it used to appear only when the last message
+           * had settled, so it came and went with every tool call, and its 46px came and went with
+           * it, shifting the transcript up and down all through a turn.
+           *
+           * But once prose is streaming in above it, "Nearly there…" is describing something the
+           * reader can already see the end of. Sitting under a finished answer saying almost-done
+           * reads as the app having lost track of itself.
+           *
+           * Folded rather than removed, so the height goes continuously — which is the whole
+           * reason it was made to stay put in the first place.
            */}
-          {running && <RunningIndicator />}
+          <div className="ly-reveal" data-open={running && !answering} aria-hidden={!running || answering}>
+            <div>
+              <div>{running && <RunningIndicator />}</div>
+            </div>
+          </div>
           {/* Where the running indicator would have been, saying why it is not there. */}
           <ResumeRow />
         </div>

@@ -255,6 +255,8 @@ export function Popover({
 			 */
 			let anchorEdge: { top: number } | { bottom: number };
 			let resolved: "top" | "bottom" | "right";
+			/** Placed by fitting it into the window rather than by hanging it off the anchor. */
+			let shifted = false;
 			/*
 			 * Where the growth starts, in the popover's own coordinates.
 			 *
@@ -280,7 +282,24 @@ export function Popover({
 				resolved =
 					placement === "top" ? (fitsAbove || !fitsBelow ? "top" : "bottom") : fitsBelow || !fitsAbove ? "bottom" : "top";
 				left = clampX(align === "start" ? a.left : align === "center" ? a.left + a.width / 2 - w / 2 : a.right - w);
-				anchorEdge = resolved === "top" ? { bottom: window.innerHeight - a.top + GAP } : { top: a.bottom + GAP };
+				/*
+				 * Neither side has room: slide it into the window rather than scroll inside it.
+				 *
+				 * This is what a native menu does. A right-click low in a long file tree opens a menu
+				 * taller than the space beneath the cursor, and taller than the space above it too —
+				 * and the answer is not to put a scrollbar in a list of eleven actions, it is to move
+				 * the menu up until it fits. Scrolling here hides the items at the end, which for
+				 * this menu are the destructive ones, behind a gesture nobody expects to need.
+				 *
+				 * Only when *both* sides fail. With room on either side the menu still hangs off the
+				 * cursor, which is where the pointer expects to find it.
+				 */
+				shifted = !fitsAbove && !fitsBelow && box.height + MARGIN * 2 <= window.innerHeight;
+				anchorEdge = shifted
+					? { top: clamp(a.bottom + GAP, MARGIN, window.innerHeight - box.height - MARGIN) }
+					: resolved === "top"
+						? { bottom: window.innerHeight - a.top + GAP }
+						: { top: a.bottom + GAP };
 				origin = `${clamp(a.left + a.width / 2 - left, 0, w)}px ${resolved === "top" ? "100%" : "0px"}`;
 			}
 
@@ -296,11 +315,15 @@ export function Popover({
 				// card rather than pushing its far edge off the screen. A caller's own ceiling
 				// only ever lowers it further.
 				maxHeight: Math.min(
-					resolved === "top"
-						? a.top - GAP - MARGIN
-						: resolved === "bottom"
-							? window.innerHeight - a.bottom - GAP - MARGIN
-							: window.innerHeight - MARGIN * 2,
+					// Shifted into place, the ceiling is the window rather than the gap it started from
+					// — the gap is precisely what it stopped being bound by.
+					shifted
+						? window.innerHeight - MARGIN * 2
+						: resolved === "top"
+							? a.top - GAP - MARGIN
+							: resolved === "bottom"
+								? window.innerHeight - a.bottom - GAP - MARGIN
+								: window.innerHeight - MARGIN * 2,
 					maxHeight ?? Infinity,
 				),
 				opacity: 1,
