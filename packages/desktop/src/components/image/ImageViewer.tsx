@@ -26,7 +26,7 @@ import { createPortal } from "react-dom";
 import { clampZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, zoomAt, type Point } from "./annotate.ts";
 import { AnnotateCanvas, AnnotateToolbar, STAGE_FIT, useAnnotator } from "./Annotator.tsx";
 import { useApp } from "../../store.ts";
-import { closeViewer, stepViewer, useViewer } from "./viewer-store.ts";
+import { closeViewer, stepViewer, useViewer, type ViewerImage } from "./viewer-store.ts";
 
 /** Matches `--ly-t-base`; kept as a number because the unmount has to be timed against it. */
 const DURATION = 260;
@@ -47,13 +47,15 @@ const FLIGHT = `transform ${DURATION}ms ${EASE}, opacity ${DURATION}ms ${EASE}`;
 const CENTRED: Point = { x: 0, y: 0 };
 
 /**
- * How long the outgoing half of a step takes, and how far it travels.
+ * How long a step sideways takes.
  *
- * Shorter than the flight: this is a step sideways through a set, not an arrival, and matching
- * the open animation made the arrows feel like they were loading something.
+ * Both pictures are on screen for all of it, so this is the length of one continuous movement
+ * rather than of a fade out followed by a fade in.
  */
-const SLIDE_OUT = 120;
-const SLIDE_SHIFT = 44;
+const SLIDE_MS = 300;
+
+/** The gap between two pictures as they pass, so they read as separate rather than as one smear. */
+const SLIDE_GAP = 56;
 
 export function ImageViewer() {
 	const state = useViewer();
@@ -80,8 +82,19 @@ export function ImageViewer() {
 	const [view, setView] = useState<{ zoom: number; offset: Point }>({ zoom: 1, offset: CENTRED });
 	const { zoom, offset } = view;
 	const [panning, setPanning] = useState(false);
-	/** Which way the picture is moving, and whether it is on its way out or in. */
-	const [slide, setSlide] = useState<{ dir: number; phase: "out" | "in" } | null>(null);
+	/**
+	 * A step in progress: the picture being left behind, and how far the pair has to travel.
+	 *
+	 * `phase` is the two frames a CSS transition needs — `start` places both pictures with no
+	 * transition, `run` turns it on and moves them. Without a rendered start there is nothing to
+	 * interpolate from and they simply appear in their final places.
+	 */
+	const [transit, setTransit] = useState<{
+		parting: ViewerImage;
+		dir: number;
+		span: number;
+		phase: "start" | "run";
+	} | null>(null);
 	const sliding = useRef(0);
 	const [spacing, setSpacing] = useState(false);
 	const grab = useRef<{ x: number; y: number; from: Point } | null>(null);
@@ -161,6 +174,10 @@ export function ImageViewer() {
 	useEffect(() => {
 		if (state) return;
 		setEditing(false);
+		// A step caught mid-flight has a second picture on a layer of its own; closing has to take
+		// that with it, or it is left behind over the app with nothing holding it.
+		window.clearTimeout(sliding.current);
+		setTransit(null);
 		if (!leaving) setHeld(null);
 	}, [state, leaving]);
 
@@ -214,30 +231,47 @@ export function ImageViewer() {
 	}, [shown, leaving]);
 
 	/**
-	 * Step to the next picture, with the movement that says which way it went.
+	 * Step to the next picture, as one movement with both pictures in it.
 	 *
-	 * Two halves either side of the swap: the outgoing picture leaves towards the side it is
-	 * going, the incoming one arrives from the opposite edge. Without this the image was simply
-	 * replaced between frames, which reads as the same picture changing rather than as a move
-	 * through a set — and gave no clue that the arrows do opposite things.
+	 * The previous version faded one out and the next one in, at the same place — which reads as
+	 * the picture being *replaced*, not as moving along a row, and gave no sense of direction at
+	 * all. Here they travel together: the one you were looking at leaves towards the side it is
+	 * going, the next arrives from the opposite edge, and for the whole 300ms both are on screen
+	 * with a gap between them. That is what a row of photographs does when you walk past it.
 	 *
-	 * Held in a ref as well as state because the swap is scheduled: a second press mid-flight must
-	 * cancel the first rather than queue behind it.
+	 * The one leaving is `fixed` to the middle of the window rather than placed inside the figure,
+	 * because the figure is sized by whichever picture is current — the moment the index changes it
+	 * resizes to the new one, and anything positioned inside it would jump. Two independently
+	 * centred layers can be different shapes and still pass each other cleanly.
 	 */
 	const step = useCallback(
 		(delta: number) => {
-			if (leaving) return;
+			if (leaving || !shown) return;
+			const parting = shown.images[shown.index];
+			if (!parting || shown.images.length < 2) return;
+
+			/*
+			 * Far enough that each picture is gone before it stops.
+			 *
+			 * Measured from the picture on screen rather than fixed, so a narrow portrait shot does
+			 * not travel three times its own width to leave, and a wide one does not stop while it
+			 * is still visible.
+			 */
+			const span = (figure.current?.getBoundingClientRect().width ?? window.innerWidth * 0.5) + SLIDE_GAP;
+
+			// A second press mid-step starts a new one from wherever this got to, rather than
+			// queueing behind it — holding the arrow key should scroll through, not stutter.
 			window.clearTimeout(sliding.current);
-			setSlide({ dir: delta, phase: "out" });
-			sliding.current = window.setTimeout(() => {
-				stepViewer(delta);
-				setSlide({ dir: delta, phase: "in" });
-				// One frame at the far edge, then release: the transition needs a start it has
-				// actually rendered, or the two writes coalesce and it appears without moving.
-				requestAnimationFrame(() => requestAnimationFrame(() => setSlide(null)));
-			}, SLIDE_OUT);
+			setTransit({ parting, dir: delta, span, phase: "start" });
+			stepViewer(delta);
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() => {
+					setTransit((current) => (current ? { ...current, phase: "run" } : null));
+					sliding.current = window.setTimeout(() => setTransit(null), SLIDE_MS);
+				}),
+			);
 		},
-		[leaving],
+		[leaving, shown],
 	);
 
 	useEffect(() => () => window.clearTimeout(sliding.current), []);
@@ -246,6 +280,10 @@ export function ImageViewer() {
 		if (leaving) return;
 		setEditing(false);
 		setLeaving(true);
+		// Only the current picture flies home to its thumbnail; one still sliding past has no
+		// thumbnail of its own to fly to and simply goes.
+		window.clearTimeout(sliding.current);
+		setTransit(null);
 		// Unzoomed on the way out, so the picture shrinks back to the thumbnail along one path rather
 		// than flying from a size the layout box knows nothing about.
 		resetView();
@@ -345,14 +383,19 @@ export function ImageViewer() {
 	const canPan = spacing || (!editing && zoom > 1);
 
 	/*
-	 * Out towards the direction of travel, in from the opposite edge.
+	 * Where each of the two pictures is, in the middle of a step.
 	 *
-	 * `dir` is +1 for the next picture, so the one leaving moves left and its replacement waits on
-	 * the right — the movement a row of images makes when you walk along it.
+	 * `dir` is +1 for the next picture, so on the way to it the one you were looking at moves left
+	 * and its replacement comes in from the right — the direction a row of images moves when you
+	 * walk forwards along it. On the `start` frame the incoming one is parked off the edge and
+	 * nothing has a transition; on `run` both have one and both travel.
 	 */
-	const slideShift = slide ? (slide.phase === "out" ? -slide.dir : slide.dir) * SLIDE_SHIFT : 0;
+	const enteringX = transit?.phase === "start" ? transit.dir * transit.span : 0;
+	const partingX = transit?.phase === "run" ? -transit.dir * transit.span : 0;
+	const SLIDE = `transform ${SLIDE_MS}ms ${EASE}`;
 
 	const startPan = (event: React.PointerEvent) => {
+
 		if (!canPan || event.button !== 0) return;
 		event.preventDefault();
 		event.stopPropagation();
@@ -413,6 +456,36 @@ export function ImageViewer() {
 				style={{ opacity: open ? 1 : 0, transition: `opacity ${DURATION}ms ${EASE}` }}
 			/>
 
+			{/*
+			 * The picture being left behind, on a layer of its own.
+			 *
+			 * `fixed` and centred on the window, not placed inside the figure: the figure is sized by
+			 * whichever picture is *current*, and the index changes the instant a step begins — so
+			 * anything living inside it would be re-laid-out to the new picture's shape and jump
+			 * sideways at the very moment it is supposed to be gliding. Two independently centred
+			 * layers can be different shapes and still pass each other cleanly.
+			 *
+			 * Below the current picture in the stacking order, and untouchable: it is on its way out
+			 * and should never take a click meant for what is arriving.
+			 */}
+			{transit && (
+				<img
+					key={transit.parting.src}
+					src={transit.parting.src}
+					alt=""
+					aria-hidden
+					draggable={false}
+					className={`${STAGE_FIT} pointer-events-none fixed rounded-xl object-contain`}
+					style={{
+						left: "50%",
+						top: "50%",
+						transform: `translate(-50%, -50%) translateX(${partingX}px)`,
+						transition: transit.phase === "start" ? "none" : SLIDE,
+						willChange: "transform",
+					}}
+				/>
+			)}
+
 			<div
 				ref={figure}
 				className="relative"
@@ -439,22 +512,20 @@ export function ImageViewer() {
 					className={canPan ? (panning ? "cursor-grabbing" : "cursor-grab") : undefined}
 					style={{
 						/*
-						 * Pan, zoom and the sideways step, in one transform.
+						 * Pan, zoom and the arrival, in one transform.
 						 *
-						 * The step is a shift away from centre and back: `out` is the picture leaving
-						 * towards where it is going, `in` is the next one waiting at the far edge for
-						 * the frame before it is released.
+						 * A step puts this picture at the far edge for one frame and then releases it
+						 * to the centre; the picture it is replacing travels the other way on its own
+						 * layer, below.
 						 */
-						transform: `translate(${offset.x + slideShift}px, ${offset.y}px) scale(${zoom})`,
-						opacity: slide ? 0 : 1,
+						transform: `translate(${offset.x + enteringX}px, ${offset.y}px) scale(${zoom})`,
 						transformOrigin: "center",
-						// Not while dragging: a transition on a per-frame update is a picture that
-						// arrives where the pointer was a moment ago. And not on the frame the next
-						// picture is parked at the edge, or it slides in from wherever the last one left.
-						transition:
-							panning || slide?.phase === "in"
-								? "none"
-								: `transform ${slide ? SLIDE_OUT : DURATION}ms ${EASE}, opacity ${slide ? SLIDE_OUT : DURATION}ms ${EASE}`,
+						/*
+						 * No transition while dragging — that would arrive where the pointer was a
+						 * moment ago — and none on the frame the picture is parked off the edge, or it
+						 * slides in from wherever the last one happened to leave.
+						 */
+						transition: panning || transit?.phase === "start" ? "none" : transit ? SLIDE : FLIGHT,
 						willChange: "transform",
 					}}
 				>
