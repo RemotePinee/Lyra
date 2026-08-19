@@ -10,6 +10,13 @@ productName: Lyra
 # electron-builder produced `@lyradesktop`, refused it as a filename, and failed the AppImage. It
 # only ever mattered on Linux, and nothing built Linux until the first release.
 executableName: Lyra
+# The filename of every artifact, spelled out.
+#
+# The default is `${name}…`, and `name` is the package's — `@lyra/desktop`. macOS and Windows
+# happen to use `productName` in their defaults and were fine; Linux's .deb used the package name
+# and tried to write `release/@lyra/desktop_0.2.0_amd64.deb`, where that slash is a directory
+# separator. It produced no .deb and no error anyone would connect to a package name.
+artifactName: ${productName}-${version}-${arch}.${ext}
 copyright: Copyright © 2026 kittors
 
 directories:
