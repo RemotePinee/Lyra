@@ -33,6 +33,15 @@ export function TerminalPane() {
 	const sessionId = useRef<string | null>(null);
 	/** Which attach this pane is the owner of, so a superseded cleanup cannot mute the shell. */
 	const connection = useRef(0);
+	/**
+	 * The terminal's measured size, for shells that have not been started yet.
+	 *
+	 * A shell wraps its output to the width it was given at birth, and nothing can re-wrap what it
+	 * has already written — so this has to be the real width, not a guess. 80×24 is only ever used
+	 * before anything has been measured, which in practice is never: the layout effect that
+	 * measures runs before the effect that opens.
+	 */
+	const size = useRef({ cols: 80, rows: 24 });
 	const [exited, setExited] = useState<number | null>(null);
 	const tabs = useTerminals((s) => (workspace?.path ? s.tabs[workspace.path] : undefined)) ?? [];
 
@@ -80,7 +89,21 @@ export function TerminalPane() {
 				useTerminals.getState().sync(cwd, tabs);
 				return;
 			}
-			const opened = await window.lyra.terminal.open(cwd, 80, 24);
+			/*
+			 * Born at the size it will be shown at.
+			 *
+			 * This used to say `80, 24`, and a shell started at 80 columns in a pane 38 wide wraps
+			 * its first output to a width the screen does not have — so the greeting and any
+			 * `.zshrc` complaints came out broken mid-word, and stayed broken, because the resize
+			 * that follows only affects what has yet to be written.
+			 *
+			 * It looked intermittent because it was a race it usually won: a shell takes a few
+			 * hundred milliseconds to say anything and the terminal is measured within one frame of
+			 * being asked for, so the correction normally lands first. A busy main thread is all it
+			 * takes to lose. `size` is what the last mounted terminal measured — see the layout
+			 * effect below — and 80×24 only stands in when nothing has been measured yet.
+			 */
+			const opened = await window.lyra.terminal.open(cwd, size.current.cols, size.current.rows);
 			if (cancelled) return;
 			useTerminals.getState().sync(cwd, [{ id: opened.id, title: opened.title }]);
 		});
@@ -89,9 +112,18 @@ export function TerminalPane() {
 		};
 	}, [cwd]);
 
+	/*
+	 * The terminal itself belongs to the pane, not to the shell it happens to be showing.
+	 *
+	 * Built as soon as there is a project, before anything is connected — because its measurement
+	 * is what a *new* shell has to be born at, and the effect that opens one runs after this. Tied
+	 * to the active tab instead, the first shell of a project was opened before any terminal
+	 * existed and so at a guessed 80×24; in a pane 38 columns wide its greeting came out wrapped
+	 * mid-word and stayed that way, since a later resize cannot re-wrap what is already written.
+	 */
 	useLayoutEffect(() => {
 		const element = host.current;
-		if (!element || !cwd || !active) return;
+		if (!element || !cwd) return;
 
 		const terminal = new Terminal({
 			fontFamily: readVar("--ly-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -111,18 +143,57 @@ export function TerminalPane() {
 		fitter.fit();
 		term.current = terminal;
 		fit.current = fitter;
+		size.current = { cols: terminal.cols, rows: terminal.rows };
+
+		/*
+		 * The pty has to be told the new size, or every program running in it keeps wrapping to
+		 * the old width — which looks like corruption rather than a stale dimension.
+		 */
+		const observer = new ResizeObserver(() => {
+			try {
+				fitter.fit();
+			} catch {
+				return;
+			}
+			size.current = { cols: terminal.cols, rows: terminal.rows };
+			if (sessionId.current) window.lyra.terminal.resize(sessionId.current, terminal.cols, terminal.rows);
+		});
+		observer.observe(element);
+
+		return () => {
+			observer.disconnect();
+			terminal.dispose();
+			term.current = null;
+			fit.current = null;
+		};
+	}, [cwd]);
+
+	/*
+	 * Connect the terminal to whichever tab is in front.
+	 *
+	 * Separate from building it, so switching tabs is a reset and a reconnection rather than a
+	 * teardown — and so the terminal exists, and has been measured, before any shell is started.
+	 */
+	useEffect(() => {
+		const terminal = term.current;
+		if (!terminal || !cwd || !active) return;
+
+		// Whatever the previous tab left on screen is not this tab's. The replay below redraws it.
+		terminal.reset();
 
 		let disposed = false;
 		/*
 		 * Output that arrived before we learned our own id.
 		 *
 		 * The shell starts writing the moment it is spawned — the prompt is usually out before
-		 * `create` has even resolved — but until it does, an incoming chunk cannot be matched to
+		 * `attach` has even resolved — but until it does, an incoming chunk cannot be matched to
 		 * this terminal. Dropping those is why the pane came up blank while the pty underneath
 		 * was working perfectly. Held by id, so a second terminal's output is never replayed
 		 * into this one.
 		 */
 		const early = new Map<string, string[]>();
+		/** The keystroke handler, bound only once a shell is on the other end of it. */
+		let typing: { dispose(): void } | null = null;
 
 		void window.lyra.terminal.attach(active, terminal.cols, terminal.rows).then((connected) => {
 			// The shell can exit while the pane is away; the list effect above notices and moves
@@ -149,7 +220,7 @@ export function TerminalPane() {
 			if (replay) terminal.write(replay);
 			for (const chunk of early.get(id) ?? []) terminal.write(chunk);
 			early.clear();
-			terminal.onData((data) => window.lyra.terminal.write(id, data));
+			typing = terminal.onData((data) => window.lyra.terminal.write(id, data));
 			terminal.focus();
 		});
 
@@ -166,25 +237,17 @@ export function TerminalPane() {
 			setExited(code);
 		});
 
-		/*
-		 * The pty has to be told the new size, or every program running in it keeps wrapping to
-		 * the old width — which looks like corruption rather than a stale dimension.
-		 */
-		const observer = new ResizeObserver(() => {
-			try {
-				fitter.fit();
-			} catch {
-				return;
-			}
-			if (sessionId.current) window.lyra.terminal.resize(sessionId.current, terminal.cols, terminal.rows);
-		});
-		observer.observe(element);
-
 		return () => {
 			disposed = true;
-			observer.disconnect();
 			offData();
 			offExit();
+			/*
+			 * Unbind the keys before letting go of the shell.
+			 *
+			 * The terminal outlives this effect now, so a handler left behind would send the next
+			 * tab's keystrokes to the shell this one was attached to.
+			 */
+			typing?.dispose();
 			/*
 			 * Detach, never kill.
 			 *
@@ -197,9 +260,6 @@ export function TerminalPane() {
 			 */
 			if (sessionId.current) window.lyra.terminal.detach(sessionId.current, connection.current);
 			sessionId.current = null;
-			terminal.dispose();
-			term.current = null;
-			fit.current = null;
 		};
 	}, [cwd, active]);
 
@@ -216,37 +276,47 @@ export function TerminalPane() {
 		);
 	}
 
-	/*
-	 * Every tab closed.
-	 *
-	 * Reachable, and it used to leave the pane a blank rectangle with no xterm in it and nothing
-	 * said — which reads as the terminal having crashed rather than as the last tab having been
-	 * closed on purpose. The way out is the same + the header carries, offered here too because
-	 * an empty pane is where you look.
-	 */
-	if (cwd && tabs.length === 0) {
-		return (
-			<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-7 pb-6 text-center">
-				<SquareTerminal size={30} strokeWidth={1.35} className="text-ink-faint" />
-				<p className="text-label text-ink-muted">这里没有终端了。</p>
-				<button
-					type="button"
-					onClick={() => {
-						void window.lyra.terminal.open(cwd, 80, 24).then((opened) => {
-							useTerminals.getState().add(cwd, { id: opened.id, title: opened.title });
-						});
-					}}
-					className="rounded-lg border border-hairline px-3 py-1.5 text-label text-ink transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
-				>
-					新建终端
-				</button>
-			</div>
-		);
-	}
+	const empty = Boolean(cwd) && tabs.length === 0;
 
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col">
-			<div ref={host} className="ly-term min-h-0 flex-1 px-2 pt-1.5" />
+			{/*
+			 * The terminal's element is always here, even with nothing to show in it.
+			 *
+			 * It used to be swapped for the empty state, which unmounted the node xterm had been
+			 * attached to while xterm itself — built per project, not per tab — carried on holding a
+			 * reference to it. Closing every tab and opening a new one then left the pane with a tab
+			 * strip and no terminal at all. Hidden and covered rather than replaced, so the element
+			 * xterm owns outlives every tab that comes and goes inside it.
+			 */}
+			<div ref={host} className={`ly-term min-h-0 flex-1 px-2 pt-1.5 ${empty ? "invisible" : ""}`} />
+
+			{/*
+			 * Every tab closed.
+			 *
+			 * Reachable, and it used to leave the pane a blank rectangle with nothing said — which
+			 * reads as the terminal having crashed rather than as the last tab having been closed on
+			 * purpose. The way out is the same + the header carries, offered here too because an
+			 * empty pane is where you look.
+			 */}
+			{empty && cwd && (
+				<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-7 pb-6 text-center">
+					<SquareTerminal size={30} strokeWidth={1.35} className="text-ink-faint" />
+					<p className="text-label text-ink-muted">这里没有终端了。</p>
+					<button
+						type="button"
+						onClick={() => {
+							// The measured size, like everywhere else a shell is started — see `size`.
+							void window.lyra.terminal.open(cwd, size.current.cols, size.current.rows).then((opened) => {
+								useTerminals.getState().add(cwd, { id: opened.id, title: opened.title });
+							});
+						}}
+						className="rounded-lg border border-hairline px-3 py-1.5 text-label text-ink transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
+					>
+						新建终端
+					</button>
+				</div>
+			)}
 			{exited !== null && (
 				<div className="shrink-0 px-3 pb-2 text-detail text-ink-faint">
 					shell 已退出（代码 {exited}）。
