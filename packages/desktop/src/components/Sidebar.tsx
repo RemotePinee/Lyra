@@ -14,6 +14,7 @@ import { useApp } from "../store.ts";
 import { ScrollText } from "./ScrollText.tsx";
 import { Scroller } from "./Scroller.tsx";
 import { SearchField } from "./SearchField.tsx";
+import { UpdateBadge } from "./UpdateBadge.tsx";
 import { activeProviderLabel, groupSessions, listableSessions } from "./sidebar/grouping.ts";
 import { Collapsible } from "./sidebar/Collapsible.tsx";
 import { ProjectGroup, SESSION_PAGE } from "./sidebar/ProjectGroup.tsx";
@@ -320,15 +321,20 @@ export function Sidebar() {
 			 * Padded container, rounded row — the same shape as every other item in this pane.
 			 * As a full-bleed button its hover fill ran edge to edge and read as a different
 			 * kind of control from the list it sits under.
+			 *
+			 * The update dot rides at the end of this row, and is usually not there at all. Which is
+			 * why it is here rather than in the toolbar: this is the one strip of the window whose
+			 * business is the app itself rather than the conversation, and a row that already ends in
+			 * a small round mark has somewhere to put another one.
 			 */}
-			<div className={`shrink-0 border-t border-line ${compact ? "p-3" : "p-2.5"}`}>
+			<div className={`flex shrink-0 items-center gap-2 border-t border-line ${compact ? "p-3" : "p-2.5"}`}>
 				<button
 					type="button"
 					onClick={() => {
 						setView("settings");
 						dismissNav();
 					}}
-					className={`ly-scroll flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover active:bg-elevated ${
+					className={`ly-scroll flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover active:bg-elevated ${
 						compact ? "h-[40px]" : "h-[34px]"
 					}`}
 				>
@@ -341,6 +347,7 @@ export function Sidebar() {
 						?
 					</span>
 				</button>
+				<UpdateBadge compact={compact} />
 			</div>
 		</div>
 	);

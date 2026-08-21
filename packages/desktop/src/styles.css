@@ -1232,25 +1232,47 @@
 }
 
 /*
- * The update dot.
+ * The update dot, and the version it opens to show.
  *
- * Solid, with the version written on it.
+ * Solid rather than a wash: this started as a 14%-opacity glyph up among the window controls, on
+ * the reasoning that a new version is "there is something", not "look at me", and a release then
+ * went a full cycle with it sitting there being reported as "I see no update at all". A pale mark
+ * the size of a window control, placed among window controls, is a window control.
  *
- * This was a 14%-opacity wash behind a bare icon, on the reasoning that a new version is "there is
- * something", not "look at me". It went too far the other way: a pale glyph the size of a window
- * control, sitting among the window controls, is indistinguishable from another window control —
- * and a release went a full cycle with the update sitting there being reported as "I see no
- * update at all".
+ * What it does *not* do any more is carry the version in the toolbar. Legibility was the fix, and
+ * a permanent 「新版本 0.3.0」 in the window's corner was overshooting it — so the dot moved down
+ * beside the settings row, and the version is a hover away. Colour says there is news; the width
+ * is only spent when someone asks what it is.
  *
- * Still small and still out of the way. But an announcement has to be legible as one.
+ * The open is a grid column from 0fr to 1fr, the same trick the folding sections use for height:
+ * it interpolates against the text's real width, so 0.3.0 and 0.10.0-beta.2 both take the same
+ * time and neither is clipped early. `overflow: hidden` goes on the child — the track is what
+ * shrinks, and the content has to be willing to be narrower than itself for that to show.
  */
 .ly-update-dot {
   background: var(--color-info);
   color: #fff;
+  transition: opacity var(--ly-t-quick) var(--ly-e-soft);
 }
 
 .ly-update-dot:hover {
   opacity: 0.9;
+}
+
+.ly-update-version {
+  display: grid;
+  grid-template-columns: 0fr;
+  transition: grid-template-columns var(--ly-t-base) var(--ly-e-out);
+}
+
+/* Keyboard reaches it too: a hover-only affordance is one the keyboard cannot read. */
+.ly-update-dot:hover .ly-update-version,
+.ly-update-dot:focus-visible .ly-update-version {
+  grid-template-columns: 1fr;
+}
+
+.ly-update-version > span {
+  overflow: hidden;
 }
 
 

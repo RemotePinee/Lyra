@@ -50,6 +50,18 @@ test("the bundle to replace is worked out from the running executable", () => {
 	assert.equal(installedAppBundle("/usr/local/bin/lyra"), null, "not a bundle at all");
 });
 
+/**
+ * The one that actually happened: an update pressed while running `pnpm dev` replaced Electron's
+ * prebuilt runtime inside `node_modules` with the packaged release, because this repository renames
+ * that bundle to `Lyra.app` and the path shape is then indistinguishable from an install.
+ */
+test("a development runtime inside node_modules is never treated as the installed app", () => {
+	assert.equal(
+		installedAppBundle("/Users/me/code/Lyra/node_modules/.pnpm/electron@43.3.0/node_modules/electron/dist/Lyra.app/Contents/MacOS/Lyra"),
+		null,
+	);
+});
+
 test("the new copy goes in, the old one is cleared away, and the app is launched again", macOnly, async () => {
 	const root = await mkdtemp(join(tmpdir(), "swap-test-"));
 	const target = join(root, "Lyra.app");

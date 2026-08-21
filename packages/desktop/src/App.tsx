@@ -19,7 +19,7 @@ import { PullRequestsView } from "./components/PullRequestsView.tsx";
 import { ScheduledView } from "./components/ScheduledView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SettingsShell } from "./components/settings/SettingsShell.tsx";
-import { DragBand, PanelMenu, UpdateSlot, WindowButtons } from "./components/WindowToolbar.tsx";
+import { DragBand, PanelMenu, WindowButtons } from "./components/WindowToolbar.tsx";
 import { DockView } from "./dock/DockView.tsx";
 import { LayoutProvider, NavPane, useLayout, useSidebarFit } from "./layout.tsx";
 import { sessionTitle } from "./sessionTitle.ts";
@@ -205,9 +205,6 @@ function ChatShell() {
 					renderConversation={() => main.body}
 				/>
 			</main>
-
-			{/* Always, regardless of what the dock is doing. */}
-			<UpdateSlot nativeFullScreen={nativeFullScreen} />
 
 			<WindowButtons
 				nativeFullScreen={nativeFullScreen}

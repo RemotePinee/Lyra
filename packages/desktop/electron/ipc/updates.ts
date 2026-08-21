@@ -220,6 +220,14 @@ export function registerUpdateIpc(): void {
 			 * go wrong except the swap itself.
 			 */
 			if (process.platform === "darwin" && file.endsWith(".zip")) {
+				/*
+				 * Never in development. The executable there is Electron's own bundle inside
+				 * `node_modules` — renamed to `Lyra.app` by this repository, which is enough to make it
+				 * look installed — so swapping it for a release replaces the runtime `pnpm dev` depends
+				 * on: a white window, and a development tree that has to be reinstalled to get back.
+				 */
+				if (!app.isPackaged) return { ok: false, error: "开发模式下不做就地更新" };
+
 				const target = installedAppBundle(app.getPath("exe"));
 				if (!target) return { ok: false, error: "这个副本不是从「应用程序」运行的，无法就地更新" };
 

@@ -1,10 +1,17 @@
 /**
  * The one piece of the window that says a newer version exists.
  *
- * It is an icon button the size of the ones beside it, in a pale blue, and it carries no text. A
- * chip with the version number in it took the toolbar's attention for something that is not urgent
- * and is not about the document — the news is only "there is something", and the version, the date
- * and what changed all belong in the dialog, where there is room for them.
+ * A dot at the end of the sidebar's bottom row, beside the settings button, that opens on hover to
+ * show the version and closes again when the pointer leaves. Two earlier attempts sat in the
+ * toolbar: first as a grey glyph among the window controls, which went a whole release cycle being
+ * read as another window control and reported as "there is no update"; then as a chip with 「新版本
+ * 0.3.0」 written on it, which fixed that by taking the top-left corner of the window and holding
+ * it for something that is not urgent and is not about the document.
+ *
+ * The dot is the compromise both were reaching for. Coloured, so it is visibly an announcement
+ * rather than a control; the size of a full stop, so it costs the window nothing; and the version —
+ * the part that made the chip wide — is a hover away rather than always on screen. Nothing is
+ * hidden that was not already a click away in the dialog.
  *
  * Pressing it fetches the installer for *this* machine and opens it. Sending someone to a release
  * page to choose between four files is not an update mechanism: the page cannot know whether they
@@ -49,7 +56,7 @@ const LABELS: Record<Stage["at"], string> = {
 	failed: "重试",
 };
 
-export function UpdateBadge() {
+export function UpdateBadge({ compact = false }: { compact?: boolean }) {
 	const [info, setInfo] = useState<Info | null>(null);
 	const [open, setOpen] = useState(false);
 	const [stage, setStage] = useState<Stage>({ at: "idle" });
@@ -109,25 +116,24 @@ export function UpdateBadge() {
 			<button
 				type="button"
 				onClick={() => setOpen(true)}
-				data-ly-tip={`有新版本 ${info.latest}`}
-				data-ly-tip-side="bottom"
 				aria-label={`有新版本 ${info.latest}`}
 				/*
-				 * Says what it is, rather than being a 24px icon among the window controls.
-				 *
-				 * It used to match the toolbar buttons beside it exactly — same size, same shape, no
-				 * text — on the reasoning that it should read as one of them. It did, and that was
-				 * the problem: a new version sat there for a whole release cycle and was reported as
-				 * "there is no update", because nothing about a grey glyph next to the traffic lights
-				 * suggests it is an announcement rather than another control.
-				 *
-				 * A pill with the version in it, in the accent colour. Still small, still out of the
-				 * way, but now it is legible as news.
+				 * Square while closed, so it is a dot and not a pill with air in it: the padding is
+				 * half the difference between the row's height and the glyph, which leaves the width
+				 * equal to the height until the version pushes it open.
 				 */
-				className="ly-update-dot flex h-[24px] shrink-0 items-center gap-1 rounded-full px-2 text-detail font-medium whitespace-nowrap transition-opacity duration-[var(--ly-t-quick)]"
+				className={`ly-update-dot flex shrink-0 items-center rounded-full text-detail font-medium whitespace-nowrap ${
+					compact ? "h-[40px] px-[13px]" : "h-[34px] px-[10px]"
+				}`}
 			>
-				<ArrowDownToLine size={12} strokeWidth={2.2} />
-				新版本 {info.latest}
+				<ArrowDownToLine size={14} strokeWidth={2.2} className="shrink-0" />
+				{/* Two spans: the outer one animates the width, the inner one clips what does not fit
+				    yet. A grid column from 0fr to 1fr is how you animate to a width nobody measured. */}
+				<span className="ly-update-version">
+					<span>
+						<span className="pl-1.5 tabular-nums">{info.latest}</span>
+					</span>
+				</span>
 			</button>
 
 			{open && (

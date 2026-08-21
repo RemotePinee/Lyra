@@ -13,8 +13,7 @@ import { has } from "../dock/tree.ts";
 import { usePanelDefinitions } from "../panels/definitions.tsx";
 import type { PanelKind } from "../sideStore.ts";
 import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
-import { ToolbarButton, TOOLBAR_BUTTON, TOOLBAR_GAP, WINDOW_CONTROLS_LEFT, WindowControls } from "./WindowControls.tsx";
-import { UpdateBadge } from "./UpdateBadge.tsx";
+import { ToolbarButton, WINDOW_CONTROLS_LEFT, WindowControls } from "./WindowControls.tsx";
 
 /** Left offset of the first toolbar button, when there are traffic lights to clear. */
 const TOOLBAR_LEFT = WINDOW_CONTROLS_LEFT;
@@ -30,26 +29,13 @@ const TOOLBAR_LEFT = WINDOW_CONTROLS_LEFT;
  */
 const TOOLBAR_LEFT_FULLSCREEN = 12;
 
-/**
- * Where the update chip sits: just past the sidebar toggle, on the toolbar's line.
+/*
+ * The update chip used to have a slot of its own here, just past the sidebar toggle.
  *
- * Its own slot rather than a child of `WindowButtons`, so an announcement never comes and goes
- * with something unrelated to it. That used to happen literally: `WindowButtons` disappeared
- * whenever the side panel took the window's corner, and took the update chip with it.
- *
- * Unaffected by whether the sidebar is open, unlike `toolbarContentLeft`: this lands *inside* the
- * sidebar's top strip when it is open, which is empty space and exactly where the chip belongs.
+ * It has moved to the end of the sidebar's bottom row, where it is a dot that opens on hover.
+ * Nothing about the toolbar was wrong for it except the size of the claim: the corner of the
+ * window is where the window's own controls are, and a version number is not one of them.
  */
-export function UpdateSlot({ nativeFullScreen }: { nativeFullScreen: boolean }) {
-	return (
-		<div
-			className="no-drag absolute top-0 z-[61] flex h-[44px] items-center"
-			style={{ left: (nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT) + TOOLBAR_BUTTON + TOOLBAR_GAP }}
-		>
-			<UpdateBadge />
-		</div>
-	);
-}
 
 /**
  * The strip of window that can be dragged to move it.

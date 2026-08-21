@@ -19,6 +19,21 @@ import { join } from "node:path";
 
 /** Where this app is installed, as a directory that can be replaced wholesale. */
 export function installedAppBundle(execPath: string): string | null {
+	/*
+	 * A development run is not an installation, however much its path looks like one.
+	 *
+	 * `pnpm dev` runs Electron's own prebuilt bundle straight out of `node_modules`, and this
+	 * repository renames that bundle to `Lyra.app` so the dock stops saying "Electron" — which
+	 * leaves it matching the shape below exactly. The swap then replaced the *runtime* with a
+	 * packaged release: `dist/Lyra.app` became a finished 0.3.0 app with its own asar, `pnpm dev`
+	 * started launching that instead of the dev server, and the window came up white. Meanwhile
+	 * the copy in 「应用程序」 was never touched, so it went on offering the same update.
+	 *
+	 * Checked here rather than only at the call site because this is the function that decides
+	 * what gets moved aside, and getting it wrong costs someone their development environment.
+	 */
+	if (execPath.includes("/node_modules/")) return null;
+
 	// …/Lyra.app/Contents/MacOS/Lyra → …/Lyra.app
 	const marker = `${sepBundle}/Contents/MacOS/`;
 	const at = execPath.indexOf(marker);
