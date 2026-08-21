@@ -327,7 +327,7 @@ export function Sidebar() {
 			 * business is the app itself rather than the conversation, and a row that already ends in
 			 * a small round mark has somewhere to put another one.
 			 */}
-			<div className={`flex shrink-0 items-center gap-2 border-t border-line ${compact ? "p-3" : "p-2.5"}`}>
+			<div className={`ly-sidebar-foot flex shrink-0 items-center gap-2 border-t border-line ${compact ? "p-3" : "p-2.5"}`}>
 				<button
 					type="button"
 					onClick={() => {
@@ -339,9 +339,11 @@ export function Sidebar() {
 					}`}
 				>
 					<SettingsIcon size={16} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
+					{/* Fades when the badge beside it opens, rather than being squeezed into its own
+					    overflow animation — see `.ly-sidebar-foot` in styles.css. */}
 					<ScrollText
 						text={activeProviderLabel(settings?.providers ?? [])}
-						className="min-w-0 flex-1 text-label text-ink"
+						className="ly-sidebar-foot-label min-w-0 flex-1 text-label text-ink"
 					/>
 					<span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-caption text-ink-faint">
 						?

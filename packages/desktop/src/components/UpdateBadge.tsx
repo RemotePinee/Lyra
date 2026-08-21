@@ -1,30 +1,32 @@
 /**
- * The one piece of the window that says a newer version exists.
+ * The one piece of the window that says a newer version exists, and how far along fetching it is.
  *
- * A dot at the end of the sidebar's bottom row, beside the settings button, that opens on hover to
- * show the version and closes again when the pointer leaves. Two earlier attempts sat in the
- * toolbar: first as a grey glyph among the window controls, which went a whole release cycle being
- * read as another window control and reported as "there is no update"; then as a chip with 「新版本
- * 0.3.0」 written on it, which fixed that by taking the top-left corner of the window and holding
- * it for something that is not urgent and is not about the document.
+ * A dot at the end of the sidebar's bottom row that opens on hover to show what it is about. Two
+ * earlier attempts sat in the toolbar: first a grey glyph among the window controls, which went a
+ * whole release being read as another window control and reported as "there is no update"; then a
+ * chip reading 「新版本 0.3.0」, which fixed that by taking the top-left corner of the window and
+ * holding it for something that is not urgent and is not about the document.
  *
- * The dot is the compromise both were reaching for. Coloured, so it is visibly an announcement
- * rather than a control; the size of a full stop, so it costs the window nothing; and the version —
- * the part that made the chip wide — is a hover away rather than always on screen. Nothing is
- * hidden that was not already a click away in the dialog.
+ * The dot is what both were reaching for. Coloured, so it is visibly an announcement rather than a
+ * control; the size of a full stop, so it costs the window nothing; and the words — the part that
+ * made the chip wide — are a hover away.
  *
- * Pressing it fetches the installer for *this* machine and opens it. Sending someone to a release
- * page to choose between four files is not an update mechanism: the page cannot know whether they
- * are on Apple silicon, and this can. What it deliberately does not do is replace the app itself —
- * this build is unsigned, so the last step is the platform's own installer, where the user is the
- * one who decides to trust it.
+ * What is new here is that it keeps saying something while a download runs. A ring closes around
+ * the dot as the bytes arrive, and it survives the dialog being closed, because the download does:
+ * the state lives in the main process and this subscribes to it. Before, closing the dialog had to
+ * be *forbidden* mid-download — there would have been nothing left to report to — so a 130MB fetch
+ * held the screen for as long as it took.
+ *
+ * Clicking always opens the dialog, in every phase, including while downloading. Pausing from a
+ * 26px circle would be a control small enough to hit by accident on the way to something else, and
+ * what it would interrupt is the longest operation in the app.
  */
 
-import { ArrowDownToLine } from "lucide-react";
+import { AlertTriangle, ArrowDownToLine, Pause, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { Overlay } from "./modals/Overlay.tsx";
-import { Scroller } from "./Scroller.tsx";
+import { fractionOf, labelFor, shouldShow, type Phase } from "../update/view.ts";
+import { UpdateDialog } from "./modals/UpdateDialog.tsx";
 
 type Info = Awaited<ReturnType<typeof window.lyra.updates.check>>;
 
@@ -32,45 +34,22 @@ type Info = Awaited<ReturnType<typeof window.lyra.updates.check>>;
 const EVERY_MS = 6 * 60 * 60 * 1000;
 
 /**
- * `staged` is the update unpacked and waiting for a relaunch; `opened` is an installer handed to
- * the OS. They are different endings and the dialog has to say different things: one offers to
- * finish the job, the other has already done as much as it can.
+ * Everything the badge and the dialog both need, read from the one place that owns it.
+ *
+ * A hook rather than two copies of these effects: the badge and the dialog are two views of one
+ * download, and the way to keep two views agreeing is to not give them separate state to disagree
+ * with. `phase` comes from the main process — asked once on mount, then pushed.
  */
-type Stage =
-	| { at: "idle" }
-	| { at: "downloading"; percent: number }
-	/** Downloaded, and being unpacked — which ending it is going to have is not known yet. */
-	| { at: "preparing" }
-	| { at: "staged" }
-	| { at: "opened" }
-	| { at: "failed"; error: string };
-
-/** What the confirming button says at each stage. Flat, because a nested ternary this deep reads
-    as a puzzle rather than as five cases. */
-const LABELS: Record<Stage["at"], string> = {
-	idle: "下载安装",
-	downloading: "下载中",
-	preparing: "准备中",
-	staged: "立即重启",
-	opened: "重新打开安装器",
-	failed: "重试",
-};
-
-export function UpdateBadge({ compact = false }: { compact?: boolean }) {
+export function useUpdate(): { info: Info | null; phase: Phase } {
 	const [info, setInfo] = useState<Info | null>(null);
-	const [open, setOpen] = useState(false);
-	const [stage, setStage] = useState<Stage>({ at: "idle" });
-	/** Dismissed for this version, in this window. Reappears for the next one. */
-	const [hidden, setHidden] = useState<string | null>(null);
+	const [phase, setPhase] = useState<Phase>({ at: "idle" });
 
 	useEffect(() => {
 		let alive = true;
 		const check = () => {
 			void window.lyra.updates
 				.check()
-				.then((next) => {
-					if (alive) setInfo(next);
-				})
+				.then((next) => alive && setInfo(next))
 				// The check is the app's business; its failure is not the user's.
 				.catch(() => {});
 		};
@@ -82,161 +61,162 @@ export function UpdateBadge({ compact = false }: { compact?: boolean }) {
 		};
 	}, []);
 
-	// Progress arrives from the main process, which is the only place that can see the stream.
 	useEffect(() => {
-		return window.lyra.updates.onProgress(({ received, total, done }) => {
-			/*
-			 * The last chunk means downloaded, not finished — and certainly not which ending this
-			 * is going to have.
-			 *
-			 * This used to guess `opened` here and let `install` correct it to `staged` a moment
-			 * later, so the dialog said 重新打开安装器 for as long as unpacking took and then
-			 * changed its mind in front of the reader. Guessing the *wrong* one was not the mistake;
-			 * guessing at all was, when the answer arrives on its own a moment later.
-			 */
-			setStage(done ? { at: "preparing" } : { at: "downloading", percent: total > 0 ? received / total : 0 });
-		});
+		let alive = true;
+		/*
+		 * Asked once, because a download already in progress emits nothing until its next chunk — and
+		 * a *paused* one emits nothing ever, since only the user resumes it. A window that opened
+		 * mid-download and only listened would draw an idle badge over a running download.
+		 */
+		void window.lyra.updates
+			.state?.()
+			.then((current) => alive && setPhase(current))
+			.catch(() => {});
+		const stop = window.lyra.updates.onProgress((next) => alive && setPhase(next));
+		return () => {
+			alive = false;
+			stop();
+		};
 	}, []);
 
-	if (!info?.available || hidden === info.latest) return null;
+	return { info, phase };
+}
 
-	const install = async () => {
-		setStage({ at: "downloading", percent: 0 });
-		const result = await window.lyra.updates.download(info.latest);
-		if (!result.ok) {
-			setStage({ at: "failed", error: result.error ?? "下载失败" });
-			return;
-		}
-		// Now it is known: an update we can swap in, or an installer the OS has been handed.
-		setStage(result.relaunch ? { at: "staged" } : { at: "opened" });
-	};
+export function UpdateBadge({ compact = false }: { compact?: boolean }) {
+	const { info, phase } = useUpdate();
+	const [open, setOpen] = useState(false);
+	/** Dismissed for this version, in this window. Reappears for the next one. */
+	const [hidden, setHidden] = useState<string | null>(null);
+
+	// Every rule about what shows and what it says lives in `update/view.ts`, where the tests can
+	// walk all six phases through all of them at once.
+	if (!info || !shouldShow(info, hidden, phase)) return null;
+
+	const fraction = fractionOf(phase);
+	/*
+	 * The size of the `?` beside it, near enough — not the size of the row.
+	 *
+	 * It was the row's full height for one build, and it was a filled blue disc, which made the
+	 * loudest thing in the sidebar a notice about a version number: the button next to it is a 16px
+	 * outline and the settings glyph is 16px, so a 34px solid circle read as a balloon that had
+	 * drifted in. An announcement earns colour, not площадь.
+	 */
+	const size = compact ? 26 : 22;
+	const glyph = compact ? 13 : 11;
 
 	return (
 		<>
 			<button
 				type="button"
 				onClick={() => setOpen(true)}
-				aria-label={`有新版本 ${info.latest}`}
-				/*
-				 * Square while closed, so it is a dot and not a pill with air in it: the padding is
-				 * half the difference between the row's height and the glyph, which leaves the width
-				 * equal to the height until the version pushes it open.
-				 */
-				className={`ly-update-dot flex shrink-0 items-center rounded-full text-detail font-medium whitespace-nowrap ${
-					compact ? "h-[40px] px-[13px]" : "h-[34px] px-[10px]"
-				}`}
+				aria-label={labelFor(phase, info.latest)}
+				data-phase={phase.at}
+				style={{
+					height: size,
+					// Padding is what keeps width equal to height while closed: half the difference
+					// between the circle and the glyph inside it. Anything else is a pill with air in it.
+					paddingInline: (size - glyph) / 2,
+				}}
+				className="ly-update-dot flex shrink-0 items-center rounded-full text-caption font-medium whitespace-nowrap"
 			>
-				<ArrowDownToLine size={14} strokeWidth={2.2} className="shrink-0" />
-				{/* Two spans: the outer one animates the width, the inner one clips what does not fit
-				    yet. A grid column from 0fr to 1fr is how you animate to a width nobody measured. */}
+				<span className="relative flex shrink-0 items-center justify-center">
+					{/*
+					 * The ring goes around the *glyph*, not around the button.
+					 *
+					 * Around the button it only works while the button is a circle, and the button stops
+					 * being a circle the moment it is hovered — which is also the moment someone is most
+					 * likely to be looking at it. Anchored to the glyph it is correct in both shapes, and
+					 * being absolutely positioned it changes no measurement, so nothing moves when a
+					 * download starts.
+					 */}
+					{fraction !== null && (
+						<ProgressRing fraction={fraction} spinning={phase.at === "preparing"} inset={(size - 2 - glyph) / 2} />
+					)}
+					<PhaseGlyph phase={phase} size={glyph} />
+				</span>
+
+				{/* Two spans: the outer animates the width, the inner clips what does not fit yet. A grid
+				    column from 0fr to 1fr is how you animate to a width nobody measured. */}
 				<span className="ly-update-version">
 					<span>
-						<span className="pl-1.5 tabular-nums">{info.latest}</span>
+						<span className="pl-1.5 tabular-nums">{labelFor(phase, info.latest)}</span>
 					</span>
 				</span>
 			</button>
 
 			{open && (
-				<Overlay
-					onClose={() => {
-						// Not while it is fetching: closing would leave the download running with nothing
-						// to report to.
-						if (stage.at !== "downloading") setOpen(false);
+				<UpdateDialog
+					info={info}
+					phase={phase}
+					onClose={() => setOpen(false)}
+					onDismiss={() => {
+						setHidden(info.latest);
+						setOpen(false);
 					}}
-					width={480}
-				>
-					<div className="px-5 pt-5 pb-3">
-						<h2 className="text-label font-semibold text-ink">有新版本可以更新</h2>
-						<p className="mt-1 text-detail text-ink-muted">
-							{info.current} → <span className="font-medium text-ink">{info.latest}</span>
-							{/* Only when the release said so — no date is better than a wrong one. */}
-							{info.publishedAt && (
-								<span className="pl-2 text-ink-faint">
-									{new Date(info.publishedAt).toLocaleDateString("zh-CN")}
-								</span>
-							)}
-						</p>
-					</div>
-
-					{/*
-					 * The release notes as written, scrolled rather than truncated.
-					 *
-					 * Shown as text and not rendered as Markdown: this is someone else's prose arriving
-					 * over the network, and the dialog's job is to let it be read, not to give it a
-					 * licence to lay itself out inside the app.
-					 */}
-					{info.notes && (
-						<Scroller className="max-h-[260px] border-t border-line-soft" contentClassName="px-5 py-4">
-							<p className="whitespace-pre-wrap text-label leading-relaxed text-ink-muted">{info.notes}</p>
-						</Scroller>
-					)}
-
-					<div className="border-t border-line px-5 py-3">
-						{stage.at === "downloading" && (
-							<div className="mb-3">
-								<div className="mb-1.5 flex items-baseline justify-between text-detail">
-									<span className="text-ink-muted">正在下载</span>
-									<span className="text-ink tabular-nums">{Math.round(stage.percent * 100)}%</span>
-								</div>
-								<div className="h-1 overflow-hidden rounded-full bg-ink/10">
-									<div
-										className="h-full rounded-full bg-info transition-[width] duration-200 ease-out"
-										style={{ width: `${Math.max(2, stage.percent * 100)}%` }}
-									/>
-								</div>
-							</div>
-						)}
-						{stage.at === "preparing" && <p className="mb-3 text-detail text-ink-muted">正在准备…</p>}
-						{stage.at === "staged" && (
-							<p className="mb-3 text-detail text-ok">已下载完成。重启 Lyra 即可用上新版本，正在进行的对话会中断。</p>
-						)}
-						{stage.at === "opened" && (
-							<p className="mb-3 text-detail text-ok">已下载完成，安装器已经打开，按它的提示装完即可。</p>
-						)}
-						{stage.at === "failed" && <p className="mb-3 text-detail text-danger">{stage.error}</p>}
-
-						<div className="flex items-center justify-end gap-2">
-							<button
-								type="button"
-								disabled={stage.at === "downloading"}
-								onClick={() => {
-									setHidden(info.latest);
-									setOpen(false);
-								}}
-								className="h-[32px] rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink disabled:opacity-40"
-							>
-								以后再说
-							</button>
-							{/*
-							 * Falls back to the release page only when this platform has no installer in
-							 * the release — better to hand over a link than to offer a button that cannot
-							 * work.
-							 */}
-							{info.asset ? (
-								<button
-									type="button"
-									disabled={stage.at === "downloading" || stage.at === "preparing"}
-									onClick={() => void (stage.at === "staged" ? window.lyra.updates.relaunch() : install())}
-									className="h-[32px] rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-50"
-								>
-									{LABELS[stage.at]}
-								</button>
-							) : (
-								<button
-									type="button"
-									onClick={() => {
-										void window.lyra.updates.open(info.url);
-										setOpen(false);
-									}}
-									className="h-[32px] rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90"
-								>
-									查看发布页
-								</button>
-							)}
-						</div>
-					</div>
-				</Overlay>
+				/>
 			)}
 		</>
+	);
+}
+
+/** The glyph in the middle: what pressing it is about, not what it will do. */
+function PhaseGlyph({ phase, size }: { phase: Phase; size: number }) {
+	if (phase.at === "failed") return <AlertTriangle size={size} strokeWidth={2.4} className="shrink-0" />;
+	if (phase.at === "ready") return <RefreshCw size={size} strokeWidth={2.6} className="shrink-0" />;
+	// Paused shows the state it is in, which is the thing the eye is scanning for — a download that
+	// is not moving looks identical to one that is, without it.
+	if (phase.at === "paused")
+		return <Pause size={size - 1} strokeWidth={2.6} className="shrink-0" fill="currentColor" />;
+	return <ArrowDownToLine size={size + 1} strokeWidth={2.4} className="shrink-0" />;
+}
+
+/**
+ * A ring that closes as the download arrives.
+ *
+ * The version before this one made the whole badge a conic gradient, on the reasoning that the disc
+ * was already a circle so it may as well be the dial. That is true of a disc and false of this
+ * control: hovering turns it into a pill, and a conic gradient on a pill is a coloured wedge fired
+ * out of the middle of the word — it looked like a rendering fault, because in every sense that
+ * matters it was one.
+ *
+ * So: an SVG ring, positioned against the glyph rather than the button, which is round in both
+ * shapes. `inset` is how far outside the glyph it sits, computed by the caller so the ring lands
+ * just inside the closed circle's edge.
+ *
+ * Rotated so zero is at the top, which is where a clock starts and therefore where everyone looks
+ * for the beginning of a circle.
+ */
+function ProgressRing({ fraction, spinning, inset }: { fraction: number; spinning: boolean; inset: number }) {
+	const radius = 10;
+	const circumference = 2 * Math.PI * radius;
+
+	return (
+		<svg
+			aria-hidden
+			viewBox="0 0 24 24"
+			style={{ inset: -inset }}
+			className={`absolute -rotate-90 ${spinning ? "ly-spin" : ""}`}
+		>
+			{/* The track, so an arc at 8% is visibly one eighth of something rather than a lone tick. */}
+			<circle cx="12" cy="12" r={radius} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.32" />
+			<circle
+				cx="12"
+				cy="12"
+				r={radius}
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeDasharray={circumference}
+				/*
+				 * A visible minimum, because the first seconds of a 135MB download round to 0% and an arc
+				 * of literally nothing is indistinguishable from a download that never started — the one
+				 * thing the ring exists to rule out. `spinning` has no percentage to show at all, so it
+				 * is a quarter-turn chasing its own tail.
+				 */
+				strokeDashoffset={circumference * (1 - Math.max(spinning ? 0.25 : 0.07, fraction))}
+				className="transition-[stroke-dashoffset] duration-300 ease-out"
+			/>
+		</svg>
 	);
 }

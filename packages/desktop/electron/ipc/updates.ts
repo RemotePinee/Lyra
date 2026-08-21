@@ -11,16 +11,14 @@
  * image is opened, and the user drags it across as they did the first time.
  */
 
-import { app, ipcMain, shell } from "electron";
-import { createWriteStream } from "node:fs";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { installedAppBundle, scheduleSwap } from "./install-update.ts";
+import { downloadDir, sweepDownloads, UpdateDownload, type DownloadPhase } from "./update-download.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -156,6 +154,16 @@ export function registerUpdateIpc(): void {
 		try {
 			const info = await fetchLatest(current);
 			cached = { at: Date.now(), info };
+			/*
+			 * Take out whatever earlier versions left behind, now that we know which one is current.
+			 *
+			 * Nothing used to, and it accumulates in a way nobody sees: every update ever fetched stayed
+			 * in the temp directory as both an installer and the copy it unpacked to. Eight versions had
+			 * piled up on the machine this was written on, 495MB for one of them. Done here because a
+			 * check is the only moment the newest version is known, and detached because a sweep that
+			 * fails is not a reason to withhold an update.
+			 */
+			void sweepDownloads(tmpdir(), info.latest);
 			return info;
 		} catch {
 			/*
@@ -170,55 +178,62 @@ export function registerUpdateIpc(): void {
 	});
 
 	/**
-	 * Fetch the installer, then let the platform open it.
+	 * The download in flight, if there is one. Outlives any window that was watching it.
 	 *
-	 * Progress is pushed rather than polled, because a download is the one operation where a
-	 * percentage is the whole of the feedback. It is written to a temp directory keyed by version so
-	 * a second attempt after a failure does not append to half a file.
+	 * One at a time, keyed by the version it is for: there is only ever one newest release, and a
+	 * second download of a different one would be a race for the same directory. A new version
+	 * replaces it — see `downloadFor`.
 	 */
-	ipcMain.handle(
-		"updates:download",
-		async (event, version: string): Promise<{ ok: boolean; error?: string; relaunch?: boolean }> => {
+	let active: { version: string; download: UpdateDownload } | null = null;
+
+	/**
+	 * Every open window hears every change.
+	 *
+	 * Not the sender that asked, which is what this used to do. A download is a fact about the app,
+	 * not about the conversation that started it: closing the dialog, or the whole window on a
+	 * multi-window desktop, must not orphan a 130MB fetch — and a window that opens halfway through
+	 * one should be able to draw it.
+	 */
+	const broadcast = (phase: DownloadPhase) => {
+		for (const window of BrowserWindow.getAllWindows()) {
+			if (!window.isDestroyed()) window.webContents.send("updates:progress", phase);
+		}
+	};
+
+	/** The downloader for this version, reusing the one already going if it is the same version. */
+	const downloadFor = (version: string): UpdateDownload | { error: string } => {
 		const info = cached?.info;
 		const asset = info?.asset;
-		if (!asset || info?.latest !== version) return { ok: false, error: "没有找到适用于这台机器的安装包" };
+		if (!asset || info?.latest !== version) return { error: "没有找到适用于这台机器的安装包" };
 
-		const dir = join(tmpdir(), `lyra-update-${version}`);
-		const file = join(dir, asset.name);
-		const send = (payload: { received: number; total: number; done?: boolean }) => {
-			if (!event.sender.isDestroyed()) event.sender.send("updates:progress", payload);
-		};
+		if (active?.version === version) return active.download;
 
+		// A different version supersedes whatever was going: stop it and drop its partial, or its
+		// bytes sit in the temp directory until the OS clears it.
+		void active?.download.cancel();
+
+		const dir = downloadDir(tmpdir(), version);
+		const download = new UpdateDownload({
+			url: asset.url,
+			file: join(dir, asset.name),
+			size: asset.size,
+			agent: `Lyra/${info.current}`,
+		});
+		download.watch(broadcast);
+		active = { version, download };
+		return download;
+	};
+
+	/**
+	 * Put the downloaded file to use: swap-in on macOS, hand to the OS everywhere else.
+	 *
+	 * Separated from fetching the bytes because they fail for unrelated reasons and only one of them
+	 * is worth resuming. Runs once the download reports `preparing`, so by the time anyone presses
+	 * 立即重启 there is nothing left that can go wrong except the swap itself.
+	 */
+	const installDownloaded = async (version: string, file: string): Promise<void> => {
+		const download = active?.download;
 		try {
-			// Already fetched and complete — skip straight to opening it.
-			const existing = await stat(file).catch(() => null);
-			if (!existing || existing.size !== asset.size) {
-				await rm(dir, { recursive: true, force: true });
-				await mkdir(dir, { recursive: true });
-
-				const response = await fetch(asset.url, { headers: { "User-Agent": `Lyra/${info.current}` } });
-				if (!response.ok || !response.body) throw new Error(`下载失败：${response.status}`);
-				const total = Number(response.headers.get("content-length")) || asset.size;
-
-				let received = 0;
-				const body = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
-				body.on("data", (chunk: Buffer) => {
-					received += chunk.length;
-					send({ received, total });
-				});
-				await pipeline(body, createWriteStream(file));
-			}
-
-			send({ received: asset.size, total: asset.size, done: true });
-
-			/*
-			 * A zip on macOS is an update we can actually perform; everything else is an installer.
-			 *
-			 * Unpacking here rather than at relaunch means any failure — a truncated download, a
-			 * bundle that is not what we expected — is reported while the window is still up and
-			 * able to say so. By the time the user presses 立即重启 there is nothing left that can
-			 * go wrong except the swap itself.
-			 */
 			if (process.platform === "darwin" && file.endsWith(".zip")) {
 				/*
 				 * Never in development. The executable there is Electron's own bundle inside
@@ -226,31 +241,63 @@ export function registerUpdateIpc(): void {
 				 * look installed — so swapping it for a release replaces the runtime `pnpm dev` depends
 				 * on: a white window, and a development tree that has to be reinstalled to get back.
 				 */
-				if (!app.isPackaged) return { ok: false, error: "开发模式下不做就地更新" };
+				if (!app.isPackaged) return download?.fail("开发模式下不做就地更新");
 
 				const target = installedAppBundle(app.getPath("exe"));
-				if (!target) return { ok: false, error: "这个副本不是从「应用程序」运行的，无法就地更新" };
+				if (!target) return download?.fail("这个副本不是从「应用程序」运行的，无法就地更新");
 
-				const staged = join(dir, "unpacked");
+				const staged = join(downloadDir(tmpdir(), version), "unpacked");
+				await rm(staged, { recursive: true, force: true });
 				await mkdir(staged, { recursive: true });
 				await unzip(file, staged);
 				const bundle = join(staged, `${app.getName()}.app`);
 				if (!(await stat(bundle).catch(() => null))?.isDirectory()) {
-					return { ok: false, error: "下载的更新包里没有找到应用" };
+					return download?.fail("下载的更新包里没有找到应用");
 				}
 
 				pending = { staged: bundle, target };
-				return { ok: true, relaunch: true };
+				return download?.finish(true);
 			}
 
 			// Windows and Linux still hand the file to the OS: those are installers, and on Linux
 			// a .deb needs a privilege this process does not have.
 			await shell.openPath(file);
-			return { ok: true };
+			download?.finish(false);
 		} catch (error) {
-			await rm(dir, { recursive: true, force: true }).catch(() => {});
-			return { ok: false, error: error instanceof Error ? error.message : "下载失败" };
+			download?.fail(error instanceof Error ? error.message : "安装失败");
 		}
+	};
+
+	/** What is happening right now, for a window that just opened or just came back. */
+	ipcMain.handle("updates:state", (): DownloadPhase => active?.download.state ?? { at: "idle" });
+
+	/**
+	 * Start, or carry on from a pause.
+	 *
+	 * Returns as soon as the download has been asked to run, not when it finishes — the answer the
+	 * caller wants arrives on `updates:progress` like every other change, so there is one path for
+	 * "where is it up to" rather than two that can disagree.
+	 */
+	ipcMain.handle("updates:download", async (_event, version: string): Promise<DownloadPhase> => {
+		const found = downloadFor(version);
+		if ("error" in found) return { at: "failed", error: found.error, received: 0, total: 0 };
+
+		const phase = await found.start();
+		if (phase.at === "preparing") {
+			const info = cached?.info;
+			if (info?.asset) await installDownloaded(version, join(downloadDir(tmpdir(), version), info.asset.name));
+		}
+		return active?.download.state ?? phase;
+	});
+
+	ipcMain.handle("updates:pause", async (): Promise<DownloadPhase> => {
+		await active?.download.pause();
+		return active?.download.state ?? { at: "idle" };
+	});
+
+	ipcMain.handle("updates:cancel", async (): Promise<DownloadPhase> => {
+		await active?.download.cancel();
+		return { at: "idle" };
 	});
 
 	/**

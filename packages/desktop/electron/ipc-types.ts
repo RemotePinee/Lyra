@@ -10,6 +10,17 @@
 
 import type { TrajectoryEntry } from "@lyra/core";
 import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
+/*
+ * Re-exported under a name that means something on this side of the boundary.
+ *
+ * `DownloadPhase` is the downloader's word for its own state; from the renderer, the thing being
+ * described is "where the update is up to". Same type, and it has to be the same type — the phase
+ * crosses the wire verbatim, so two declarations would be two contracts with one of them free to
+ * drift.
+ */
+import type { DownloadPhase } from "./ipc/update-download.ts";
+
+export type UpdatePhase = DownloadPhase;
 
 import type {
 	AgentEvent,
@@ -308,18 +319,28 @@ export interface LyraApi {
 			asset: { name: string; url: string; size: number } | null;
 		}>;
 		/**
-		 * Fetches the update and gets it ready. Progress arrives on `onProgress`.
+		 * Where the download is right now, whoever started it.
 		 *
-		 * `relaunch: true` means it is staged and the app can swap to it on demand — macOS, where
-		 * the download is the app itself. Without it the file was an installer and has been handed
-		 * to the OS, which is as far as this can take it.
+		 * The main process owns this, not the window: a download outlives the dialog that began it
+		 * and outlives the window itself. Asked once on mount, and kept current by `onProgress`.
 		 */
-		download(version: string): Promise<{ ok: boolean; error?: string; relaunch?: boolean }>;
+		state(): Promise<UpdatePhase>;
+		/**
+		 * Start fetching, or carry on from a pause. Resumes from the bytes already on disk.
+		 *
+		 * Returns the phase it reached, and every change also arrives on `onProgress` — so a caller
+		 * may await this or ignore it entirely and just draw what it is told.
+		 */
+		download(version: string): Promise<UpdatePhase>;
+		/** Stop, keeping what has come down. Resuming asks the server only for the rest. */
+		pause(): Promise<UpdatePhase>;
+		/** Stop and throw the partial away. What 取消 means, as opposed to 暂停. */
+		cancel(): Promise<UpdatePhase>;
 		/** Put the staged update in place and come back up on it. Does not return if it works. */
 		relaunch(): Promise<boolean>;
 		/** Opens the release page in the browser. Refuses anything that is not a github.com URL. */
 		open(url: string): Promise<boolean>;
-		onProgress(listener: (payload: { received: number; total: number; done?: boolean }) => void): () => void;
+		onProgress(listener: (phase: UpdatePhase) => void): () => void;
 	};
 	system: {
 		openPath(path: string): Promise<void>;

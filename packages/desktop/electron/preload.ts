@@ -202,12 +202,14 @@ const api: LyraApi = {
 	},
 	updates: {
 		check: (force) => ipcRenderer.invoke("updates:check", force),
+		state: () => ipcRenderer.invoke("updates:state"),
 		download: (version) => ipcRenderer.invoke("updates:download", version),
+		pause: () => ipcRenderer.invoke("updates:pause"),
+		cancel: () => ipcRenderer.invoke("updates:cancel"),
 		relaunch: () => ipcRenderer.invoke("updates:relaunch"),
 		open: (url) => ipcRenderer.invoke("updates:open", url),
 		onProgress: (listener) => {
-			const handler = (_event: unknown, payload: { received: number; total: number; done?: boolean }) =>
-				listener(payload);
+			const handler = (_event: unknown, phase: Parameters<typeof listener>[0]) => listener(phase);
 			ipcRenderer.on("updates:progress", handler);
 			return () => ipcRenderer.off("updates:progress", handler);
 		},
