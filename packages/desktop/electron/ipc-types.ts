@@ -252,6 +252,14 @@ export interface LyraApi {
 		/** A registry logo as a data URL, or null. Fetched in the main process; see `registry:icon`. */
 		icon(url: string): Promise<string | null>;
 		/**
+		 * A whole catalogue's logos at once, keyed by the URL each was asked for.
+		 *
+		 * Not a batched `icon` for the sake of fewer round trips — the answers differ. A picture that
+		 * more than one entry claims is nobody's mark and comes back `null`, which is a fact about the
+		 * batch and cannot be decided one URL at a time. See `dropShared`.
+		 */
+		icons(urls: string[]): Promise<Record<string, string | null>>;
+		/**
 		 * Clone an entry and file it by what it turns out to be.
 		 *
 		 * `kind` comes back because the index's claim is only a claim: install something listed as

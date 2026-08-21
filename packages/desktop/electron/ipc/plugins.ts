@@ -14,6 +14,8 @@ import { basename, join } from "node:path";
 import type { McpBundle, Settings } from "@lyra/core";
 import { lyraHome, fetchRegistry, installEntry, loadPlugins, loadSkills, uninstallEntry } from "@lyra/core";
 import { remoteImage } from "../avatars.ts";
+import { dropShared } from "../registry-icons.ts";
+import { settingsAfterInstall, settingsAfterReconcile, settingsAfterUninstall } from "./plugin-actions.ts";
 import type { RegistryEntry } from "../ipc-types.ts";
 
 /*
@@ -70,15 +72,8 @@ export function registerPluginsIpc({ settings, saveSettings }: PluginsIpcDeps): 
 	ipcMain.handle("registry:install", async (_event, entry: RegistryEntry, registryName?: string) => {
 		try {
 			const installed = await installEntry(entry, registryName);
-			if (installed.kind === "mcp" && installed.servers.length > 0) {
-				const current = settings();
-				// Re-installing something replaces its servers rather than doubling them up.
-				const others = current.mcpServers.filter((server) => server.origin?.bundle !== entry.id);
-				await saveSettings({
-					...current,
-					mcpServers: [...others, ...installed.servers.map((server) => ({ ...server, enabled: false }))],
-				});
-			}
+			const next = settingsAfterInstall(settings(), entry.id, installed);
+			if (next) await saveSettings(next);
 			return { ok: true as const, dir: installed.dir, kind: installed.kind, servers: installed.servers.length };
 		} catch (cause) {
 			return { ok: false as const, message: cause instanceof Error ? cause.message : String(cause) };
@@ -94,40 +89,14 @@ export function registerPluginsIpc({ settings, saveSettings }: PluginsIpcDeps): 
 	 */
 	ipcMain.handle("registry:uninstall", async (_event, id: string) => {
 		await uninstallEntry(id);
-		const current = settings();
-		const remaining = current.mcpServers.filter((server) => server.origin?.bundle !== id);
-		if (remaining.length !== current.mcpServers.length) {
-			await saveSettings({ ...current, mcpServers: remaining });
-		}
+		const next = settingsAfterUninstall(settings(), id);
+		if (next) await saveSettings(next);
 	});
 
-	/**
-	 * Bring what is on disk and what is in settings back into agreement.
-	 *
-	 * Every MCP bundle installed before the split went into `~/.lyra/plugins` and was loaded
-	 * through the plugin's own `mcpServers` list — a path that no longer exists. Left alone, an
-	 * upgrade would silently disconnect every MCP server anybody had installed: still on disk,
-	 * still in the catalogue, connected to nothing.
-	 *
-	 * So anything on disk without a matching row gets one. It keeps the state it had, which for a
-	 * bundle loaded the old way means "on unless the user switched this plugin off" — a migration
-	 * that turns working servers off is as wrong as one that turns unknown servers on. Idempotent:
-	 * the second call finds a row for everything and writes nothing.
-	 */
+	/** Bring what is on disk and what is in settings back into agreement — see `settingsAfterReconcile`. */
 	const reconcile = async (bundles: McpBundle[]): Promise<void> => {
-		const current = settings();
-		const known = new Set(current.mcpServers.map((server) => server.origin?.bundle).filter(Boolean));
-		const missing = bundles.filter((bundle) => !known.has(bundle.id));
-		if (missing.length === 0) return;
-
-		const disabled = new Set(current.disabledPlugins);
-		const restored = missing.flatMap((bundle) =>
-			bundle.servers.map((server) => ({
-				...server,
-				enabled: !disabled.has("*") && !disabled.has(bundle.id),
-			})),
-		);
-		await saveSettings({ ...current, mcpServers: [...current.mcpServers, ...restored] });
+		const next = settingsAfterReconcile(settings(), bundles);
+		if (next) await saveSettings(next);
 	};
 
 	/**
@@ -198,6 +167,26 @@ export function registerPluginsIpc({ settings, saveSettings }: PluginsIpcDeps): 
 	 * decoration. Cached, so a list of twenty entries is twenty requests once and none after.
 	 */
 	ipcMain.handle("registry:icon", async (_event, url: string) => remoteImage(url));
+
+	/*
+	 * The catalogue's logos, asked for together because one of the answers depends on the others.
+	 *
+	 * A picture two entries share identifies neither of them — see `dropShared`. That is a judgement
+	 * about the batch, so it cannot be made one card at a time: whichever request happened to land
+	 * first would keep the picture and the rest would lose it, and the page would look different
+	 * depending on the order the network answered in.
+	 *
+	 * Order is preserved through the `Map` so the answer lines up with what was asked, and `remoteImage`
+	 * still does the caching and the concurrency limiting, so asking for twenty at once is the same
+	 * traffic as twenty separate asks and a good deal less IPC.
+	 */
+	ipcMain.handle("registry:icons", async (_event, urls: string[]) => {
+		const wanted = [...new Set(urls ?? [])];
+		const resolved = new Map(
+			await Promise.all(wanted.map(async (url) => [url, await remoteImage(url)] as const)),
+		);
+		return Object.fromEntries(dropShared(resolved));
+	});
 
 	ipcMain.handle("plugins:revealDir", async (_event, scope: "workspace" | "user", cwd: string) => {
 		const dir = pluginsDir(scope, cwd);

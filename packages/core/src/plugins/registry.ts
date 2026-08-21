@@ -185,6 +185,21 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 		await mkdir(root, { recursive: true });
 		const target = join(root, entry.id);
 		await rm(target, { recursive: true, force: true });
+		/*
+		 * The checkout goes; the files stay.
+		 *
+		 * An entry with a `path` never had this problem — only the named subdirectory is moved, so the
+		 * `.git` beside it is left in staging and swept up with everything else. An entry without one
+		 * moves the whole clone, and used to move the repository with it: `~/.lyra/plugins/demo` came
+		 * out a working tree of somebody else's project. That is a real thing in the user's home
+		 * directory, not a tidiness point — anything that walks upward looking for a repository finds
+		 * it, `git status` one directory too high reports on it, and a shallow clone's history is
+		 * weight nobody asked to keep.
+		 *
+		 * Unconditional rather than gated on `via === "git"`. An archive should not contain one either,
+		 * and if it does, it is even less welcome.
+		 */
+		await rm(join(source, ".git"), { recursive: true, force: true });
 		await rename(source, target);
 
 		return {

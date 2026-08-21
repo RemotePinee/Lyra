@@ -180,7 +180,7 @@ function PluginRow({
 	return (
 		<>
 			<ListRow
-				icon={<PluginIcon name={name} logo={ui?.logo} brandColor={ui?.brandColor} size={28} />}
+				icon={<PluginIcon name={name} logo={ui?.logo} brandColor={ui?.brandColor} kind="plugin" size={28} />}
 				title={name}
 				detail={ui?.shortDescription ?? plugin.manifest.description ?? "（无描述）"}
 				onOpen={onManage}

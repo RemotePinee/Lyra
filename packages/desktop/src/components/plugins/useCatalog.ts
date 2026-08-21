@@ -165,11 +165,69 @@ export function useCatalog(): Catalog {
 	 * — a Filesystem pointed at their own directory, a server they switched off. The declaration
 	 * on disk is only the starting point it was installed from.
 	 */
-	const items = useMemo(
+	const merged = useMemo(
 		() => merge(local.plugins, local.mcpBundles, settings?.mcpServers ?? [], remote, local.skills),
 		// `settings` rather than `settings.mcpServers`: the list is a fresh array on every render,
 		// the object it hangs off is not — it is only replaced when something is actually saved.
 		[local.plugins, local.mcpBundles, settings, remote, local.skills],
+	);
+
+	/*
+	 * Every remote logo, fetched as one batch, because one of the answers depends on the others.
+	 *
+	 * A registry entry's `logo` is an https URL, which the page may not put in a `src` — the main
+	 * process fetches it and hands back a data URL. That much was already true and used to happen per
+	 * card, inside `PluginIcon`.
+	 *
+	 * It moved here because the interesting question is not "what is this URL" but "does this picture
+	 * belong to this entry", and that is only answerable across the whole list: the default catalogue
+	 * serves the repository owner's GitHub avatar for entries that shipped no icon, so seven MCP
+	 * servers from one monorepo came back as seven copies of the same person's face. `dropShared`
+	 * throws those out, in the main process, where it can see all of them at once — see
+	 * `registry-icons.ts`. Asked one card at a time the judgement is not even well-defined.
+	 *
+	 * What lands here is therefore already drawable: a data URL, or nothing at all.
+	 */
+	/*
+	 * Keyed on the joined string for the same reason the registry URLs above are: the list itself is
+	 * a fresh array on every render and its contents almost never change, so depending on the array
+	 * would re-fetch every logo whenever an unrelated piece of state moved.
+	 */
+	const logosKey = useMemo(
+		() => [...new Set(merged.map((item) => item.logo).filter((logo) => logo?.startsWith("https://")))].join("|"),
+		[merged],
+	);
+	const [logos, setLogos] = useState<Record<string, string | null>>({});
+
+	useEffect(() => {
+		if (!logosKey) return;
+		let cancelled = false;
+		void window.lyra.plugins
+			// Optional, because the main process does not hot-reload: during a dev session where the
+			// renderer has this code and the main process does not, the logos simply stay unresolved
+			// and every card draws its own mark — which is what an unfetchable logo does anyway.
+			.icons?.(logosKey.split("|"))
+			.then((resolved) => !cancelled && setLogos((previous) => ({ ...previous, ...resolved })))
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [logosKey]);
+
+	/**
+	 * The same list, with each remote logo replaced by what it resolved to.
+	 *
+	 * Replaced rather than carried alongside: by the time an item reaches a card, `logo` means "the
+	 * picture to draw", and a card has no business knowing that some logos are URLs that have to be
+	 * laundered through the main process first. An entry whose logo was dropped or never arrived
+	 * comes out with no logo, which is the state `PluginIcon` already draws a mark for.
+	 */
+	const items = useMemo(
+		() =>
+			merged.map((item) =>
+				item.logo?.startsWith("https://") ? { ...item, logo: logos[item.logo] ?? undefined } : item,
+			),
+		[merged, logos],
 	);
 
 	/** Re-read here, and tell every other list that reads the same directories to do the same. */

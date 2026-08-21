@@ -137,7 +137,27 @@ export async function loadPlugins(
 			}
 
 			const manifest = found.manifest;
-			const id = manifest.name || entry.name;
+			/*
+			 * The directory is the identity; the manifest is the label.
+			 *
+			 * This used to be `manifest.name || entry.name`, which is the same string almost always
+			 * and silently wrong when it is not. `inferManifest` deliberately prefers the name inside
+			 * a `.claude-plugin/marketplace.json` — a bundle installed as `agentic-note-taking` comes
+			 * back calling itself `Agentic Note Taking` — and every part of installing and removing a
+			 * bundle works on the directory: install creates `<root>/<entry.id>`, uninstall removes
+			 * `<root>/<id>`, and the servers are stamped with the same id so the settings rows can be
+			 * found again.
+			 *
+			 * With the two disagreeing, all three broke at once and none of them said so. Uninstalling
+			 * removed a directory that did not exist and reported success; the settings rows were
+			 * matched on a name nothing had been stamped with, so the server stayed in the list; and
+			 * the next scan found a bundle with no row and appended its servers again — once per scan,
+			 * which is once per visit to the plugins page.
+			 *
+			 * What the manifest called it is not lost: it is `manifest.name`, and every list that shows
+			 * a bundle reads `interface.displayName ?? manifest.name ?? id` for exactly this reason.
+			 */
+			const id = entry.name;
 			// Workspace plugins are loaded first, so a user-level plugin of the same name loses.
 			if (seen.has(id)) {
 				diagnostics.push({ path: pluginDir, message: `插件 "${id}" 已由更高优先级的来源提供` });
@@ -167,9 +187,10 @@ export async function loadPlugins(
 					dir: pluginDir,
 					manifest,
 					source,
+					// `id`, so that what stamps a row and what looks the row up are the same string.
 					servers: read.servers.map((server) => ({
 						...server,
-						origin: { bundle: entry.name, version: manifest.version },
+						origin: { bundle: id, version: manifest.version },
 					})),
 				});
 				continue;
@@ -182,7 +203,19 @@ export async function loadPlugins(
 				source,
 				// Tag skills so the UI can show which plugin brought them in.
 				skills: read.skills.map((skill) => ({ ...skill, pluginId: id })),
-				enabled: !disabled.includes("*") && !disabled.includes(id),
+				/*
+				 * Both names, because this list was written by earlier versions.
+				 *
+				 * `disabledPlugins` holds whatever `id` meant when the user switched something off, and
+				 * until this file changed that was the manifest's name. Reading only the directory
+				 * would quietly re-enable every renamed bundle anybody had disabled — and a migration
+				 * that turns things *on* is the one direction that cannot be undone by noticing.
+				 *
+				 * Costs a comparison and never expires: a bundle disabled under either name stays that
+				 * way, and new entries are written under the directory like everything else now is.
+				 */
+				enabled:
+					!disabled.includes("*") && !disabled.includes(id) && !(!!manifest.name && disabled.includes(manifest.name)),
 			});
 		}
 	}

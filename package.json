@@ -1,6 +1,6 @@
 {
   "name": "lyra",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Lyra — a fully self-hosted code agent with custom models, tools, skills and MCP. Desktop (Electron) + Mobile (React Native), fully synced.",

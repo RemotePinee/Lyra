@@ -84,10 +84,6 @@ async function fromTarball(entry: RegistryEntry, staging: string): Promise<void>
 	});
 	if (!response.ok) throw new Error(`下载返回 ${response.status}`);
 
-	const archive = new Uint8Array(await response.arrayBuffer());
-	if (archive.length === 0) throw new Error("下载到的是空文件");
-	if (archive.length > MAX_ARCHIVE_BYTES) throw new Error("下载的包过大");
-
 	/*
 	 * The hash from the index, or the one the platform sent with the bytes.
 	 *
@@ -96,6 +92,30 @@ async function fromTarball(entry: RegistryEntry, staging: string): Promise<void>
 	 * only has a URL, and is worth strictly less — it arrived with the thing it describes.
 	 */
 	const expected = entry.sha256 ?? response.headers.get("x-lyra-sha256") ?? undefined;
+	await unpackVerified(new Uint8Array(await response.arrayBuffer()), expected, staging);
+}
+
+/**
+ * Check an archive against its hash and unpack it, or throw without having written anything.
+ *
+ * Separate from the download because it is the half worth being sure about, and it is the half that
+ * cannot be exercised through `fetchBundle` without standing up an HTTPS server with a certificate
+ * a test process will accept. Refusing a tampered archive is a security property; a security
+ * property nothing checks is a comment.
+ *
+ * Unpacked with the system `tar` rather than a parser of our own. Every platform this runs on has
+ * one — macOS and Linux for decades, Windows since 10 — the main process already shells out to
+ * `git` two lines above, and a tar implementation is a surprising amount of code to own for the
+ * sake of avoiding a subprocess that is already there.
+ */
+export async function unpackVerified(
+	archive: Uint8Array,
+	expected: string | undefined,
+	staging: string,
+): Promise<void> {
+	if (archive.length === 0) throw new Error("下载到的是空文件");
+	if (archive.length > MAX_ARCHIVE_BYTES) throw new Error("下载的包过大");
+
 	if (expected) {
 		const actual = createHash("sha256").update(archive).digest("hex");
 		if (actual !== expected.toLowerCase()) {

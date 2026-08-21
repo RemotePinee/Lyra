@@ -333,6 +333,7 @@ export function PluginsView() {
 													name={item.name}
 													logo={item.logo}
 													brandColor={item.brandColor}
+													kind={item.kind}
 													size={34}
 												/>
 											</button>

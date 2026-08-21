@@ -138,6 +138,7 @@ export function CatalogCard({
 					logo={item.logo}
 					brandColor={item.brandColor}
 					category={item.category}
+					kind={item.kind}
 					size={36}
 				/>
 

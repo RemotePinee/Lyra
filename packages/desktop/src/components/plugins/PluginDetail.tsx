@@ -34,7 +34,7 @@ import { useState } from "react";
 import { useApp } from "../../store.ts";
 import { useConfirmer } from "../Confirm.tsx";
 import { Scroller } from "../Scroller.tsx";
-import { PluginIcon } from "../settings/PluginIcon.tsx";
+import { PluginIcon, safeColour } from "../settings/PluginIcon.tsx";
 import { isEnabled, isInstalled, type CatalogItem } from "./useCatalog.ts";
 
 export function PluginDetail({
@@ -66,6 +66,8 @@ export function PluginDetail({
 	const installed = isInstalled(item);
 	const dir = plugin?.dir ?? bundle?.dir ?? null;
 	const isMcp = item.kind === "mcp";
+	/** The declared colour, once it has been established that it is a colour. */
+	const brandColour = safeColour(item.brandColor);
 	/** A bundle inside the project's own directory is removed by deleting it there. */
 	const workspaceOwned = (plugin?.source ?? bundle?.source) === "workspace";
 
@@ -157,6 +159,7 @@ export function PluginDetail({
 							logo={item.logo}
 							brandColor={item.brandColor}
 							category={item.category}
+							kind={item.kind}
 							size={64}
 						/>
 					</div>
@@ -251,11 +254,13 @@ export function PluginDetail({
 					{prompts.length > 0 && isEnabled(item) && (
 						<section
 							style={{
-								background: item.brandColor
-									? `linear-gradient(135deg, color-mix(in srgb, ${item.brandColor} 22%, transparent), color-mix(in srgb, ${item.brandColor} 8%, transparent))`
+								// Checked before it goes in, because this is a string out of someone else's
+								// JSON file being pasted into a stylesheet — see `safeColour`.
+								background: brandColour
+									? `linear-gradient(135deg, color-mix(in srgb, ${brandColour} 22%, transparent), color-mix(in srgb, ${brandColour} 8%, transparent))`
 									: undefined,
 							}}
-							className={`mt-7 flex flex-col gap-2 rounded-2xl p-5 ${item.brandColor ? "" : "bg-card-hover/50"}`}
+							className={`mt-7 flex flex-col gap-2 rounded-2xl p-5 ${brandColour ? "" : "bg-card-hover/50"}`}
 						>
 							{prompts.slice(0, 4).map((prompt, index) => (
 								<button
@@ -272,6 +277,7 @@ export function PluginDetail({
 										logo={item.logo}
 										brandColor={item.brandColor}
 										category={item.category}
+										kind={item.kind}
 										size={16}
 									/>
 									<span className="min-w-0 flex-1">{prompt}</span>

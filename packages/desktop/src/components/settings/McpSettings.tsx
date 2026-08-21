@@ -136,7 +136,7 @@ export function McpSettings({ filter = "" }: { filter?: string }) {
 						return (
 							<Card key={server.id}>
 								<div className="flex items-center gap-2.5 border-b border-line-soft px-4 py-3">
-									<PluginIcon name={server.name} size={22} />
+									<PluginIcon name={server.name} kind="mcp" size={22} />
 									<input
 										value={server.name}
 										onChange={(e) => update(server.id, { name: e.target.value })}
