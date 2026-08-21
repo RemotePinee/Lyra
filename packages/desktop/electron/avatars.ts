@@ -114,21 +114,26 @@ async function download(url: string): Promise<string | null> {
 }
 
 /**
- * Where GitHub keeps the picture for an account, when nothing else said.
+ * Where a host keeps the picture for an account, when nothing else said.
+ *
+ * Only GitHub gets a guess, and only because `github.com/<login>.png` is a documented redirect
+ * that has worked for a decade. The others have no such address — GitLab and Gitee serve avatars
+ * from a CDN under an opaque id, Gitea from a hash — so for them "no URL" means no picture rather
+ * than a request that 404s once per name per minute.
  *
  * `?s=80` because these are drawn at 20pt at most and the full-size image is several hundred KB of
  * something nobody will look closely at. GitHub resizes server-side, so this is smaller on the
  * wire as well as in memory.
  */
-function avatarUrlFor(login: string): string | null {
+function guessUrl(login: string, host: string): string | null {
 	const name = login.trim();
 	if (!name || name.includes("/")) return null;
-	return `https://github.com/${encodeURIComponent(name)}.png?s=80`;
+	return `${host}/${encodeURIComponent(name)}.png?s=80`;
 }
 
 /** One account's picture, for the places that know a name and nothing else. */
 export async function githubAvatar(login: string): Promise<string | null> {
-	const url = avatarUrlFor(login);
+	const url = guessUrl(login, "https://github.com");
 	return url ? remoteImage(url) : null;
 }
 
@@ -139,25 +144,33 @@ export async function githubAvatar(login: string): Promise<string | null> {
  * round trip per row on every mount — a hundred and eighty of them for a list of sixty — for an
  * answer the main process usually had cached already.
  *
- * Keyed by login, because that is what the renderer has on the row it is drawing. The URL comes
- * from the search result when there is one: `github.com/<login>.png` is not the same picture for
- * the accounts that appear most, since a bot's avatar belongs to the app rather than to whichever
- * user shares its name.
+ * Keyed by `accountId:login`, not by login alone. Two hosts can each have a `kittors` and they are
+ * not the same person; keying by name meant whichever list arrived first decided what the other
+ * one's face looked like. The URL comes from the search result where there is one, because
+ * `github.com/<login>.png` is wrong for the accounts that appear most — a bot's picture belongs to
+ * the app rather than to whichever user shares its name.
  */
-export async function githubAvatars(
-	people: { login: string; url?: string | null }[],
+export async function avatarsFor(
+	people: { login: string; url?: string | null; accountId?: string }[],
+	hostFor: (accountId: string) => { kind: string; baseUrl: string } | null,
 ): Promise<Record<string, string | null>> {
 	const wanted = new Map<string, string>();
 	for (const person of people) {
 		const login = (person.login ?? "").trim();
-		if (!login || wanted.has(login)) continue;
+		if (!login) continue;
+		const key = `${person.accountId ?? ""}:${login}`;
+		if (wanted.has(key)) continue;
+
 		const given = (person.url ?? "").trim();
-		const url = given.startsWith("https://") ? given : avatarUrlFor(login);
-		if (url) wanted.set(login, url);
+		if (given.startsWith("https://")) {
+			wanted.set(key, given);
+			continue;
+		}
+		const account = person.accountId ? hostFor(person.accountId) : null;
+		const guess = account?.kind === "github" ? guessUrl(login, account.baseUrl) : null;
+		if (guess) wanted.set(key, guess);
 	}
 
-	const entries = await Promise.all(
-		[...wanted].map(async ([login, url]) => [login, await remoteImage(url)] as const),
-	);
+	const entries = await Promise.all([...wanted].map(async ([key, url]) => [key, await remoteImage(url)] as const));
 	return Object.fromEntries(entries);
 }

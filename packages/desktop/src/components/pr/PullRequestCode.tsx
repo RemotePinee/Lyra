@@ -15,7 +15,7 @@ import { FileDiffList } from "../git/FileDiffList.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { CodeSkeleton } from "./PullRequestSkeleton.tsx";
 
-export function PullRequestCode({ repo, number }: { repo: string; number: number }) {
+export function PullRequestCode({ accountId, repo, number }: { accountId: string; repo: string; number: number }) {
 	const [files, setFiles] = useState<WorkspaceDiffFile[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -23,7 +23,7 @@ export function PullRequestCode({ repo, number }: { repo: string; number: number
 		let cancelled = false;
 		setFiles(null);
 		setError(null);
-		void window.lyra.git.pullRequestDiff(repo, number).then((result) => {
+		void window.lyra.git.pullRequestDiff(accountId, repo, number).then((result) => {
 			if (cancelled) return;
 			setFiles(result.files);
 			setError(result.error ?? null);
@@ -31,7 +31,7 @@ export function PullRequestCode({ repo, number }: { repo: string; number: number
 		return () => {
 			cancelled = true;
 		};
-	}, [repo, number]);
+	}, [accountId, repo, number]);
 
 	if (error) return <Centered>{error}</Centered>;
 	if (!files) return <CodeSkeleton />;

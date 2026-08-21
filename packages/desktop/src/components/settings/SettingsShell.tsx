@@ -15,6 +15,7 @@ import {
 	Anchor,
 	Smartphone,
 	Archive,
+	GitPullRequest,
 } from "lucide-react";
 import { useEffect } from "react";
 import { NavPane, useLayout } from "../../layout.tsx";
@@ -34,6 +35,7 @@ import { IndexSettings } from "./IndexSettings.tsx";
 import { BrowserSettings } from "./BrowserSettings.tsx";
 import { SkillsSettings } from "./SkillsSettings.tsx";
 import { AccessSettings } from "./AccessSettings.tsx";
+import { ForgeSettings } from "./ForgeSettings.tsx";
 import { SearchSettings } from "./SearchSettings.tsx";
 import { SyncSettings } from "./SyncSettings.tsx";
 import { UsageSettings } from "./UsageSettings.tsx";
@@ -53,6 +55,7 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 			{ id: "general", label: "常规", icon: Settings2 },
 			{ id: "appearance", label: "外观", icon: Palette },
 			{ id: "models", label: "模型设置", icon: Layers },
+			{ id: "forges", label: "代码托管", icon: GitPullRequest },
 			{ id: "browser", label: "浏览器", icon: Globe },
 		],
 	},
@@ -285,6 +288,8 @@ function SectionBody({ section }: { section: SettingsSection }) {
 			return <SearchSettings />;
 		case "access":
 			return <AccessSettings />;
+		case "forges":
+			return <ForgeSettings />;
 		case "sync":
 			return <SyncSettings />;
 		case "usage":

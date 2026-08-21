@@ -50,6 +50,7 @@ export function PullRequestsView() {
 	const newSession = useApp((s) => s.newSession);
 	const setComposerDraft = useApp((s) => s.setComposerDraft);
 	const setView = useApp((s) => s.setView);
+	const setSettingsSection = useApp((s) => s.setSettingsSection);
 	// Stacked, the list is the whole screen: opening the first row on arrival would be a navigation
 	// nobody asked for. Side by side, leaving the other half blank is worse.
 	const pr = usePullRequests({ autoSelect: !compact });
@@ -104,13 +105,25 @@ export function PullRequestsView() {
 		setView("chat");
 	};
 
+	/*
+	 * Adding an account happens in settings, not in a dialog here.
+	 *
+	 * It is a thing you do once and then manage — rename, switch off, sign out — and all of that
+	 * already belongs on a settings page. A modal that could add but not manage would be a second
+	 * place to look for accounts, and the pane would still have to send people to the first one.
+	 */
+	const openAccountSettings = () => {
+		setSettingsSection("forges");
+		setView("settings");
+	};
+
 	const submit = async (verdict: "approve" | "request-changes" | "comment", body: string): Promise<string | null> => {
 		if (!pr.selected) return "没有选中的 Pull Request";
-		const { repo, number } = pr.selected;
+		const { accountId, repo, number } = pr.selected;
 		const result =
 			verdict === "comment"
-				? await window.lyra.git.commentOnPullRequest(repo, number, body)
-				: await window.lyra.git.reviewPullRequest(repo, number, verdict, body);
+				? await window.lyra.git.commentOnPullRequest(accountId, repo, number, body)
+				: await window.lyra.git.reviewPullRequest(accountId, repo, number, verdict, body);
 		if (result.error) return result.error;
 		// What was just said is part of the pull request now; show it rather than claim it.
 		pr.refreshDetail();
@@ -130,6 +143,12 @@ export function PullRequestsView() {
 			touched={pr.touched}
 			loading={pr.loading}
 			error={pr.error}
+			accountErrors={pr.accountErrors}
+			accounts={pr.accounts}
+			accountsReady={pr.accountsReady}
+			account={pr.account}
+			onAccount={pr.setAccount}
+			onAddAccount={openAccountSettings}
 			onRefresh={pr.refresh}
 		/>
 	);

@@ -1,11 +1,11 @@
 /**
  * The pull request list: what is in it, which of it you are looking at, and keeping both current.
  *
- * Fetching is one call for the whole list and one more for whichever row is open. The list call
- * brings everything a row draws — title, author, branch, line counts, CI — because it is one
- * GraphQL search either way; the description, the comments and the per-check names arrive with the
- * detail, since paying for those thirty times to decorate rows nobody clicked is how a list
- * becomes slow to open.
+ * Fetching is one call for the whole list — across every signed-in account — and one more for
+ * whichever row is open. The list call brings as much as each host will give up in a single
+ * search; the description, the comments and the per-check names arrive with the detail, since
+ * paying for those thirty times to decorate rows nobody clicked is how a list becomes slow to
+ * open.
  *
  * It refreshes itself. The three rules that make that bearable rather than distracting live next
  * door in `pr-sync`: an unchanged row keeps its object so nothing re-renders, an unchanged detail
@@ -17,10 +17,26 @@ import type { PullRequestDetail, PullRequestSummary } from "../../../electron/ip
 import { prefetchAvatars } from "./avatar-cache.ts";
 import { readDetail, readList, readSeen, rowId, writeDetail, writeList, writeSeen } from "./pr-cache.ts";
 import { type Filter, groupFor } from "./pr-groups.ts";
+import { reloadAccounts, useForgeAccounts } from "./useForgeAccounts.ts";
 import { acknowledge, baseline, mergeLists, pruneSeen, sameDetail, sameSeen, unseenOf } from "./pr-sync.ts";
 import { type RefreshReason, useLiveRefresh } from "./useLiveRefresh.ts";
 
 export type { Filter, Group } from "./pr-groups.ts";
+
+/**
+ * Enough to find one pull request again: the account it was seen through, and where it lives.
+ *
+ * The account is not optional. `owner/name` collides across hosts, and every call made about a
+ * pull request afterwards has to go back out through the token that could see it in the first
+ * place.
+ */
+export interface PrRef {
+	accountId: string;
+	repo: string;
+	number: number;
+}
+
+const sameRef = (a: PrRef, b: PrRef) => a.accountId === b.accountId && a.repo === b.repo && a.number === b.number;
 
 /**
  * How often the list re-asks while it is on screen.
@@ -61,11 +77,22 @@ export function usePullRequests({
 	const [seen, setSeen] = useState<Record<string, string> | null>(readSeen);
 	const [touched, setTouched] = useState<Set<string>>(NONE);
 	const [error, setError] = useState<string | null>(null);
+	/** What each account had to say for itself, so a tab can explain its own empty list. */
+	const [accountErrors, setAccountErrors] = useState<Record<string, string>>({});
 	const [loading, setLoading] = useState(false);
 
+	const { accounts, ready: accountsReady } = useForgeAccounts();
+	/**
+	 * Which account's rows are shown. Null is all of them, which is the resting state.
+	 *
+	 * Not persisted. Whose work you are looking at follows what you are doing right now, and
+	 * arriving at this screen filtered to one host because of something you did last Tuesday is
+	 * the kind of stale state that reads as rows having disappeared.
+	 */
+	const [account, setAccount] = useState<string | null>(null);
 	const [filter, setFilter] = useState<Filter>("all");
 	const [query, setQuery] = useState("");
-	const [selected, setSelected] = useState<{ repo: string; number: number } | null>(null);
+	const [selected, setSelected] = useState<PrRef | null>(null);
 
 	const [detail, setDetail] = useState<PullRequestDetail | null>(null);
 	const [detailError, setDetailError] = useState<string | null>(null);
@@ -113,7 +140,7 @@ export function usePullRequests({
 		// Whatever is open is being read as this arrives, so it cannot also be unread — otherwise a
 		// comment landing on the pull request you have in front of you marks it as news.
 		const current = open.current;
-		const row = current && merged.items.find((pr) => pr.repo === current.repo && pr.number === current.number);
+		const row = current && merged.items.find((pr) => sameRef(current, pr));
 		if (row) next = acknowledge(next, row);
 
 		if (!sameSeen(acked.current, next)) {
@@ -138,12 +165,22 @@ export function usePullRequests({
 			try {
 				const result = await window.lyra.git.myPullRequests();
 				/*
+				 * The accounts are re-read on the same beat.
+				 *
+				 * They carry the last failure per account, which is what a tab draws when its rows
+				 * are missing — and an account added in settings while this pane was open should
+				 * grow a tab here without anybody reloading anything.
+				 */
+				void reloadAccounts();
+				setAccountErrors(result.errors ?? {});
+				/*
 				 * A failed refresh keeps what is already on screen.
 				 *
-				 * `gh` reports every failure the same way — an empty list and a message — so replacing
-				 * the rows unconditionally meant one expired token, one flaky network or one rate limit
-				 * wiped a list that was still perfectly good, and now that this runs on a timer it
-				 * would do it unprompted.
+				 * A total failure arrives as an empty list and a message, so replacing the rows
+				 * unconditionally meant one expired token, one flaky network or one rate limit wiped a
+				 * list that was still perfectly good — and now that this runs on a timer it would do it
+				 * unprompted. A *partial* failure is not caught here: those rows are real, and the
+				 * account that failed says so on its own tab.
 				 */
 				if (result.error && result.pullRequests.length === 0) {
 					setError(result.error);
@@ -211,7 +248,7 @@ export function usePullRequests({
 		setDetailLoading(!start);
 
 		void window.lyra.git
-			.pullRequest(selected.repo, selected.number)
+			.pullRequest(selected.accountId, selected.repo, selected.number)
 			.then((result) => {
 				if (cancelled) return;
 				if (result.detail) {
@@ -235,7 +272,18 @@ export function usePullRequests({
 		};
 	}, [selected, reload]);
 
-	const groups = useMemo(() => groupFor(items, filter, query), [items, filter, query]);
+	/*
+	 * The account tab narrows the list before anything else looks at it.
+	 *
+	 * Ahead of the relation filter and the search, so both of those describe what is on screen
+	 * rather than what exists — a count of "3 等你审查" under a tab showing one account has to be
+	 * three in that account.
+	 */
+	const visible = useMemo(
+		() => (account ? items.filter((pr) => pr.accountId === account) : items),
+		[items, account],
+	);
+	const groups = useMemo(() => groupFor(visible, filter, query), [visible, filter, query]);
 	const unseen = useMemo(() => unseenOf(items, seen), [items, seen]);
 
 	useEffect(() => {
@@ -243,7 +291,7 @@ export function usePullRequests({
 		const first = groups[0].items[0];
 		// Not through `select`: nobody opened this one, so it is not one of the ones you have read.
 		// The next refresh will record it, because by then it has been on screen the whole time.
-		if (first) setSelected({ repo: first.repo, number: first.number });
+		if (first) setSelected({ accountId: first.accountId, repo: first.repo, number: first.number });
 	}, [autoSelect, groups, selected]);
 
 	/**
@@ -254,7 +302,7 @@ export function usePullRequests({
 	 */
 	const select = useCallback((pr: PullRequestSummary) => {
 		setSelected((current) =>
-			current && current.repo === pr.repo && current.number === pr.number ? current : { repo: pr.repo, number: pr.number },
+			current && sameRef(current, pr) ? current : { accountId: pr.accountId, repo: pr.repo, number: pr.number },
 		);
 		const next = acknowledge(acked.current, pr);
 		if (sameSeen(acked.current, next)) return;
@@ -269,6 +317,11 @@ export function usePullRequests({
 		unseen,
 		touched,
 		error,
+		accountErrors,
+		accounts,
+		accountsReady,
+		account,
+		setAccount,
 		loading,
 		filter,
 		setFilter,

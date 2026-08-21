@@ -130,6 +130,16 @@ export interface SyncStatus {
  * them per row would mean thirty round trips to decorate a list nobody has clicked yet.
  */
 export interface PullRequestSummary {
+	/**
+	 * Which signed-in account this row came from.
+	 *
+	 * Carried on the row rather than looked up from the repository, because the repository is not
+	 * enough to answer it: the same `owner/name` can exist on github.com and on a company's own
+	 * GitHub Enterprise, and two accounts on one host is the ordinary case for anyone with a work
+	 * identity. Everything done to a pull request afterwards — reading it, commenting, approving —
+	 * goes back through the account it arrived on.
+	 */
+	accountId: string;
 	repo: string;
 	number: number;
 	title: string;

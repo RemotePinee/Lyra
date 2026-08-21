@@ -12,6 +12,7 @@ export function pr(
 	over: Partial<PullRequestSummary> & { relation: PullRequestSummary["relation"] },
 ): PullRequestSummary {
 	return {
+		accountId: "acct-1",
 		repo: "kittors/lyra",
 		number: 1,
 		title: "fix: something",

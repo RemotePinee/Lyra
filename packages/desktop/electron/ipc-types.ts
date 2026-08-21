@@ -9,6 +9,7 @@
  */
 
 import type { TrajectoryEntry } from "@lyra/core";
+import type { ForgeAccount, ForgeKind, ForgeKindInfo } from "./forge/types.ts";
 import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
 /*
  * Re-exported under a name that means something on this side of the boundary.
@@ -55,6 +56,15 @@ import type {
 } from "./ipc-shapes.ts";
 
 export * from "./ipc-shapes.ts";
+
+/*
+ * The account types, re-exported so the renderer imports one module.
+ *
+ * `forge/types.ts` also declares the driver interface, which reaches into `node:` territory
+ * conceptually if not in its imports. Only these three cross the boundary, and naming them keeps
+ * that boundary a list rather than a habit.
+ */
+export type { ForgeAccount, ForgeKind, ForgeKindInfo } from "./forge/types.ts";
 
 /** One shell in a directory, as the tab strip lists it. */
 export interface TerminalTab {
@@ -360,16 +370,49 @@ export interface LyraApi {
 		/** Run a scheduled task immediately, through the same path the timer uses. */
 		runNow(taskId: string): Promise<{ ok: boolean; error?: string }>;
 	};
+	/**
+	 * The code hosts this app is signed in to.
+	 *
+	 * Note what is not here: there is no way to read a token back. They go in through `signIn`,
+	 * are verified before they are stored, and are only ever used by the main process — a channel
+	 * that returned one would put every one of the user's credentials one devtools panel away.
+	 */
+	forge: {
+		/** The hosts that can be added, and whether this machine can encrypt what it stores. */
+		kinds(): Promise<{ kinds: ForgeKindInfo[]; encrypted: boolean }>;
+		accounts(): Promise<ForgeAccount[]>;
+		/**
+		 * Check a token against its host, and keep it if it works.
+		 *
+		 * Verified first, always: a token stored without being checked is an account that looks
+		 * settled on the settings page and produces an empty list somewhere else entirely.
+		 */
+		signIn(input: { kind: ForgeKind; baseUrl: string; token: string; label?: string }): Promise<{
+			account?: ForgeAccount;
+			error?: string;
+		}>;
+		signOut(id: string): Promise<void>;
+		/** Stop fetching this one without forgetting it. */
+		setEnabled(id: string, enabled: boolean): Promise<ForgeAccount | null>;
+		rename(id: string, label: string): Promise<ForgeAccount | null>;
+	};
 	git: {
 		/**
-		 * Every pull request that concerns you, across every repository.
+		 * Every pull request that concerns you, across every repository and every account.
 		 *
 		 * Not scoped to the open folder: what is waiting on you on a Monday morning is spread
-		 * across everything you work in.
+		 * across everything you work in, and these days across more than one host.
+		 *
+		 * `errors` is per account, and separate from `error` on purpose — one unreachable
+		 * self-hosted instance must not empty a list the other accounts answered.
 		 */
-		myPullRequests(): Promise<{ pullRequests: PullRequestSummary[]; error?: string }>;
-		pullRequest(repo: string, number: number): Promise<{ detail?: PullRequestDetail; error?: string }>;
-		pullRequestDiff(repo: string, number: number): Promise<{ files: WorkspaceDiffFile[]; error?: string }>;
+		myPullRequests(): Promise<{
+			pullRequests: PullRequestSummary[];
+			errors: Record<string, string>;
+			error?: string;
+		}>;
+		pullRequest(accountId: string, repo: string, number: number): Promise<{ detail?: PullRequestDetail; error?: string }>;
+		pullRequestDiff(accountId: string, repo: string, number: number): Promise<{ files: WorkspaceDiffFile[]; error?: string }>;
 		/**
 		 * A scratch directory for talking about this pull request, with `PR.md` written into it.
 		 *
@@ -418,8 +461,9 @@ export interface LyraApi {
 		 * `url` is what the search result said; without one the login is turned into an address.
 		 */
 		avatars(people: { login: string; url?: string | null }[]): Promise<Record<string, string | null>>;
-		commentOnPullRequest(repo: string, number: number, body: string): Promise<{ error?: string }>;
+		commentOnPullRequest(accountId: string, repo: string, number: number, body: string): Promise<{ error?: string }>;
 		reviewPullRequest(
+			accountId: string,
 			repo: string,
 			number: number,
 			verdict: "approve" | "request-changes" | "comment",

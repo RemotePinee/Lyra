@@ -21,7 +21,7 @@ import { relativeTime } from "../git/relative-time.ts";
 import { type ActivityEntry, firstLine } from "./activity.ts";
 import { Avatar } from "./Avatar.tsx";
 
-export function PullRequestActivity({ entries }: { entries: ActivityEntry[] }) {
+export function PullRequestActivity({ accountId, entries }: { accountId: string; entries: ActivityEntry[] }) {
 	/*
 	 * Nothing is open to begin with, except a lone piece of prose.
 	 *
@@ -41,6 +41,7 @@ export function PullRequestActivity({ entries }: { entries: ActivityEntry[] }) {
 				) : (
 					<ProseRow
 						key={entry.key}
+						accountId={accountId}
 						entry={entry}
 						open={open[entry.key] === true}
 						onToggle={() => setOpen((prev) => ({ ...prev, [entry.key]: !prev[entry.key] }))}
@@ -83,7 +84,17 @@ function EventRow({ entry }: { entry: ActivityEntry }) {
 }
 
 /** A comment or a review: a face, a first line, and the whole thing behind it. */
-function ProseRow({ entry, open, onToggle }: { entry: ActivityEntry; open: boolean; onToggle: () => void }) {
+function ProseRow({
+	accountId,
+	entry,
+	open,
+	onToggle,
+}: {
+	accountId: string;
+	entry: ActivityEntry;
+	open: boolean;
+	onToggle: () => void;
+}) {
 	const empty = !entry.body.trim();
 
 	return (
@@ -95,7 +106,7 @@ function ProseRow({ entry, open, onToggle }: { entry: ActivityEntry; open: boole
 				onClick={onToggle}
 				className="group/entry flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/50 disabled:cursor-default disabled:hover:bg-transparent"
 			>
-				<Avatar login={entry.author} />
+				<Avatar accountId={accountId} login={entry.author} />
 				<span className="shrink-0 text-label text-ink">{entry.author}</span>
 				{entry.verdict && <span className="shrink-0 text-detail text-ink-faint">{entry.verdict}</span>}
 

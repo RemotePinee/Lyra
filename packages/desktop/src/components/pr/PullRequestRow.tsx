@@ -82,7 +82,7 @@ export const PullRequestRow = memo(function PullRequestRow({
 				 * spending the branch's last thirty pixels to say a number the detail pane also says.
 				 */}
 				<span className="flex items-center gap-1.5 text-detail text-ink-faint">
-					<Avatar login={pr.author} url={pr.avatarUrl} size={13} />
+					<Avatar accountId={pr.accountId} login={pr.author} url={pr.avatarUrl} size={13} />
 					<span className="max-w-[46%] shrink-0 truncate">{pr.repo}</span>
 					{pr.headRefName ? (
 						<span className="min-w-0 flex-1 truncate font-mono text-caption opacity-80">{pr.headRefName}</span>

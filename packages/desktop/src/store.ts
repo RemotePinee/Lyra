@@ -46,6 +46,7 @@ export type SettingsSection =
   | "index"
   | "search"
   | "access"
+  | "forges"
   | "usage"
   | "sync"
   | "archived";

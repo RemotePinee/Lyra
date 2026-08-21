@@ -33,18 +33,18 @@ function node(over: Partial<SearchNode> = {}): SearchNode {
 	};
 }
 
-function answer(buckets: { reviewing?: unknown[]; authored?: unknown[]; reviewed?: unknown[] }): string {
-	return JSON.stringify({
+function answer(buckets: { reviewing?: unknown[]; authored?: unknown[]; reviewed?: unknown[] }): unknown {
+	return {
 		data: {
 			reviewing: { nodes: buckets.reviewing ?? [] },
 			authored: { nodes: buckets.authored ?? [] },
 			reviewed: { nodes: buckets.reviewed ?? [] },
 		},
-	});
+	};
 }
 
 test("a row carries everything the list draws, from one search", () => {
-	const summary = toSummary(node(), "reviewing");
+	const summary = toSummary(node(), "reviewing", "acct-1");
 
 	assert.equal(summary.repo, "kittors/Lyra");
 	assert.equal(summary.author, "dependabot");
@@ -55,11 +55,12 @@ test("a row carries everything the list draws, from one search", () => {
 	assert.equal(summary.comments, 2);
 	assert.equal(summary.checkState, "fail", "the head commit's rollup, which is why the row can show a red dot");
 	assert.equal(summary.relation, "reviewing");
+	assert.equal(summary.accountId, "acct-1", "which account saw it, since owner/name is not unique across hosts");
 });
 
 test("a pull request with no checks is not one whose checks are pending", () => {
-	assert.equal(toSummary(node({ commits: { nodes: [{ commit: { statusCheckRollup: null } }] } }), "authored").checkState, null);
-	assert.equal(toSummary(node({ commits: { nodes: [] } }), "authored").checkState, null, "and neither is one with no commits");
+	assert.equal(toSummary(node({ commits: { nodes: [{ commit: { statusCheckRollup: null } }] } }), "authored", "acct-1").checkState, null);
+	assert.equal(toSummary(node({ commits: { nodes: [] } }), "authored", "acct-1").checkState, null, "and neither is one with no commits");
 });
 
 test("CI's states come down to the three a reviewer acts on", () => {
@@ -83,15 +84,15 @@ test("a search for issues that matched an issue drops it", () => {
 });
 
 test("an error delivered with a 200 is still an error", () => {
-	const body = JSON.stringify({
+	const body = {
 		data: { reviewing: { nodes: [] }, authored: { nodes: [] }, reviewed: { nodes: [] } },
 		errors: [{ message: "API rate limit exceeded" }],
-	});
+	};
 	assert.throws(() => parseSearch(body), /rate limit/, "reporting this as an empty list would be the worst of both");
 });
 
 test("a bucket the server left out is an empty bucket, not a crash", () => {
-	const parsed = parseSearch(JSON.stringify({ data: { authored: { nodes: [node()] } } }));
+	const parsed = parseSearch({ data: { authored: { nodes: [node()] } } });
 	assert.equal(parsed.authored.length, 1);
 	assert.deepEqual(parsed.reviewing, []);
 	assert.deepEqual(parsed.reviewed, []);

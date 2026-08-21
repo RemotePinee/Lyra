@@ -1,7 +1,7 @@
 /**
- * What one row of the pull request list is, and how a search result becomes one.
+ * What one row of the pull request list is, and how a GitHub search result becomes one.
  *
- * Separated from the `gh` call that produces it because everything here has a rule in it — which
+ * Separated from the driver that produces it because everything here has a rule in it — which
  * relation a pull request keeps when it matches two searches, what CI's dozen states mean to
  * somebody scanning for red, which of the numbers on a row are real — and a rule that can only be
  * exercised by reaching GitHub is a rule nobody tests.
@@ -96,8 +96,8 @@ export interface SearchNode {
  * caught. Rate limiting is exactly that shape — the failure this query exists to avoid — and
  * reporting it as an empty list would be the worst of both.
  */
-export function parseSearch(stdout: string): Record<Relation, SearchNode[]> {
-	const body = JSON.parse(stdout) as {
+export function parseSearch(response: unknown): Record<Relation, SearchNode[]> {
+	const body = (response ?? {}) as {
 		data?: Record<string, { nodes?: (SearchNode | null)[] } | null>;
 		errors?: { message?: string }[];
 	};
@@ -128,10 +128,11 @@ export function checkStateOf(state: string | null | undefined): PullRequestCheck
 	return "pending";
 }
 
-export function toSummary(node: SearchNode, relation: Relation): PullRequestSummary {
+export function toSummary(node: SearchNode, relation: Relation, accountId: string): PullRequestSummary {
 	const rollup = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state;
 
 	return {
+		accountId,
 		repo: node.repository?.nameWithOwner ?? "",
 		number: node.number,
 		title: node.title,
@@ -152,7 +153,15 @@ export function toSummary(node: SearchNode, relation: Relation): PullRequestSumm
 	};
 }
 
-const rowId = (pr: { repo: string; number: number }) => `${pr.repo}#${pr.number}`;
+/**
+ * What makes a row unique, now that rows arrive from more than one account.
+ *
+ * The account is part of it because `owner/name` is not unique across hosts — a company's own
+ * GitHub Enterprise happily holds a repository with the same name as one on github.com — and
+ * because the same pull request seen through two accounts is two different sets of things you are
+ * allowed to do to it.
+ */
+const rowId = (pr: { accountId: string; repo: string; number: number }) => `${pr.accountId}:${pr.repo}#${pr.number}`;
 
 /**
  * One row per pull request, newest first.

@@ -7,7 +7,7 @@
  */
 
 import { ipcMain } from "electron";
-import { githubAvatar, githubAvatars } from "../avatars.ts";
+import { avatarsFor, githubAvatar } from "../avatars.ts";
 import { findLocalCheckout } from "../git-remote.ts";
 import { generalScratchDir, type PrBrief, prScratchDir, scratchRoots, writePrBrief } from "../scratch.ts";
 import {
@@ -34,13 +34,19 @@ import {
 	workspaceStat,
 } from "../git.ts";
 import {
+	accounts,
 	commentOnPullRequest,
-	listMyPullRequests,
+	listPullRequests,
 	pullRequestDetail,
 	pullRequestDiff,
+	renameAccount,
 	reviewPullRequest,
-	type ReviewVerdict,
-} from "../git-pr.ts";
+	setAccountEnabled,
+	signIn,
+	signOut,
+} from "../forge/index.ts";
+import { encryptionAvailable } from "../forge/vault.ts";
+import { FORGE_KINDS, type ForgeKind, type ReviewVerdict } from "../forge/types.ts";
 
 export interface GitIpcDeps {
 	/** Whether a path lies inside a project the user has opened. */
@@ -48,21 +54,53 @@ export interface GitIpcDeps {
 }
 
 export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
-	ipcMain.handle("git:myPullRequests", async () => listMyPullRequests());
+	ipcMain.handle("git:myPullRequests", async () => listPullRequests());
 
-	ipcMain.handle("git:pullRequest", async (_event, repo: string, number: number) => pullRequestDetail(repo, number));
+	/*
+	 * Everything about one pull request is addressed by account first.
+	 *
+	 * `owner/name` is not enough to find it any more: the same path exists on github.com and on a
+	 * company's own GitHub Enterprise, and which token may read it is exactly the difference. The
+	 * id travels on the row, so the renderer never has to work out which host a click belongs to.
+	 */
+	ipcMain.handle("git:pullRequest", async (_event, accountId: string, repo: string, number: number) =>
+		pullRequestDetail(accountId, repo, number),
+	);
 
-	ipcMain.handle("git:pullRequestDiff", async (_event, repo: string, number: number) => pullRequestDiff(repo, number));
+	ipcMain.handle("git:pullRequestDiff", async (_event, accountId: string, repo: string, number: number) =>
+		pullRequestDiff(accountId, repo, number),
+	);
 
-	ipcMain.handle("git:commentOnPullRequest", async (_event, repo: string, number: number, body: string) =>
-		commentOnPullRequest(repo, number, body),
+	ipcMain.handle("git:commentOnPullRequest", async (_event, accountId: string, repo: string, number: number, body: string) =>
+		commentOnPullRequest(accountId, repo, number, body),
 	);
 
 	ipcMain.handle(
 		"git:reviewPullRequest",
-		async (_event, repo: string, number: number, verdict: ReviewVerdict, body: string) =>
-			reviewPullRequest(repo, number, verdict, body),
+		async (_event, accountId: string, repo: string, number: number, verdict: ReviewVerdict, body: string) =>
+			reviewPullRequest(accountId, repo, number, verdict, body),
 	);
+
+	/*
+	 * The accounts themselves, which are the only part of this the renderer may change.
+	 *
+	 * Tokens go in and never come out. `forge:accounts` returns identities without secrets, and
+	 * there is deliberately no channel that reads one back — a token that can be asked for over IPC
+	 * is a token that ends up in a devtools panel.
+	 */
+	ipcMain.handle("forge:kinds", async () => ({ kinds: FORGE_KINDS, encrypted: await encryptionAvailable() }));
+
+	ipcMain.handle("forge:accounts", async () => accounts());
+
+	ipcMain.handle("forge:signIn", async (_event, input: { kind: ForgeKind; baseUrl: string; token: string; label?: string }) =>
+		signIn(input),
+	);
+
+	ipcMain.handle("forge:signOut", async (_event, id: string) => signOut(id));
+
+	ipcMain.handle("forge:setEnabled", async (_event, id: string, enabled: boolean) => setAccountEnabled(id, enabled));
+
+	ipcMain.handle("forge:rename", async (_event, id: string, label: string) => renameAccount(id, label));
 
 	ipcMain.handle("git:branches", async (_event, cwd: string) => listBranches(cwd));
 
@@ -180,9 +218,12 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	 * cap is above anything the pane can actually draw (three buckets of thirty) and well below
 	 * anything worth worrying about.
 	 */
-	ipcMain.handle("git:avatars", async (_event, people: { login: string; url?: string | null }[]) =>
-		githubAvatars(Array.isArray(people) ? people.slice(0, 120) : []),
-	);
+	ipcMain.handle("git:avatars", async (_event, people: { login: string; url?: string | null; accountId?: string }[]) => {
+		// Resolved here rather than sent from the renderer: the account list is the main process's,
+		// and a page that could name a host to fetch from is a page that widened the CSP by proxy.
+		const known = new Map((await accounts()).map((account) => [account.id, account]));
+		return avatarsFor(Array.isArray(people) ? people.slice(0, 120) : [], (id) => known.get(id) ?? null);
+	});
 
 	/*
 	 * Which of the user's own projects is this repository, if any.

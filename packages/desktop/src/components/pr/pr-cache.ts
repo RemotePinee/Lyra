@@ -15,11 +15,18 @@
 
 import type { PullRequestDetail, PullRequestSummary } from "../../../electron/ipc-types.ts";
 
-/** v1 → v2: rows carry the author's picture, the line counts, the branch and CI's verdict. */
-const LIST_KEY = "lyra.pull-requests.v2";
-/** v2 → v3: the detail gained the same fields, since the list's shape is the one it extends. */
-const DETAIL_KEY = "lyra.pull-request-details.v3";
-const SEEN_KEY = "lyra.pull-requests.seen.v1";
+/**
+ * v2 → v3: rows come from several accounts now, so a row without one cannot be placed.
+ *
+ * The key had to move rather than the reader tolerate it. A cached row from the `gh` era has no
+ * account, and everything done to a pull request afterwards is addressed by account first — a
+ * tolerant reader would have meant a list that draws and a detail pane that cannot open.
+ */
+const LIST_KEY = "lyra.pull-requests.v3";
+/** v3 → v4: same reason, and the detail extends the row's shape. */
+const DETAIL_KEY = "lyra.pull-request-details.v4";
+/** v1 → v2: keyed by row id, which now includes the account. */
+const SEEN_KEY = "lyra.pull-requests.seen.v2";
 
 /**
  * Bounded, because a detail carries its description, its reviews and its comment threads, and a
@@ -29,7 +36,16 @@ const SEEN_KEY = "lyra.pull-requests.seen.v1";
  */
 const DETAIL_LIMIT = 24;
 
-export const rowId = (pr: { repo: string; number: number }) => `${pr.repo}#${pr.number}`;
+/**
+ * What identifies a row, now that rows arrive from more than one account.
+ *
+ * `owner/name` is not unique across hosts — a company's own GitHub Enterprise happily holds a
+ * repository named the same as one on github.com — and the same pull request seen through two
+ * accounts is two different sets of things you are allowed to do to it. Kept in step with the
+ * main process's own `rowId`, which decides the same question when merging buckets.
+ */
+export const rowId = (pr: { accountId: string; repo: string; number: number }) =>
+	`${pr.accountId}:${pr.repo}#${pr.number}`;
 
 function read<T>(key: string): T | null {
 	try {
@@ -64,6 +80,8 @@ export function readList(): PullRequestSummary[] {
 		const pr = row as Partial<PullRequestSummary> | null;
 		return Boolean(
 			pr &&
+				typeof pr.accountId === "string" &&
+				pr.accountId &&
 				typeof pr.repo === "string" &&
 				typeof pr.number === "number" &&
 				typeof pr.title === "string" &&

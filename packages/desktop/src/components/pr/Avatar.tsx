@@ -21,16 +21,25 @@
 import { useAvatar } from "./avatar-cache.ts";
 
 export function Avatar({
+	accountId,
 	login,
 	url,
 	size = 18,
 }: {
+	/**
+	 * Which signed-in account this name was seen through.
+	 *
+	 * Required, because a login only means something within one host. Without it, a `kittors` on a
+	 * work GitLab and a `kittors` on github.com share a cache entry, and whichever list loaded
+	 * first decides what the other one's face is.
+	 */
+	accountId: string;
 	login: string;
-	/** Where GitHub said the picture is. Absent falls back to the account's own address. */
+	/** Where the host said the picture is. Absent falls back to the account's own address. */
 	url?: string | null;
 	size?: number;
 }) {
-	const src = useAvatar(login, url);
+	const src = useAvatar(accountId, login, url);
 
 	return (
 		<span

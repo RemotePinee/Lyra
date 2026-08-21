@@ -230,19 +230,28 @@ const api: LyraApi = {
 	scheduler: {
 		runNow: (taskId) => ipcRenderer.invoke("scheduler:runNow", taskId),
 	},
+	forge: {
+		kinds: () => ipcRenderer.invoke("forge:kinds"),
+		accounts: () => ipcRenderer.invoke("forge:accounts"),
+		signIn: (input) => ipcRenderer.invoke("forge:signIn", input),
+		signOut: (id) => ipcRenderer.invoke("forge:signOut", id),
+		setEnabled: (id, enabled) => ipcRenderer.invoke("forge:setEnabled", id, enabled),
+		rename: (id, label) => ipcRenderer.invoke("forge:rename", id, label),
+	},
 	git: {
 		myPullRequests: () => ipcRenderer.invoke("git:myPullRequests"),
-		pullRequest: (repo, number) => ipcRenderer.invoke("git:pullRequest", repo, number),
-		pullRequestDiff: (repo, number) => ipcRenderer.invoke("git:pullRequestDiff", repo, number),
+		pullRequest: (accountId, repo, number) => ipcRenderer.invoke("git:pullRequest", accountId, repo, number),
+		pullRequestDiff: (accountId, repo, number) => ipcRenderer.invoke("git:pullRequestDiff", accountId, repo, number),
 		scratchForPullRequest: (pr) => ipcRenderer.invoke("scratch:forPullRequest", pr),
 		generalScratch: () => ipcRenderer.invoke("scratch:general"),
 		scratchRoots: () => ipcRenderer.invoke("scratch:roots"),
 		findLocalCheckout: (repo, candidates) => ipcRenderer.invoke("git:findLocalCheckout", repo, candidates),
 		avatar: (login) => ipcRenderer.invoke("git:avatar", login),
 		avatars: (people) => ipcRenderer.invoke("git:avatars", people),
-		commentOnPullRequest: (repo, number, body) => ipcRenderer.invoke("git:commentOnPullRequest", repo, number, body),
-		reviewPullRequest: (repo, number, verdict, body) =>
-			ipcRenderer.invoke("git:reviewPullRequest", repo, number, verdict, body),
+		commentOnPullRequest: (accountId, repo, number, body) =>
+			ipcRenderer.invoke("git:commentOnPullRequest", accountId, repo, number, body),
+		reviewPullRequest: (accountId, repo, number, verdict, body) =>
+			ipcRenderer.invoke("git:reviewPullRequest", accountId, repo, number, verdict, body),
 		branches: (cwd) => ipcRenderer.invoke("git:branches", cwd),
 		switchBranch: (cwd, branch) => ipcRenderer.invoke("git:switchBranch", cwd, branch),
 		createWorktree: (cwd, branch) => ipcRenderer.invoke("git:createWorktree", cwd, branch),

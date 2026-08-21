@@ -176,7 +176,7 @@ export function PullRequestDetail({
 			 * counts toward scrollHeight and would drag the scroll position along with it.
 			 */}
 			{tab === "code" ? (
-				<PullRequestCode repo={detail.repo} number={detail.number} />
+				<PullRequestCode accountId={detail.accountId} repo={detail.repo} number={detail.number} />
 			) : (
 				<Scroller
 					key={`${detail.repo}#${detail.number}`}
@@ -186,7 +186,7 @@ export function PullRequestDetail({
 					<h1 className="text-heading leading-snug font-semibold tracking-tight text-ink">{detail.title}</h1>
 					{/* A face on the byline, for the same reason it is on each comment: recognition. */}
 					<div className="flex items-center gap-2 pt-2 pb-4 text-detail text-ink-faint">
-						<Avatar login={detail.author} size={17} />
+						<Avatar accountId={detail.accountId} login={detail.author} size={17} />
 						<span className="text-ink-muted">{detail.author}</span>
 						<span>·</span>
 						<span>{relativeTime(detail.createdAt)}</span>
@@ -238,7 +238,7 @@ export function PullRequestDetail({
 								onToggle={() => toggle("activity")}
 								trailing={<ActivityLink url={detail.url} />}
 							>
-								<PullRequestActivity entries={activity} />
+								<PullRequestActivity accountId={detail.accountId} entries={activity} />
 							</Disclosure>
 						)}
 					</div>

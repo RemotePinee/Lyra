@@ -17,7 +17,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 
-const KEY = "lyra.avatars.v1";
+const KEY = "lyra.avatars.v2";
 
 /** Roughly 4KB each at this size. Eighty covers every author a triage session sees. */
 const LIMIT = 80;
@@ -45,8 +45,18 @@ const faces = new Map<string, string>(restore());
 const asked = new Map<string, number>();
 const listeners = new Set<() => void>();
 
-let queued: Map<string, string | null> | null = null;
+/** Queued by cache key, carrying what the row said about where the picture lives. */
+let queued: Map<string, { login: string; url: string | null; accountId: string }> | null = null;
 let timer = 0;
+
+/**
+ * What a face is filed under.
+ *
+ * The account is part of it because a login is only unique within one host: a work GitLab and
+ * github.com can each have a `kittors`, and they are not the same person. Keyed by name alone,
+ * whichever list arrived first decided what the other one\'s face looked like.
+ */
+const keyFor = (accountId: string, login: string) => `${accountId}\u0000${login}`;
 
 function restore(): [string, string][] {
 	try {
@@ -70,13 +80,15 @@ function persist(): void {
 	}
 }
 
-function want(login: string, url?: string | null): void {
-	if (!login || faces.has(login)) return;
-	if (Date.now() - (asked.get(login) ?? 0) < RETRY_MS) return;
+function want(accountId: string, login: string, url?: string | null): void {
+	if (!login || !accountId) return;
+	const key = keyFor(accountId, login);
+	if (faces.has(key)) return;
+	if (Date.now() - (asked.get(key) ?? 0) < RETRY_MS) return;
 	queued ??= new Map();
-	if (queued.has(login)) return;
-	asked.set(login, Date.now());
-	queued.set(login, url ?? null);
+	if (queued.has(key)) return;
+	asked.set(key, Date.now());
+	queued.set(key, { login, url: url ?? null, accountId });
 	if (!timer) timer = window.setTimeout(() => void flush(), BATCH_MS);
 }
 
@@ -86,17 +98,19 @@ async function flush(): Promise<void> {
 	queued = null;
 	if (!batch?.size) return;
 
-	const answer = await window.lyra.git.avatars([...batch].map(([login, url]) => ({ login, url }))).catch(() => null);
+	const answer = await window.lyra.git.avatars([...batch.values()]).catch(() => null);
 	if (!answer) return;
 
 	// Only what arrived is recorded. A miss leaves the login absent, which — behind the retry
 	// window above — is what lets a later refresh pick it up instead of the first bad second at
 	// launch deciding the whole session.
 	let changed = false;
-	for (const login of batch.keys()) {
-		const value = answer[login];
-		if (typeof value === "string" && faces.get(login) !== value) {
-			faces.set(login, value);
+	for (const [key, { login, accountId }] of batch) {
+		// The main process answers under `accountId:login`, which is the same question this cache
+		// keys on and a different spelling of it — one of them has to do the translating.
+		const value = answer[`${accountId}:${login}`];
+		if (typeof value === "string" && faces.get(key) !== value) {
+			faces.set(key, value);
 			changed = true;
 		}
 	}
@@ -116,20 +130,20 @@ function subscribe(listener: () => void): () => void {
  * Called when the list itself arrives rather than when a row mounts, so the pictures for rows
  * below the fold are already in hand by the time scrolling reaches them.
  */
-export function prefetchAvatars(people: { author: string; avatarUrl?: string | null }[]): void {
-	for (const person of people) want(person.author, person.avatarUrl);
+export function prefetchAvatars(people: { accountId: string; author: string; avatarUrl?: string | null }[]): void {
+	for (const person of people) want(person.accountId, person.author, person.avatarUrl);
 }
 
 /** This account's picture, or null while there is not one — which is also the resting state. */
-export function useAvatar(login: string, url?: string | null): string | null {
+export function useAvatar(accountId: string, login: string, url?: string | null): string | null {
 	const src = useSyncExternalStore(
 		subscribe,
-		() => faces.get(login) ?? null,
+		() => faces.get(keyFor(accountId, login)) ?? null,
 	);
 
 	useEffect(() => {
-		want(login, url);
-	}, [login, url]);
+		want(accountId, login, url);
+	}, [accountId, login, url]);
 
 	return src;
 }

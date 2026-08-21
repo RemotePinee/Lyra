@@ -13,12 +13,12 @@ export { git, run } from "./git-exec.ts";
 export { collectWorkspaceDiff } from "./git-diff.ts";
 export {
 	commentOnPullRequest,
-	listMyPullRequests,
+	listPullRequests,
 	pullRequestDetail,
 	pullRequestDiff,
 	reviewPullRequest,
-	type ReviewVerdict,
-} from "./git-pr.ts";
+} from "./forge/index.ts";
+export type { ReviewVerdict } from "./forge/types.ts";
 export {
 	commitAll,
 	discardPaths,

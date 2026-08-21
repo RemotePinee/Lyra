@@ -11,20 +11,54 @@
  * elements afterwards — a memo that silently stops working looks identical in every other way,
  * and would quietly put a full re-render of the list on a 45-second timer.
  *
- * Nothing here asserts on the *contents* of a row. Whether this machine can reach GitHub decides
- * whether the list is the seeded cache or the real thing, and both are correct — so every
- * assertion is about shape and behaviour, which are the same either way.
+ * Nothing here asserts on the *contents* of a row. The seeded accounts point at hosts that cannot
+ * resolve, so the list is always the seeded cache — which is also what a real machine shows while
+ * a host is unreachable, and is the one state that does not depend on somebody's token.
  */
 
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { startApp, type RunningApp } from "./app.ts";
 
 let app: RunningApp;
 
+/**
+ * Two signed-in accounts, on hosts that do not exist.
+ *
+ * `.invalid` is reserved by RFC 2606 and never resolves, which is deliberate: the pane must not
+ * reach out to github.com every time this suite runs, and a fetch that always fails is what keeps
+ * the list the seeded cache rather than a race between a network and a timer.
+ *
+ * Stored unencrypted, which is a shape the vault genuinely supports — a machine with no keyring
+ * writes exactly this — so nothing here is a fixture the app would not otherwise read.
+ */
+const ACCOUNTS = [
+	{ id: "acct-one", kind: "github", label: "kittors · one.invalid", baseUrl: "https://one.invalid", login: "kittors" },
+	{ id: "acct-two", kind: "gitlab", label: "work · two.invalid", baseUrl: "https://two.invalid", login: "work" },
+];
+
+async function seed(home: string): Promise<void> {
+	await mkdir(home, { recursive: true });
+	await writeFile(
+		join(home, "forges.json"),
+		JSON.stringify({
+			version: 1,
+			entries: ACCOUNTS.map((account) => ({
+				account: { ...account, avatarUrl: null, addedAt: 1, enabled: true },
+				token: "not-a-real-token",
+				encrypted: false,
+			})),
+		}),
+		"utf8",
+	);
+}
+
 /** Enough of a row for the pane to draw one; the validation on the way out of the cache is real. */
 const CACHED = [
 	{
+		accountId: "acct-one",
 		repo: "kittors/lyra",
 		number: 1,
 		title: "fix: 一个足够长的标题，长到需要在这一列里被裁掉",
@@ -44,6 +78,7 @@ const CACHED = [
 		reviewDecision: null,
 	},
 	{
+		accountId: "acct-one",
 		repo: "kittors/lyra",
 		number: 2,
 		title: "chore: bump",
@@ -63,6 +98,7 @@ const CACHED = [
 		reviewDecision: "APPROVED",
 	},
 	{
+		accountId: "acct-two",
 		repo: "farion1231/cc-switch",
 		number: 3,
 		title: "feat: 另一个仓库里的改动",
@@ -86,12 +122,12 @@ const CACHED = [
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 before(async () => {
-	app = await startApp({ port: 9449 });
+	app = await startApp({ port: 9449, seed });
 
 	// Seeded before the pane is ever opened, so it draws from this on its first frame — which is
-	// also what happens on a machine with no `gh`, and what keeps this test the same on both.
+	// also what happens whenever a host is unreachable, and what keeps this test the same either way.
 	await app.evaluate(`(() => {
-		localStorage.setItem("lyra.pull-requests.v2", ${JSON.stringify(JSON.stringify(CACHED))});
+		localStorage.setItem("lyra.pull-requests.v3", ${JSON.stringify(JSON.stringify(CACHED))});
 		localStorage.removeItem("lyra.pull-requests.folded.v1");
 		return true;
 	})()`);
@@ -208,4 +244,72 @@ test("a refresh that changes nothing does not redraw a single row", async () => 
 
 	assert.ok(after.total > 0);
 	assert.equal(after.kept, after.total, "the rows on screen are the same elements they were");
+});
+
+test("the account tabs are a filter, not a decoration", async () => {
+	/*
+	 * The claim: rows from two hosts share one list, and a tab narrows it to one of them.
+	 *
+	 * Measured by counting rows rather than by reading state, because the failure this guards
+	 * against is a tab that highlights and filters nothing — which looks identical from the inside
+	 * and is exactly what happens if the filter is applied after grouping instead of before.
+	 */
+	const tabs = await app.evaluate<string[]>(`[...document.querySelectorAll("[aria-label='账号'] button")].map((b) => b.textContent.trim())`);
+	assert.ok(tabs.some((t) => t.includes("全部")), "with two accounts there is a tab strip");
+	assert.ok(tabs.length >= 3, `expected 全部 plus one tab per account, got ${JSON.stringify(tabs)}`);
+
+	const counts = await app.evaluate<{ all: number; one: number; two: number }>(`(async () => {
+		const tab = (name) => [...document.querySelectorAll("[aria-label='账号'] button")].find((b) => b.textContent.includes(name));
+		const rows = () => document.querySelectorAll(".ly-pr-row").length;
+		const settle = () => new Promise((r) => setTimeout(r, 350));
+
+		const all = rows();
+		tab("kittors").click();
+		await settle();
+		const one = rows();
+		tab("work").click();
+		await settle();
+		const two = rows();
+		tab("全部").click();
+		await settle();
+		return { all, one, two };
+	})()`);
+
+	assert.equal(counts.all, 3);
+	assert.equal(counts.one, 2, "the two rows seen through the first account");
+	assert.equal(counts.two, 1, "and the one seen through the second");
+});
+
+test("with no account left, the pane is the sign-in screen rather than an empty list", async () => {
+	/*
+	 * Last, because it signs both accounts out for real.
+	 *
+	 * Through the app's own IPC rather than by touching state: signing out has to remove the token
+	 * from disk *and* take the tabs away, and only the real path does both. The distinction this
+	 * asserts is the one the old pane got wrong — "nothing configured" used to render as a list
+	 * with a grey line of text in it, which reads as a feature that is broken.
+	 */
+	const screen = await app.evaluate<{ rows: number; tabs: number; button: boolean; text: string }>(`(async () => {
+		const accounts = await window.lyra.forge.accounts();
+		for (const account of accounts) await window.lyra.forge.signOut(account.id);
+		const refresh = [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "刷新");
+		refresh?.click();
+		for (let i = 0; i < 40 && document.querySelectorAll(".ly-pr-row").length > 0; i++) {
+			await new Promise((r) => setTimeout(r, 250));
+		}
+		return {
+			rows: document.querySelectorAll(".ly-pr-row").length,
+			tabs: document.querySelectorAll("[aria-label='账号'] button").length,
+			button: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "添加账号"),
+			text: document.body.innerText,
+		};
+	})()`);
+
+	assert.equal(screen.rows, 0, "rows nobody can act on are not left on screen");
+	assert.equal(screen.tabs, 0);
+	assert.ok(screen.button, "there is one thing to do here, and it is a button");
+	assert.match(screen.text, /还没有添加代码托管账号/);
+	// The message that used to be here named a CLI and a Homebrew command, which told a GitLab
+	// user the app did not work rather than that they were one token away.
+	assert.doesNotMatch(screen.text, /gh CLI|brew install/);
 });
