@@ -112,22 +112,23 @@ export function readyNote(relaunch: boolean): string {
  *   - `confirm` is disabled only while something is genuinely working. Paused and failed are both
  *     actionable — disabling them was how the old dialog said "wait", which it then never stopped
  *     saying if the download had quietly died.
- *   - `pause` replaces `dismiss` while downloading, rather than joining it: 以后再说 during a
- *     download is an answer to a question nobody is asking any more.
+ *   - `pause` replaces `close` while downloading, rather than joining it: the two want the same
+ *     slot, and a dialog that can be left by pressing Escape does not need a button saying so
+ *     during the one phase where stopping is the more useful thing to offer.
  *   - `cancel` appears only when there is something to throw away. On an untouched update it would
- *     be a second 以后再说 wearing a more alarming word.
+ *     be a second 关闭 wearing a more alarming word.
  */
 export function controlsFor(phase: Phase): {
 	confirmDisabled: boolean;
 	pause: boolean;
-	dismiss: boolean;
+	close: boolean;
 	cancel: boolean;
 } {
 	const running = phase.at === "downloading";
 	return {
 		confirmDisabled: running || phase.at === "preparing",
 		pause: running,
-		dismiss: !running,
+		close: !running,
 		cancel: running || phase.at === "paused" || (phase.at === "failed" && phase.received > 0),
 	};
 }
@@ -135,19 +136,18 @@ export function controlsFor(phase: Phase): {
 /**
  * Whether the badge is on screen at all.
  *
- * `dismissed` is 以后再说, which hides the announcement — and should: it answers "there is a new
- * version". It does not answer "you have 90MB of one on disk", so anything mid-flight outranks it.
- * Hiding a running download would leave it using the network with nothing on screen admitting it,
- * which is how someone ends up unable to find the thing they want to stop.
+ * One rule: there is a newer version than the one running. It stays until that stops being true,
+ * which happens exactly once — when the update is installed.
+ *
+ * There was a second rule, and it was reported as a bug within a day of shipping: 以后再说 hid the
+ * badge for that version, so the one thing on screen saying an update existed could be made to
+ * vanish by pressing a button that sounded like "remind me later". The reasoning was that
+ * re-raising an answered announcement is nagging — true of a notification, and this is not one. It
+ * is a 20px dot at the bottom of the sidebar whose entire job is to be findable later. A dot that
+ * disappears when acknowledged is not a quieter version of that job; it is the opposite of it.
  */
-export function shouldShow(
-	update: { available: boolean; latest: string } | null,
-	dismissed: string | null,
-	phase: Phase,
-): boolean {
-	if (!update?.available) return false;
-	if (dismissed !== update.latest) return true;
-	return phase.at !== "idle" && phase.at !== "failed";
+export function shouldShow(update: { available: boolean } | null): boolean {
+	return Boolean(update?.available);
 }
 
 /**

@@ -109,15 +109,15 @@ test("a failure offers a retry, and it is not greyed out", () => {
 	assert.equal(confirmLabel(failed), "重试");
 });
 
-test("暂停 and 以后再说 never appear together, and one of them always does", () => {
+test("暂停 and 关闭 never appear together, and one of them always does", () => {
 	/*
-	 * They occupy the same slot: during a download 以后再说 answers a question nobody is asking any
-	 * more, and outside one 暂停 has nothing to stop. Both at once would be two buttons for one
-	 * position; neither would leave a gap where a control belongs.
+	 * They occupy the same slot: during a download 暂停 is the more useful thing to offer there, and
+	 * outside one it has nothing to stop. Both at once would be two buttons for one position;
+	 * neither would leave a gap where a control belongs.
 	 */
 	for (const phase of PHASES) {
-		const { pause, dismiss } = controlsFor(phase);
-		assert.notEqual(pause, dismiss, `${phase.at} 的这两个按钮应当恰好出现一个`);
+		const { pause, close } = controlsFor(phase);
+		assert.notEqual(pause, close, `${phase.at} 的这两个按钮应当恰好出现一个`);
 	}
 });
 
@@ -165,38 +165,32 @@ test("the note under a finished download describes what actually happens next", 
 
 /* Whether the badge is on screen at all. */
 
-test("no update means no badge, whatever else is true", () => {
-	for (const phase of PHASES) {
-		assert.equal(shouldShow({ available: false, latest: "0.3.2" }, null, phase), false);
-		assert.equal(shouldShow(null, null, phase), false);
-	}
+test("no update means no badge", () => {
+	assert.equal(shouldShow({ available: false, latest: "0.3.2" }), false);
+	assert.equal(shouldShow(null), false);
 });
 
-test("an available update shows, until it is dismissed", () => {
-	assert.equal(shouldShow(update, null, { at: "idle" }), true);
-	assert.equal(shouldShow(update, "0.3.2", { at: "idle" }), false);
-});
-
-test("dismissing one version does not hide the next", () => {
-	assert.equal(shouldShow(update, "0.3.1", { at: "idle" }), true);
-});
-
-test("a download in flight outranks having been dismissed", () => {
+test("an available update shows, and there is nothing that takes it away", () => {
 	/*
-	 * 以后再说 answers "there is a new version". It does not answer "you have 90MB of one coming
-	 * down" — and hiding that would leave a download using the network with nothing on screen
-	 * admitting it, so the only way to stop it would be to quit the app.
+	 * The whole rule, and the regression this replaced.
+	 *
+	 * 以后再说 used to hide the badge for the version in hand, which meant the one thing on screen
+	 * saying an update existed could be removed by pressing a button — and it was reported as a bug
+	 * the day it shipped. There is no argument to this function any more that could hide it: as
+	 * long as a newer version exists, so does the dot.
 	 */
-	assert.equal(shouldShow(update, "0.3.2", { at: "downloading", received: 1, total: 2 }), true);
-	assert.equal(shouldShow(update, "0.3.2", { at: "paused", received: 1, total: 2 }), true);
-	assert.equal(shouldShow(update, "0.3.2", { at: "preparing", received: 2, total: 2 }), true);
-	assert.equal(shouldShow(update, "0.3.2", { at: "ready", relaunch: true }), true);
+	assert.equal(shouldShow(update), true);
 });
 
-test("a failed download that was dismissed stays hidden", () => {
-	// Nothing is running and the announcement was answered; re-raising it would be nagging.
-	assert.equal(shouldShow(update, "0.3.2", { at: "failed", error: "x", received: 0, total: 0 }), false);
-});
+/*
+ * There is no test walking `shouldShow` across `PHASES`, and there should not be.
+ *
+ * The old rule was phase-dependent — hidden in `idle` and `failed`, which is to say in the two
+ * states an update sits in when nobody is currently doing anything about it, precisely when it
+ * most needs to still be findable. A loop over the phases now would call the same one-argument
+ * function seven times and assert the same thing seven times: a test that looks thorough and
+ * checks nothing. What replaced that rule is in the signature, where the compiler holds it.
+ */
 
 /*
  * The line under 版本 in 设置 → 关于.

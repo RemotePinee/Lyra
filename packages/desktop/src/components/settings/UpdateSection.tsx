@@ -1,10 +1,10 @@
 /**
  * 关于: which version this is, and the way back to an update that was waved off.
  *
- * This exists because the sidebar dot was the only door into the update dialog, and 以后再说 —
- * the button whose whole job is to make the dot go away — therefore also removed the only way to
- * change your mind. Nothing anywhere else in the app named the version, so the answer to "what am
- * I running, and what happened to that update?" was to quit and reopen and hope the dot returned.
+ * This exists because the sidebar dot was the only door into the update dialog, and nothing
+ * anywhere else in the app named the version — so "what am I running?" had no answer, and "is
+ * there an update?" could only be asked by finding a dot that is deliberately easy to overlook.
+ * 检查更新 is also the only way to ask *now* rather than waiting out the six-hourly timer.
  *
  * A download in flight is shown here as well, and it is genuinely the same download: the phase
  * comes from the main process through the same store the badge reads, so 检查更新 pressed here
@@ -61,10 +61,8 @@ export function UpdateSection() {
 				/>
 			</Card>
 
-			{/*
-			 * No `onDismiss`. 以后再说 hides the sidebar badge, which is not what the second button
-			 * should do in a window someone opened on purpose to find this — so here it is 关闭.
-			 */}
+			{/* The same dialog the sidebar dot opens, and it behaves the same in both: 关闭 closes the
+			    window and changes nothing about what is on screen behind it. */}
 			{open && info && <UpdateDialog info={info} phase={phase} onClose={() => setOpen(false)} />}
 		</>
 	);

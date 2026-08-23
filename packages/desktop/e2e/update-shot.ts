@@ -236,31 +236,35 @@ try {
 	if (paused.at !== "paused") throw new Error(`暂停之后应当是 paused，实际是 ${paused.at}`);
 	await shot("6-dialog-paused", true);
 
-	say("7. 按「以后再说」：有 60MB 在磁盘上，角标不该跟着消失");
-	/*
-	 * 以后再说 answers "there is a new version". It does not answer "you have 60MB of one paused on
-	 * disk" — and hiding that would leave the only way to resume or discard it off screen. The rule
-	 * is in `shouldShow` and covered by a unit test; this is it happening in a window.
-	 */
-	await press("以后再说");
+	say("7. 按「关闭」：弹窗该走，角标该留");
+	await press("关闭");
 	await wait(400);
-	if (await dialogOpen()) throw new Error("「以后再说」没有关掉弹窗");
-	if (!(await badgeThere())) throw new Error("下载还暂停着，角标不该被「以后再说」藏起来");
+	if (await dialogOpen()) throw new Error("「关闭」没有关掉弹窗");
+	if (!(await badgeThere())) throw new Error("关掉弹窗不该把角标一起带走");
 	say("   ✓ 弹窗关了，角标留着");
-	await shot("7-dismissed-still-there");
+	await shot("7-closed-still-there");
 
-	say("8. 回到弹窗把下载取消掉——这下才真的没有东西可报了，角标该走");
+	say("8. 把下载取消掉——这是被报上来的那一步：角标仍然该在");
+	/*
+	 * The regression this step exists for.
+	 *
+	 * 以后再说 used to hide the badge for this version, and cancelling the download then took away
+	 * the last reason to keep it — so the update disappeared from the window entirely while still
+	 * being available, and the only way back was 设置 → 关于, which nobody would think to look for.
+	 * Now the rule is one line: a newer version exists, so the dot exists. Nothing on this screen
+	 * can take it away except installing the update.
+	 */
 	await clickBadge();
 	await wait(400);
-	if (!(await dialogOpen())) throw new Error("「以后再说」之后点角标进不去弹窗");
+	if (!(await dialogOpen())) throw new Error("关掉之后点角标进不去弹窗");
 	await press("取消下载");
 	await wait(800);
 	say(`   ${await phase()}`);
-	if (await badgeThere()) throw new Error("已经取消并且说过「以后再说」，角标还在");
-	say("   ✓ 角标消失了——这一刻，更新在界面上已经无处可寻");
-	await shot("8-gone");
+	if (!(await badgeThere())) throw new Error("取消下载之后角标没了——这正是被报上来的问题");
+	say("   ✓ 下载取消了，角标还在");
+	await shot("8-cancelled-still-there");
 
-	say("9. 从设置 → 常规 → 关于 找回来");
+	say("9. 设置 → 常规 → 关于 也说得出同一件事");
 	await app.evaluate(`document.querySelector(".ly-sidebar-foot button").click()`);
 	await wait(600);
 	await press("常规");
@@ -280,7 +284,7 @@ try {
 	await press("查看更新");
 	await wait(500);
 	if (!(await dialogOpen())) throw new Error("设置里的「查看更新」没有打开弹窗");
-	say("   ✓ 「以后再说」之后仍然回得来");
+	say("   ✓ 第二个入口通向同一个弹窗");
 	await shot("10-about-dialog", true);
 
 	say("10. 从这里重新下载，走到底");

@@ -5,8 +5,8 @@
  * there. That is the whole design, and it is what makes the dialog closable while a download runs:
  * closing it stops nothing, because it was never holding anything. The previous version had the
  * download living inside this component's state, which forced two things that both read as bugs —
- * 以后再说 disabled mid-download, and the close gesture ignored — because leaving would have
- * orphaned a fetch nobody could then find or stop.
+ * the second button disabled mid-download, and the close gesture ignored — because leaving would
+ * have orphaned a fetch nobody could then find or stop.
  *
  * The three controls are deliberately not the same three in every phase. A dialog that shows
  * 暂停, 继续 and 取消 at once, greying out two of them, is a control panel for a state machine;
@@ -25,20 +25,10 @@ export function UpdateDialog({
 	info,
 	phase,
 	onClose,
-	onDismiss,
 }: {
 	info: Info;
 	phase: Phase;
 	onClose: () => void;
-	/**
-	 * 以后再说: hide the announcement for this version, in this window.
-	 *
-	 * Optional, because the badge is not the only door into this dialog any more. Opened from
-	 * 设置 → 关于, hiding the badge is not what the button beside 立即重启 should do — the person
-	 * went looking for this on purpose, and answering that with 以后再说 makes the announcement
-	 * vanish from a window they are still standing in. There it is simply 关闭.
-	 */
-	onDismiss?: () => void;
 }) {
 	const fraction = fractionOf(phase);
 	// Which of the four controls belong in this phase — the rules, and their tests, are in `view.ts`.
@@ -154,7 +144,7 @@ export function UpdateDialog({
 					{/*
 					 * 取消 sits on the left, apart from the pair on the right, because it is the only one
 					 * that destroys something — the partial file goes with it. Only offered when there is
-					 * something to cancel; on an untouched update it would be a second 以后再说.
+					 * something to cancel; on an untouched update it would be a second 关闭.
 					 */}
 					{controls.cancel && (
 						<button
@@ -181,10 +171,10 @@ export function UpdateDialog({
 					) : (
 						<button
 							type="button"
-							onClick={onDismiss ?? onClose}
+							onClick={onClose}
 							className="h-[32px] rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
 						>
-							{onDismiss ? "以后再说" : "关闭"}
+							关闭
 						</button>
 					)}
 

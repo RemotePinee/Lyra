@@ -21,10 +21,11 @@
  * 20px circle would be a control small enough to hit by accident on the way to something else, and
  * what it would interrupt is the longest operation in the app.
  *
- * 以后再说 takes it off screen, which is the point of saying so — and for a while that made this
- * the only door into the dialog and a one-way one, since answering the announcement removed the
- * thing you would press to change your mind. 设置 → 关于 is now the way back, and the way in for
- * anyone who wants to check without being asked.
+ * Nothing here takes it off screen. It appears when a newer version exists and leaves when that
+ * stops being true, which is to say when the update has been installed. 以后再说 used to hide it
+ * for the version in hand, and that was reported as a bug the day it shipped — correctly: the dot
+ * is not a notification to be acknowledged, it is where you go to find the update, and a place you
+ * go to is not somewhere that can be dismissed. The dialog's second button is now just 关闭.
  */
 
 import { AlertTriangle, ArrowDownToLine, Pause, RefreshCw } from "lucide-react";
@@ -37,12 +38,10 @@ import { UpdateDialog } from "./modals/UpdateDialog.tsx";
 export function UpdateBadge({ compact = false }: { compact?: boolean }) {
 	const { info, phase } = useUpdate();
 	const [open, setOpen] = useState(false);
-	/** Dismissed for this version, in this window. Reappears for the next one. */
-	const [hidden, setHidden] = useState<string | null>(null);
 
 	// Every rule about what shows and what it says lives in `update/view.ts`, where the tests can
 	// walk all six phases through all of them at once.
-	if (!info || !shouldShow(info, hidden, phase)) return null;
+	if (!info || !shouldShow(info)) return null;
 
 	const fraction = fractionOf(phase);
 	/*
@@ -103,17 +102,7 @@ export function UpdateBadge({ compact = false }: { compact?: boolean }) {
 				</span>
 			</button>
 
-			{open && (
-				<UpdateDialog
-					info={info}
-					phase={phase}
-					onClose={() => setOpen(false)}
-					onDismiss={() => {
-						setHidden(info.latest);
-						setOpen(false);
-					}}
-				/>
-			)}
+			{open && <UpdateDialog info={info} phase={phase} onClose={() => setOpen(false)} />}
 		</>
 	);
 }
