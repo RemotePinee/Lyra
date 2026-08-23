@@ -207,6 +207,7 @@ const api: LyraApi = {
 		pause: () => ipcRenderer.invoke("updates:pause"),
 		cancel: () => ipcRenderer.invoke("updates:cancel"),
 		relaunch: () => ipcRenderer.invoke("updates:relaunch"),
+		reopen: () => ipcRenderer.invoke("updates:reopen"),
 		open: (url) => ipcRenderer.invoke("updates:open", url),
 		onProgress: (listener) => {
 			const handler = (_event: unknown, phase: Parameters<typeof listener>[0]) => listener(phase);

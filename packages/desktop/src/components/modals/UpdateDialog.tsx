@@ -15,11 +15,11 @@
 
 import { Pause, Play, X } from "lucide-react";
 
-import { confirmLabel, controlsFor, fractionOf, mb, type Phase } from "../../update/view.ts";
+import { useApp } from "../../store.ts";
+import type { Info } from "../../update/store.ts";
+import { confirmLabel, controlsFor, fractionOf, mb, readyNote, type Phase } from "../../update/view.ts";
 import { Overlay } from "./Overlay.tsx";
 import { Scroller } from "../Scroller.tsx";
-
-type Info = Awaited<ReturnType<typeof window.lyra.updates.check>>;
 
 export function UpdateDialog({
 	info,
@@ -30,15 +30,43 @@ export function UpdateDialog({
 	info: Info;
 	phase: Phase;
 	onClose: () => void;
-	/** 以后再说: hide the announcement for this version, in this window. */
-	onDismiss: () => void;
+	/**
+	 * 以后再说: hide the announcement for this version, in this window.
+	 *
+	 * Optional, because the badge is not the only door into this dialog any more. Opened from
+	 * 设置 → 关于, hiding the badge is not what the button beside 立即重启 should do — the person
+	 * went looking for this on purpose, and answering that with 以后再说 makes the announcement
+	 * vanish from a window they are still standing in. There it is simply 关闭.
+	 */
+	onDismiss?: () => void;
 }) {
 	const fraction = fractionOf(phase);
 	// Which of the four controls belong in this phase — the rules, and their tests, are in `view.ts`.
 	const controls = controlsFor(phase);
 
-	const confirm = () => {
-		if (phase.at === "ready") return void window.lyra.updates.relaunch();
+	/**
+	 * The main button, in whichever phase it was pressed.
+	 *
+	 * The two `ready` branches both answer, which is the point of awaiting them. Each has a way of
+	 * returning false — nothing staged, or an installer that has since been swept out of the temp
+	 * directory — and both were previously fired and forgotten, so the failure mode of the last
+	 * step in an update was a button that could be pressed all afternoon in silence. A relaunch
+	 * that works does not come back from here at all; the app is already on its way out.
+	 */
+	const confirm = async () => {
+		// Two endings behind one phase: macOS has the update unpacked and can restart into it,
+		// while Windows and Linux have an installer open in a window this app does not own.
+		if (phase.at === "ready") {
+			const done = phase.relaunch
+				? await window.lyra.updates.relaunch()
+				: await window.lyra.updates.reopen();
+			if (!done) {
+				useApp
+					.getState()
+					.notify(phase.relaunch ? "更新没有准备好，重新下载一次再试" : "没找到下载好的安装包，重新下载一次", "warn");
+			}
+			return;
+		}
 		void window.lyra.updates.download(info.latest);
 	};
 
@@ -111,11 +139,7 @@ export function UpdateDialog({
 					</div>
 				)}
 
-				{phase.at === "ready" && (
-					<p className="mb-3 text-detail text-ok">
-						已下载完成。重启 Lyra 即可用上新版本，正在进行的对话会中断。
-					</p>
-				)}
+				{phase.at === "ready" && <p className="mb-3 text-detail text-ok">{readyNote(phase.relaunch)}</p>}
 				{phase.at === "failed" && (
 					<p className="mb-3 text-detail text-danger">
 						{phase.error}
@@ -157,10 +181,10 @@ export function UpdateDialog({
 					) : (
 						<button
 							type="button"
-							onClick={onDismiss}
+							onClick={onDismiss ?? onClose}
 							className="h-[32px] rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:border-ink-faint hover:text-ink"
 						>
-							以后再说
+							{onDismiss ? "以后再说" : "关闭"}
 						</button>
 					)}
 
@@ -175,7 +199,7 @@ export function UpdateDialog({
 							// disabling them was the old dialog's way of saying "wait", which it then never
 							// stopped saying if the download had quietly died.
 							disabled={controls.confirmDisabled}
-							onClick={confirm}
+							onClick={() => void confirm()}
 							className="flex h-[32px] items-center gap-1.5 rounded-lg bg-ink px-3.5 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-50"
 						>
 							{phase.at === "paused" && <Play size={12} strokeWidth={2.2} fill="currentColor" />}

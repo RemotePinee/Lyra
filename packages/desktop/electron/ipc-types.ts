@@ -323,6 +323,15 @@ export interface LyraApi {
 			current: string;
 			latest: string;
 			available: boolean;
+			/**
+			 * Whether GitHub actually answered.
+			 *
+			 * False means offline, rate-limited, or no releases yet — all of which return the running
+			 * version as the newest, which is the same shape as "you are up to date" and must not be
+			 * shown as it. The badge is right to treat both as nothing to announce; a surface that was
+			 * asked the question directly is not.
+			 */
+			checked: boolean;
 			notes: string;
 			url: string;
 			publishedAt: number | null;
@@ -348,6 +357,11 @@ export interface LyraApi {
 		cancel(): Promise<UpdatePhase>;
 		/** Put the staged update in place and come back up on it. Does not return if it works. */
 		relaunch(): Promise<boolean>;
+		/**
+		 * Put the downloaded installer back on screen — Windows and Linux, where installing is a
+		 * window this app does not own and is easy to dismiss by accident. False if there is none.
+		 */
+		reopen(): Promise<boolean>;
 		/** Opens the release page in the browser. Refuses anything that is not a github.com URL. */
 		open(url: string): Promise<boolean>;
 		onProgress(listener: (phase: UpdatePhase) => void): () => void;

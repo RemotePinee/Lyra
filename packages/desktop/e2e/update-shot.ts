@@ -4,7 +4,8 @@
  * Not a test — `node e2e/update-shot.ts` — and it is here rather than in `*.test.ts` because it
  * needs the network and a published release, which a test suite must not. What it is for is the
  * half of this feature that only exists once it is on screen: whether the ring actually closes,
- * whether pausing looks paused, whether closing the dialog leaves the badge still counting.
+ * whether pausing looks paused, whether closing the dialog leaves the badge still counting, and
+ * whether there is a way back in after the announcement has been waved off.
  *
  * It walks the phases in order and photographs each one, so the sequence can be reviewed as a
  * sequence. The caller is expected to have dropped `packages/desktop/package.json` to an older
@@ -12,9 +13,11 @@
  * version has, correctly, nothing to show.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { downloadDir } from "../electron/ipc/update-download.ts";
 import { startApp } from "./app.ts";
 
 const out = process.argv[2] ?? "/tmp/lyra-update";
@@ -58,20 +61,20 @@ async function shot(name: string, full = false): Promise<void> {
 }
 
 /**
- * Put the badge into `:hover` and leave it there.
+ * Put the badge into `:hover` and photograph it, if this machine will let us.
  *
  * `Input.dispatchMouseEvent` was the obvious way and it does not work: a synthetic move updates
  * where the page thinks the pointer is, but the *hover* that CSS matches on is decided by the
  * compositor from the real cursor, which is wherever the person running this left it. It appeared
  * to work when the badge was large enough to sit under the cursor by luck, and stopped the moment
- * it was made smaller — a test that passes because of where a mouse happens to be is worse than no
- * test.
+ * it was made smaller.
  *
- * `CSS.forcePseudoState` is what the DevTools "force element state" checkbox does, and it asserts
- * the state directly. Verified afterwards rather than assumed, because a silently ineffective
- * hover produces two identical screenshots and a reviewer who concludes the animation is broken.
+ * So this reports rather than throws. A step that passes or fails on where someone left their
+ * mouse is not a check, and dressing it as one costs more than the animation it covers is worth —
+ * the phases either side of it are asserted properly, and this returns whether the photograph
+ * beside it is worth looking at.
  */
-async function hoverBadge(): Promise<void> {
+async function hoverBadge(): Promise<boolean> {
 	const box = await app.evaluate<{ x: number; y: number } | null>(`(() => {
 		const badge = document.querySelector(".ly-update-dot");
 		if (!badge) return null;
@@ -94,7 +97,9 @@ async function hoverBadge(): Promise<void> {
 		hovered: Boolean(document.querySelector(".ly-update-dot:hover")),
 		label: document.querySelector(".ly-update-version")?.getBoundingClientRect().width ?? 0,
 	})`);
-	if (!open.hovered || open.label < 4) throw new Error(`hover 没生效：${JSON.stringify(open)}`);
+	if (open.hovered && open.label >= 4) return true;
+	say(`   （hover 没落上，这台机器的真实光标不在角标上：${JSON.stringify(open)}——截图跳过）`);
+	return false;
 }
 
 /** Move the pointer away, so the next photograph is of the resting state. */
@@ -107,18 +112,60 @@ async function phase(): Promise<string> {
 	return app.evaluate<string>(`window.lyra.updates.state().then((p) => JSON.stringify(p))`);
 }
 
+const dialogOpen = () => app.evaluate<boolean>(`document.body.innerText.includes("有新版本可以更新")`);
+const badgeThere = () => app.evaluate<boolean>(`Boolean(document.querySelector(".ly-update-dot"))`);
+const clickBadge = () => app.evaluate(`document.querySelector(".ly-update-dot")?.click()`);
+const escape = () =>
+	app.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+
+/** Press the button whose label contains this text, anywhere on screen. */
+const press = (text: string) =>
+	app.evaluate(`(() => {
+		const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes(${JSON.stringify(text)}));
+		if (!button) throw new Error("没有找到按钮：" + ${JSON.stringify(text)});
+		button.click();
+		return true;
+	})()`);
+
 try {
 	await wait(3500);
 	const info = await app.evaluate<string>(`window.lyra.updates.check().then((i) => JSON.stringify(i))`);
 	say(`检查更新：${info}`);
 	if (!JSON.parse(info).available) throw new Error("没有可用更新——先把 package.json 的版本降下去");
+	const latest = JSON.parse(info).latest;
 
-	say("1. 静止：应当是一个圆点");
+	/*
+	 * Start from nothing on disk.
+	 *
+	 * The downloader is a resuming one, and it is right to be: a complete file from an earlier run
+	 * is finished work, so `start()` goes straight to `preparing`. Which means a second run of this
+	 * script photographs the ending five times and never once sees a download — it did, and reported
+	 * `failed` where the ring should have been, which took a while to recognise as the *feature*
+	 * working rather than the phase being wrong.
+	 */
+	await rm(downloadDir(tmpdir(), latest), { recursive: true, force: true });
+
+	say("1. 静止：应当是一个圆点，而且不比旁边的图标重");
+	/*
+	 * Measured, not eyeballed.
+	 *
+	 * "Too big" was the report, and a screenshot alone cannot settle it — the number that matters is
+	 * the badge against the two glyphs it shares the row with. A saturated 34px disc beside a 16px
+	 * hairline was the version that got reported; anything much past 20 is on the way back to it.
+	 */
+	const sizes = await app.evaluate<{ badge: number; help: number }>(`(() => {
+		const badge = document.querySelector(".ly-update-dot").getBoundingClientRect();
+		const help = [...document.querySelectorAll(".ly-sidebar-foot span")]
+			.find((s) => s.textContent?.trim() === "?")
+			.getBoundingClientRect();
+		return { badge: Math.round(badge.height), help: Math.round(help.height) };
+	})()`);
+	say(`   角标 ${sizes.badge}px，旁边的 ? 是 ${sizes.help}px`);
+	if (sizes.badge > sizes.help + 6) throw new Error(`角标比旁边的图标大太多：${sizes.badge} vs ${sizes.help}`);
 	await shot("1-dot");
 
 	say("2. 悬停：横向展开，显示版本号");
-	await hoverBadge();
-	await shot("2-hover");
+	if (await hoverBadge()) await shot("2-hover");
 	await unhoverBadge();
 
 	/*
@@ -128,57 +175,127 @@ try {
 	 * photographing "downloading" photographs a download that has already finished. Everything in
 	 * this section is therefore measured in a few hundred milliseconds.
 	 */
-	say("3. 开始下载（真实的 135MB）");
-	void app.evaluate(`window.lyra.updates.download(${JSON.stringify(JSON.parse(info).latest)})`);
+	say("3. 从弹窗里按下载，然后立刻关掉弹窗——这是被报上来的那一步");
+	await clickBadge();
 	await wait(400);
-	say(`   ${await phase()}`);
-	await shot("3-downloading");
-	await hoverBadge();
-	await shot("3b-downloading-hover");
+	if (!(await dialogOpen())) throw new Error("点角标没有打开弹窗");
+	await press("下载安装");
+	await wait(400);
+	await escape();
+	await wait(200);
+	if (await dialogOpen()) throw new Error("Escape 没有关掉弹窗");
+
+	say("4. 弹窗关了，角标该继续报进度");
+	// `[data-ring]`, not `svg`: the glyph in the middle is an SVG too, so the loose selector matched
+	// the warning triangle of a failed download and reported a ring in the one phase that has none.
+	const ring = await app.evaluate<{ ring: boolean; phase: string }>(`({
+		ring: Boolean(document.querySelector(".ly-update-dot [data-ring]")),
+		phase: document.querySelector(".ly-update-dot")?.dataset.phase ?? "(没有角标)",
+	})`);
+	say(`   角标状态 ${ring.phase}，进度环 ${ring.ring}`);
+	if (!ring.ring) throw new Error("关掉弹窗之后角标没有进度环——这正是被报上来的问题");
+	// Stated as `downloading` rather than "not idle": a run that reached the ending early is a run
+	// that photographed nothing, and it should say so instead of passing on a technicality.
+	if (ring.phase !== "downloading") throw new Error(`这时候本该正在下载，实际是 ${ring.phase}`);
+	const before = JSON.parse(await phase());
+	/*
+	 * Waited for, not slept past.
+	 *
+	 * GitHub answers a release asset with a redirect to its object store, so the gap between
+	 * `downloading` being announced and anything arriving is a DNS lookup, a TLS handshake and a
+	 * second request. At 700ms this read `0 → 0` and called the download stopped, on a download
+	 * that was merely still connecting — and a fixed three seconds is the same mistake with a
+	 * larger number: measured here, that handshake takes anywhere from 1.5s to over 4s on the same
+	 * connection, so the constant that passes on a good evening reports a broken download on a bad
+	 * one. What the step is actually asserting is that bytes arrive after the dialog is closed, so
+	 * it waits for one and gives up only when waiting has stopped being plausible.
+	 */
+	const deadline = Date.now() + 20_000;
+	let after = before;
+	while (after.received <= before.received && after.at === "downloading" && Date.now() < deadline) {
+		await wait(250);
+		after = JSON.parse(await phase());
+	}
+	say(`   ${before.received} → ${after.received} 字节（${after.at}）`);
+	if (!(after.received > before.received)) throw new Error("关掉弹窗之后下载停了");
+	await shot("4-downloading-after-close");
+	if (await hoverBadge()) await shot("4b-downloading-hover");
 	await unhoverBadge();
 
-	say("4. 暂停");
-	await app.evaluate(`window.lyra.updates.pause()`);
+	say("5. 再点角标：应当能回到弹窗，并且看到进度");
+	await clickBadge();
 	await wait(400);
+	if (!(await dialogOpen())) throw new Error("关掉之后再点角标进不去弹窗——这正是被报上来的问题");
+	await shot("5-reopened", true);
+
+	say("6. 暂停");
+	await press("暂停");
+	await wait(600);
 	const paused = JSON.parse(await phase());
 	say(`   ${JSON.stringify(paused)}`);
 	if (paused.at !== "paused") throw new Error(`暂停之后应当是 paused，实际是 ${paused.at}`);
-	await shot("4-paused");
+	await shot("6-dialog-paused", true);
 
-	say("5. 打开弹窗看暂停态");
-	await app.evaluate(`document.querySelector(".ly-update-dot").click()`);
-	await wait(600);
-	await shot("5-dialog-paused", true);
+	say("7. 按「以后再说」：有 60MB 在磁盘上，角标不该跟着消失");
+	/*
+	 * 以后再说 answers "there is a new version". It does not answer "you have 60MB of one paused on
+	 * disk" — and hiding that would leave the only way to resume or discard it off screen. The rule
+	 * is in `shouldShow` and covered by a unit test; this is it happening in a window.
+	 */
+	await press("以后再说");
+	await wait(400);
+	if (await dialogOpen()) throw new Error("「以后再说」没有关掉弹窗");
+	if (!(await badgeThere())) throw new Error("下载还暂停着，角标不该被「以后再说」藏起来");
+	say("   ✓ 弹窗关了，角标留着");
+	await shot("7-dismissed-still-there");
 
-	say("6. 继续，然后马上关掉弹窗——下载应当照常进行");
-	await app.evaluate(`(() => {
-		const go = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("继续下载"));
-		if (!go) throw new Error("没有找到继续下载按钮");
-		go.click();
-		return true;
-	})()`);
-	await wait(150);
-	// Escape is the ordinary way out of a dialog, and the one the old version had to ignore.
-	await app.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
-	await wait(150);
-	const closed = await app.evaluate<boolean>(`!document.body.innerText.includes("有新版本可以更新")`);
-	say(`   弹窗关掉了：${closed}`);
-
-	const before = JSON.parse(await phase());
-	await wait(700);
-	const after = JSON.parse(await phase());
-	say(`   关窗后：${before.received} → ${after.received} 字节（${after.at}）`);
-	const moved = after.at === "preparing" || after.at === "ready" || after.at === "failed" || after.received > before.received;
-	if (!moved) throw new Error("关掉弹窗之后下载停了——这正是要修的那件事");
-	say("   ✓ 关掉弹窗，下载照常进行");
-	await shot("6-after-close");
-
-	say("7. 走到底，看它怎么收场");
-	await wait(6000);
+	say("8. 回到弹窗把下载取消掉——这下才真的没有东西可报了，角标该走");
+	await clickBadge();
+	await wait(400);
+	if (!(await dialogOpen())) throw new Error("「以后再说」之后点角标进不去弹窗");
+	await press("取消下载");
+	await wait(800);
 	say(`   ${await phase()}`);
-	await app.evaluate(`document.querySelector(".ly-update-dot")?.click()`);
+	if (await badgeThere()) throw new Error("已经取消并且说过「以后再说」，角标还在");
+	say("   ✓ 角标消失了——这一刻，更新在界面上已经无处可寻");
+	await shot("8-gone");
+
+	say("9. 从设置 → 常规 → 关于 找回来");
+	await app.evaluate(`document.querySelector(".ly-sidebar-foot button").click()`);
 	await wait(600);
-	await shot("7-final-dialog", true);
+	await press("常规");
+	await wait(600);
+	// Scrolled into view before photographing: 关于 is the last section of a long page, and a
+	// full-window shot of the top of it proves only that the page still scrolls.
+	const about = await app.evaluate<string>(`(() => {
+		const row = [...document.querySelectorAll("div")].find((d) => d.textContent?.trim().startsWith("版本当前"));
+		row?.scrollIntoView({ block: "center" });
+		return row?.textContent?.trim().slice(0, 80) ?? "(没有找到关于区块)";
+	})()`);
+	await wait(500);
+	say(`   ${about}`);
+	if (!about.includes(latest)) throw new Error(`关于区块没有提到新版本 ${latest}：${about}`);
+	await shot("9-about", true);
+
+	await press("查看更新");
+	await wait(500);
+	if (!(await dialogOpen())) throw new Error("设置里的「查看更新」没有打开弹窗");
+	say("   ✓ 「以后再说」之后仍然回得来");
+	await shot("10-about-dialog", true);
+
+	say("10. 从这里重新下载，走到底");
+	await press("下载安装");
+	await wait(20000);
+	/*
+	 * `failed: 开发模式下不做就地更新` is the correct ending here, not a fault.
+	 *
+	 * The executable this runs is Electron's own bundle inside `node_modules`, renamed to Lyra.app;
+	 * swapping it for a release would replace the runtime `pnpm dev` depends on. So the last step
+	 * refuses on purpose, and what this photograph is for is that the refusal arrives as a phase
+	 * with a sentence in it rather than as a button that stops responding.
+	 */
+	say(`   ${await phase()}`);
+	await shot("11-final", true);
 } finally {
 	await app.stop();
 }

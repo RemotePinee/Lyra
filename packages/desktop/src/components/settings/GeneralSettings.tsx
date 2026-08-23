@@ -9,6 +9,7 @@ import {
   Segmented,
   Toggle,
 } from "./controls.tsx";
+import { UpdateSection } from "./UpdateSection.tsx";
 
 const EDITORS = [
   "Zed",
@@ -118,7 +119,7 @@ export function GeneralSettings() {
       </Card>
 
       <SectionTitle>常规</SectionTitle>
-      <Card>
+      <Card className="mb-9">
         <Row
           title="默认文件打开目标"
           detail="点击文件路径时用哪个应用打开"
@@ -194,6 +195,14 @@ export function GeneralSettings() {
           }
         />
       </Card>
+
+      {/*
+       * The version, and the way back to an update that was waved off.
+       *
+       * Here rather than in a page of its own: 「我在用哪个版本」 is asked in the same breath as
+       * 「这是什么环境」, which is the row directly above it.
+       */}
+      <UpdateSection />
     </div>
   );
 }

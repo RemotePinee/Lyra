@@ -18,69 +18,21 @@
  * held the screen for as long as it took.
  *
  * Clicking always opens the dialog, in every phase, including while downloading. Pausing from a
- * 26px circle would be a control small enough to hit by accident on the way to something else, and
+ * 20px circle would be a control small enough to hit by accident on the way to something else, and
  * what it would interrupt is the longest operation in the app.
+ *
+ * 以后再说 takes it off screen, which is the point of saying so — and for a while that made this
+ * the only door into the dialog and a one-way one, since answering the announcement removed the
+ * thing you would press to change your mind. 设置 → 关于 is now the way back, and the way in for
+ * anyone who wants to check without being asked.
  */
 
 import { AlertTriangle, ArrowDownToLine, Pause, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import { useUpdate } from "../update/store.ts";
 import { fractionOf, labelFor, shouldShow, type Phase } from "../update/view.ts";
 import { UpdateDialog } from "./modals/UpdateDialog.tsx";
-
-type Info = Awaited<ReturnType<typeof window.lyra.updates.check>>;
-
-/** Rechecked this often while the window stays open; the main process caches under it. */
-const EVERY_MS = 6 * 60 * 60 * 1000;
-
-/**
- * Everything the badge and the dialog both need, read from the one place that owns it.
- *
- * A hook rather than two copies of these effects: the badge and the dialog are two views of one
- * download, and the way to keep two views agreeing is to not give them separate state to disagree
- * with. `phase` comes from the main process — asked once on mount, then pushed.
- */
-export function useUpdate(): { info: Info | null; phase: Phase } {
-	const [info, setInfo] = useState<Info | null>(null);
-	const [phase, setPhase] = useState<Phase>({ at: "idle" });
-
-	useEffect(() => {
-		let alive = true;
-		const check = () => {
-			void window.lyra.updates
-				.check()
-				.then((next) => alive && setInfo(next))
-				// The check is the app's business; its failure is not the user's.
-				.catch(() => {});
-		};
-		check();
-		const timer = window.setInterval(check, EVERY_MS);
-		return () => {
-			alive = false;
-			window.clearInterval(timer);
-		};
-	}, []);
-
-	useEffect(() => {
-		let alive = true;
-		/*
-		 * Asked once, because a download already in progress emits nothing until its next chunk — and
-		 * a *paused* one emits nothing ever, since only the user resumes it. A window that opened
-		 * mid-download and only listened would draw an idle badge over a running download.
-		 */
-		void window.lyra.updates
-			.state?.()
-			.then((current) => alive && setPhase(current))
-			.catch(() => {});
-		const stop = window.lyra.updates.onProgress((next) => alive && setPhase(next));
-		return () => {
-			alive = false;
-			stop();
-		};
-	}, []);
-
-	return { info, phase };
-}
 
 export function UpdateBadge({ compact = false }: { compact?: boolean }) {
 	const { info, phase } = useUpdate();
@@ -94,15 +46,22 @@ export function UpdateBadge({ compact = false }: { compact?: boolean }) {
 
 	const fraction = fractionOf(phase);
 	/*
-	 * The size of the `?` beside it, near enough — not the size of the row.
+	 * Sized against its neighbours, not against the row.
 	 *
-	 * It was the row's full height for one build, and it was a filled blue disc, which made the
-	 * loudest thing in the sidebar a notice about a version number: the button next to it is a 16px
-	 * outline and the settings glyph is 16px, so a 34px solid circle read as a balloon that had
-	 * drifted in. An announcement earns colour, not площадь.
+	 * It was the row's full height once — a 34px disc of saturated blue beside a 16px settings
+	 * glyph and a 16px outlined `?`, which made the loudest thing in the sidebar a notice about a
+	 * version number. Shrinking it to 22 helped and did not settle it, because the weight was never
+	 * only the diameter: a filled circle in an accent colour outweighs a hairline outline at any
+	 * size, and next to two 16px line glyphs it still read as something that had drifted in from
+	 * another application.
+	 *
+	 * So it is 20px now, and the fill went with it — see `.ly-update-dot`, which is a wash of the
+	 * accent behind a glyph drawn in it, the same treatment the `Badge` in settings uses. That is
+	 * the register this belongs in: coloured, so it is visibly an announcement rather than a
+	 * control, and quiet, because nothing here is urgent.
 	 */
-	const size = compact ? 26 : 22;
-	const glyph = compact ? 13 : 11;
+	const size = compact ? 22 : 20;
+	const glyph = compact ? 12 : 11;
 
 	return (
 		<>
@@ -193,6 +152,10 @@ function ProgressRing({ fraction, spinning, inset }: { fraction: number; spinnin
 	return (
 		<svg
 			aria-hidden
+			// Named, because the glyph in the middle is an SVG too — `.ly-update-dot svg` matches the
+			// warning triangle of a *failed* download just as happily, which is how a check for "the
+			// ring is drawn" came to pass in the one phase that has no ring.
+			data-ring
 			viewBox="0 0 24 24"
 			style={{ inset: -inset }}
 			className={`absolute -rotate-90 ${spinning ? "ly-spin" : ""}`}

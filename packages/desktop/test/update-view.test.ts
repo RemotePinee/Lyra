@@ -22,7 +22,9 @@ import {
 	labelFor,
 	mb,
 	PHASES,
+	readyNote,
 	shouldShow,
+	versionNote,
 	type Phase,
 } from "../src/update/view.ts";
 
@@ -130,6 +132,35 @@ test("取消 is offered only when there is something to throw away", () => {
 test("取消 is not offered once it is downloaded and waiting on a restart", () => {
 	// There is nothing left to cancel: the bytes are unpacked and the old app is still running.
 	assert.equal(controlsFor({ at: "ready", relaunch: true }).cancel, false);
+	assert.equal(controlsFor({ at: "ready", relaunch: false }).cancel, false);
+});
+
+/*
+ * The two endings of `ready`.
+ *
+ * macOS unpacks the update and can restart into it; Windows and Linux hand an installer to the OS
+ * and the rest happens in a window this app does not own. Drawn from `at` alone — which is what a
+ * release shipped — the second one gets 立即重启, a button wired to a relaunch that has nothing
+ * staged to relaunch into, and therefore does nothing at all when pressed. Nothing about that is
+ * visible in the component: it is one `phase.at === "ready"` reading exactly as intended.
+ */
+
+test("a staged update offers a restart; an opened installer does not pretend to", () => {
+	assert.equal(confirmLabel({ at: "ready", relaunch: true }), "立即重启");
+	assert.equal(confirmLabel({ at: "ready", relaunch: false }), "重新打开安装包");
+});
+
+test("the badge says which ending this is, in the space it has", () => {
+	assert.equal(labelFor({ at: "ready", relaunch: true }, "0.3.2"), "重启更新");
+	assert.equal(labelFor({ at: "ready", relaunch: false }, "0.3.2"), "去安装");
+});
+
+test("the note under a finished download describes what actually happens next", () => {
+	assert.match(readyNote(true), /重启 Lyra/);
+	// The one that mattered: this used to promise a restart on a platform where the installer is
+	// what finishes the job, so the sentence and the button beside it were both describing macOS.
+	assert.match(readyNote(false), /安装程序/);
+	assert.doesNotMatch(readyNote(false), /重启 Lyra 即可/);
 });
 
 /* Whether the badge is on screen at all. */
@@ -165,6 +196,51 @@ test("a download in flight outranks having been dismissed", () => {
 test("a failed download that was dismissed stays hidden", () => {
 	// Nothing is running and the announcement was answered; re-raising it would be nagging.
 	assert.equal(shouldShow(update, "0.3.2", { at: "failed", error: "x", received: 0, total: 0 }), false);
+});
+
+/*
+ * The line under 版本 in 设置 → 关于.
+ *
+ * The case worth having a test for is the third one, which for a while was not a case at all: a
+ * check that could not reach GitHub returns the running version as the newest, so folding it in
+ * with "up to date" produced an app that told someone with no network they had the latest release.
+ */
+
+test("a failed check is not reported as being up to date", () => {
+	const offline = { current: "0.3.1", latest: "0.3.1", available: false, checked: false };
+	const note = versionNote(offline, { at: "idle" });
+	assert.doesNotMatch(note, /最新/, `离线时说了：${note}`);
+	assert.match(note, /网络/);
+});
+
+test("a successful check on the newest version says so", () => {
+	const current = { current: "0.3.2", latest: "0.3.2", available: false, checked: true };
+	assert.match(versionNote(current, { at: "idle" }), /已经是最新版本/);
+});
+
+test("an available update carries the phase, so the row means something mid-download", () => {
+	const update = { current: "0.3.1", latest: "0.3.2", available: true, checked: true };
+	assert.match(versionNote(update, { at: "idle" }), /新版本 0\.3\.2/);
+	assert.match(versionNote(update, { at: "downloading", received: 45, total: 100 }), /下载中 45%/);
+	assert.match(versionNote(update, { at: "paused", received: 45, total: 100 }), /已暂停 45%/);
+});
+
+test("the version is named in every phase, and never as NaN or undefined", () => {
+	for (const phase of PHASES) {
+		for (const info of [
+			{ current: "0.3.1", latest: "0.3.2", available: true, checked: true },
+			{ current: "0.3.2", latest: "0.3.2", available: false, checked: true },
+			{ current: "0.3.2", latest: "0.3.2", available: false, checked: false },
+		]) {
+			const note = versionNote(info, phase);
+			assert.match(note, /当前 0\.3\./, `${phase.at} 没有说当前版本：${note}`);
+			assert.doesNotMatch(note, /NaN|undefined|Infinity/, `${phase.at} 的文案是：${note}`);
+		}
+	}
+});
+
+test("before the first answer arrives it says so, rather than inventing a version", () => {
+	assert.equal(versionNote(null, { at: "idle" }), "正在读取版本…");
 });
 
 test("bytes are rendered as something a person reads", () => {

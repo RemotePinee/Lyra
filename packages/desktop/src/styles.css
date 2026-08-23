@@ -1252,14 +1252,26 @@
 /*
  * The update dot, and the phases it goes through.
  *
- * Colour carries the phase, because the badge is 26px and there is no room for a word until it is
+ * Colour carries the phase, because the badge is 20px and there is no room for a word until it is
  * hovered: blue while there is something to fetch, quiet while it is paused, green once it is ready
  * to restart, red when it failed. Someone glancing at the corner of the window gets the state
  * without reading anything, which is the entire job of a thing this size.
+ *
+ * A wash of the colour with the glyph drawn in it, rather than a solid disc with a white glyph.
+ * That was the version people kept reporting as "too big" while the diameter was already down to
+ * 22px, and they were describing weight rather than size: it shares its row with a 16px hairline
+ * settings glyph and a 16px outlined `?`, and a saturated fill outweighs both at any diameter. The
+ * wash keeps the colour — which is the announcement, and the reason this is not a grey glyph — and
+ * gives back the contrast that made it the loudest thing in the sidebar. It is the same treatment
+ * as `Badge` in settings, which is the register a notice belongs in.
+ *
+ * The percentages are a compromise the theme forces: `--color-ink` is near-white on dark, so a
+ * fixed alpha that reads as a tint on one theme reads as a spotlight on the other. These are the
+ * pair that hold up in both.
  */
 .ly-update-dot {
-  background: var(--color-info);
-  color: #fff;
+  background: color-mix(in srgb, var(--color-info) 16%, transparent);
+  color: var(--color-info);
   /*
    * Width is not in the list, deliberately.
    *
@@ -1269,25 +1281,42 @@
    */
   transition:
     background-color var(--ly-t-base) var(--ly-e-soft),
-    opacity var(--ly-t-quick) var(--ly-e-soft);
+    color var(--ly-t-base) var(--ly-e-soft);
 }
 
+/* Hover deepens the wash rather than fading the whole control: this is the one moment the badge is
+   being addressed, and a control that dims when pressed towards reads as going away. */
 .ly-update-dot:hover {
-  opacity: 0.92;
+  background: color-mix(in srgb, var(--color-info) 28%, transparent);
 }
 
 /* Paused: still there, plainly not working. Reads as a state rather than as an announcement. */
 .ly-update-dot[data-phase="paused"] {
-  background: color-mix(in srgb, var(--color-ink) 42%, transparent);
+  background: color-mix(in srgb, var(--color-ink) 10%, transparent);
+  color: var(--color-ink-muted);
+}
+
+.ly-update-dot[data-phase="paused"]:hover {
+  background: color-mix(in srgb, var(--color-ink) 16%, transparent);
 }
 
 /* Downloaded and waiting on a restart — the one phase where the next move is the user's. */
 .ly-update-dot[data-phase="ready"] {
-  background: var(--color-ok);
+  background: color-mix(in srgb, var(--color-ok) 18%, transparent);
+  color: var(--color-ok);
+}
+
+.ly-update-dot[data-phase="ready"]:hover {
+  background: color-mix(in srgb, var(--color-ok) 30%, transparent);
 }
 
 .ly-update-dot[data-phase="failed"] {
-  background: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+.ly-update-dot[data-phase="failed"]:hover {
+  background: color-mix(in srgb, var(--color-danger) 28%, transparent);
 }
 
 /*

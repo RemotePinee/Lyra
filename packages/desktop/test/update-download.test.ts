@@ -472,6 +472,16 @@ test("a version that merely starts the same way is not mistaken for the current 
 	assert.deepEqual(staleDownloads(["lyra-update-0.3.1"], "0.3.1"), []);
 });
 
+test("the version being downloaded right now is spared, even when it is no longer the newest", () => {
+	/*
+	 * A release published mid-download makes the running download stale by this measure, and the
+	 * sweep runs on every check — so the directory being written into is exactly the one this would
+	 * delete. The only case where tidying up could take something someone is waiting for.
+	 */
+	const entries = ["lyra-update-0.3.0", "lyra-update-0.3.1", "lyra-update-0.3.2"];
+	assert.deepEqual(staleDownloads(entries, ["0.3.2", "0.3.1"]), ["lyra-update-0.3.0"]);
+});
+
 test("sweeping really removes the directories, and leaves the current one alone", async () => {
 	const root = await workdir();
 	for (const version of ["0.2.9", "0.3.0", "0.3.1"]) {

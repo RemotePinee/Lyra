@@ -315,10 +315,19 @@ export function downloadDir(root: string, version: string): string {
 	return join(root, `lyra-update-${version}`);
 }
 
-/** The directories `downloadDir` would have made, other than the one for `keep`. */
-export function staleDownloads(entries: string[], keep: string): string[] {
+/**
+ * The directories `downloadDir` would have made, other than the ones for `keep`.
+ *
+ * `keep` is plural because "the newest release" and "the version being downloaded right now" are
+ * not always the same version. A release published mid-download makes them differ for as long as
+ * the download lasts, and sweeping on the newest alone would then delete the directory currently
+ * being written into — the one case where this tidying could destroy something someone is waiting
+ * for.
+ */
+export function staleDownloads(entries: string[], keep: string | string[]): string[] {
 	const mine = `lyra-update-`;
-	return entries.filter((name) => name.startsWith(mine) && name !== `${mine}${keep}`);
+	const kept = new Set((Array.isArray(keep) ? keep : [keep]).map((version) => `${mine}${version}`));
+	return entries.filter((name) => name.startsWith(mine) && !kept.has(name));
 }
 
 /**
@@ -333,7 +342,7 @@ export function staleDownloads(entries: string[], keep: string): string[] {
  * Best-effort by design: a directory that will not delete is not worth a word to the user, and
  * certainly not worth failing an update over.
  */
-export async function sweepDownloads(root: string, keep: string): Promise<void> {
+export async function sweepDownloads(root: string, keep: string | string[]): Promise<void> {
 	const entries = await readdir(root).catch((): string[] => []);
 	for (const name of staleDownloads(entries, keep)) {
 		await rm(join(root, name), { recursive: true, force: true }).catch(() => {});

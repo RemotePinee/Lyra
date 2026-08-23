@@ -44,6 +44,17 @@ export interface UpdateInfo {
 	current: string;
 	latest: string;
 	available: boolean;
+	/**
+	 * Whether this answer came from GitHub, or is what we say when we could not ask.
+	 *
+	 * The two are not the same claim and were reported as the same one: a failed check returns the
+	 * running version as the newest, which is indistinguishable from a successful check on an app
+	 * that is up to date — so 设置 → 关于 told someone with no network that they were on the latest
+	 * version. That is a wrong answer to the one question they pressed a button to ask. The badge
+	 * still treats both as "nothing to announce", which is right; only the surface that was *asked*
+	 * needs to know the difference.
+	 */
+	checked: boolean;
 	/** The release body, as written. Markdown, shown as text. */
 	notes: string;
 	url: string;
@@ -97,6 +108,16 @@ let cached: { at: number; info: UpdateInfo } | null = null;
 /** An unpacked update waiting for the user to say when. Cleared once it has been used. */
 let pending: { staged: string; target: string } | null = null;
 
+/**
+ * An installer already handed to the OS, on the platforms where that is the whole of installing.
+ *
+ * Windows and Linux end at `shell.openPath`, and what happens next is a window this app does not
+ * own — one that is closed by accident often enough that "it downloaded and then nothing happened"
+ * is the ordinary way for that ending to be experienced. Keeping the path is what lets the dialog
+ * offer to open it again instead of leaving the file somewhere in a temp directory.
+ */
+let opened: string | null = null;
+
 async function fetchLatest(current: string): Promise<UpdateInfo> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -124,6 +145,7 @@ async function fetchLatest(current: string): Promise<UpdateInfo> {
 			current,
 			latest: latest || current,
 			available: offerable && isNewer(latest, current),
+			checked: true,
 			notes: (release.body ?? "").trim(),
 			url: release.html_url ?? `https://github.com/${REPO}/releases/latest`,
 			publishedAt: release.published_at ? Date.parse(release.published_at) : null,
@@ -138,6 +160,8 @@ const nothing = (current: string): UpdateInfo => ({
 	current,
 	latest: current,
 	available: false,
+	// The one field that says this is not an answer. See `UpdateInfo.checked`.
+	checked: false,
 	notes: "",
 	url: `https://github.com/${REPO}/releases`,
 	publishedAt: null,
@@ -162,8 +186,12 @@ export function registerUpdateIpc(): void {
 			 * piled up on the machine this was written on, 495MB for one of them. Done here because a
 			 * check is the only moment the newest version is known, and detached because a sweep that
 			 * fails is not a reason to withhold an update.
+			 *
+			 * The version being downloaded right now is spared as well. A release published while a
+			 * download is running makes it stale by this measure, and deleting the directory being
+			 * written into is the one way this tidying could take something someone is waiting for.
 			 */
-			void sweepDownloads(tmpdir(), info.latest);
+			void sweepDownloads(tmpdir(), active ? [info.latest, active.version] : info.latest);
 			return info;
 		} catch {
 			/*
@@ -183,8 +211,24 @@ export function registerUpdateIpc(): void {
 	 * One at a time, keyed by the version it is for: there is only ever one newest release, and a
 	 * second download of a different one would be a race for the same directory. A new version
 	 * replaces it — see `downloadFor`.
+	 *
+	 * `unwatch` is kept because superseding one is not just a matter of cancelling it. `cancel()` is
+	 * asynchronous and ends by announcing `idle`; if the replacement has already started by then,
+	 * that announcement lands *after* the new download's first `downloading` and wipes it from every
+	 * window — a progress ring that vanishes a moment after it appeared. Unsubscribing first means
+	 * the old download's dying words go nowhere, which is where they belong.
 	 */
-	let active: { version: string; download: UpdateDownload } | null = null;
+	let active: { version: string; download: UpdateDownload; unwatch: () => void } | null = null;
+
+	/**
+	 * Where the download is, as far as the whole app is concerned.
+	 *
+	 * Held here rather than read off `active.download` on demand, because not every phase belongs to
+	 * a downloader: "there is no installer for this machine" is a failure with nothing to attach it
+	 * to, and asking a downloader that was never created produces `idle` — a window that then draws
+	 * nothing at all, which is exactly how a pressed button comes to look like it did nothing.
+	 */
+	let phase: DownloadPhase = { at: "idle" };
 
 	/**
 	 * Every open window hears every change.
@@ -194,9 +238,10 @@ export function registerUpdateIpc(): void {
 	 * multi-window desktop, must not orphan a 130MB fetch — and a window that opens halfway through
 	 * one should be able to draw it.
 	 */
-	const broadcast = (phase: DownloadPhase) => {
+	const broadcast = (next: DownloadPhase) => {
+		phase = next;
 		for (const window of BrowserWindow.getAllWindows()) {
-			if (!window.isDestroyed()) window.webContents.send("updates:progress", phase);
+			if (!window.isDestroyed()) window.webContents.send("updates:progress", next);
 		}
 	};
 
@@ -209,7 +254,8 @@ export function registerUpdateIpc(): void {
 		if (active?.version === version) return active.download;
 
 		// A different version supersedes whatever was going: stop it and drop its partial, or its
-		// bytes sit in the temp directory until the OS clears it.
+		// bytes sit in the temp directory until the OS clears it. Unsubscribed first — see `active`.
+		active?.unwatch();
 		void active?.download.cancel();
 
 		const dir = downloadDir(tmpdir(), version);
@@ -219,8 +265,8 @@ export function registerUpdateIpc(): void {
 			size: asset.size,
 			agent: `Lyra/${info.current}`,
 		});
-		download.watch(broadcast);
-		active = { version, download };
+		const unwatch = download.watch(broadcast);
+		active = { version, download, unwatch };
 		return download;
 	};
 
@@ -262,6 +308,9 @@ export function registerUpdateIpc(): void {
 			// Windows and Linux still hand the file to the OS: those are installers, and on Linux
 			// a .deb needs a privilege this process does not have.
 			await shell.openPath(file);
+			// Remembered so 重新打开安装包 has something to open. The installer window is easy to
+			// dismiss by accident, and without this the only way back to it is the file system.
+			opened = file;
 			download?.finish(false);
 		} catch (error) {
 			download?.fail(error instanceof Error ? error.message : "安装失败");
@@ -269,7 +318,7 @@ export function registerUpdateIpc(): void {
 	};
 
 	/** What is happening right now, for a window that just opened or just came back. */
-	ipcMain.handle("updates:state", (): DownloadPhase => active?.download.state ?? { at: "idle" });
+	ipcMain.handle("updates:state", (): DownloadPhase => phase);
 
 	/**
 	 * Start, or carry on from a pause.
@@ -280,24 +329,54 @@ export function registerUpdateIpc(): void {
 	 */
 	ipcMain.handle("updates:download", async (_event, version: string): Promise<DownloadPhase> => {
 		const found = downloadFor(version);
-		if ("error" in found) return { at: "failed", error: found.error, received: 0, total: 0 };
+		/*
+		 * Announced, not just returned.
+		 *
+		 * The caller is a click handler that does not await this — it draws whatever `onProgress`
+		 * tells it, like every other phase does. Returning the failure and nothing else meant this
+		 * one path was the exception: the window stayed on `idle`, the button kept saying 下载安装,
+		 * and pressing it looked like pressing a dead control. A failure nobody is told about is
+		 * indistinguishable from a button that does not work.
+		 */
+		if ("error" in found) {
+			const failed: DownloadPhase = { at: "failed", error: found.error, received: 0, total: 0 };
+			broadcast(failed);
+			return failed;
+		}
 
-		const phase = await found.start();
-		if (phase.at === "preparing") {
+		const reached = await found.start();
+		if (reached.at === "preparing") {
 			const info = cached?.info;
 			if (info?.asset) await installDownloaded(version, join(downloadDir(tmpdir(), version), info.asset.name));
 		}
-		return active?.download.state ?? phase;
+		return phase;
 	});
 
 	ipcMain.handle("updates:pause", async (): Promise<DownloadPhase> => {
 		await active?.download.pause();
-		return active?.download.state ?? { at: "idle" };
+		return phase;
 	});
 
 	ipcMain.handle("updates:cancel", async (): Promise<DownloadPhase> => {
-		await active?.download.cancel();
-		return { at: "idle" };
+		// `cancel()` announces `idle` itself when there is a download to cancel; this covers the case
+		// where the phase is a failure that never had one — 取消 must clear that too, or the badge
+		// keeps a red dot for a download that no longer exists.
+		if (active) await active.download.cancel();
+		else broadcast({ at: "idle" });
+		return phase;
+	});
+
+	/**
+	 * Open the installer again, on the platforms where installing is a window we do not own.
+	 *
+	 * The one thing `relaunch` cannot do: on Windows and Linux there is nothing staged to swap in,
+	 * so 立即重启 would be a button with no work behind it — which is what it was, silently, for a
+	 * release. Here the honest offer is to put the installer back on screen.
+	 */
+	ipcMain.handle("updates:reopen", async (): Promise<boolean> => {
+		if (!opened) return false;
+		const failure = await shell.openPath(opened);
+		return failure === "";
 	});
 
 	/**
