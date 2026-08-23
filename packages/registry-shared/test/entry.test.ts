@@ -126,3 +126,34 @@ test("slugging a name gives something an id check accepts", () => {
 	assert.equal(slugOf("Chrome DevTools!!"), "chrome-devtools");
 	assert.ok(isValidId(slugOf("Sequential Thinking")));
 });
+
+test("compatibility is read off the archive, and a plugin manifest only counts for a plugin", async () => {
+	const { clientsFor } = await import("../src/clients.ts");
+	const none = { skills: false, mcp: false, claudePlugin: false, lyraPlugin: false, codexPlugin: false };
+
+	// Skills are the portable case: every agent that reads SKILL.md can install them.
+	assert.deepEqual(clientsFor("skill", { ...none, skills: true }), ["claude-code", "codex", "pi", "lyra"]);
+
+	/*
+	 * The bug this exists to prevent. Context7 is a `.mcp.json` plus a `.lyra-plugin/` directory
+	 * holding a name and an icon — metadata, not a plugin. Counting that directory as evidence
+	 * advertised it as installable into Lyra and Codex as a plugin, which it is not.
+	 */
+	assert.deepEqual(clientsFor("mcp", { ...none, mcp: true, lyraPlugin: true }), ["mcp"]);
+
+	// For something that really is a plugin, the manifest does say which product's format it is.
+	assert.deepEqual(clientsFor("plugin", { ...none, skills: true, lyraPlugin: true }), [
+		"claude-code",
+		"codex",
+		"pi",
+		"lyra",
+	]);
+	assert.deepEqual(clientsFor("plugin", { ...none, claudePlugin: true }), ["claude-code"]);
+
+	// Codex is never inferred from Lyra's directory, only from its own.
+	assert.deepEqual(clientsFor("plugin", { ...none, lyraPlugin: true }), ["lyra"]);
+	assert.deepEqual(clientsFor("plugin", { ...none, codexPlugin: true }), ["codex"]);
+
+	// Nothing recognisable claims nothing, rather than claiming everything.
+	assert.deepEqual(clientsFor("plugin", none), []);
+});

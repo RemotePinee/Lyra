@@ -46,8 +46,19 @@ export function isEntrySort(value: unknown): value is EntrySort {
 }
 
 /** A catalogue row: an index entry plus what only the platform knows about it. */
+/**
+ * Where the picture behind `logo` is currently coming from.
+ *
+ * `logo` is always our own URL, which is what makes a catalogue drawable by a viewer who cannot
+ * reach GitHub — and what makes the source invisible. A maintainer deciding whether to upload a
+ * replacement needs to know whether they would be overriding the author's own icon or filling a
+ * gap, and those are the same picture-shaped hole from the outside.
+ */
+export type IconSource = "uploaded" | "bundled" | "remote" | "none";
+
 export interface EntrySummary extends RegistryEntry {
 	status: EntryStatus;
+	iconSource?: IconSource;
 	/** GitHub login of whoever claimed it here — not necessarily the code's author. */
 	publisher?: string;
 	publisherAvatar?: string;
@@ -61,6 +72,12 @@ export interface EntryDetail extends EntrySummary {
 	versions: VersionInfo[];
 	/** The README the build found in the bundle, as raw markdown. Rendered by the client. */
 	readme?: string;
+	/**
+	 * Directory the README's relative links resolve against, relative to the repository root.
+	 *
+	 * `""` means the repository root, which is where a bundle with no README of its own gets one.
+	 */
+	readmeBase?: string;
 	/** Present only for the entry's own publisher or an admin. */
 	reviewNote?: string;
 }

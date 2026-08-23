@@ -127,3 +127,82 @@ test("a main process that has never heard of MCP bundles does not take the page 
 	assert.equal(merge([plugin("waza")], missing, [], []).length, 1);
 	assert.deepEqual(merge([], [bundle("context7", [server("c7")])], noSettings, [])[0].servers, []);
 });
+
+/*
+ * What a card is allowed to say about a bundle, and where each fact comes from.
+ *
+ * The rule is the same one the name and description already follow, extended to the rest: what is
+ * installed is what is running, so a manifest on disk outranks an index that may have moved on.
+ * The exceptions are the facts no directory can hold — nobody's disk knows how many other people
+ * installed it, which agents can use it, or what a maintainer typed into a console.
+ */
+
+test("an entry's own fields reach the card", () => {
+	const rich: RegistryEntry = {
+		...entry("waza", "skill"),
+		version: "1.2.3",
+		author: "tw93",
+		downloads: 42,
+		skillCount: 8,
+		clients: ["claude-code", "lyra"],
+		tagline: "五个字",
+	};
+	const [item] = merge([], [], [], [{ from: "Lyra Registry", entry: rich }]);
+
+	assert.equal(item.version, "1.2.3");
+	assert.equal(item.author, "tw93");
+	assert.equal(item.downloads, 42);
+	assert.equal(item.skillCount, 8);
+	assert.deepEqual(item.clients, ["claude-code", "lyra"]);
+	assert.equal(item.tagline, "五个字");
+});
+
+test("the installed manifest wins over the index, and the index fills what it left blank", () => {
+	const installed = plugin("waza");
+	installed.manifest = { name: "waza", version: "0.9.0", author: { name: "本地作者" } };
+	const offered: RegistryEntry = { ...entry("waza", "plugin"), version: "2.0.0", author: "索引作者", downloads: 7 };
+
+	const [item] = merge([installed], [], [], [{ from: "r", entry: offered }]);
+
+	assert.equal(item.version, "0.9.0", "the copy on disk is the one running");
+	assert.equal(item.author, "本地作者");
+	// Nothing on disk counts installs, so this can only come from the index.
+	assert.equal(item.downloads, 7);
+});
+
+test("an installed bundle whose manifest says nothing takes the index's word", () => {
+	const bare = plugin("waza");
+	bare.manifest = { name: "waza" };
+	const offered: RegistryEntry = { ...entry("waza", "plugin"), version: "2.0.0", author: "索引作者" };
+
+	const [item] = merge([bare], [], [], [{ from: "r", entry: offered }]);
+
+	assert.equal(item.version, "2.0.0");
+	assert.equal(item.author, "索引作者");
+});
+
+test("a plugin reports the skills the loader actually found, not the number claimed", () => {
+	const withSkills = plugin("waza");
+	withSkills.skills = [
+		{ name: "a", description: "", dir: "/d/a", source: "user" },
+		{ name: "b", description: "", dir: "/d/b", source: "user" },
+	] as unknown as typeof withSkills.skills;
+	const offered: RegistryEntry = { ...entry("waza", "plugin"), skillCount: 99 };
+
+	const [item] = merge([withSkills], [], [], [{ from: "r", entry: offered }]);
+	assert.equal(item.skillCount, 2, "counted on disk beats claimed in an index");
+});
+
+test("an update is only claimed when the installed copy carries a comparable record", () => {
+	const known = plugin("waza");
+	known.origin = { id: "waza", installedAt: "2026-08-01T00:00:00.000Z", commit: "aaa" };
+	const moved: RegistryEntry = { ...entry("waza", "plugin"), commit: "bbb" };
+
+	assert.equal(merge([known], [], [], [{ from: "r", entry: moved }])[0].outdated, true);
+	assert.equal(merge([known], [], [], [{ from: "r", entry: { ...moved, commit: "aaa" } }])[0].outdated, false);
+
+	// Installed by hand, or before the ledger existed: no record, so nothing may be claimed.
+	assert.equal(merge([plugin("waza")], [], [], [{ from: "r", entry: moved }])[0].outdated, false);
+	// And nothing that is not installed can be behind anything.
+	assert.equal(merge([], [], [], [{ from: "r", entry: moved }])[0].outdated, false);
+});

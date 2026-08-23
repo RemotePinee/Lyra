@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { normalisePath, ownerAvatar, parseRepo, tarballUrl } from "../src/repo.ts";
+import { normalisePath, parseRepo, tarballUrl } from "../src/repo.ts";
 
 test("every form a repository is written in reaches the same pair", () => {
 	for (const raw of [
@@ -49,10 +49,6 @@ test("a tarball URL escapes its ref, because a branch name is user input", () =>
 	assert.equal(tarballUrl(ref, "main"), "https://codeload.github.com/kittors/Lyra/tar.gz/main");
 	// Slashes are legal in branch names (`feat/x`) and must not become path segments.
 	assert.equal(tarballUrl(ref, "feat/x"), "https://codeload.github.com/kittors/Lyra/tar.gz/feat%2Fx");
-});
-
-test("the owner avatar is derived, not stored", () => {
-	assert.equal(ownerAvatar(parseRepo("kittors/Lyra")!), "https://github.com/kittors.png?size=128");
 });
 
 test("a sub-path is kept when it stays inside the checkout", () => {

@@ -84,23 +84,30 @@ function KindMark({ kind, brandColor, size }: { kind: BundleKind; brandColor?: s
 			style={{
 				width: size,
 				height: size,
-				borderRadius: Math.round(size * 0.28),
-				// Mixed rather than set flat: a brand colour is chosen to be seen against white, and a
-				// 36px tile of it beside eight grey ones is a page where the loudest entry is whichever
-				// one filled in an optional field.
+				borderRadius: Math.round(size * 0.235),
+				/*
+				 * Mixed down, and graded rather than flat.
+				 *
+				 * Mixed because a brand colour is chosen to be legible against white, and a 38px tile
+				 * of it beside eight quiet ones makes the loudest thing on the page whichever author
+				 * filled in an optional field. Graded because a flat wash at 12% reads as a failed
+				 * image — the same fallback the platform serves for entries with no icon at all, and
+				 * these two have to look like one thing since they appear side by side in the same
+				 * grid. The numbers match `placeholder()` in the registry's icon route.
+				 */
 				...(colour
 					? {
-							background: `color-mix(in srgb, ${colour} 12%, transparent)`,
-							borderColor: `color-mix(in srgb, ${colour} 28%, transparent)`,
+							background: `linear-gradient(to bottom, color-mix(in srgb, ${colour} 16%, transparent), color-mix(in srgb, ${colour} 6%, transparent))`,
+							borderColor: `color-mix(in srgb, ${colour} 22%, transparent)`,
 							color: colour,
 						}
 					: {}),
 			}}
 			className={`flex shrink-0 items-center justify-center border ${
-				colour ? "" : "border-line-soft bg-card/60 text-ink-faint"
+				colour ? "" : "border-line-soft bg-gradient-to-b from-card to-card/40 text-ink-faint"
 			}`}
 		>
-			<Glyph size={Math.round(size * 0.46)} strokeWidth={1.7} />
+			<Glyph size={Math.round(size * 0.42)} strokeWidth={1.7} />
 		</span>
 	);
 }

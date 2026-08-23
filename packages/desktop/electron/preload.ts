@@ -182,7 +182,8 @@ const api: LyraApi = {
 		fetchRegistry: (url, force) => ipcRenderer.invoke("registry:fetch", url, force),
 		icon: (url) => ipcRenderer.invoke("registry:icon", url),
 		icons: (urls) => ipcRenderer.invoke("registry:icons", urls),
-		installFromRegistry: (entry, registryName) => ipcRenderer.invoke("registry:install", entry, registryName),
+		installFromRegistry: (entry, registryName, replace) =>
+			ipcRenderer.invoke("registry:install", entry, registryName, replace),
 		uninstall: (id) => ipcRenderer.invoke("registry:uninstall", id),
 	},
 	

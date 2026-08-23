@@ -12,6 +12,8 @@
  * not a replacement format.
  */
 
+import { isClientId, type ClientId } from "./clients.ts";
+
 /**
  * The three things a registry can offer, distinguished by where they land and what starts them.
  *
@@ -93,6 +95,22 @@ export interface RegistryEntry {
 	serverCount?: number;
 	/** The upstream commit this version was built from, so a build can be reproduced. */
 	commit?: string;
+	/**
+	 * Which agents can install this, derived from the archive's contents.
+	 *
+	 * Absent on a plain file-based index, which has no way to know — the field only means something
+	 * when something has read the bundle.
+	 */
+	clients?: ClientId[];
+	/**
+	 * A short line for a card, where the description is too long to be read.
+	 *
+	 * Written by a maintainer rather than derived: nothing in a manifest is short enough to be one,
+	 * and a truncated description is not a tagline — it is a description with the end cut off. A
+	 * client with room for a sentence should still show `description`; this is for the places that
+	 * have room for five words.
+	 */
+	tagline?: string;
 }
 
 /**
@@ -155,6 +173,11 @@ export function normalise(item: unknown): RegistryEntry | null {
 		skillCount: positive(raw.skillCount ?? raw.skill_count),
 		serverCount: positive(raw.serverCount ?? raw.server_count),
 		commit: pick(raw, "commit", "sha", "commitSha"),
+		clients: Array.isArray(raw.clients) ? raw.clients.filter(isClientId) : undefined,
+		// Only this one key. `summary` and `shortDescription` are already aliases for `description`
+		// above, so accepting them here would make an index that uses one of them produce a card
+		// showing the same sentence twice.
+		tagline: pick(raw, "tagline"),
 	};
 }
 

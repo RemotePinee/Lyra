@@ -18,7 +18,10 @@
  * registry says it is.
  */
 
-import type { BundleKind, McpBundle, McpServerConfig, Plugin, RegistryEntry, Skill } from "@lyra/core";
+import type { BundleKind, ClientId, InstallRecord, McpBundle, McpServerConfig, Plugin, RegistryEntry, Skill } from "@lyra/core";
+// A sub-entry, not the root: importing a value from `@lyra/core` pulls its whole index — and with
+// it `node:fs` — into this bundle. See AGENTS.md.
+import { isOutdated } from "@lyra/core/install-record";
 
 /** Bundles with nothing to file them under. Not a category anyone chose — see `groupByCategory`. */
 export const UNFILED = " unfiled";
@@ -61,6 +64,33 @@ export interface CatalogItem {
 	entry: RegistryEntry | null;
 	/** Which registry offered it, for the rare case of two offering the same name. */
 	from: string | null;
+
+	/*
+	 * What the card says about a bundle besides its name.
+	 *
+	 * Every one of these was already being fetched and thrown away: the platform has published
+	 * `version`, `author`, `downloads`, `skillCount` and `clients` since it existed, and the site
+	 * has shown all of them on its own cards the whole time. The desktop card drew a name and a
+	 * description, so the two views of the same catalogue disagreed about how much was known.
+	 *
+	 * Optional, all of them, because a bundle sitting in `~/.lyra/plugins` came from a directory
+	 * rather than an index and genuinely has no author, no download count and no version beyond
+	 * what its own manifest claims. A missing field is left out of the line rather than filled.
+	 */
+	/** A maintainer's short line, preferred over `description` where space is tight. */
+	tagline?: string;
+	version?: string;
+	author?: string;
+	downloads?: number;
+	/** How many skills it holds: counted on disk once installed, claimed by the index before that. */
+	skillCount?: number;
+	serverCount?: number;
+	/** Which agents can install it, derived by the platform from the archive's contents. */
+	clients?: ClientId[];
+	/** What the registry said this was when it was installed. Absent for anything not installed. */
+	origin?: InstallRecord;
+	/** Installed, and what the registry now offers is not what was installed. See `isOutdated`. */
+	outdated: boolean;
 }
 
 /** On disk, in whichever way this kind arrives — the question every "do I have this" check asks. */
@@ -152,6 +182,19 @@ export function merge(
 			servers: [],
 			entry: null,
 			from: null,
+			/*
+			 * The version on disk, and the author who wrote the manifest.
+			 *
+			 * The registry's copy of both is attached below and deliberately does not overwrite
+			 * these: what is installed is what is running, and a registry that has moved on since
+			 * should not relabel it. That is the same rule the name and description follow.
+			 */
+			version: plugin.manifest.version,
+			author: typeof plugin.manifest.author === "string" ? plugin.manifest.author : plugin.manifest.author?.name,
+			// Counted, not claimed — the loader already read the directory.
+			skillCount: plugin.skills.length,
+			origin: plugin.origin,
+			outdated: false,
 		});
 	}
 
@@ -174,6 +217,12 @@ export function merge(
 			servers: configured.filter((server) => server.origin?.bundle === bundle.id),
 			entry: null,
 			from: null,
+			version: bundle.manifest.version,
+			author: typeof bundle.manifest.author === "string" ? bundle.manifest.author : bundle.manifest.author?.name,
+			// What its `.mcp.json` declares, which is what install read to write the settings rows.
+			serverCount: bundle.servers.length,
+			origin: bundle.origin,
+			outdated: false,
 		});
 	}
 
@@ -186,6 +235,29 @@ export function merge(
 			if (!existing.description) existing.description = entry.description ?? "";
 			if (!existing.logo) existing.logo = entry.logo;
 			if (existing.category === UNFILED && entry.category) existing.category = entry.category;
+			/*
+			 * The same rule for everything the index also knows: fill the gaps, overwrite nothing.
+			 *
+			 * A manifest that named its author speaks for the bundle running on this machine; the
+			 * index's copy may be months stale. The exceptions below are the three the index is the
+			 * only possible source for — nothing on disk counts downloads, records who else can
+			 * install it, or knows what a maintainer wrote in a console.
+			 */
+			existing.tagline ??= entry.tagline;
+			existing.version ??= entry.version;
+			existing.author ??= entry.author;
+			existing.skillCount ??= entry.skillCount;
+			existing.serverCount ??= entry.serverCount;
+			existing.downloads = entry.downloads;
+			existing.clients = entry.clients;
+			/*
+			 * Whether what is on offer differs from what was installed.
+			 *
+			 * Only answerable here, which is why it is computed here rather than in either process:
+			 * the record comes from the main process's scan of the disk and the entry comes from a
+			 * registry this window fetched, and this is the first place both are in scope.
+			 */
+			existing.outdated = isOutdated(existing.origin, entry);
 			continue;
 		}
 		// Which of the loose skills this collection put there — none, unless it is a collection.
@@ -206,6 +278,16 @@ export function merge(
 			servers: [],
 			entry,
 			from,
+			tagline: entry.tagline,
+			version: entry.version,
+			author: entry.author,
+			downloads: entry.downloads,
+			skillCount: entry.skillCount,
+			serverCount: entry.serverCount,
+			clients: entry.clients,
+			// Nothing is installed, so there is nothing to be behind. A collection whose skills are
+			// on disk has no record either — `moveInto` leaves no directory to have written one for.
+			outdated: false,
 		});
 	}
 

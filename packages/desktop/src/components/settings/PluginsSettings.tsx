@@ -19,6 +19,7 @@ import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, usePopover } from "../Popover.tsx";
 import { useApp } from "../../store.ts";
 import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
+import { settingsAfterToggle } from "../plugins/toggle.ts";
 import { Card, ListRow, Toggle } from "./controls.tsx";
 import { PluginIcon } from "./PluginIcon.tsx";
 
@@ -57,25 +58,12 @@ export function PluginsSettings({ filter = "" }: { filter?: string }) {
 	);
 	const diagnostics = scan?.pluginDiagnostics ?? [];
 
-	/*
-	 * `*` in `disabledPlugins` means "none of them", whoever wrote it there.
-	 *
-	 * Switching one back on has to clear that as well, or the toggle is a control that reports a
-	 * change and produces none: the id is removed, the wildcard stays, and every plugin is still
-	 * off after a reload. Turning the wildcard off means naming what it stood for — everything
-	 * currently on disk except the one being switched on.
-	 */
+	/* `*` means "none of them" and is still shown to the user below; the rule for clearing it lives
+	   in `settingsAfterToggle`, because the catalogue card switches plugins too. */
 	const allOff = settings.disabledPlugins.includes("*");
 
 	const toggle = (plugin: Plugin, enabled: boolean) => {
-		const disabled = new Set(settings.disabledPlugins);
-		if (allOff && enabled) {
-			disabled.delete("*");
-			for (const other of scan?.plugins ?? []) if (other.id !== plugin.id) disabled.add(other.id);
-		}
-		if (enabled) disabled.delete(plugin.id);
-		else disabled.add(plugin.id);
-		void saveSettings({ ...settings, disabledPlugins: [...disabled] });
+		void saveSettings(settingsAfterToggle(settings, plugin, enabled, scan?.plugins ?? []));
 	};
 
 	/** The bundle's own page, in the catalogue — which is a different view, not a panel in here. */

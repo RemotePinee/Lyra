@@ -21,6 +21,7 @@ import type { BundleKind, RegistryEntry } from "@lyra/registry-shared";
 import type { McpServerConfig } from "../mcp/client.ts";
 import { lyraHome } from "../session/store.ts";
 import { fetchBundle } from "./fetch-bundle.ts";
+import { forgetInstall, recordInstall } from "./installs.ts";
 import { inspectBundle } from "./loader.ts";
 
 /*
@@ -34,7 +35,10 @@ import { inspectBundle } from "./loader.ts";
  * Re-exported rather than replaced at every call site: the renderer imports these from `@lyra/core`
  * in a dozen places, and moving a type is not a reason to touch a dozen files.
  */
-export type { BundleKind, RegistryEntry } from "@lyra/registry-shared";
+// `ClientId` too: the desktop package depends on core alone, and a card that shows which agents a
+// bundle installs into needs the type. Adding a second dependency to reach one alias would be a
+// wider change than re-exporting it beside the entry type it is a field of.
+export type { BundleKind, ClientId, RegistryEntry } from "@lyra/registry-shared";
 export { normalise } from "@lyra/registry-shared";
 
 /** How long a registry has to answer before we give up on it. */
@@ -110,28 +114,40 @@ export interface Installed {
  * what gets kept; the rest, including the `.git` that would otherwise make a subdirectory look
  * like a checkout of the whole collection, is thrown away.
  */
-export async function installEntry(entry: RegistryEntry, registryName?: string): Promise<Installed> {
+export async function installEntry(entry: RegistryEntry, registryName?: string, replace = false): Promise<Installed> {
 	// Shared with the platform, so that a path it accepted when building an archive is the same path
 	// this refuses to clone into. Two implementations of "cannot climb out" is one too many.
 	const inner = normalisePath(entry.path);
 	if (inner === null) throw new Error(`插件路径不合法：${entry.path}`);
 
-	for (const kind of ["plugin", "mcp"] as const) {
-		const root = bundleRoot(kind);
-		if ((await readdir(root).catch((): string[] => [])).includes(entry.id)) {
-			throw new Error(`已经装过 ${entry.id} 了`);
-		}
-	}
 	/*
-	 * And a collection, which has no directory to look for — only its prefix among the loose skills.
+	 * `replace` is what an update is, and it is safe for the same reason a first install is.
 	 *
-	 * Without this the same collection could be installed twice: the second run overwrites every
-	 * skill it still ships and silently leaves behind the ones it has since dropped, which is a
-	 * worse state than either version.
+	 * Everything lands in staging and is inspected there; the target directory is not touched until
+	 * a complete, verified bundle is sitting beside it. So a failed update — a dead network, a
+	 * corrupt archive, a repository that has stopped being a plugin — leaves what is installed
+	 * exactly as it was. The alternative people usually write, uninstall-then-install, has a window
+	 * in the middle where the user has neither version.
 	 */
-	if (entry.kind === "skill") {
-		const loose = await readdir(bundleRoot("skill")).catch((): string[] => []);
-		if (loose.some((name) => name.startsWith(`${entry.id}-`))) throw new Error(`已经装过 ${entry.id} 了`);
+	if (!replace) {
+		for (const kind of ["plugin", "mcp"] as const) {
+			const root = bundleRoot(kind);
+			if ((await readdir(root).catch((): string[] => [])).includes(entry.id)) {
+				throw new Error(`已经装过 ${entry.id} 了`);
+			}
+		}
+		/*
+		 * And a collection, which has no directory to look for — only its prefix among the loose
+		 * skills.
+		 *
+		 * Without this the same collection could be installed twice: the second run overwrites every
+		 * skill it still ships and silently leaves behind the ones it has since dropped, which is a
+		 * worse state than either version.
+		 */
+		if (entry.kind === "skill") {
+			const loose = await readdir(bundleRoot("skill")).catch((): string[] => []);
+			if (loose.some((name) => name.startsWith(`${entry.id}-`))) throw new Error(`已经装过 ${entry.id} 了`);
+		}
 	}
 
 	// Beside the eventual target rather than in the OS temp dir: same filesystem, so the move is a
@@ -171,7 +187,20 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 			const skills = await countSkills(source);
 			if (skills === 0) throw new Error("这个目录里没有技能（应当是一层含 SKILL.md 的子目录）");
 			const root = bundleRoot("skill");
+			/*
+			 * Clear the old scatter before laying down the new one.
+			 *
+			 * `moveInto` overwrites each skill it still ships and cannot know about the ones this
+			 * version dropped — those would stay in the skills directory forever, loaded into every
+			 * session, belonging to a version of the collection nobody has any more. A plugin does
+			 * not have this problem because its whole directory is replaced at once.
+			 *
+			 * Done here rather than before the download: by this point the new files are staged and
+			 * verified, so the window in which the collection is half-removed is one rename wide.
+			 */
+			if (replace) await removeCollection(entry.id);
 			await moveInto(source, root, entry.id);
+			await remember(entry, registryName);
 			// `dir` is the directory the skills went into; a collection has no directory of its own.
 			return { dir: root, kind: "skill", servers: [], name: `${entry.name}（${skills} 个技能）` };
 		}
@@ -201,6 +230,7 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 		 */
 		await rm(join(source, ".git"), { recursive: true, force: true });
 		await rename(source, target);
+		await remember(entry, registryName);
 
 		return {
 			dir: target,
@@ -222,6 +252,23 @@ export async function installEntry(entry: RegistryEntry, registryName?: string):
 }
 
 /**
+ * Note what this was, so a later visit can tell it apart from what the registry now offers.
+ *
+ * Failing to write the ledger must not fail the install: the files are already in place and the
+ * bundle works. What is lost is the update badge, which is worth less than the bundle.
+ */
+async function remember(entry: RegistryEntry, registryName?: string): Promise<void> {
+	await recordInstall({
+		id: entry.id,
+		version: entry.version,
+		commit: entry.commit,
+		sha256: entry.sha256,
+		from: registryName,
+		installedAt: new Date().toISOString(),
+	}).catch(() => undefined);
+}
+
+/**
  * Drop an installed bundle, whichever of the two directories it lives in.
  *
  * Both are cleared rather than asking the caller which kind it was: an id is unique across the
@@ -234,16 +281,26 @@ export async function uninstallEntry(id: string): Promise<void> {
 	await rm(join(bundleRoot("plugin"), id), { recursive: true, force: true });
 	await rm(join(bundleRoot("mcp"), id), { recursive: true, force: true });
 
-	/*
-	 * And the skills a collection scattered, which have no directory of their own to remove.
-	 *
-	 * `moveInto` flattened them in among the loose skills with an `<id>-` prefix, so this is the
-	 * same rename read backwards. Removing only the two bundle roots left a collection uninstalled
-	 * everywhere except in the agent, which went on loading all of its skills.
-	 *
-	 * The prefix has to be followed by something: a skill genuinely named `waza` is not one of
-	 * Waza's, and dropping it would be deleting a directory the user put there themselves.
-	 */
+	// And a collection's skills, which are not under either root. Removing only the two left a
+	// collection uninstalled everywhere except in the agent, which went on loading all of them.
+	await removeCollection(id);
+
+	// Last, and allowed to fail: a stale ledger entry is harmless because every reader joins it
+	// against what the scan actually found, while a bundle whose files are gone is uninstalled.
+	await forgetInstall(id).catch(() => undefined);
+}
+
+/**
+ * Remove the skills a collection scattered, which have no directory of their own.
+ *
+ * `moveInto` flattened them in among the loose skills with an `<id>-` prefix, so this is the same
+ * rename read backwards. Shared with the replace path in `installEntry`, because an update that
+ * left the previous version's dropped skills behind would be the same bug in a different place.
+ *
+ * The prefix has to be followed by something: a skill genuinely named `waza` is not one of Waza's,
+ * and removing it would be deleting a directory the user put there themselves.
+ */
+async function removeCollection(id: string): Promise<void> {
 	const skills = bundleRoot("skill");
 	for (const entry of await readdir(skills, { withFileTypes: true }).catch((): Dirent[] => [])) {
 		if (entry.isDirectory() && entry.name.startsWith(`${id}-`)) {

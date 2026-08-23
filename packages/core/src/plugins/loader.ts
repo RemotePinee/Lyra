@@ -34,6 +34,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative as relativePath, resolve } from "node:path";
 import type { McpServerConfig } from "../mcp/client.ts";
 import { loadSkills, type Skill } from "../skills/loader.ts";
+import { readInstalls, type InstallRecord } from "./installs.ts";
 
 export interface PluginInterface {
 	displayName?: string;
@@ -71,6 +72,14 @@ export interface Plugin {
 	source: "workspace" | "user";
 	skills: Skill[];
 	enabled: boolean;
+	/**
+	 * What the registry said this was when it was installed, when it came from one.
+	 *
+	 * Absent for a directory somebody put here themselves, and for anything installed before the
+	 * ledger existed. Both mean "no idea where this came from", which is why nothing may treat its
+	 * absence as evidence of anything — see `isOutdated`.
+	 */
+	origin?: InstallRecord;
 	/** Populated when the bundle is present but unusable. */
 	error?: string;
 }
@@ -91,6 +100,8 @@ export interface McpBundle {
 	source: "workspace" | "user";
 	/** What its `.mcp.json` declares, ready to be merged into settings. */
 	servers: McpServerConfig[];
+	/** Where it came from, when it came from a registry. See `Plugin.origin`. */
+	origin?: InstallRecord;
 }
 
 export interface PluginDiagnostic {
@@ -119,6 +130,15 @@ export async function loadPlugins(
 	const mcpBundles: McpBundle[] = [];
 	const diagnostics: PluginDiagnostic[] = [];
 	const seen = new Set<string>();
+	/*
+	 * Read once for the whole scan, and joined on rather than trusted.
+	 *
+	 * The ledger says what was installed; this loop says what is there. A bundle whose directory was
+	 * deleted by hand never reaches the join, so a stale record is invisible rather than wrong — and
+	 * a bundle the user dropped in themselves has no record at all, which is the honest answer to
+	 * "where did this come from" and the reason nothing may be inferred from its absence.
+	 */
+	const installs = await readInstalls();
 
 	for (const { dir, source } of sources) {
 		const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
@@ -187,6 +207,7 @@ export async function loadPlugins(
 					dir: pluginDir,
 					manifest,
 					source,
+					origin: installs[id],
 					// `id`, so that what stamps a row and what looks the row up are the same string.
 					servers: read.servers.map((server) => ({
 						...server,
@@ -201,6 +222,7 @@ export async function loadPlugins(
 				dir: pluginDir,
 				manifest,
 				source,
+				origin: installs[id],
 				// Tag skills so the UI can show which plugin brought them in.
 				skills: read.skills.map((skill) => ({ ...skill, pluginId: id })),
 				/*

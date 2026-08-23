@@ -69,9 +69,11 @@ export function registerPluginsIpc({ settings, saveSettings }: PluginsIpcDeps): 
 	 * They arrive switched off — installing is not the same as trusting, and a server is a command
 	 * that runs on this machine with this user's permissions.
 	 */
-	ipcMain.handle("registry:install", async (_event, entry: RegistryEntry, registryName?: string) => {
+	// `replace` is an update: same call, but the "already installed" check is skipped and the old
+	// files are replaced only once the new ones are staged and verified. See `installEntry`.
+	ipcMain.handle("registry:install", async (_event, entry: RegistryEntry, registryName?: string, replace?: boolean) => {
 		try {
-			const installed = await installEntry(entry, registryName);
+			const installed = await installEntry(entry, registryName, replace);
 			const next = settingsAfterInstall(settings(), entry.id, installed);
 			if (next) await saveSettings(next);
 			return { ok: true as const, dir: installed.dir, kind: installed.kind, servers: installed.servers.length };

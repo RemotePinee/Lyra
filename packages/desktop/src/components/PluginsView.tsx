@@ -32,7 +32,8 @@ import { PluginIcon, SkillMark } from "./settings/PluginIcon.tsx";
 import { CatalogCard } from "./plugins/CatalogCard.tsx";
 import { PluginDetail } from "./plugins/PluginDetail.tsx";
 import { RegistrySources } from "./plugins/RegistrySources.tsx";
-import { groupByCategory, isEnabled, isInstalled, UNFILED, useCatalog } from "./plugins/useCatalog.ts";
+import { settingsAfterToggle } from "./plugins/toggle.ts";
+import { groupByCategory, isEnabled, isInstalled, UNFILED, useCatalog, type CatalogItem } from "./plugins/useCatalog.ts";
 import { RollingText } from "./RollingText.tsx";
 
 /**
@@ -59,6 +60,9 @@ export function PluginsView() {
 	const setSettingsSection = useApp((s) => s.setSettingsSection);
 	const setComposerDraft = useApp((s) => s.setComposerDraft);
 	const newSession = useApp((s) => s.newSession);
+
+	const settings = useApp((s) => s.settings);
+	const saveSettings = useApp((s) => s.saveSettings);
 
 	const catalog = useCatalog();
 	const [tab, setTab] = useState<Tab>("plugins");
@@ -98,6 +102,29 @@ export function PluginsView() {
 		void newSession();
 		setComposerDraft(prompt);
 		setView("chat");
+	};
+
+	/**
+	 * Switch a plugin on or off from its card, without going to 设置 first.
+	 *
+	 * The rule is `settingsAfterToggle`, shared with the settings list — the wildcard case is not
+	 * obvious and two copies of it would be right in one place only.
+	 *
+	 * Only a plugin has one switch: an MCP bundle has one per server it brought, which is a
+	 * different control on a different page, and a collection has none at all. `CatalogCard` draws
+	 * nothing when this returns without acting.
+	 */
+	const toggle = (item: CatalogItem, enabled: boolean) => {
+		const plugin = item.installed;
+		if (!plugin || !settings) return;
+		void saveSettings(
+			settingsAfterToggle(
+				settings,
+				plugin,
+				enabled,
+				catalog.items.flatMap((entry) => (entry.installed ? [entry.installed] : [])),
+			),
+		);
 	};
 
 	// Whichever kind this tab is about. Everything below — the counts, the two scopes, the
@@ -392,6 +419,7 @@ export function PluginsView() {
 													<CatalogCard
 														item={item}
 														onOpen={() => setOpenKey(item.key)}
+											onToggle={(enabled) => toggle(item, enabled)}
 														onChanged={() => {
 															setFailure(null);
 															catalog.refresh();
@@ -438,6 +466,7 @@ export function PluginsView() {
 												<CatalogCard
 													item={item}
 													onOpen={() => setOpenKey(item.key)}
+											onToggle={(enabled) => toggle(item, enabled)}
 													onChanged={() => {
 														setFailure(null);
 														catalog.refresh();

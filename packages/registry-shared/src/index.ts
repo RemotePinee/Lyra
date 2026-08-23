@@ -32,6 +32,7 @@ export {
 	type EntryQuery,
 	type EntrySort,
 	type EntrySummary,
+	type IconSource,
 	type Page,
 	type RegistryStats,
 	type ReviewRequest,
@@ -40,4 +41,16 @@ export {
 	type Viewer,
 } from "./api.ts";
 
-export { normalisePath, ownerAvatar, parseRepo, tarballUrl, type RepoRef } from "./repo.ts";
+export { normalisePath, parseRepo, tarballUrl, type RepoRef } from "./repo.ts";
+
+export {
+	CLIENTS,
+	CLIENT_LABEL,
+	CLIENT_SKILL_PATH,
+	clientsFor,
+	isClientId,
+	parseClients,
+	serialiseClients,
+	type ClientId,
+	type Evidence,
+} from "./clients.ts";

@@ -287,9 +287,18 @@ export interface LyraApi {
 		 * a plugin that holds nothing but a `.mcp.json` and what you have installed is an MCP
 		 * server, whose servers are now in settings switched off, waiting to be turned on.
 		 */
+		/**
+		 * `replace` turns the same call into an update.
+		 *
+		 * It skips the "already installed" check and overwrites what is there — safely, because the
+		 * new bundle is downloaded and inspected in a staging directory first, so a failed update
+		 * leaves the working copy untouched. Uninstall-then-install would not: it has a window in
+		 * the middle where the user has neither version.
+		 */
 		installFromRegistry(
 			entry: RegistryEntry,
 			registryName?: string,
+			replace?: boolean,
 		): Promise<{ ok: true; dir: string; kind: BundleKind; servers: number } | { ok: false; message: string }>;
 		uninstall(id: string): Promise<void>;
 	};

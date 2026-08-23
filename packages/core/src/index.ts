@@ -101,6 +101,7 @@ export {
 	installEntry,
 	uninstallEntry,
 	type BundleKind,
+	type ClientId,
 	type Installed,
 	type Registry,
 	type RegistryEntry,
@@ -115,6 +116,12 @@ export {
 	type PluginInterface,
 	type PluginManifest,
 } from "./plugins/loader.ts";
+/*
+ * `isOutdated` is also published as `@lyra/core/install-record`, and the renderer must use that one.
+ * Importing a *value* from this index pulls the whole of it into a browser bundle, which reaches
+ * `node:fs` and blanks the window. The type is free either way.
+ */
+export { isOutdated, readInstalls, type InstallRecord } from "./plugins/installs.ts";
 export {
 	buildIndex,
 	indexStats,

@@ -55,11 +55,6 @@ export function tarballUrl(ref: RepoRef, gitRef: string): string {
 	return `https://codeload.github.com/${ref.owner}/${ref.repo}/tar.gz/${encodeURIComponent(gitRef)}`;
 }
 
-/** The owner's avatar, which every GitHub project has and which never 404s. */
-export function ownerAvatar(ref: RepoRef, size = 128): string {
-	return `https://github.com/${ref.owner}.png?size=${size}`;
-}
-
 /**
  * A sub-path inside a repository, or null for anything absolute or climbing out of the checkout.
  *
