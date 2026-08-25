@@ -12,6 +12,7 @@ import { Clock, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useConfirmer } from "./Confirm.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { NumberField, TimeField } from "./settings/pickers.tsx";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 import { Toggle } from "./settings/controls.tsx";
@@ -215,23 +216,21 @@ function TaskCard({
 					</div>
 
 					{task.schedule.kind === "daily" ? (
-						<input
-							type="time"
+						<TimeField
 							value={task.schedule.time}
-							onChange={(e) => onChange({ schedule: { kind: "daily", time: e.target.value } })}
-							className="h-[30px] rounded-lg border border-line bg-input px-2.5 font-mono text-label text-ink focus:border-ink-faint"
+							onChange={(time) => onChange({ schedule: { kind: "daily", time } })}
+							label="每天运行时间"
 						/>
 					) : (
 						<div className="flex items-center gap-1.5">
-							<input
-								type="number"
-								min={1}
+							<NumberField
 								value={task.schedule.minutes}
-								onChange={(e) => {
-									const minutes = Number(e.target.value);
-									if (minutes >= 1) onChange({ schedule: { kind: "interval", minutes } });
-								}}
-								className="h-[30px] w-[70px] rounded-lg border border-line bg-input px-2.5 text-center font-mono text-label text-ink focus:border-ink-faint"
+								// A task cannot repeat more often than once a minute; the field enforces that
+								// rather than silently dropping the keystroke that would break it.
+								min={1}
+								max={60 * 24}
+								onChange={(minutes) => onChange({ schedule: { kind: "interval", minutes } })}
+								label="间隔分钟数"
 							/>
 							<span className="text-detail text-ink-faint">分钟</span>
 						</div>

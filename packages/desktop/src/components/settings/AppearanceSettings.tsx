@@ -34,7 +34,8 @@ const PRESETS: { id: string; label: string; patch: Partial<Appearance> }[] = [
 	{ id: "ember", label: "Ember", patch: { accent: "#FF8B3D", darkBackground: "#1A1412", darkForeground: "#F5E9E2" } },
 ];
 
-import { ColorRow, NumberField, ThemePreview } from "./appearance-controls.tsx";
+import { ColorRow, PixelField, ThemePreview } from "./appearance-controls.tsx";
+import { Slider } from "./pickers.tsx";
 
 export function AppearanceSettings() {
 	const settings = useApp((s) => s.settings);
@@ -137,14 +138,12 @@ export function AppearanceSettings() {
 					title="对比度"
 					control={
 						<div className="flex items-center gap-3">
-							<input
-								type="range"
+							<Slider
+								value={appearance.contrast}
+								onChange={(contrast) => patch({ contrast })}
 								min={0}
 								max={100}
-								value={appearance.contrast}
-								onChange={(e) => patch({ contrast: Number(e.target.value) })}
-								className="h-1 w-[180px] cursor-pointer appearance-none rounded-full bg-line accent-[var(--color-info)]"
-								style={{ accentColor: appearance.accent }}
+								label="对比度"
 							/>
 							<span className="w-6 text-right font-mono text-label text-ink">{appearance.contrast}</span>
 						</div>
@@ -180,11 +179,12 @@ export function AppearanceSettings() {
 					title="UI 字号"
 					detail="调整 Lyra 界面使用的基准字号"
 					control={
-						<NumberField
+						<PixelField
 							value={appearance.uiFontSize}
 							min={11}
 							max={20}
 							onChange={(uiFontSize) => patch({ uiFontSize })}
+							label="UI 字号"
 						/>
 					}
 				/>
@@ -192,11 +192,12 @@ export function AppearanceSettings() {
 					title="代码字体大小"
 					detail="调整聊天和差异视图中代码使用的基础字号"
 					control={
-						<NumberField
+						<PixelField
 							value={appearance.codeFontSize}
 							min={10}
 							max={20}
 							onChange={(codeFontSize) => patch({ codeFontSize })}
+							label="代码字体大小"
 						/>
 					}
 				/>

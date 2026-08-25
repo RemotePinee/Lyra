@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { NumberField } from "./pickers.tsx";
 import { contrastingInk, parseHex } from "../../theme.ts";
 
 export function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
@@ -44,30 +45,23 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
 	);
 }
 
-export function NumberField({
+/** A size in pixels: the shared number field, plus the unit it is always in. */
+export function PixelField({
 	value,
 	min,
 	max,
 	onChange,
+	label,
 }: {
 	value: number;
 	min: number;
 	max: number;
 	onChange: (value: number) => void;
+	label: string;
 }) {
 	return (
 		<div className="flex items-center gap-2">
-			<input
-				type="number"
-				min={min}
-				max={max}
-				value={value}
-				onChange={(e) => {
-					const next = Number(e.target.value);
-					if (Number.isFinite(next) && next >= min && next <= max) onChange(next);
-				}}
-				className="h-[30px] w-[64px] rounded-lg border border-line bg-input px-2.5 text-center font-mono text-label text-ink focus:border-ink-faint"
-			/>
+			<NumberField value={value} min={min} max={max} onChange={onChange} label={label} width={64} />
 			<span className="text-detail text-ink-faint">px</span>
 		</div>
 	);

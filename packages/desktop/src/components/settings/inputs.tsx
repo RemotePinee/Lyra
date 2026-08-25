@@ -87,12 +87,15 @@ function Dropdown<T extends string>({
 	onChange,
 	options,
 	size,
+	ariaLabel,
 }: {
 	value: T;
 	onChange: (value: T) => void;
 	options: { value: T; label: string; detail?: string; icon?: React.ReactNode }[];
 	/** `field` fills a form row; `inline` is the compact one that sits at the end of a setting. */
 	size: "field" | "inline";
+	/** For a dropdown whose own label does not say what it is — two of them reading `09` and `30`. */
+	ariaLabel?: string;
 }) {
 	const menu = usePopover();
 	const current = options.find((option) => option.value === value);
@@ -103,6 +106,7 @@ function Dropdown<T extends string>({
 			<button
 				type="button"
 				onClick={menu.toggle}
+				aria-label={ariaLabel}
 				aria-haspopup="menu"
 				aria-expanded={menu.open}
 				className={`flex items-center justify-between gap-2 border text-ink transition-colors ${
@@ -165,6 +169,7 @@ export function Select<T extends string>(props: {
 	value: T;
 	onChange: (value: T) => void;
 	options: { value: T; label: string; detail?: string; icon?: React.ReactNode }[];
+	ariaLabel?: string;
 }) {
 	return <Dropdown {...props} size="field" />;
 }
@@ -174,6 +179,7 @@ export function InlineSelect<T extends string>(props: {
 	value: T;
 	onChange: (value: T) => void;
 	options: { value: T; label: string; detail?: string; icon?: React.ReactNode }[];
+	ariaLabel?: string;
 }) {
 	return <Dropdown {...props} size="inline" />;
 }
