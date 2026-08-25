@@ -1,6 +1,7 @@
 import type { DiffHunk, ToolResult } from "@lyra/core";
 import { Scroller } from "./Scroller.tsx";
 import {
+	Cable,
 	ChevronRight,
 	CircleCheck,
 	CircleX,
@@ -20,6 +21,9 @@ import { useEffect, useRef, useState } from "react";
 import { CodeText } from "./detail/CodeText.tsx";
 import { Section } from "./detail/Section.tsx";
 import { DiffView } from "./DiffView.tsx";
+import type { McpMark } from "./mcp-marks.ts";
+import { safeColour } from "./settings/PluginIcon.tsx";
+import { useMcpMark } from "./useMcpMark.ts";
 
 const ICONS: Record<string, typeof FileText> = {
 	read: FileText,
@@ -47,7 +51,16 @@ interface ToolCardProps {
 export function ToolCard({ toolName, summary, args, status, result }: ToolCardProps) {
 	const [open, setOpen] = useState(false);
 	const [elapsed, setElapsed] = useState(0);
-	const Icon = ICONS[toolName] ?? (toolName.startsWith("mcp__") ? Globe : Terminal);
+	const mcpMark = useMcpMark()(toolName);
+	/*
+	 * `Cable` rather than `Globe` for a server with no icon of its own.
+	 *
+	 * The globe was already `web_fetch`'s, so an MCP call and a page fetch drew the same thing —
+	 * and a globe says "the network", which is true of a hosted server and false of the stdio ones
+	 * that are most of this catalogue. `Cable` is what 设置 › MCP and the plugins page already use
+	 * for this, so a row now agrees with the pages the server is managed on.
+	 */
+	const Icon = ICONS[toolName] ?? (mcpMark ? Cable : Terminal);
 	const details = result?.details as Record<string, unknown> | undefined;
 	const hasDiff = Array.isArray(details?.hunks) && (details.hunks as DiffHunk[]).length > 0;
 	const running = status === "running";
@@ -72,11 +85,7 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				onClick={() => setOpen((v) => !v)}
 				className="ly-scroll flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover/50"
 			>
-				<Icon
-					size={14}
-					strokeWidth={1.8}
-					className={`shrink-0 transition-colors duration-[var(--ly-t-base)] ${running ? "ly-pulse text-info" : "text-ink-faint"}`}
-				/>
+				<ToolMark mark={mcpMark} Icon={Icon} running={running} />
 				<span
 					className={`min-w-0 flex-1 truncate text-label transition-colors duration-[var(--ly-t-base)] ${
 						running ? "text-ink" : "text-ink-muted"
@@ -162,6 +171,45 @@ export function ToolCard({ toolName, summary, args, status, result }: ToolCardPr
 				</div>
 			)}
 		</div>
+	);
+}
+
+/**
+ * The mark at the start of a tool row.
+ *
+ * A glyph for everything built in, and for an MCP call the picture of the server that answered it —
+ * because "which server was that" is the question a row of MCP calls has to answer, and the name is
+ * already competing with the tool's own name for the same line of text.
+ *
+ * Drawn at the glyph's size and given no background. A row is 14px of ink beside a sentence; the
+ * tile treatment the catalogue uses would make the busiest thing in a transcript the logo of
+ * whatever the model happened to call.
+ */
+function ToolMark({ mark, Icon, running }: { mark: McpMark | null; Icon: typeof FileText; running: boolean }) {
+	const tint = safeColour(mark?.brandColor);
+
+	if (mark?.logo) {
+		return (
+			<img
+				src={mark.logo}
+				alt=""
+				width={14}
+				height={14}
+				className={`shrink-0 rounded-[3px] object-cover transition-opacity duration-[var(--ly-t-base)] ${running ? "ly-pulse" : "opacity-90"}`}
+			/>
+		);
+	}
+
+	return (
+		<Icon
+			size={14}
+			strokeWidth={1.8}
+			aria-label={mark ? `MCP：${mark.name}` : undefined}
+			// A server that declared a colour and shipped no picture is still told apart from the next
+			// one. Only while idle: the running state is the app speaking, and it owns that colour.
+			style={tint && !running ? { color: tint } : undefined}
+			className={`shrink-0 transition-colors duration-[var(--ly-t-base)] ${running ? "ly-pulse text-info" : "text-ink-faint"}`}
+		/>
 	);
 }
 
