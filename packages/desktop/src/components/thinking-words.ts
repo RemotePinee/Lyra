@@ -81,19 +81,28 @@ const BY_TOOL: Record<string, Mood> = {
 const TEST_HINT = /\b(test|jest|vitest|pytest|spec|coverage)\b/i;
 
 /**
- * What the agent is doing, from the newest call that has not finished.
+ * What the agent is doing, in the order these questions have to be asked.
  *
  * `retrying` wins over everything: a turn waiting on a reconnect is not doing whatever its last
  * tool was, it is doing nothing at all until the network comes back, and the orb saying otherwise
- * would be the only thing on screen still claiming progress. Everything else falls back to
- * `breathing`, which is the honest answer for "the model is thinking" and for tools this does not
- * know about.
+ * would be the only thing on screen still claiming progress.
+ *
+ * `writing` is the difference between the two halves of the silence, and without it most of a turn
+ * looked identical. A model with no tool running is either reasoning — nothing to show yet — or
+ * streaming its answer, which is `composing`, the same thing `write` does. Reading it off the last
+ * content block is what makes that free: a `thinking` block means the first, a `text` block the
+ * second. Tools still win, because a tool running while text streams is the more specific fact.
  */
-export function moodFor(toolName: string | undefined, summary: string | undefined, retrying = false): Mood {
+export function moodFor(
+	toolName: string | undefined,
+	summary: string | undefined,
+	retrying = false,
+	writing = false,
+): Mood {
 	if (retrying) return "connecting";
 	if (summary && TEST_HINT.test(summary)) return "solving";
-	if (!toolName) return "breathing";
-	return BY_TOOL[toolName] ?? "breathing";
+	if (toolName) return BY_TOOL[toolName] ?? "breathing";
+	return writing ? "composing" : "breathing";
 }
 
 /**

@@ -30,6 +30,24 @@ test("nothing running is the model thinking", () => {
 	assert.equal(moodFor("", ""), "breathing");
 });
 
+test("the silence has two halves: reasoning, and the answer arriving", () => {
+	/*
+	 * Both look like "no tool is running", and telling them apart is most of what makes the mark
+	 * move at all — a turn spends far more time here than it does inside any tool.
+	 */
+	assert.equal(moodFor(undefined, undefined, false, false), "breathing", "reasoning, nothing to show");
+	assert.equal(moodFor(undefined, undefined, false, true), "composing", "the reply is being typed out");
+});
+
+test("a running tool is more specific than text streaming, so it wins", () => {
+	assert.equal(moodFor("grep", "TODO", false, true), "searching");
+	assert.equal(moodFor("bash", "pnpm test", false, true), "solving");
+});
+
+test("a reconnect still beats everything, including text arriving", () => {
+	assert.equal(moodFor(undefined, undefined, true, true), "connecting");
+});
+
 test("a tool nobody mapped falls back rather than picking something wrong", () => {
 	assert.equal(moodFor("some_future_tool", "doing a thing"), "breathing");
 });

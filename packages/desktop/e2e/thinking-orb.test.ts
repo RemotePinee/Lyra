@@ -53,7 +53,7 @@ function startModel(): Server {
 			});
 			sse(res, { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
 			sse(res, { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "开始干活" } });
-			// Left open on purpose.
+			// Left open on purpose: the turn has to still be running when the picture is taken.
 		});
 	});
 	server.listen(MODEL_PORT, "127.0.0.1");
@@ -265,6 +265,30 @@ test("the ink suits the theme it is drawn on", async () => {
 	);
 
 	await setTheme("dark");
+});
+
+/**
+ * The mark moves with the work, which is the whole point of there being nine of them.
+ *
+ * The first version only looked at tools that were *running*, and a `read` or an `ls` is over in
+ * tens of milliseconds — so in practice the line sat on one state for an entire turn and the nine
+ * animations were decoration. Text streaming is the common case and it now has its own state.
+ */
+test("the mark says the reply is being written while it streams", async () => {
+	const mood = await app.evaluate<string | null>(
+		`document.querySelector("main [data-ly-running]")?.dataset.lyMood ?? null`,
+	);
+	assert.equal(mood, "composing", "text is arriving, so it is not the thinking mark");
+
+	// And the words agree with it, because they come from the same reading.
+	const phrase = await app.evaluate<string>(
+		`(document.querySelector("main [data-ly-running]")?.innerText ?? "").trim()`,
+	);
+	const composing = ["Writing", "Drafting", "Putting it down", "Getting it on paper", "Laying down code"];
+	assert.ok(
+		composing.some((word) => phrase.startsWith(word)),
+		`the phrase is one of the writing words (${phrase})`,
+	);
 });
 
 test("it goes away when the turn does", async () => {

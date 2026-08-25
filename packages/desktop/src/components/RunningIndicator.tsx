@@ -12,6 +12,14 @@ import { useApp } from "../store.ts";
  * this has been going for ten seconds or ten minutes, or what it has cost. Three dots said
  * "something is happening"; this says what.
  */
+/**
+ * How long a finished tool keeps the line after it ends.
+ *
+ * Most calls are far shorter than this, so without it the mark they stand for is never actually
+ * on screen. Two seconds reads as "it just did that" without outlasting the doing of it.
+ */
+const TOOL_HOLD_MS = 2000;
+
 export function RunningIndicator() {
 	const startedAt = useApp((s) => s.turnStartedAt);
 	const tokens = useApp((s) => s.turnTokens);
@@ -26,11 +34,36 @@ export function RunningIndicator() {
 	 * enough to look alive and slow enough to be read.
 	 */
 	const [tick, setTick] = useState(0);
-	/** What the agent is doing right now, from the newest call that has not finished. */
+	/**
+	 * The newest call, running or just finished, as `name \0 summary \0 finishedAt`.
+	 *
+	 * Just-finished matters as much as running, and leaving it out is why most of a turn showed the
+	 * same mark. A `read` or an `ls` is over in tens of milliseconds — far too fast to see — so the
+	 * state it stands for flashed past and the line spent nearly all its time on the "nothing is
+	 * running" answer. The window is applied in the component rather than here: a selector only
+	 * re-runs when the store changes, and nothing changes when a hold quietly expires.
+	 */
 	const doing = useApp((s) => {
-		const runs = Object.values(s.toolRuns).filter((run) => run.status === "running");
-		const newest = runs.sort((a, b) => b.startedAt - a.startedAt)[0];
-		return newest ? `${newest.toolName}\u0000${newest.summary}` : "";
+		const runs = Object.values(s.toolRuns);
+		const running = runs.filter((run) => run.status === "running").sort((a, b) => b.startedAt - a.startedAt)[0];
+		if (running) return `${running.toolName}\u0000${running.summary}\u0000`;
+		const finished = runs
+			.filter((run) => run.finishedAt !== undefined)
+			.sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0))[0];
+		return finished ? `${finished.toolName}\u0000${finished.summary}\u0000${finished.finishedAt}` : "";
+	});
+	/**
+	 * Whether the answer is being typed out, as opposed to being thought about.
+	 *
+	 * The last content block says which: `thinking` is the model reasoning with nothing to show yet,
+	 * `text` is the reply arriving. From the outside both look like "no tool is running", and they
+	 * are the two halves the silence is actually made of.
+	 */
+	const writing = useApp((s) => {
+		const last = s.messages[s.messages.length - 1];
+		if (last?.role !== "assistant" || last.stopReason !== "pending") return false;
+		const block = last.content[last.content.length - 1];
+		return block?.type === "text" && block.text.length > 0;
 	});
 
 	useEffect(() => {
@@ -52,7 +85,15 @@ export function RunningIndicator() {
 	// Travelled to, not jumped to: usage lands per message, so this moves in steps of thousands.
 	const counted = useCountUp(total);
 
-	const [toolName, summary] = doing.split("\u0000");
+	const [toolName, summary, finishedAt] = doing.split("\u0000");
+	/*
+	 * A finished tool keeps the line for a moment after it ends.
+	 *
+	 * Long enough to be seen — the work it stood for is over in a blink — and short enough that a
+	 * turn which has moved on to thinking is not still claiming to be reading a file. `now` ticks
+	 * four times a second, which is what lets this expire on its own.
+	 */
+	const fresh = Boolean(toolName) && (!finishedAt || now - Number(finishedAt) < TOOL_HOLD_MS);
 	const elapsed = startedAt ? now - startedAt : 0;
 	/*
 	 * One reading of what is happening, drawn twice.
@@ -61,7 +102,7 @@ export function RunningIndicator() {
 	 * was the obvious first shape and it is wrong: the two would disagree for a frame every time a
 	 * tool started, which is exactly the moment anybody is looking at them.
 	 */
-	const mood = moodFor(toolName || undefined, summary, Boolean(retrying));
+	const mood = moodFor(fresh ? toolName : undefined, fresh ? summary : undefined, Boolean(retrying), writing);
 	const phrase = phraseFor(mood, tick, elapsed);
 
 	return (
@@ -72,7 +113,18 @@ export function RunningIndicator() {
 		 * dots — which tied every one of them to which loader this happens to draw. Swapping the
 		 * loader is exactly the change that should not break them.
 		 */
-		<div data-ly-running className="ly-enter mb-2.5 flex items-center gap-2 text-detail text-ink-muted">
+		<div
+			data-ly-running
+			/*
+			 * The reading, on the element, so it can be checked from outside.
+			 *
+			 * The orb is a canvas: which of the nine it is drawing leaves no trace in the DOM, and a
+			 * test that cannot see the state can only prove that *something* is animating. This is
+			 * also the fastest way to see what the window thinks it is doing while using it.
+			 */
+			data-ly-mood={mood}
+			className="ly-enter mb-2.5 flex items-center gap-2 text-detail text-ink-muted"
+		>
 			{/*
 			 * Decorative, so `aria-hidden`: the phrase beside it already says what this is, and a
 			 * reader announcing the orb's own label before "Hunting…" is the same fact twice.
