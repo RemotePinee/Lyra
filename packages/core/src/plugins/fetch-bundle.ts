@@ -45,6 +45,17 @@ export async function fetchBundle(entry: RegistryEntry, staging: string): Promis
 			await fromTarball(entry, staging);
 			return { via: "tarball" };
 		} catch (error) {
+			const because = error instanceof Error ? error.message : String(error);
+			/*
+			 * There is not always something to fall back to.
+			 *
+			 * A bundle uploaded to a registry has no repository — that is what makes it private — so
+			 * the archive is not the fast path, it is the only path. Cloning an empty string produces
+			 * a git error about a missing URL, which reads as "the download is broken" when what
+			 * actually happened is that the download failed and nothing else exists.
+			 */
+			if (!entry.repository) throw new Error(`取包失败：${because}`, { cause: error });
+
 			/*
 			 * Start over before cloning.
 			 *
@@ -52,12 +63,12 @@ export async function fetchBundle(entry: RegistryEntry, staging: string): Promis
 			 * has files in it fails with a message about the directory rather than about the download.
 			 */
 			await rm(staging, { recursive: true, force: true });
-			const because = error instanceof Error ? error.message : String(error);
 			await fromGit(entry, staging);
 			return { via: "git", fellBackBecause: because };
 		}
 	}
 
+	if (!entry.repository) throw new Error("这个条目既没有下载地址也没有仓库地址");
 	await fromGit(entry, staging);
 	return { via: "git" };
 }

@@ -34,6 +34,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative as relativePath, resolve } from "node:path";
 import type { McpServerConfig } from "../mcp/client.ts";
 import { loadSkills, type Skill } from "../skills/loader.ts";
+import { readBundleIcon } from "./bundle-icon.ts";
 import { readInstalls, type InstallRecord } from "./installs.ts";
 
 export interface PluginInterface {
@@ -195,6 +196,7 @@ export async function loadPlugins(
 			 */
 			const read = await readContents(pluginDir, manifest, id, source);
 			diagnostics.push(...read.diagnostics);
+			await attachIcon(pluginDir, manifest);
 
 			/*
 			 * No skills and a server declaration: this is an MCP server, whatever the directory it
@@ -265,7 +267,32 @@ export async function inspectBundle(
 
 	const manifest = found.manifest;
 	const read = await readContents(dir, manifest, manifest.name || basename(dir), source);
+	await attachIcon(dir, manifest);
 	return { kind: read.kind, manifest, skills: read.skills, servers: read.servers };
+}
+
+/**
+ * Give a manifest the picture its bundle shipped.
+ *
+ * Written into `interface.logo` rather than into a field of its own, because every list that draws
+ * a bundle already reads that field and a second one would mean nine call sites choosing between
+ * them.
+ *
+ * A file inside the bundle beats a `logo` URL even when the manifest declares one, which is not the
+ * obvious rule and is the one the platform follows: its icon route serves an uploaded icon first,
+ * then the bundle's own, and a remote URL last, because that one depends on somebody else's server
+ * still being there. The app has to agree — an entry whose mark differs before and after installing
+ * is the same defect as a catalogue that mislabels what a bundle is. `iconCandidates` is where the
+ * two ends share that ordering.
+ *
+ * Mutates, deliberately: the manifest was parsed one line ago and belongs to this scan alone.
+ */
+async function attachIcon(dir: string, manifest: PluginManifest): Promise<void> {
+	const declared = manifest.interface?.logo;
+	// Already an inlined picture — from a previous scan, or written by hand into the manifest.
+	if (declared?.startsWith("data:")) return;
+	const icon = await readBundleIcon(dir, declared);
+	if (icon) manifest.interface = { ...manifest.interface, logo: icon };
 }
 
 /** The skills and servers a manifest points at, and the verdict that follows from having them. */

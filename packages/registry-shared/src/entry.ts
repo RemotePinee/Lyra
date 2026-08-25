@@ -49,7 +49,13 @@ export interface RegistryEntry {
 	id: string;
 	name: string;
 	description?: string;
-	/** Git URL the bundle is cloned from — still the fallback when a tarball cannot be had. */
+	/**
+	 * Git URL the bundle is cloned from — still the fallback when a tarball cannot be had.
+	 *
+	 * Empty for a bundle that was uploaded rather than built from a repository. Those exist only on a
+	 * platform that serves a tarball, so there is nothing to fall back *to*, and inventing a URL to
+	 * satisfy the field would produce a clone that 404s.
+	 */
 	repository: string;
 	/** Sub-path within the repository, for registries that ship many bundles in one repo. */
 	path?: string;
@@ -129,21 +135,31 @@ export function normalise(item: unknown): RegistryEntry | null {
 
 	const repository = pick(raw, "repository", "repo", "url", "git");
 	const name = pick(raw, "name", "title", "displayName");
-	if (!repository || !name) return null;
+	const tarball = pick(raw, "tarball", "dist");
+	if (!name) return null;
+
+	/*
+	 * A bundle needs somewhere to come from — a repository or a built archive.
+	 *
+	 * It used to need a repository, full stop, which was true of every entry a file-based index could
+	 * hold. A platform that builds and stores archives can also serve something that was uploaded and
+	 * has no repository at all; requiring one dropped those entries on the floor, silently, in
+	 * `readIndex` — the catalogue listed them and the client acted as though they did not exist.
+	 */
+	if (!repository && !tarball) return null;
 	// Only ever cloned from, never opened in a browser, but a non-git scheme has no business here.
-	if (!/^(https:\/\/|git@)/i.test(repository)) return null;
+	if (repository && !/^(https:\/\/|git@)/i.test(repository)) return null;
 
 	const id = pick(raw, "id", "slug") ?? slugOf(name);
 	if (!/^[a-z0-9._-]+$/i.test(id)) return null;
 
 	const logo = pick(raw, "logo", "icon", "iconUrl");
-	const tarball = pick(raw, "tarball", "dist");
 	const declared = pick(raw, "kind", "type");
 	const packageName = pick(raw, "package", "npm");
 	return {
 		id,
 		name,
-		repository,
+		repository: repository ?? "",
 		description: pick(raw, "description", "summary", "shortDescription"),
 		path: pick(raw, "path", "subpath"),
 		author: pick(raw, "author", "developerName", "owner"),

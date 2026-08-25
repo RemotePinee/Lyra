@@ -157,3 +157,31 @@ test("compatibility is read off the archive, and a plugin manifest only counts f
 	// Nothing recognisable claims nothing, rather than claiming everything.
 	assert.deepEqual(clientsFor("plugin", none), []);
 });
+
+test("a bundle with an archive but no repository is kept", () => {
+	/*
+	 * An uploaded private bundle has no repository — that is what makes it private. Requiring one
+	 * dropped those entries inside `readIndex`, so the platform listed them and the client behaved as
+	 * though they did not exist: the catalogue said 11, the app saw 10, and nothing said why.
+	 */
+	const entry = normalise({
+		id: "secret-notes",
+		name: "内部笔记",
+		repository: "",
+		tarball: "https://market.example/v1/download/secret-notes/1.0.0?token=abc",
+		kind: "plugin",
+	});
+	assert.equal(entry?.id, "secret-notes");
+	assert.equal(entry?.repository, "");
+	assert.ok(entry?.tarball);
+});
+
+test("with neither, there is nowhere to install from", () => {
+	assert.equal(normalise({ id: "nothing", name: "空的" }), null);
+});
+
+test("a repository that is not a git URL is still refused", () => {
+	// The relaxation is "may be absent", not "may be anything".
+	assert.equal(normalise({ id: "x", name: "x", repository: "ftp://example.com/x.git" }), null);
+	assert.equal(normalise({ id: "x", name: "x", repository: "javascript:alert(1)" }), null);
+});

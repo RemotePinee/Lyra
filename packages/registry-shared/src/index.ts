@@ -43,6 +43,8 @@ export {
 
 export { normalisePath, parseRepo, tarballUrl, type RepoRef } from "./repo.ts";
 
+export { MAX_ICON_BYTES, acceptIcon, iconCandidates, remoteLogo } from "./icon.ts";
+
 export {
 	CLIENTS,
 	CLIENT_LABEL,
