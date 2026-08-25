@@ -51,11 +51,49 @@ export function isPinned(row: StickyRow): boolean {
 	return row.top <= row.rail + EPSILON;
 }
 
-/** The underside of the pinned band: the lowest edge of everything currently being held. */
-export function pinnedDepth(rows: StickyRow[]): number {
-	let depth = 0;
+/**
+ * The band the list must not be softened through, as a top and an underside.
+ *
+ * Wider than "what has reached its rail", and that difference is the point. The fade eats whatever
+ * is in the top few pixels of the viewport, and a row on its way to the rail travels through
+ * exactly there — so the strip dissolved as it approached the top, hung there as a ghost of itself,
+ * and snapped back to full strength the instant it landed. The row was never the list; it only
+ * looked like it because it was passing through where the list gets erased.
+ *
+ * So a row counts as held once it is within one fade-depth of its rail: from there the mask holds
+ * it whole and softens above and below it instead. `fade` is that depth — `Scroller`'s `FADE_TOP`,
+ * and zero when the scroller is at the top and nothing is being softened at all.
+ *
+ * `top` is where the band starts, which is what lets the list keep fading above a row that has not
+ * landed yet. It is zero once anything has actually reached its rail, and the band then reaches the
+ * top edge the way it always did.
+ */
+export interface HeldBand {
+	top: number;
+	bottom: number;
+}
+
+export function heldBand(rows: StickyRow[], fade: number): HeldBand {
+	let top = 0;
+	let bottom = 0;
+	let found = false;
 	for (const row of rows) {
-		if (isPinned(row)) depth = Math.max(depth, row.bottom);
+		if (row.top > row.rail + fade + EPSILON) continue;
+		// Clamped: a row being pushed out sits above the viewport, and the band starts at its edge.
+		const at = Math.max(row.top, 0);
+		top = found ? Math.min(top, at) : at;
+		bottom = Math.max(bottom, row.bottom);
+		found = true;
 	}
-	return depth;
+	return found ? { top, bottom } : { top: 0, bottom: 0 };
+}
+
+/**
+ * The underside of the pinned band: the lowest edge of everything that has actually landed.
+ *
+ * `heldBand` with no fade to allow for — the same question this always asked, kept because it is
+ * the one the tests are written against and the one `isPinned` agrees with row by row.
+ */
+export function pinnedDepth(rows: StickyRow[]): number {
+	return heldBand(rows, 0).bottom;
 }

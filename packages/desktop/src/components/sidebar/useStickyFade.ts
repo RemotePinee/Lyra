@@ -10,7 +10,8 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { isPinned, pinnedDepth, type StickyRow } from "./sticky.ts";
+import { FADE_TOP } from "../Scroller.tsx";
+import { heldBand, isPinned, type StickyRow } from "./sticky.ts";
 
 /** Marks a row the browser is currently holding at its rail. `.ly-pin` fills only while it is set. */
 const STUCK = "data-ly-stuck";
@@ -23,7 +24,7 @@ export function useStickyFade(viewport: React.RefObject<HTMLDivElement | null>, 
 	/** Found once per change to the list rather than once per frame. */
 	const rows = useRef<{ node: HTMLElement; rail: number }[]>([]);
 	const stale = useRef(true);
-	const written = useRef(-1);
+	const written = useRef({ top: -1, bottom: -1 });
 	const frame = useRef(0);
 
 	const measure = useCallback(() => {
@@ -51,11 +52,18 @@ export function useStickyFade(viewport: React.RefObject<HTMLDivElement | null>, 
 			const box = node.getBoundingClientRect();
 			return { top: box.top - origin, bottom: box.bottom - origin, rail: at };
 		});
-		const depth = pinnedDepth(measured);
+		/*
+		 * The depth the softening allows for is the depth it is about to eat into.
+		 *
+		 * Zero while the scroller is at its top: nothing is being softened then, so no row needs
+		 * protecting from it, and a strip sitting a hundred pixels down is not "nearly held".
+		 */
+		const band = heldBand(measured, view.scrollTop > 0 ? FADE_TOP : 0);
 
-		if (written.current !== depth) {
-			view.style.setProperty("--ly-fade-inset", `${depth}px`);
-			written.current = depth;
+		if (written.current.top !== band.top || written.current.bottom !== band.bottom) {
+			view.style.setProperty("--ly-hold-top", `${band.top}px`);
+			view.style.setProperty("--ly-fade-inset", `${band.bottom}px`);
+			written.current = band;
 		}
 
 		/*

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /** How deep the softening reaches. The bottom is the edge content moves through — a list grows
- *  downwards, a transcript streams into it — and a shallow fade there reads as a cut. */
-const FADE_TOP = 36;
+ *  downwards, a transcript streams into it — and a shallow fade there reads as a cut.
+ *
+ *  The top is exported because a scroller with rows pinned in it has to know: a row within this
+ *  distance of its rail is already inside the softening, and holding it whole from there is what
+ *  keeps it from dissolving on the way up. See `sidebar/sticky.ts`. */
+export const FADE_TOP = 36;
 const FADE_BOTTOM = 48;
 
 /**

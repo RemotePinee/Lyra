@@ -1165,12 +1165,37 @@
   initial-value: 0px;
 }
 
+/*
+ * Where the held band *starts*, for the stretch of list still above it.
+ *
+ * Zero for every scroller in the app and for the sidebar whenever a row has actually reached its
+ * rail — the band runs to the top edge then, and every stop below collapses onto it. It is only
+ * non-zero while a row is on its way in: the softening reaches a few dozen pixels down from the
+ * top, a row travelling to its rail passes through exactly that, and without this the strip
+ * dissolved on approach and snapped back the moment it landed. The list above it still fades; what
+ * changed is that the fade now ends where the row begins instead of running through it.
+ */
+@property --ly-hold-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 .ly-fade-y {
   mask-image: linear-gradient(
     to bottom,
-    /* The pinned band, kept at full strength: the rows held there are inside this element, so
+    /* Above the held band: the list, softened into the top edge as it always was. Collapses to
+       nothing when `--ly-hold-top` is zero, which is every case except a row on its way in. */
+      transparent 0,
+    rgb(0 0 0 / 0.06) calc(var(--ly-hold-top) * 0.12),
+    rgb(0 0 0 / 0.19) calc(var(--ly-hold-top) * 0.26),
+    rgb(0 0 0 / 0.38) calc(var(--ly-hold-top) * 0.41),
+    rgb(0 0 0 / 0.6) calc(var(--ly-hold-top) * 0.57),
+    rgb(0 0 0 / 0.8) calc(var(--ly-hold-top) * 0.72),
+    rgb(0 0 0 / 0.94) calc(var(--ly-hold-top) * 0.86),
+    /* The held band, kept at full strength: the rows held there are inside this element, so
        softening it would fade the very rows it is supposed to start below. What hides the list
-       behind them is their own fill, not this. */ #000 0,
+       behind them is their own fill, not this. */ #000 var(--ly-hold-top),
     #000 var(--ly-fade-inset),
     transparent var(--ly-fade-inset),
     rgb(0 0 0 / 0.06) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.12),

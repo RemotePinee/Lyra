@@ -136,6 +136,8 @@ interface Pinned {
 
 interface State {
 	scrollTop: number;
+	/** Where the unsoftened band starts. Non-zero only while a row is on its way to its rail. */
+	holdTop: number;
 	/** How deep the mask is erasing the list — what the pinned rows are standing on. */
 	inset: number;
 	fadeTop: number;
@@ -178,6 +180,7 @@ async function state(): Promise<State> {
 		const px = (name) => Number.parseFloat(style.getPropertyValue(name)) || 0;
 		return {
 			scrollTop: view.scrollTop,
+			holdTop: px("--ly-hold-top"),
 			inset: px("--ly-fade-inset"),
 			fadeTop: px("--ly-fade-top"),
 			fadeBottom: px("--ly-fade-bottom"),
@@ -317,6 +320,51 @@ test("a row fills only while it is held, so a pane at rest stays clear", async (
 	for (const head of found.at.heads.filter((h) => h.y > found.at.rail + 2)) {
 		assert.equal(head.fill[3], 0, `「${head.text}」 is still in the list and still clear`);
 	}
+});
+
+/*
+ * The strip on its way to the rail, which is where it used to dissolve.
+ *
+ * The mask softens the top of the viewport and the strip travels through exactly that, so it faded
+ * out as it approached, hung there as a ghost of itself, and snapped back to full strength the
+ * instant it landed — a control, dimming and un-dimming, while the list around it did the right
+ * thing. The list still fades above it; the band the mask leaves alone now starts at the strip
+ * rather than at the top edge.
+ *
+ * Asserted as containment rather than by reading pixels: a row is untouched by the mask exactly
+ * when it lies inside the unsoftened band, and both edges of that band are on the viewport.
+ */
+test("the strip is not faded on its way to the rail", async () => {
+	let approaching: State | null = null;
+	// Somewhere in here it is partway up. Which offset depends on how tall the destinations above
+	// it are, so it is searched for rather than assumed.
+	for (let y = 40; y <= 160 && !approaching; y += 4) {
+		const at = await scrollTo(y);
+		const top = at.strip?.y ?? -1;
+		if (top > 0.5 && top < 34) approaching = at;
+	}
+	assert.ok(approaching, "some offset catches the strip partway to the rail");
+
+	const strip = approaching.strip;
+	assert.ok(strip, "the strip is on the viewport");
+	assert.equal(strip.stuck, false, `it has not landed yet (${strip.y})`);
+	assert.ok(
+		approaching.holdTop <= strip.y + 0.5,
+		`the unsoftened band starts at or above it (band ${approaching.holdTop}, strip ${strip.y})`,
+	);
+	assert.ok(
+		approaching.inset >= strip.y + strip.height - 0.5,
+		`and reaches past its underside (band ends ${approaching.inset}, strip ends ${strip.y + strip.height})`,
+	);
+	// The list above it is still being softened — this is not "turn the fade off while scrolling".
+	assert.ok(approaching.holdTop > 0.5, `and the list above it still fades (${approaching.holdTop})`);
+	assert.ok(approaching.fadeTop > 0, "with the top fade very much on");
+});
+
+test("landed, the band goes back to the top edge", async () => {
+	const at = await scrollTo(400);
+	assert.ok(at.strip?.stuck, "the strip is held");
+	assert.equal(at.holdTop, 0, "nothing above it to leave unsoftened, so the band starts at the edge");
 });
 
 /*
