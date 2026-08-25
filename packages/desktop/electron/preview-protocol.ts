@@ -27,14 +27,10 @@ export const PREVIEW_SCHEME = "ly-preview";
 /**
  * Tell the OS which appearance this window is in.
  *
- * macOS draws the sidebar's vibrancy itself, and picks the material from the *window's*
- * appearance — which, left alone, is whatever the system is set to. So a light app on a dark
- * system got a dark material under a 72%-white sidebar, and the sidebar came out grey while
- * every pixel the renderer painted was correct. Nothing in CSS can reach that layer; the
- * window has to be told.
- *
- * It also settles the native menus, dialogs and scrollbars, which have the same problem for
- * the same reason.
+ * The platform draws its own surfaces — menus, dialogs, scrollbars, the traffic lights — and picks
+ * their appearance from the *window's*, which left alone is whatever the system is set to. A light
+ * app on a dark system got dark native chrome around a light page. Nothing in CSS can reach that
+ * layer; the window has to be told.
  */
 /** Enough of a MIME table for a self-contained page; anything else is served as bytes. */
 /**

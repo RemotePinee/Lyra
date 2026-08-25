@@ -75,8 +75,8 @@ test("a list with no headings is just the strip", () => {
  *
  * It decides two separate things and the second one is visible even when the first is not: the
  * depth above, and whether the row may draw a fill at all. A row that fills while it is still
- * travelling with the list is an opaque band laid across a translucent pane, hiding nothing —
- * which is exactly what every project name looked like before this was asked row by row.
+ * travelling with the list is painting over nothing, which is invisible right up until the pane's
+ * colour and the fill's stop agreeing — and then it is a grey slab on every project name.
  */
 test("a row is held once it reaches its rail, and not one pixel before", () => {
 	assert.equal(isPinned(head(RAIL)), true, "resting exactly on the rail");

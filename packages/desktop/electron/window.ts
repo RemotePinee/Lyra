@@ -45,7 +45,6 @@ export function appIconPath(): string | undefined {
  */
 let readSettings: () => Settings | undefined = () => undefined;
 let mainWindow: BrowserWindow | null = null;
-let vibrant = process.platform === "darwin";
 
 export function useSettingsSource(read: () => Settings | undefined): void {
 	readSettings = read;
@@ -80,7 +79,7 @@ export function applyNativeAppearance(): void {
 	nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
 }
 
-function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string; vibrancy: boolean } {
+function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string } {
 	const appearance = readSettings()?.appearance;
 	const dark = appearance
 		? appearance.theme === "dark" || (appearance.theme === "system" && nativeTheme.shouldUseDarkColors)
@@ -90,7 +89,6 @@ function bootTheme(): { dark: boolean; background: string; foreground: string; a
 		background: dark ? (appearance?.darkBackground ?? "#171717") : (appearance?.lightBackground ?? "#ffffff"),
 		foreground: dark ? (appearance?.darkForeground ?? "#ededed") : (appearance?.lightForeground ?? "#1a1a1a"),
 		accent: appearance?.accent ?? "#339cff",
-		vibrancy: process.platform === "darwin" && appearance?.translucentSidebar !== false,
 	};
 }
 
@@ -127,22 +125,6 @@ export function createWindow(): void {
 		 * from the saved appearance here, and kept in step by `window:theme` afterwards.
 		 */
 		backgroundColor: resolvedBackground(),
-		/*
-		 * macOS vibrancy, which is what "半透明侧边栏" actually means.
-		 *
-		 * A translucent colour on the sidebar alone would show the window's own opaque background
-		 * through it — the same flat tone, at less contrast. What makes a sidebar translucent is
-		 * the compositor sampling the desktop behind the window, and only the platform can do
-		 * that. Windows has its own material and Linux has none, so this is darwin-only.
-		 */
-		...(process.platform === "darwin" && readSettings()?.appearance?.translucentSidebar !== false
-			? {
-					vibrancy: "sidebar" as const,
-					// Otherwise the material follows focus and flattens whenever another app is in front.
-					visualEffectState: "active" as const,
-					backgroundColor: "#00000000",
-				}
-			: {}),
 		// The chrome in the design is drawn by the renderer; keep only the traffic lights.
 		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
 		// Centres the 12pt lights on the 46px toolbar row the renderer draws, matching the
@@ -290,35 +272,12 @@ function writeWindowState(): void {
  */
 
 /**
- * The two things the renderer can ask the window itself to do.
+ * What the renderer can ask the window itself to do.
  *
- * Both are about the surface behind the page rather than the page: a fast resize exposes the
- * window's own backing colour before the renderer has reflowed, and the vibrant material has to be
- * turned off before an opaque colour is painted over it.
+ * About the surface behind the page rather than the page: a fast resize exposes the window's own
+ * backing colour before the renderer has reflowed, so that colour has to track the theme.
  */
 export function registerWindowIpc(): void {
-	/**
-	 * Repaint the system window controls to match the theme.
-	 *
-	 * Only Windows and Linux have this strip — macOS keeps its own lights outside the page —
-	 * and Electron throws if the window was not created with an overlay, so the call is guarded
-	 * rather than merely no-op'd.
-	 */
-	/*
-	 * Toggled without recreating the window.
-	 *
-	 * `vibrancy` is a constructor option but also a live setter, so flipping the switch takes
-	 * effect immediately. The backing colour has to move with it: an opaque one would sit over
-	 * the vibrant layer and hide the very thing it was turned on for.
-	 */
-	ipcMain.on("window:vibrancy", (_event, on: boolean) => {
-		const window = getWindow();
-		if (process.platform !== "darwin" || !window) return;
-		vibrant = on;
-		window.setVibrancy(on ? "sidebar" : null);
-		window.setBackgroundColor(on ? "#00000000" : resolvedBackground());
-	});
-
 	ipcMain.on("window:theme", (_event, colors: { color: string; symbolColor: string }) => {
 		const window = getWindow();
 		if (!window || window.isDestroyed()) return;
@@ -328,7 +287,12 @@ export function registerWindowIpc(): void {
 		 * This is the surface a fast resize exposes before the renderer has reflowed, so it has
 		 * to track the theme — otherwise dragging an edge flashes the old palette's background.
 		 */
-		if (!vibrant) window.setBackgroundColor(colors.color);
+		window.setBackgroundColor(colors.color);
+		/*
+		 * Only Windows and Linux have a system-drawn title strip — macOS keeps its own lights
+		 * outside the page — and Electron throws if the window was not created with an overlay,
+		 * so the call is guarded rather than merely no-op'd.
+		 */
 		if (process.platform === "darwin") return;
 		try {
 			window.setTitleBarOverlay({ ...colors, height: 44 });

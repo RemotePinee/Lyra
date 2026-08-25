@@ -14,7 +14,7 @@ function paintBootTheme(): void {
 	const flag = process.argv.find((arg) => arg.startsWith("--ly-boot="));
 	if (!flag) return;
 
-	let boot: { dark: boolean; background: string; foreground: string; accent: string; vibrancy?: boolean };
+	let boot: { dark: boolean; background: string; foreground: string; accent: string };
 	try {
 		boot = JSON.parse(decodeURIComponent(flag.slice("--ly-boot=".length)));
 	} catch {
@@ -35,13 +35,8 @@ function paintBootTheme(): void {
 		/*
 		 * Painted directly as well, not only as a token: the stylesheet that turns `--color-shell`
 		 * into a background is itself a load away, and until it lands the page is default white.
-		 *
-		 * Except under vibrancy, where an opaque page is precisely what must not be painted — the
-		 * translucent sidebar shows the desktop through the *window*, so every layer above it has
-		 * to let light past. The flag is set here so the stylesheet can do the same.
 		 */
-		root.dataset.vibrancy = boot.vibrancy ? "on" : "off";
-		root.style.background = boot.vibrancy ? "transparent" : boot.background;
+		root.style.background = boot.background;
 		// Left behind so "did the theme land before the first paint?" stays answerable later.
 		root.dataset.bootThemeMs = String(Math.round(performance.now()));
 	};
@@ -189,7 +184,6 @@ const api: LyraApi = {
 	
 	setWindowTheme: (colors: { color: string; symbolColor: string }) =>
 		ipcRenderer.send("window:theme", colors),
-	setVibrancy: (on: boolean) => ipcRenderer.send("window:vibrancy", on),
 	onFullScreenChange: (handler) => {
 		const listener = (_e: Electron.IpcRendererEvent, full: boolean) => handler(full);
 		ipcRenderer.on("window:fullscreen", listener);

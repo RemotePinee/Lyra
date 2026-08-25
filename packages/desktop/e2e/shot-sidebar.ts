@@ -3,8 +3,8 @@
  *
  * Not a test — `node e2e/shot-sidebar.ts` — and beside the tests because it boots the app the same
  * way they do. Reviewing a change to how something is *drawn* against a DOM assertion is reviewing
- * a description of the picture; this is the picture. `LYRA_SHOT_THEME` and `LYRA_SHOT_GLASS` cover
- * the two treatments a pinned row has to survive: opaque, and translucent over the desktop.
+ * a description of the picture; this is the picture. `LYRA_SHOT_THEME` picks the theme, which is
+ * the one thing a pinned row's colour still depends on.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -62,7 +62,6 @@ async function seed(home: string): Promise<void> {
 			sync: { enabled: false, port: 4517, token: null },
 			appearance: {
 				theme: process.env.LYRA_SHOT_THEME === "light" ? "light" : "dark",
-				translucentSidebar: process.env.LYRA_SHOT_GLASS === "1",
 			},
 		}),
 	);

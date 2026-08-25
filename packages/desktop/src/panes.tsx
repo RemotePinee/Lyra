@@ -68,12 +68,9 @@ export function NavPane({
 			// so Tab walks into something nobody can see.
 			inert={!navOpen}
 			/*
-			 * Which form it is in, so the fill can differ.
-			 *
-			 * Beside the content it is translucent on purpose — that is the point of the
-			 * vibrancy, and what shows through is the desktop. As a drawer it lies over the
-			 * transcript, and 72% opacity means the conversation reads straight through the
-			 * navigation: two columns of text on top of each other, neither legible.
+			 * Which form it is in, so the fill can differ — see `[data-pane="drawer"]` in the
+			 * stylesheet. Beside the content the pane is a column of its own; as a drawer it lies
+			 * over the transcript and has to cover what is under it.
 			 */
 			data-pane={compact ? "drawer" : "beside"}
 			className={`${compact ? "fixed inset-0 z-30 shadow-2xl shadow-black/60" : "h-full w-full overflow-hidden"} ${

@@ -155,15 +155,6 @@ const sideChats = new Map<string, SideChat>();
 const terminals = new Map<string, LiveTerminal>();
 let settings: Settings;
 
-/**
- * Whether the window is currently showing a vibrant material.
- *
- * Tracked because two handlers write the same property. `window:theme` repaints the backing
- * colour so a fast resize does not flash the old palette — but under vibrancy that colour is
- * exactly what must stay transparent, and an opaque one painted over the material is the
- * material gone. Whichever message arrived last used to win.
- */
-
 let scheduler: Scheduler | null = null;
 
 // ---------------------------------------------------------------------------

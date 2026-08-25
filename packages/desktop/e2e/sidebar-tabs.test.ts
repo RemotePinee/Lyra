@@ -263,9 +263,9 @@ test("a project name is held under the strip, and the list is erased out from un
 	assert.ok(found, "some scroll position holds a heading at the rail");
 	assert.ok(found.held.text.length > 0, "and it is a real heading with a name on it");
 	/*
-	 * The heading has no fill of its own — the pane is translucent, so it cannot have one — which
-	 * makes this the assertion the whole approach rests on. If the erased band stopped at the strip,
-	 * the list would be showing through the project name standing over it.
+	 * The erased band, not the heading's fill. If the band stopped at the strip, the rows below
+	 * would start softening while still under the project name — the first conversation in a
+	 * project, half drawn, every time.
 	 */
 	assert.ok(
 		found.at.inset >= found.held.y + found.held.height - 1,
@@ -298,7 +298,8 @@ test("the strip's fill covers the whole rail, so nothing surfaces above it", asy
  * The fill is there to hide the list going under a held row. A row travelling with the list has
  * nothing going under it, and an opaque band on it is a band of the wrong colour laid across a pane
  * the desktop is supposed to show through — which is what every project name and the strip itself
- * looked like at rest, four grey slabs down a translucent sidebar, none of them hiding anything.
+ * is paint that covers nothing — and it is what put a visible grey slab on every project name back
+ * when this pane was translucent.
  *
  * Both halves are asserted here because either one alone is satisfiable by doing nothing: never
  * filling breaks the test above, always filling breaks this one.
@@ -368,63 +369,30 @@ test("landed, the band goes back to the top edge", async () => {
 });
 
 /*
- * Translucent is the mode this went wrong in, so it is the mode the colour is checked in.
+ * The colour it fills with, which is the pane's own and must stay that way.
  *
- * `--color-sidebar` was the fill for both modes, which is exact while the pane is opaque and a
- * visibly lighter, flatter grey once it is not. The fill has to stay opaque — that is what hides
- * the list — so what changes is which opaque colour: the pane's own mix, resolved, rather than a
- * shade picked for a pane that no longer looks like that.
+ * This is the assertion that would have caught the whole episode: the fill was `--color-sidebar`
+ * while the pane was painting something else, and every held row was a visible grey slab. Opaque,
+ * because that is what hides the list — and exactly the pane's colour, because that is what makes
+ * it invisible.
  */
-test("held under vibrancy, a row is the pane's colour rather than a stand-in for it", async () => {
-	await scrollTo(400);
-	type Rgba = [number, number, number, number];
-	const seen = await app.evaluate<{ shell: Rgba; sidebar: Rgba; held: Rgba }>(`(() => {
-		const root = document.documentElement;
-		const wasMode = root.dataset.vibrancy;
-		const wasAlpha = root.style.getPropertyValue("--ly-sidebar-alpha");
-		// The translucent case, whichever way this window happens to be configured.
-		root.dataset.vibrancy = "on";
-		root.style.setProperty("--ly-sidebar-alpha", "0.78");
+test("a held row fills with the pane's own colour, opaque", async () => {
+	const at = await scrollTo(400);
+	assert.ok(at.strip?.stuck, "the strip is held");
 
-		const pane = document.querySelector(".ly-sidebar-fill");
+	const pane = await app.evaluate<[number, number, number, number]>(`(() => {
 		const paint = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
-		const rgba = (css) => {
-			paint.clearRect(0, 0, 1, 1);
-			paint.fillStyle = css.trim();
-			paint.fillRect(0, 0, 1, 1);
-			return [...paint.getImageData(0, 0, 1, 1).data];
-		};
-		const out = {
-			// The two colours the pane is made of, and what the held row came out as.
-			shell: rgba(getComputedStyle(pane).getPropertyValue("--color-shell")),
-			sidebar: rgba(getComputedStyle(pane).getPropertyValue("--color-sidebar")),
-			held: rgba(getComputedStyle(${VIEW}.querySelector("[data-ly-rail]")).backgroundColor),
-		};
-
-		if (wasMode === undefined) delete root.dataset.vibrancy; else root.dataset.vibrancy = wasMode;
-		if (wasAlpha) root.style.setProperty("--ly-sidebar-alpha", wasAlpha);
-		else root.style.removeProperty("--ly-sidebar-alpha");
-		return out;
+		paint.fillStyle = getComputedStyle(document.querySelector(".ly-sidebar-fill")).backgroundColor;
+		paint.fillRect(0, 0, 1, 1);
+		return [...paint.getImageData(0, 0, 1, 1).data];
 	})()`);
 
-	const { shell, sidebar, held } = seen;
-	assert.equal(held[3], 255, `the held row stays opaque under vibrancy (${held})`);
-	assert.notDeepEqual(held.slice(0, 3), sidebar.slice(0, 3), `and is no longer the flat sidebar grey (${sidebar})`);
-	assert.notDeepEqual(held.slice(0, 3), shell.slice(0, 3), "nor the plain page colour, the other half of the mix");
-
-	/*
-	 * Between the two, which is the whole claim: the pane paints `--color-shell` at this alpha over
-	 * the window's material, and this is that mix with `--color-sidebar` standing in for what CSS
-	 * cannot sample. A value outside the range would mean it is coming from somewhere else.
-	 */
-	for (let i = 0; i < 3; i++) {
-		const [lo, hi] = [Math.min(shell[i], sidebar[i]), Math.max(shell[i], sidebar[i])];
-		assert.ok(held[i] >= lo && held[i] <= hi, `channel ${i}: ${held[i]} is between ${lo} and ${hi}`);
+	assert.equal(at.strip.fill[3], 255, `opaque (${at.strip.fill})`);
+	assert.equal(pane[3], 255, `and so is the pane behind it (${pane})`);
+	assert.deepEqual(at.strip.fill, pane, "the same colour, so a held row shows only by what it hides");
+	for (const head of at.heads.filter((h) => h.stuck)) {
+		assert.deepEqual(head.fill, pane, `「${head.text}」 too`);
 	}
-	// And weighted toward the pane's own colour rather than sitting halfway.
-	const toShell = Math.max(...held.slice(0, 3).map((v, i) => Math.abs(v - shell[i])));
-	const toSidebar = Math.max(...held.slice(0, 3).map((v, i) => Math.abs(v - sidebar[i])));
-	assert.ok(toShell < toSidebar, `nearer the pane (${toShell}) than the old stand-in (${toSidebar})`);
 });
 
 test("scrolling on past a project hands the rail to the next one", async () => {

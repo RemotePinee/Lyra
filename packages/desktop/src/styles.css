@@ -1108,11 +1108,11 @@
  * this working and this being the reason the sidebar had no fade at all.
  *
  * The old fade was a strip painted in the pane's own colour, handed in by every caller. That is
- * only ever right where the pane is opaque, and the sidebar's is not: under vibrancy its fill is
- * `color-mix(--color-shell, transparent)` over the desktop, so a band of solid `--color-sidebar`
- * laid across the top of the list was a grey film with a boundary of its own. It read as a
- * rendering fault, which is what it was, and the conclusion drawn at the time was that the
- * sidebar wanted a hairline instead of a fade. The conclusion was wrong; the paint was.
+ * only ever right where the caller's guess at the colour is right, and on a surface that is not a
+ * flat fill — a card, a diff's tinted rows, a pane that was translucent for a while — it is a band
+ * with a boundary of its own laid across the top of the list. It read as a rendering fault, which
+ * is what it was, and the conclusion drawn at the time was that the sidebar wanted a hairline
+ * instead of a fade. The conclusion was wrong; the paint was.
  *
  * Taking the content's own alpha down has no colour in it to be wrong. It is correct over glass,
  * over a card, over whatever the desktop happens to be showing through, and it needs nothing
@@ -2330,32 +2330,16 @@
  * Dark: a mid grey, because a raised object on a dark surface catches light rather than losing
  * it, and the panel behind it is too close to black for anything darker to be findable.
  */
-/* ---------------------------------------------------------------------------
- * Translucent sidebar
- *
- * The effect is the compositor sampling the desktop behind the window and blurring it. Only the
- * platform can do that, so the window is created with `vibrancy: "sidebar"` and a transparent
- * backing colour — and then every layer between that vibrant surface and the sidebar has to let
- * light through, or it is covered by our own opaque paint and nothing shows.
- *
- * So under vibrancy the page itself is transparent, and the regions that must *not* be
- * see-through — the conversation, the settings body — put their own opaque fill back. Without
- * that second half the whole window turns into a sheet of glass, which is not what was asked
- * for either.
- * ------------------------------------------------------------------------- */
-
-:root[data-vibrancy="on"] body {
-  background: transparent;
-}
-
 .ly-sidebar-fill {
   background: var(--color-sidebar);
   /*
    * What a pinned row in this pane is drawn on — see `.ly-pin`.
    *
-   * Exact while the pane is opaque, which is the whole of the requirement then: the fill is the
-   * pane's own colour, so a held row is invisible except for the list disappearing behind it.
-   * Vibrancy is where it stops being exact, and the two rules below are what that costs.
+   * The pane's own colour, exactly, which is the whole of the requirement: a held row is then
+   * invisible except for the list disappearing behind it. This pane was translucent for a while
+   * and that exactness was the thing it cost — an opaque fill over a pane showing the desktop
+   * through cannot match it, because nothing in CSS can sample what is behind a window. The
+   * sidebar is opaque again and the fill is the pane again.
    */
   --ly-behind: var(--color-sidebar);
 }
@@ -2364,10 +2348,9 @@
  * A row here fills only while it is actually being held.
  *
  * The fill hides the list passing underneath a pinned row, and a row travelling with the list has
- * nothing passing underneath it — so this was a band of opaque colour laid across every project
- * name and across the tab strip, at rest, on a pane whose entire point is that the desktop shows
- * through it. Three or four grey slabs stacked down a translucent sidebar, none of them hiding
- * anything.
+ * nothing passing underneath it — so an unconditional fill is paint that covers nothing. It is
+ * invisible here now that the colour matches the pane, but it is still a lie about what the row is
+ * doing, and it is what made every project name a visible grey slab back when the pane was glass.
  *
  * CSS has no way to ask whether a `sticky` element is currently stuck, and `useStickyFade` is
  * already measuring exactly that on every frame for the fade — so it marks the rows it finds held
@@ -2376,33 +2359,6 @@
  */
 .ly-sidebar-fill .ly-pin:not([data-ly-stuck]) {
   background: transparent;
-}
-
-/*
- * And while it is held, under vibrancy, it is the colour the pane actually comes out as.
- *
- * It has to be opaque — a held row hides the list passing under it, and nothing else can. What it
- * must not be is a *different* opaque colour, which is what `--color-sidebar` was: a shade picked
- * to sit beside the pane back when the pane was solid, laid over a pane that is now 78% of a
- * darker one. That reads lighter and flatter than everything around it, and with the strip and a
- * project name held together it becomes one slab with an edge down both sides of it.
- *
- * So compute the pane instead of guessing at it. The pane paints `--color-shell` at
- * `--ly-sidebar-alpha` over the window's material; this is that same mix, resolved against
- * `--color-sidebar` standing in for the material behind it. Not exact — nothing in CSS can sample
- * a desktop — but wrong by the distance between the material and one grey, rather than by the
- * whole of the alpha.
- *
- * `backdrop-filter` was tried here first and does nothing: the mask on the scroll viewport makes it
- * a backdrop root, so the blur samples the desktop it cannot reach rather than the rows inside it,
- * and the titles passed under the strip in full focus.
- */
-:root[data-vibrancy="on"] .ly-sidebar-fill .ly-pin[data-ly-stuck] {
-  background: color-mix(
-    in srgb,
-    var(--color-shell) calc(var(--ly-sidebar-alpha, 1) * 100%),
-    var(--color-sidebar)
-  );
 }
 
 /* ---------------------------------------------------------------------------
@@ -2445,28 +2401,10 @@
     0 2px 6px -2px rgb(0 0 0 / 0.3);
 }
 
-/*
- * Under vibrancy the wash is the page colour, not the sidebar's grey.
- *
- * That grey exists to separate the sidebar from the content beside it — a job the material
- * already does here. Keeping it meant laying an achromatic film over the desktop showing
- * through, which is exactly what "everything looks grey" is: a neutral tint desaturating
- * whatever is behind it. White on light and near-black on dark leaves the blur its own colour.
- */
-:root[data-vibrancy="on"] .ly-sidebar-fill {
-  background: color-mix(in srgb, var(--color-shell) calc(var(--ly-sidebar-alpha, 1) * 100%), transparent);
-}
-
 .ly-shell {
   background: var(--color-shell);
 }
 
-/* Under vibrancy the shell steps aside so the sidebar has something to reveal. */
-:root[data-vibrancy="on"] .ly-shell {
-  background: transparent;
-}
-
-/* Everything that is not the sidebar stays solid, vibrant window or not. */
 .ly-opaque {
   background: var(--color-shell);
 }
@@ -2765,14 +2703,13 @@
 }
 
 /*
- * The navigation drawer is opaque, whatever the vibrancy setting says.
+ * The drawer carries the sidebar's own fill rather than inheriting the page's.
  *
- * Translucency is for the pane that sits beside the content and lets the desktop through. The
- * drawer covers the content instead, so the same treatment puts the transcript underneath the
- * navigation — every line of one showing through the other.
+ * Beside the content the pane is a column with the transcript next to it; as a drawer it lies
+ * *over* the transcript, and anything less than opaque puts every line of the conversation
+ * through the navigation.
  */
-[data-pane="drawer"] .ly-sidebar-fill,
-:root[data-vibrancy="on"] [data-pane="drawer"] .ly-sidebar-fill {
+[data-pane="drawer"] .ly-sidebar-fill {
   background: var(--color-sidebar);
 }
 

@@ -19,7 +19,6 @@ const FACTORY_APPEARANCE: Appearance = {
 	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
 	uiFontSize: 13,
 	codeFontSize: 12,
-	translucentSidebar: true,
 	contrast: 60,
 	pointerCursor: false,
 	reduceMotion: "system",
@@ -121,16 +120,6 @@ export function AppearanceSettings() {
 							onChange={(codeFont) => patch({ codeFont })}
 							mono
 							className="w-[220px]"
-						/>
-					}
-				/>
-				<Row
-					title="半透明侧边栏"
-					detail="侧边栏透出窗口背后的内容（仅 macOS）。效果取决于背后是什么。"
-					control={
-						<Toggle
-							checked={appearance.translucentSidebar}
-							onChange={(translucentSidebar) => patch({ translucentSidebar })}
 						/>
 					}
 				/>

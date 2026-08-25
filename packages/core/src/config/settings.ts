@@ -34,7 +34,6 @@ export interface AppearanceSettings {
 	codeFont: string;
 	uiFontSize: number;
 	codeFontSize: number;
-	translucentSidebar: boolean;
 	/** 0–100. Scales the distance between surface layers and text. */
 	contrast: number;
 	pointerCursor: boolean;
@@ -55,7 +54,6 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
 	uiFontSize: 13,
 	codeFontSize: 12,
-	translucentSidebar: false,
 	contrast: 60,
 	pointerCursor: false,
 	reduceMotion: "system",
@@ -311,11 +309,26 @@ const SUPERSEDED_FONTS: Record<"uiFont" | "codeFont", string[]> = {
 	codeFont: ['ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace'],
 };
 
-function migrateAppearance(appearance: AppearanceSettings): AppearanceSettings {
+/**
+ * Settings that no longer exist, dropped rather than carried forever.
+ *
+ * The file is merged over the defaults and written back out in full, so a key nothing reads any
+ * more still survives every save — and the next person to grep for it finds it live in real
+ * settings files and has to work out whether it means anything. It does not.
+ *
+ * `translucentSidebar` turned the sidebar into macOS vibrancy. It was removed because a translucent
+ * pane cannot be matched by anything opaque drawn on top of it: a pinned row has to hide the list
+ * going under it, and no colour CSS can name is the colour of a pane showing the desktop through.
+ * Every held row was a visible slab, and which shade of wrong depended on the wallpaper.
+ */
+const REMOVED_APPEARANCE = ["translucentSidebar"] as const;
+
+export function migrateAppearance(appearance: AppearanceSettings): AppearanceSettings {
 	const next = { ...appearance };
 	for (const key of ["uiFont", "codeFont"] as const) {
 		if (SUPERSEDED_FONTS[key].includes(next[key])) next[key] = DEFAULT_APPEARANCE[key];
 	}
+	for (const key of REMOVED_APPEARANCE) delete (next as Record<string, unknown>)[key];
 	return next;
 }
 

@@ -130,25 +130,6 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		"--ly-code-font": appearance.codeFont,
 		"--ly-ui-size": `${appearance.uiFontSize}px`,
 		"--ly-code-size": `${appearance.codeFontSize}px`,
-		/*
-		 * A tint over the material, not a pane in front of it.
-		 *
-		 * 0.62 was covering the very thing it turned on — the blur was there but you could barely
-		 * read anything through it. macOS's own sidebars lay down only a light wash and let the
-		 * vibrancy carry the look; the material already lifts contrast for text drawn on it, so
-		 * a thin tint stays legible. Dark themes get a little more, because a dark wash over a
-		 * bright desktop needs more body to keep pale text off a light patch.
-		 */
-		/*
-		 * A wash heavy enough that the sidebar still has a colour of its own.
-		 *
-		 * Thin is what makes vibrancy look like vibrancy, and it is also what makes the sidebar
-		 * take on whatever the window happens to be sitting over — grey against a dark desktop,
-		 * near-white against a bright one. That unpredictability is what reads as "unnatural":
-		 * every other surface in the app is a fixed colour and this one drifts. At 0.72 the tint
-		 * dominates and the material shows through as a subtle shift rather than as the subject.
-		 */
-		"--ly-sidebar-alpha": appearance.translucentSidebar ? (dark ? "0.78" : "0.72") : "1",
 	};
 
 	for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
@@ -162,14 +143,6 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 	 * quickly is exactly that, and a stale colour there is the black frame that flashes.
 	 */
 	window.lyra?.setWindowTheme?.({ color: toHex(background), symbolColor: text(0.62) });
-	/*
-	 * The window has to be told too: vibrancy is a native layer, not a CSS effect.
-	 *
-	 * Nothing in the stylesheet can sample the desktop behind the window, so the alpha above only
-	 * has anything to reveal once the platform is compositing a vibrant layer underneath it.
-	 */
-	window.lyra?.setVibrancy?.(appearance.translucentSidebar);
-	root.dataset.vibrancy = appearance.translucentSidebar ? "on" : "off";
 
 	root.classList.toggle("dark", dark);
 	root.classList.toggle("light", !dark);

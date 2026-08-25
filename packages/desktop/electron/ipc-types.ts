@@ -310,8 +310,6 @@ export interface LyraApi {
 	 * the renderer catches up.
 	 */
 	setWindowTheme(colors: { color: string; symbolColor: string }): void;
-	/** macOS only; a no-op elsewhere. Translucency is a window material, not a CSS colour. */
-	setVibrancy(on: boolean): void;
 	/**
 	 * Native full screen, reported by the window because the page cannot detect it.
 	 *

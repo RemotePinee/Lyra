@@ -357,21 +357,8 @@ export function Popover({
 		};
 	}, [anchor, dismiss]);
 
-	/*
-	 * Frosted over the page, opaque over the sidebar.
-	 *
-	 * Under vibrancy the sidebar has no background at all — macOS draws the material *below* the web
-	 * contents, so every layer from the sidebar up to `<html>` is transparent. There is nothing there
-	 * for `backdrop-filter` to blur, and a 52% panel over nothing is 52% of nothing: the rows behind
-	 * it simply show through, legibly, which is the one thing a menu must not allow.
-	 *
-	 * Blur cannot fix that, so this stops asking for it there and pays with an opaque fill instead.
-	 * Over `main` — which does paint a background — the real thing still happens.
-	 */
-	const surface =
-		anchor instanceof HTMLElement && anchor.closest("aside") && document.documentElement.dataset.vibrancy === "on"
-			? "ly-glass-solid"
-			: "ly-glass";
+	// Frosted: every surface a menu opens over paints a background of its own for it to blur.
+	const surface = "ly-glass";
 
 	/*
 	 * Rendered into `<body>`, not where it was written.

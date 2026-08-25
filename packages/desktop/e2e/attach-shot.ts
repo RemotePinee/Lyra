@@ -83,7 +83,6 @@ const probe = await call<{ result: { value: unknown } }>("Runtime.evaluate", {
 		const origin = view.getBoundingClientRect().top;
 		const cs = getComputedStyle(view);
 		return {
-			vibrancy: document.documentElement.dataset.vibrancy,
 			paneBg: getComputedStyle(pane).backgroundColor,
 			behind: getComputedStyle(pane).getPropertyValue("--ly-behind").trim(),
 			headBg: head ? getComputedStyle(head).backgroundColor : null,
