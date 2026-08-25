@@ -1749,6 +1749,11 @@
  *
  * The variable is there for a panel that is not the usual colour: set `--ly-behind` on the scroll
  * container and the backing follows it, rather than every such panel needing its own rule.
+ *
+ * Unconditional here because the panels that use it — a diff's file headings, a detail card — are
+ * opaque, so a backing that matches them is invisible whether the row is held or not. The sidebar
+ * is the one place that is not true; it narrows this to the moment the row is actually held, and
+ * the rule is with the rest of that pane.
  */
 .ly-pin {
   background: var(--ly-behind, var(--color-shell));
@@ -2323,20 +2328,56 @@
   /*
    * What a pinned row in this pane is drawn on — see `.ly-pin`.
    *
-   * A pinned row has to be opaque, and this is the one place in the app where that is a real cost
-   * rather than a detail: the pane is translucent by default, so a solid strip is a band the
-   * desktop does not show through. It is the price of `position: sticky`, and it is worth paying.
-   * The alternative — placing the rows by hand outside the mask so they need no fill — was built
-   * first, and it lagged the scroll by a frame: the list moves on the compositor and JavaScript
-   * cannot keep up with it, so every pinned row wobbled by however far the last wheel tick went.
-   *
-   * The same value under vibrancy too, deliberately not overridden there. The pane's own fill goes
-   * translucent in that mode, but `--color-sidebar` is still the nearest *opaque* match for it — a
-   * pinned row filled with the plain background colour, `--color-shell`, came out visibly flatter
-   * and darker than the material around it. It cannot be exact; what is actually behind the pane is
-   * the desktop, and nothing in CSS can sample that.
+   * Exact while the pane is opaque, which is the whole of the requirement then: the fill is the
+   * pane's own colour, so a held row is invisible except for the list disappearing behind it.
+   * Vibrancy is where it stops being exact, and the two rules below are what that costs.
    */
   --ly-behind: var(--color-sidebar);
+}
+
+/*
+ * A row here fills only while it is actually being held.
+ *
+ * The fill hides the list passing underneath a pinned row, and a row travelling with the list has
+ * nothing passing underneath it — so this was a band of opaque colour laid across every project
+ * name and across the tab strip, at rest, on a pane whose entire point is that the desktop shows
+ * through it. Three or four grey slabs stacked down a translucent sidebar, none of them hiding
+ * anything.
+ *
+ * CSS has no way to ask whether a `sticky` element is currently stuck, and `useStickyFade` is
+ * already measuring exactly that on every frame for the fade — so it marks the rows it finds held
+ * and this reads the mark. `sidebar/sticky.ts` has the reasoning for why that measurement is
+ * allowed to be a frame late while the placement is not.
+ */
+.ly-sidebar-fill .ly-pin:not([data-ly-stuck]) {
+  background: transparent;
+}
+
+/*
+ * And while it is held, under vibrancy, it is the colour the pane actually comes out as.
+ *
+ * It has to be opaque — a held row hides the list passing under it, and nothing else can. What it
+ * must not be is a *different* opaque colour, which is what `--color-sidebar` was: a shade picked
+ * to sit beside the pane back when the pane was solid, laid over a pane that is now 78% of a
+ * darker one. That reads lighter and flatter than everything around it, and with the strip and a
+ * project name held together it becomes one slab with an edge down both sides of it.
+ *
+ * So compute the pane instead of guessing at it. The pane paints `--color-shell` at
+ * `--ly-sidebar-alpha` over the window's material; this is that same mix, resolved against
+ * `--color-sidebar` standing in for the material behind it. Not exact — nothing in CSS can sample
+ * a desktop — but wrong by the distance between the material and one grey, rather than by the
+ * whole of the alpha.
+ *
+ * `backdrop-filter` was tried here first and does nothing: the mask on the scroll viewport makes it
+ * a backdrop root, so the blur samples the desktop it cannot reach rather than the rows inside it,
+ * and the titles passed under the strip in full focus.
+ */
+:root[data-vibrancy="on"] .ly-sidebar-fill .ly-pin[data-ly-stuck] {
+  background: color-mix(
+    in srgb,
+    var(--color-shell) calc(var(--ly-sidebar-alpha, 1) * 100%),
+    var(--color-sidebar)
+  );
 }
 
 /* ---------------------------------------------------------------------------

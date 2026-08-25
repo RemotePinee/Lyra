@@ -10,7 +10,10 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { pinnedDepth, type StickyRow } from "./sticky.ts";
+import { isPinned, pinnedDepth, type StickyRow } from "./sticky.ts";
+
+/** Marks a row the browser is currently holding at its rail. `.ly-pin` fills only while it is set. */
+const STUCK = "data-ly-stuck";
 
 /**
  * Attach to a scroll viewport. `rail` is the offset headings rest at, in pixels — the strip rests
@@ -53,6 +56,26 @@ export function useStickyFade(viewport: React.RefObject<HTMLDivElement | null>, 
 		if (written.current !== depth) {
 			view.style.setProperty("--ly-fade-inset", `${depth}px`);
 			written.current = depth;
+		}
+
+		/*
+		 * And which rows are being held, so only those draw a fill.
+		 *
+		 * The fill exists to hide the list passing underneath a held row, and a row travelling with
+		 * the list has nothing passing underneath it — so on a translucent pane it was a band of
+		 * opaque colour sitting on every project name at rest, which is what the pane is translucent
+		 * to avoid. CSS cannot ask "is this sticky element currently stuck", and this loop has just
+		 * measured exactly that.
+		 *
+		 * After the reads and after the one style write, never between them: an attribute that only
+		 * selects a background changes no geometry, so nothing below needs measuring again. Compared
+		 * before writing because this runs on every frame of every scroll and the state flips once
+		 * per row per pass.
+		 */
+		for (let i = 0; i < measured.length; i++) {
+			const node = rows.current[i].node;
+			const held = isPinned(measured[i]);
+			if (node.hasAttribute(STUCK) !== held) node.toggleAttribute(STUCK, held);
 		}
 	}, [viewport, gap, rail]);
 

@@ -119,6 +119,19 @@ interface Pinned {
 	y: number;
 	height: number;
 	text: string;
+	/** Whether the browser is currently holding it, as the row itself has been marked. */
+	stuck: boolean;
+	/**
+	 * What it is painting, as `[r, g, b, a]` off a canvas rather than as a string.
+	 *
+	 * Computed colours come back in whichever notation the declaration used — `rgb()`, `rgba()`,
+	 * `color(srgb …)` from a `color-mix()` — and comparing those as text means adding a case every
+	 * time a stylesheet changes how it spells one. Painting the colour and reading the pixel gives
+	 * one form for all of them, and `a === 0` versus `a === 255` is the question being asked here:
+	 * a fill hides the list going under a held row, and a row holding nothing back has nothing to
+	 * hide.
+	 */
+	fill: [number, number, number, number];
 }
 
 interface State {
@@ -142,10 +155,24 @@ async function state(): Promise<State> {
 		const view = ${VIEW};
 		const origin = view.getBoundingClientRect().top;
 		const clean = (el) => el.innerText.replace(/\\s+/g, " ").trim();
+		// Paint the colour and read the pixel: one form for every notation a computed style uses.
+		const paint = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+		const rgba = (css) => {
+			paint.clearRect(0, 0, 1, 1);
+			paint.fillStyle = css.trim();
+			paint.fillRect(0, 0, 1, 1);
+			return [...paint.getImageData(0, 0, 1, 1).data];
+		};
 		const pin = (el) => {
 			if (!el) return null;
 			const r = el.getBoundingClientRect();
-			return { y: r.top - origin, height: r.height, text: clean(el) };
+			return {
+				y: r.top - origin,
+				height: r.height,
+				text: clean(el),
+				stuck: el.hasAttribute("data-ly-stuck"),
+				fill: rgba(getComputedStyle(el).backgroundColor),
+			};
 		};
 		const style = getComputedStyle(view);
 		const px = (name) => Number.parseFloat(style.getPropertyValue(name)) || 0;
@@ -251,21 +278,105 @@ test("a project name is held under the strip, and the list is erased out from un
  * six transparent pixels above the control and slid across the top of the pane.
  */
 test("the strip's fill covers the whole rail, so nothing surfaces above it", async () => {
-	const cover = await app.evaluate<{ height: number; rail: number; opaque: boolean }>(`(() => {
-		const row = ${VIEW}.querySelector("[data-ly-rail]");
-		const fill = getComputedStyle(row).backgroundColor;
-		return {
-			height: row.getBoundingClientRect().height,
-			rail: Number.parseFloat(getComputedStyle(${VIEW}).getPropertyValue("--ly-rail")) || 0,
-			// Computed colours come back as "rgb(…)" when opaque and "rgba(…, a)" when not.
-			opaque: fill.startsWith("rgb(") || fill.endsWith(", 1)"),
-		};
-	})()`);
-	assert.ok(cover.opaque, "the strip has a fill to hide them behind");
+	// Scrolled first, and not incidentally: the fill only exists while the strip is being held,
+	// so asking about it at rest is asking about a row that has nothing to hide. See the test below.
+	const at = await scrollTo(400);
+	assert.ok(at.strip?.stuck, "the strip is being held");
+	assert.equal(at.strip?.fill[3], 255, `it has an opaque fill to hide them behind (${at.strip?.fill})`);
 	assert.ok(
-		Math.abs(cover.height - cover.rail) < 1,
-		`and it is as tall as the rail headings stop at (${cover.height} vs ${cover.rail}) — any gap is a slot to show through`,
+		Math.abs((at.strip?.height ?? 0) - at.rail) < 1,
+		`and it is as tall as the rail headings stop at (${at.strip?.height} vs ${at.rail}) — any gap is a slot to show through`,
 	);
+});
+
+/*
+ * And it exists only then.
+ *
+ * The fill is there to hide the list going under a held row. A row travelling with the list has
+ * nothing going under it, and an opaque band on it is a band of the wrong colour laid across a pane
+ * the desktop is supposed to show through — which is what every project name and the strip itself
+ * looked like at rest, four grey slabs down a translucent sidebar, none of them hiding anything.
+ *
+ * Both halves are asserted here because either one alone is satisfiable by doing nothing: never
+ * filling breaks the test above, always filling breaks this one.
+ */
+test("a row fills only while it is held, so a pane at rest stays clear", async () => {
+	const rest = await scrollTo(0);
+	assert.equal(rest.strip?.stuck, false, "at the top of the list nothing is being held back");
+	assert.equal(rest.strip?.fill[3], 0, `and the strip paints nothing (${rest.strip?.fill})`);
+	for (const head of rest.heads) {
+		assert.equal(head.stuck, false, `「${head.text}」 travels with the list`);
+		assert.equal(head.fill[3], 0, `「${head.text}」 paints nothing (${head.fill})`);
+	}
+
+	const found = await scrollUntilPinned();
+	assert.ok(found, "some scroll position holds a heading at the rail");
+	assert.ok(found.held.stuck, `「${found.held.text}」 is marked held once it reaches the rail`);
+	assert.equal(found.held.fill[3], 255, `and only then does it fill (${found.held.fill})`);
+	// The ones still coming up the list are unchanged by their neighbour being held.
+	for (const head of found.at.heads.filter((h) => h.y > found.at.rail + 2)) {
+		assert.equal(head.fill[3], 0, `「${head.text}」 is still in the list and still clear`);
+	}
+});
+
+/*
+ * Translucent is the mode this went wrong in, so it is the mode the colour is checked in.
+ *
+ * `--color-sidebar` was the fill for both modes, which is exact while the pane is opaque and a
+ * visibly lighter, flatter grey once it is not. The fill has to stay opaque — that is what hides
+ * the list — so what changes is which opaque colour: the pane's own mix, resolved, rather than a
+ * shade picked for a pane that no longer looks like that.
+ */
+test("held under vibrancy, a row is the pane's colour rather than a stand-in for it", async () => {
+	await scrollTo(400);
+	type Rgba = [number, number, number, number];
+	const seen = await app.evaluate<{ shell: Rgba; sidebar: Rgba; held: Rgba }>(`(() => {
+		const root = document.documentElement;
+		const wasMode = root.dataset.vibrancy;
+		const wasAlpha = root.style.getPropertyValue("--ly-sidebar-alpha");
+		// The translucent case, whichever way this window happens to be configured.
+		root.dataset.vibrancy = "on";
+		root.style.setProperty("--ly-sidebar-alpha", "0.78");
+
+		const pane = document.querySelector(".ly-sidebar-fill");
+		const paint = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+		const rgba = (css) => {
+			paint.clearRect(0, 0, 1, 1);
+			paint.fillStyle = css.trim();
+			paint.fillRect(0, 0, 1, 1);
+			return [...paint.getImageData(0, 0, 1, 1).data];
+		};
+		const out = {
+			// The two colours the pane is made of, and what the held row came out as.
+			shell: rgba(getComputedStyle(pane).getPropertyValue("--color-shell")),
+			sidebar: rgba(getComputedStyle(pane).getPropertyValue("--color-sidebar")),
+			held: rgba(getComputedStyle(${VIEW}.querySelector("[data-ly-rail]")).backgroundColor),
+		};
+
+		if (wasMode === undefined) delete root.dataset.vibrancy; else root.dataset.vibrancy = wasMode;
+		if (wasAlpha) root.style.setProperty("--ly-sidebar-alpha", wasAlpha);
+		else root.style.removeProperty("--ly-sidebar-alpha");
+		return out;
+	})()`);
+
+	const { shell, sidebar, held } = seen;
+	assert.equal(held[3], 255, `the held row stays opaque under vibrancy (${held})`);
+	assert.notDeepEqual(held.slice(0, 3), sidebar.slice(0, 3), `and is no longer the flat sidebar grey (${sidebar})`);
+	assert.notDeepEqual(held.slice(0, 3), shell.slice(0, 3), "nor the plain page colour, the other half of the mix");
+
+	/*
+	 * Between the two, which is the whole claim: the pane paints `--color-shell` at this alpha over
+	 * the window's material, and this is that mix with `--color-sidebar` standing in for what CSS
+	 * cannot sample. A value outside the range would mean it is coming from somewhere else.
+	 */
+	for (let i = 0; i < 3; i++) {
+		const [lo, hi] = [Math.min(shell[i], sidebar[i]), Math.max(shell[i], sidebar[i])];
+		assert.ok(held[i] >= lo && held[i] <= hi, `channel ${i}: ${held[i]} is between ${lo} and ${hi}`);
+	}
+	// And weighted toward the pane's own colour rather than sitting halfway.
+	const toShell = Math.max(...held.slice(0, 3).map((v, i) => Math.abs(v - shell[i])));
+	const toSidebar = Math.max(...held.slice(0, 3).map((v, i) => Math.abs(v - sidebar[i])));
+	assert.ok(toShell < toSidebar, `nearer the pane (${toShell}) than the old stand-in (${toSidebar})`);
 });
 
 test("scrolling on past a project hands the rail to the next one", async () => {

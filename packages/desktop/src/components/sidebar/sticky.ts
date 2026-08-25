@@ -35,17 +35,27 @@ export interface StickyRow {
 const EPSILON = 0.5;
 
 /**
- * The underside of the pinned band: the lowest edge of everything currently being held.
+ * Whether this row is currently being held rather than travelling with the list.
  *
  * A row counts once it has reached its rail — at or above it, which also covers the one being
  * pushed out by the next, since that travels upwards past its rail on the way out. A row still
  * arriving is not being held and covers nothing; it is part of the list, and the list is what the
  * fade is for.
+ *
+ * Asked twice, for two different reasons. The fade needs the depth below; the row itself needs to
+ * know because being held is the only moment it may draw a fill — see `.ly-pin` and `data-ly-stuck`.
+ * A row flowing with the list has nothing to hide and an opaque backing on it is just a band of the
+ * wrong colour laid across a translucent pane.
  */
+export function isPinned(row: StickyRow): boolean {
+	return row.top <= row.rail + EPSILON;
+}
+
+/** The underside of the pinned band: the lowest edge of everything currently being held. */
 export function pinnedDepth(rows: StickyRow[]): number {
 	let depth = 0;
 	for (const row of rows) {
-		if (row.top <= row.rail + EPSILON) depth = Math.max(depth, row.bottom);
+		if (isPinned(row)) depth = Math.max(depth, row.bottom);
 	}
 	return depth;
 }
