@@ -1,8 +1,8 @@
 /**
- * What to call the waiting.
+ * What to call the waiting, and what to draw while it lasts.
  *
- * A turn is mostly silence — a spinner and a number counting up. The number says how long, the
- * spinner says it is alive, and neither says what kind of waiting this is. Reading a file, running
+ * A turn is mostly silence — a loader and a number counting up. The number says how long, the
+ * loader says it is alive, and neither says what kind of waiting this is. Reading a file, running
  * a test and hunting through a codebase feel different to sit through, and naming the difference
  * is most of what makes a long turn bearable.
  *
@@ -15,20 +15,44 @@
  * a Chinese phrase in that row read as a different voice interrupting a technical readout. This
  * is the app muttering to itself in the corner of the screen, not a progress dialog reporting to
  * a manager.
+ *
+ * One classification, two consumers. The words below and the orb beside them are the same answer
+ * drawn twice, so `Mood` *is* `OrbState` rather than a parallel vocabulary that has to be kept in
+ * step by hand — a mood the orb cannot draw stops compiling, and an orb state nothing ever picks
+ * is a missing key in `WORDS`.
  */
 
-/** The kinds of waiting worth distinguishing, in the order they get checked. */
-export type Mood = "reading" | "writing" | "running" | "searching" | "testing" | "browsing" | "planning" | "thinking";
+import type { OrbState } from "thinking-orbs";
+
+/**
+ * The kinds of waiting worth distinguishing.
+ *
+ * Nine, because that is what the orbs draw, and each one had to earn its tool rather than be
+ * assigned one to fill the set — the animation and the work have to be about the same thing or the
+ * mark is decoration. What each one looks like is in `thinking-orbs`' own docs; what it means here:
+ *
+ * - `breathing`  — a ring slowly morphing: the model is thinking, nothing is running
+ * - `listening`  — a waveform rolling through rings: taking something in, i.e. reading
+ * - `searching`  — a scan meridian sweeping the globe: grep, glob, ls
+ * - `working`    — particles on tilted orbits: a command is running
+ * - `solving`    — bands scrambling and clicking back: a test suite, which either passes or does not
+ * - `connecting` — a constellation wiring itself: anything that leaves this machine
+ * - `weaving`    — three strands plaiting: a plan being laid out, or subagents running
+ * - `composing`  — an undulating sash: writing something new
+ * - `shaping`    — a dotted outline morphing circle → triangle → square: reworking something there
+ */
+export type Mood = OrbState;
 
 const WORDS: Record<Mood, string[]> = {
-	reading: ["Reading up", "Skimming", "Digging in", "Getting the lay of it", "Poking around the source"],
-	writing: ["Writing", "Drafting", "Putting it down", "Getting it on paper", "Laying down code"],
-	running: ["Running it", "Kicking it off", "Letting it rip", "Waiting on the shell", "Turning the crank"],
+	listening: ["Reading up", "Skimming", "Digging in", "Getting the lay of it", "Poking around the source"],
+	composing: ["Writing", "Drafting", "Putting it down", "Getting it on paper", "Laying down code"],
+	shaping: ["Reworking", "Editing", "Reshaping it", "Moving things around", "Knocking it into shape"],
+	working: ["Running it", "Kicking it off", "Letting it rip", "Waiting on the shell", "Turning the crank"],
 	searching: ["Hunting", "Rummaging", "Casting about", "Following the thread", "Combing through"],
-	testing: ["Proving it", "Running the gauntlet", "Making sure", "Putting it through its paces"],
-	browsing: ["Having a look", "Loading the page", "Peeking at the web"],
-	planning: ["Plotting", "Lining it up", "Sketching the order", "Working out the steps"],
-	thinking: ["Thinking", "Mulling", "Turning it over", "Chewing on it", "Working it out", "Pondering"],
+	solving: ["Proving it", "Running the gauntlet", "Making sure", "Putting it through its paces"],
+	connecting: ["Having a look", "Loading the page", "Peeking at the web", "Reaching out"],
+	weaving: ["Plotting", "Lining it up", "Sketching the order", "Working out the steps"],
+	breathing: ["Thinking", "Mulling", "Turning it over", "Chewing on it", "Working it out", "Pondering"],
 };
 
 /** After this long on one step, the wording acknowledges that it is taking a while. */
@@ -36,30 +60,40 @@ const PATIENCE_MS = 45_000;
 const LONG_WORDS = ["Still at it", "This one's stubborn", "Taking its time", "Nearly there", "Wrestling with it"];
 
 const BY_TOOL: Record<string, Mood> = {
-	read: "reading",
-	symbol: "reading",
-	write: "writing",
-	edit: "writing",
-	bash: "running",
-	bash_output: "running",
+	read: "listening",
+	symbol: "listening",
+	write: "composing",
+	preview: "composing",
+	edit: "shaping",
+	bash: "working",
+	bash_output: "working",
 	glob: "searching",
 	grep: "searching",
 	ls: "searching",
-	todo_write: "planning",
-	task: "planning",
-	web_fetch: "browsing",
-	web_search: "browsing",
-	browser_act: "browsing",
-	preview: "writing",
+	todo_write: "weaving",
+	task: "weaving",
+	web_fetch: "connecting",
+	web_search: "connecting",
+	browser_act: "connecting",
 };
 
 /** Commands that are really a test run, whatever tool they arrived through. */
 const TEST_HINT = /\b(test|jest|vitest|pytest|spec|coverage)\b/i;
 
-export function moodFor(toolName: string | undefined, summary: string | undefined): Mood {
-	if (summary && TEST_HINT.test(summary)) return "testing";
-	if (!toolName) return "thinking";
-	return BY_TOOL[toolName] ?? "thinking";
+/**
+ * What the agent is doing, from the newest call that has not finished.
+ *
+ * `retrying` wins over everything: a turn waiting on a reconnect is not doing whatever its last
+ * tool was, it is doing nothing at all until the network comes back, and the orb saying otherwise
+ * would be the only thing on screen still claiming progress. Everything else falls back to
+ * `breathing`, which is the honest answer for "the model is thinking" and for tools this does not
+ * know about.
+ */
+export function moodFor(toolName: string | undefined, summary: string | undefined, retrying = false): Mood {
+	if (retrying) return "connecting";
+	if (summary && TEST_HINT.test(summary)) return "solving";
+	if (!toolName) return "breathing";
+	return BY_TOOL[toolName] ?? "breathing";
 }
 
 /**

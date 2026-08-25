@@ -164,9 +164,9 @@ interface Frame {
 	/**
 	 * Whether the running indicator is on screen.
 	 *
-	 * Read from its loader — `.ly-flow`, the three dots — because `Conversation` mounts the whole
-	 * indicator behind `running`. So this is `running` as the window actually resolved it, not as
-	 * the store claims it.
+	 * Read from the indicator's own marker rather than from whichever loader it draws: `Conversation`
+	 * mounts the whole indicator behind `running`, so this is `running` as the window actually
+	 * resolved it, not as the store claims it — and swapping the loader does not break it.
 	 */
 	running: boolean;
 	/** Whether the resumed reply has landed. */
@@ -193,7 +193,7 @@ async function runTurn(): Promise<Frame[]> {
 			const spans = [...document.querySelectorAll("main span")].map((s) => s.innerText ?? "");
 			return {
 				line: spans.find((t) => t.includes("连接中断")) ?? "",
-				running: Boolean(document.querySelector("main .ly-flow")),
+				running: Boolean(document.querySelector("main [data-ly-running]")),
 				answered: (document.querySelector("main")?.innerText ?? "").includes("接着上次做完了"),
 			};
 		};

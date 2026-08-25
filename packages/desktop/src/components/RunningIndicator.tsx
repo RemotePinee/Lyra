@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FlowLoader } from "./loaders.tsx";
+import { ThinkingOrb } from "thinking-orbs";
 import { describeRetry } from "./retry-line.ts";
 import { useCountUp } from "./useCountUp.ts";
 import { moodFor, phraseFor } from "./thinking-words.ts";
@@ -54,23 +54,53 @@ export function RunningIndicator() {
 
 	const [toolName, summary] = doing.split("\u0000");
 	const elapsed = startedAt ? now - startedAt : 0;
-	const phrase = phraseFor(moodFor(toolName || undefined, summary), tick, elapsed);
+	/*
+	 * One reading of what is happening, drawn twice.
+	 *
+	 * The orb and the phrase are the same answer — see `thinking-words`. Deciding them separately
+	 * was the obvious first shape and it is wrong: the two would disagree for a frame every time a
+	 * tool started, which is exactly the moment anybody is looking at them.
+	 */
+	const mood = moodFor(toolName || undefined, summary, Boolean(retrying));
+	const phrase = phraseFor(mood, tick, elapsed);
 
 	return (
-		<div className="ly-enter mb-2.5 flex items-center gap-2 text-detail text-ink-muted">
-			<FlowLoader />
-			{/* Keyed on the words so one fades in as the other goes, rather than swapping in place. */}
+		/*
+		 * Marked, because "is the turn still going" is a question asked from outside this file.
+		 *
+		 * The tests used to answer it by looking for the loader's own class — `.ly-flow`, the three
+		 * dots — which tied every one of them to which loader this happens to draw. Swapping the
+		 * loader is exactly the change that should not break them.
+		 */
+		<div data-ly-running className="ly-enter mb-2.5 flex items-center gap-2 text-detail text-ink-muted">
+			{/*
+			 * Decorative, so `aria-hidden`: the phrase beside it already says what this is, and a
+			 * reader announcing the orb's own label before "Hunting…" is the same fact twice.
+			 *
+			 * `20` rather than a scaled-down 64 — the two sizes are separate designs in that
+			 * library, each with its own dot count and speed, and this one is drawn to sit in a
+			 * line of text. Theme stays on `auto`, which reads the `dark`/`light` class this app
+			 * already puts on `<html>` and follows it live.
+			 */}
+			<ThinkingOrb aria-hidden state={mood} size={20} className="shrink-0" />
+			{/*
+			 * Keyed on the words so one fades in as the other goes, rather than swapping in place.
+			 *
+			 * The phrase is the line's subject and reads at full strength; the meter after it —
+			 * elapsed, tokens, why the wait is long — is reference, and sits a step back. They were
+			 * the same weight before, which made a row of five things with no order to read them in.
+			 */}
 			<span key={phrase} className="ly-fade-in">
 				{phrase}…
 			</span>
 			<span className="text-ink-faint">·</span>
-			{startedAt && <span className="tabular-nums">{formatElapsed(now - startedAt)}</span>}
+			{startedAt && <span className="text-ink-faint tabular-nums">{formatElapsed(now - startedAt)}</span>}
 			{total > 0 && (
 				<>
 					<span className="text-ink-faint">·</span>
 					{/* `tabular-nums` matters more while it is moving: without it the glyph widths
 					    change every frame and the whole line shuffles sideways as the number climbs. */}
-					<span className="tabular-nums">{formatTokens(Math.round(counted))} tokens</span>
+					<span className="text-ink-faint tabular-nums">{formatTokens(Math.round(counted))} tokens</span>
 				</>
 			)}
 			{/*

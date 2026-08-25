@@ -924,51 +924,6 @@
   animation: ly-breathe-core 2.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
 }
 
-/*
- * `sk-flow`: three dots, scaling rather than fading.
- *
- * The delays are a third of the period apart, so no two dots are ever at the same point of the
- * curve and the movement reads as one wave passing through rather than as three things blinking.
- * Scale rather than opacity for the same reason — a dot that shrinks is being carried, a dot that
- * fades is being switched off.
- */
-@keyframes ly-flow {
-  0%,
-  80%,
-  100% {
-    transform: scale(0.3);
-    opacity: 0.35;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.ly-flow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.ly-flow span {
-  display: block;
-  width: 27%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: currentColor;
-  /* Sine, from SpinKit — the ease that makes the dots settle rather than snap. */
-  animation: ly-flow 1.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite both;
-}
-
-.ly-flow span:nth-child(1) {
-  animation-delay: -0.3s;
-}
-
-.ly-flow span:nth-child(2) {
-  animation-delay: -0.15s;
-}
-
 /* ---------------------------------------------------------------------------
  * Scrolling
  *

@@ -180,14 +180,14 @@ const READ_ROW = `(() => {
 	});
 	// The innermost match: the outer ones are its ancestors, which contain the whole transcript.
 	const row = rows[rows.length - 1];
-	if (!row) return { text: "", buttons: [], belowTheReply: false, running: Boolean(document.querySelector("main .ly-flow")) };
+	if (!row) return { text: "", buttons: [], belowTheReply: false, running: Boolean(document.querySelector("main [data-ly-running]")) };
 	const replies = [...document.querySelectorAll("main .group\\\\/msg")];
 	const last = replies[replies.length - 1];
 	return {
 		text: row.innerText ?? "",
 		buttons: [...row.querySelectorAll("button")].map((b) => b.textContent?.trim() ?? ""),
 		belowTheReply: Boolean(last) && row.getBoundingClientRect().top >= last.getBoundingClientRect().bottom - 1,
-		running: Boolean(document.querySelector("main .ly-flow")),
+		running: Boolean(document.querySelector("main [data-ly-running]")),
 	};
 })()`;
 
