@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { startApp } from "./app.ts";
 
 const out = process.argv[2] ?? "/tmp/lyra-plugins.png";
-const REGISTRY = "https://lyra-registry.gj7nrhnb9j.workers.dev/v1/index";
+const REGISTRY = "https://market.07230805.xyz/v1/index";
 
 async function seed(home: string): Promise<void> {
 	// Two bundles on disk, so the 已安装 row has something in it besides whatever installs.

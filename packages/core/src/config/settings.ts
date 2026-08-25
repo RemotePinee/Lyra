@@ -186,7 +186,17 @@ export interface Settings {
  * The path is `/v1/index` because that endpoint answers in the *old* file format. A copy of the app
  * that predates any of this can be pointed here and simply work.
  */
-const REGISTRY_ORIGIN = "https://lyra-registry.gj7nrhnb9j.workers.dev";
+const REGISTRY_ORIGIN = "https://market.07230805.xyz";
+
+/**
+ * Where the platform answered before it had a domain of its own.
+ *
+ * Still live, and deliberately so: the address is written into every existing user's settings file,
+ * and a `workers.dev` subdomain that stops resolving on the day the real one appears would empty
+ * their marketplace before their copy of the app has had a chance to rewrite the setting. The
+ * Worker serves both; this is only here to move people off it.
+ */
+const WORKERS_DEV_ORIGIN = "https://lyra-registry.gj7nrhnb9j.workers.dev";
 
 /** Plugins and MCP servers. */
 export const DEFAULT_PLUGIN_REGISTRY = `${REGISTRY_ORIGIN}/v1/index`;
@@ -197,13 +207,20 @@ export const DEFAULT_SKILL_REGISTRY = `${REGISTRY_ORIGIN}/v1/index?kind=skill`;
 /**
  * Sources that were preset by an older version and should move with it.
  *
- * A user who never touched the setting is still pointed at the file-based index, which is the one
- * that gets rate-limited — leaving them there means the fix ships and nobody gets it. Only these
- * exact strings are replaced; anything a user added themselves is theirs.
+ * A user who never touched the setting is still pointed at wherever that version pointed — leaving
+ * them there means an address change ships and nobody gets it. Only these exact strings are
+ * replaced; anything a user added themselves is theirs.
+ *
+ * Two generations of preset are listed. The `raw.githubusercontent.com` pair is the file-based
+ * index that used to get rate-limited; the `workers.dev` pair is the platform before it had a
+ * domain. Both still resolve, so nothing breaks for someone who never launches the new version —
+ * this only spares them from browsing a catalogue at an address that is no longer the real one.
  */
 export const SUPERSEDED_REGISTRIES: Record<string, string> = {
 	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/registry.json": DEFAULT_PLUGIN_REGISTRY,
 	"https://raw.githubusercontent.com/kittors/Lyra-Plugins/main/skills.json": DEFAULT_SKILL_REGISTRY,
+	[`${WORKERS_DEV_ORIGIN}/v1/index`]: DEFAULT_PLUGIN_REGISTRY,
+	[`${WORKERS_DEV_ORIGIN}/v1/index?kind=skill`]: DEFAULT_SKILL_REGISTRY,
 };
 
 /** Rewrite the preset sources in a stored list, leaving everything else alone. */
