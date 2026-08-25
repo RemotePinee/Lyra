@@ -8,6 +8,7 @@ import type {
 } from "@lyra/core";
 import { type SessionActivity } from "@lyra/core/activity";
 import { applyAgentEvent } from "./store/apply-event.ts";
+import type { TurnStop } from "./store/derive.ts";
 import { sessionSlice } from "./store/session-slice.ts";
 import { turnSlice } from "./store/turn-slice.ts";
 import { workspaceSlice } from "./store/workspace-slice.ts";
@@ -165,8 +166,16 @@ export interface AppState {
    * Belongs to the turn, so it is cleared when one starts or ends rather than dismissed. Before
    * this it went to the corner of the window with the notices, where it outlived the turn it
    * described and sat next to messages that had nothing to do with it.
+   *
+   * `until` is an instant rather than the delay it was born as: the countdown on screen needs to
+   * know when the wait ends, and a duration measured from an event that has already been
+   * delivered, queued and rendered is stale by the time anything can read it.
+   *
+   * `resume` is the turn being picked back up rather than a request being sent again — a longer
+   * wait, and one that says something different, because by then the turn has already ended and
+   * what is being promised is that the work survived it.
    */
-  retrying: { attempt: number; delayMs: number; reason: string } | null;
+  retrying: { attempt: number; until: number; reason: string; resume: boolean } | null;
   /**
    * The agent's own plan for this piece of work, as it last wrote it.
    *
@@ -177,13 +186,18 @@ export interface AppState {
    */
   todos: TodoItem[];
   /**
-   * The last turn stopped without finishing, and nothing is running now.
+   * The last turn stopped without finishing, and how.
    *
    * A reply left `pending` in the log means the process holding it went away mid-turn — the app
    * was quit, it crashed, the machine slept. Reopening such a conversation showed the last
    * half-written message and no explanation, as if the agent had simply gone quiet.
+   *
+   * Pressing stop lands here too, and used not to: this was computed once, when a session was
+   * opened, so a turn paused in the conversation you were sitting in left the state saying the
+   * turn had ended normally. Nothing offered to resume it, because as far as the window was
+   * concerned there was nothing to resume.
    */
-  interrupted: boolean;
+  stopped: TurnStop;
   /** Where history was summarised, by position in the transcript. */
   compactions: { at: number; before: number; after: number }[];
   notices: { id: string; level: "info" | "warn" | "error"; message: string }[];
@@ -262,7 +276,7 @@ export const useApp = create<AppState>((set, get) => ({
   approvals: [],
   activity: {},
   retrying: null,
-  interrupted: false,
+  stopped: null,
   compactions: [],
   todos: [],
   notices: [],

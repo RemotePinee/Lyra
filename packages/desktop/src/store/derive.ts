@@ -40,7 +40,49 @@ export function without(cache: Cache, id: string): Cache {
 }
 
 
-/** Reconstruct tool cards when opening a stored session. */
+/**
+ * How the last turn ended, when it ended somewhere short of the end.
+ *
+ * `"user"` is the stop button: the work is fine, it is just not moving. `"interrupt"` is
+ * everything that took the turn away without being asked — a crash, a quit, a machine going to
+ * sleep. `null` is a turn that finished.
+ *
+ * Two states rather than one because the offer reads differently. Being told 「上次执行被中断」
+ * about a pause you performed yourself a second ago is the app describing your own click back to
+ * you as an accident, and the two words that follow — 继续, 重试 — are the same either way, so the
+ * only thing the sentence does is get it wrong.
+ */
+export type TurnStop = "user" | "interrupt" | null;
+
+/**
+ * The reason lives in two places, and both are needed.
+ *
+ * `agent_end` carries it exactly, but only while it is happening; the transcript carries it
+ * afterwards, in a `stopReason` that survives being written to disk and read back next week. The
+ * event wins where they differ, because a turn stopped while a tool was running has already had
+ * its last reply settled as `toolUse` and leaves nothing in the log to say who stopped it.
+ */
+export function howItStopped(messages: Message[], reason?: string): TurnStop {
+	if (reason === "aborted") return "user";
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason === "aborted") return "user";
+		break;
+	}
+	return wasCutShort(messages) ? "interrupt" : null;
+}
+
+/**
+ * Whether there is anything to re-ask.
+ *
+ * `retryFrom` walks back to the nearest message a person actually typed; with none in the
+ * transcript it is a button that does nothing, which is worse than a button that is not there.
+ */
+export function hasRetryPoint(messages: Message[]): boolean {
+	return messages.some((message) => message.role === "user" && !message.synthetic);
+}
+
 /**
  * Whether the conversation was left mid-turn.
  *

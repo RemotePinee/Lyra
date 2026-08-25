@@ -132,6 +132,16 @@ export interface AssistantMessage {
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
+	/**
+	 * Whether what ended this was the connection rather than the request.
+	 *
+	 * A dropped socket and a rejected API key both arrive as `stopReason: "error"`, and only one of
+	 * them is worth going back for. Which it was is known exactly once — where the error is caught,
+	 * with the cause still attached — and by the time it has been flattened into a message string
+	 * telling them apart is pattern-matching on prose. So it is written down while it is still a
+	 * fact.
+	 */
+	errorRetryable?: boolean;
 	/** Provider response id, used for Responses-API conversation chaining. */
 	responseId?: string;
 	timestamp: number;

@@ -71,6 +71,10 @@ export async function driveTurn(input: TurnInputs): Promise<void> {
 		todos: () => (input.can.state.get(TODOS_KEY) as TodoItem[] | undefined) ?? [],
 		aborted: () => input.signal.aborted,
 		notify: (message) => input.emit({ type: "notice", level: "info", message }),
+		// The running line, not a toast: this wait outlives one by an order of magnitude.
+		resuming: (info) => input.emit({ type: "retry", ...info, resume: true }),
+		// So that pressing stop during a minute-long wait is felt immediately.
+		signal: input.signal,
 	});
 }
 

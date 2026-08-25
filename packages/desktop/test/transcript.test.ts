@@ -5,7 +5,7 @@ import type { AssistantMessage, Message } from "@lyra/core";
 
 import { emptyUsage } from "@lyra/core";
 
-import { rebuildToolRuns, wasCutShort } from "../src/store/derive.ts";
+import { hasRetryPoint, howItStopped, rebuildToolRuns, wasCutShort } from "../src/store/derive.ts";
 import { settleTail } from "../src/transcript.ts";
 
 function reply(stopReason: AssistantMessage["stopReason"], text = "你好！"): AssistantMessage {
@@ -125,4 +125,66 @@ test("a turn stopped between a tool result and the reply counts as cut short", (
 		{ role: "assistant", content: [{ type: "text", text: "好了" }], stopReason: "stop", timestamp: 4 },
 	] as unknown as Message[];
 	assert.equal(wasCutShort(complete), false);
+});
+
+// ---------------------------------------------------------------------------
+// How the turn stopped
+// ---------------------------------------------------------------------------
+
+test("a finished turn is not offering to be resumed", () => {
+	assert.equal(howItStopped([asked, reply("stop")], "done"), null);
+});
+
+test("pressing stop mid-sentence is a pause, not an interruption", () => {
+	/*
+	 * The case the whole thing was written for. `settleTail` has just marked the reply `aborted`,
+	 * and it holds no tool calls — which is the shape `wasCutShort` reads as a complete turn, so
+	 * before this the window offered nothing at all after a pause.
+	 */
+	const settled = settleTail([asked, reply("pending")], { type: "agent_end", reason: "aborted" });
+	assert.equal(wasCutShort(settled), false, "a stopped sentence looks finished by shape alone");
+	assert.equal(howItStopped(settled, "aborted"), "user");
+	// And still says so next week, with no event left to ask.
+	assert.equal(howItStopped(settled), "user");
+});
+
+test("stopping while a tool runs is a pause too, though the transcript cannot tell", () => {
+	/*
+	 * The last reply was settled as `toolUse` long before the stop, so nothing in the log records
+	 * who ended the turn. The event does, and that is why it wins where the two disagree.
+	 */
+	const midTool = [
+		asked,
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: "c1", name: "bash", arguments: {} }],
+			stopReason: "toolUse",
+			timestamp: 2,
+		},
+	] as unknown as Message[];
+
+	assert.equal(howItStopped(midTool, "aborted"), "user");
+	// Reopened later, it reads as an interruption — which is the honest answer, and offers the same two things.
+	assert.equal(howItStopped(midTool), "interrupt");
+});
+
+test("a turn the app never came back from is an interruption", () => {
+	assert.equal(howItStopped([asked, reply("pending")]), "interrupt");
+});
+
+test("an error is left to the retry the failed message already carries", () => {
+	/*
+	 * Not "interrupt": the reply itself puts 重试 under the error text, next to what went wrong.
+	 * A second offer at the bottom of the transcript would be the same button, further from the
+	 * thing it is about.
+	 */
+	assert.equal(howItStopped([asked, reply("error")], "error"), null);
+});
+
+test("there is nothing to re-ask when nobody has asked anything", () => {
+	assert.equal(hasRetryPoint([reply("stop")]), false);
+	assert.equal(hasRetryPoint([asked, reply("stop")]), true);
+	// The runtime's own nudges are not something anyone typed, so they are not a retry point.
+	const nudged = [{ ...asked, synthetic: true }] as Message[];
+	assert.equal(hasRetryPoint(nudged), false);
 });

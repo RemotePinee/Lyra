@@ -83,6 +83,13 @@ export interface AgentRunResult {
 	messages: Message[];
 	reason: "done" | "aborted" | "error" | "max_turns" | "stalled";
 	error?: string;
+	/**
+	 * The run died on the connection, not on anything it asked for.
+	 *
+	 * Only meaningful with `reason: "error"`. It is what tells a caller whether going back is worth
+	 * anything: a dropped socket will likely be gone in ten seconds, a rejected key will not.
+	 */
+	retryable?: boolean;
 }
 
 const DEFAULT_MAX_TURNS = 200;
@@ -151,8 +158,31 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 		messages.push(assistant);
 		produced.push(assistant);
 
-		if (assistant.stopReason === "aborted") return finish("aborted");
-		if (assistant.stopReason === "error") return finish("error", assistant.errorMessage);
+		if (assistant.stopReason === "aborted" || assistant.stopReason === "error") {
+			/*
+			 * A call the model never finished saying still has to be answered.
+			 *
+			 * A reply cut off mid-stream keeps whatever it had emitted, and that can include an
+			 * opened tool call. Anthropic rejects any request carrying a `tool_use` with no result
+			 * after it — so the orphan does not end one turn, it ends the conversation: every later
+			 * request fails on the same 400, including the one sent to pick the work back up. The
+			 * call is failed rather than run, because arguments that stopped arriving halfway are
+			 * not arguments.
+			 */
+			const unanswered = assistant.content.filter((c) => c.type === "toolCall");
+			if (unanswered.length > 0) {
+				const why =
+					assistant.stopReason === "aborted"
+						? "the turn was stopped before it could run"
+						: "the connection dropped while the call was still arriving, so its arguments are incomplete";
+				for (const result of await failTruncatedCalls(unanswered, emit, why)) {
+					messages.push(result);
+					produced.push(result);
+				}
+			}
+			if (assistant.stopReason === "aborted") return finish("aborted");
+			return finish("error", assistant.errorMessage, assistant.errorRetryable);
+		}
 
 		const toolCalls = assistant.content.filter((c) => c.type === "toolCall");
 		if (toolCalls.length === 0) {
@@ -265,9 +295,13 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 		}
 	}
 
-	async function finish(reason: AgentRunResult["reason"], error?: string): Promise<AgentRunResult> {
+	async function finish(
+		reason: AgentRunResult["reason"],
+		error?: string,
+		retryable?: boolean,
+	): Promise<AgentRunResult> {
 		await emit({ type: "agent_end", reason, error });
-		return { messages: produced, reason, error };
+		return { messages: produced, reason, error, ...(retryable ? { retryable } : {}) };
 	}
 }
 
@@ -287,6 +321,16 @@ async function streamTurn(
 		return message;
 	}
 
+	/*
+	 * How many times *this request* has been retried, which is not what either retry counts.
+	 *
+	 * Two of them are nested: `fetchWithRetry` for getting the connection, `retryStream` for
+	 * keeping it once it is open. Each has its own budget and each numbers its attempts from 1,
+	 * so passing those numbers straight through made the line on screen count 1, 2, 1, 1, 2 as
+	 * control moved between the layers — and call the fifth attempt of the request "第 1 次".
+	 * The user is waiting on the request, so the request is what gets counted.
+	 */
+	let retries = 0;
 	const stream = streamAssistant(config.provider, config.model, context, {
 		signal: config.signal,
 		thinking: config.thinking,
@@ -300,8 +344,9 @@ async function streamTurn(
 		 * silence is indistinguishable from a stall. One line naming the cause turns it into
 		 * something that is visibly being handled.
 		 */
-		onRetry: ({ attempt, delayMs, reason }) => {
-			void emit({ type: "retry", attempt, delayMs, reason });
+		onRetry: ({ delayMs, reason }) => {
+			retries += 1;
+			void emit({ type: "retry", attempt: retries, delayMs, reason });
 		},
 	});
 

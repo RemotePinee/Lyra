@@ -11,12 +11,23 @@ import type { AgentEvent, Message } from "@lyra/core";
 import { nextActivity } from "@lyra/core/activity";
 import { coalesce, flushCoalesced } from "./coalesce.ts";
 import { applyToolEvent } from "./apply-tool.ts";
+import { howItStopped } from "./derive.ts";
 import { useSide } from "../sideStore.ts";
 import type { AppState } from "../store.ts";
 import { settleTail } from "../transcript.ts";
 
 type Get = () => AppState;
 type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+
+/** Events that can only arrive over a connection that is working again. */
+const RECONNECTED = new Set<AgentEvent["type"]>([
+  "message_start",
+  "message_update",
+  "message_end",
+  "tool_start",
+  "tool_update",
+  "tool_end",
+]);
 
 export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, get: Get): void {
   /*
@@ -72,6 +83,16 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
   }
 
   /*
+   * The reconnection worked, and nothing else was ever going to say so.
+   *
+   * `retrying` was cleared only when a turn started or ended, so one dropped socket pinned
+   * "连接中断，N 秒后重试" to the running line for the rest of the turn — still sitting there a
+   * minute later beside a reply that had long since arrived, claiming a wait that was over.
+   * Anything streaming in is the proof: the connection is back, so the notice goes.
+   */
+  if (get().retrying && RECONNECTED.has(event.type)) set({ retrying: null });
+
+  /*
    * Anything that is not a streamed update lands after the one still waiting.
    *
    * Without this a held update could be applied on the next frame — after the `message_end` that
@@ -85,7 +106,7 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
       set({
         running: true,
         retrying: null,
-        interrupted: false,
+        stopped: null,
         // The composer already started the clock when it sent, and the ~2s of session
         // setup before the agent starts is part of the wait. Overwriting it here made
         // the elapsed time jump backwards. A turn driven from the phone or the
@@ -219,7 +240,26 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
       break;
 
     case "retry":
-      set({ retrying: { attempt: event.attempt, delayMs: event.delayMs, reason: event.reason } });
+      // Stamped on arrival: the delay is counted from now, and the countdown reads the clock.
+      set({
+        retrying: {
+          attempt: event.attempt,
+          until: Date.now() + event.delayMs,
+          reason: event.reason,
+          resume: event.resume === true,
+        },
+        /*
+         * A resume arrives after `agent_end`, which has already stood the window down.
+         *
+         * Leaving it down would give a minute of blank, idle-looking window between a turn that
+         * visibly failed and one that silently starts again — the exact stretch during which the
+         * user concludes it is dead and starts over by hand. The turn is not over; put the line
+         * back and let it count.
+         */
+        ...(event.resume
+          ? { running: true, turnStartedAt: get().turnStartedAt ?? Date.now() }
+          : {}),
+      });
       break;
 
     case "compacted":
@@ -251,19 +291,28 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
       });
       break;
 
-    case "agent_end":
+    case "agent_end": {
+      /*
+       * Settled first, then read — in that order, because the answer depends on it.
+       *
+       * `settleTail` is what turns the half-written reply into an `aborted` one; asking the old
+       * list how the turn stopped would be asking a message that still says `pending`.
+       */
+      const settled = settleTail(get().messages, event);
       set({
         running: false,
         retrying: null,
         approvals: [],
         pendingUserMessage: null,
         turnStartedAt: null,
-        messages: settleTail(get().messages, event),
+        messages: settled,
+        stopped: howItStopped(settled, event.reason),
       });
       void window.lyra.sessions
         .list()
         .then((sessions) => set({ sessions }));
       break;
+    }
   }
 }
 

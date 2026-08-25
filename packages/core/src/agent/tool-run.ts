@@ -175,13 +175,21 @@ async function executeOne(
  * When the model hits its output limit mid-call, streamed arguments may parse yet still be
  * missing fields. Executing them is worse than failing them, so every call in the message is
  * rejected with an explanation the model can act on.
+ *
+ * The same shape answers a call the model never finished saying — a stream cut off by a dropped
+ * socket, or by the user stopping the turn. Nothing is executed in either case; what matters is
+ * that a call which was opened gets closed. Anthropic rejects any request carrying a `tool_use`
+ * with no `tool_result` after it, so one orphan does not spoil a turn, it spoils the conversation:
+ * every later request fails on the same 400, including the one meant to recover the work.
  */
-export async function failTruncatedCalls(toolCalls: ToolCall[], emit: AgentEventSink): Promise<ToolResultMessage[]> {
+export async function failTruncatedCalls(
+	toolCalls: ToolCall[],
+	emit: AgentEventSink,
+	reason = "the response hit the output token limit, so its arguments may be incomplete",
+): Promise<ToolResultMessage[]> {
 	const results: ToolResultMessage[] = [];
 	for (const call of toolCalls) {
-		const result = errorResult(
-			`"${call.name}" was not executed: the response hit the output token limit, so its arguments may be incomplete. Re-issue the call.`,
-		);
+		const result = errorResult(`"${call.name}" was not executed: ${reason}. Re-issue the call.`);
 		await emit({ type: "tool_start", toolCallId: call.id, toolName: call.name, args: call.arguments, summary: call.name });
 		await emit({ type: "tool_end", toolCallId: call.id, toolName: call.name, result, isError: true });
 		const message: ToolResultMessage = {

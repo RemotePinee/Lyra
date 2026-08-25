@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { FlowLoader } from "./loaders.tsx";
+import { describeRetry } from "./retry-line.ts";
 import { useCountUp } from "./useCountUp.ts";
 import { moodFor, phraseFor } from "./thinking-words.ts";
 import { useApp } from "../store.ts";
@@ -82,9 +83,7 @@ export function RunningIndicator() {
 			{retrying && (
 				<>
 					<span className="text-ink-faint">·</span>
-					<span className="text-ink-faint">
-						连接中断，{Math.round(retrying.delayMs / 1000)} 秒后重试（第 {retrying.attempt} 次）
-					</span>
+					<span className="text-ink-faint tabular-nums">{describeRetry(retrying, now)}</span>
 				</>
 			)}
 		</div>

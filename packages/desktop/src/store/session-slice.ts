@@ -8,7 +8,7 @@
 
 import type { SessionMeta } from "@lyra/core";
 import type { SessionActivity } from "@lyra/core/activity";
-import { prune, rebuildToolRuns, todosFrom, wasCutShort, without } from "./derive.ts";
+import { howItStopped, prune, rebuildToolRuns, todosFrom, without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;
@@ -66,6 +66,11 @@ export function sessionSlice(set: Set, get: Get) {
       running: false,
       todos: [],
       turnStartedAt: null,
+      // Belongs to the turn being left behind; carrying it over would report this conversation's
+      // connection as broken on the strength of another one's — or, for `stopped`, offer to
+      // resume a blank conversation on the strength of a pause in the last one.
+      retrying: null,
+      stopped: null,
       loadingSession: false,
       pendingUserMessage: null,
       capabilities: null,
@@ -137,6 +142,9 @@ export function sessionSlice(set: Set, get: Get) {
       approvals: [],
       running: false,
       todos: [],
+      // Belongs to the turn being left behind; see the note in `newSession`.
+      retrying: null,
+      stopped: null,
       // Only a session with nothing to show is "loading"; a cached one is already on screen
       // and re-reads quietly behind it.
       loadingSession: !cached,
@@ -182,7 +190,9 @@ export function sessionSlice(set: Set, get: Get) {
       todos: todosFrom(snapshot.messages),
       // Replayed from the log: the summary itself is not in the transcript, only the fact.
       compactions: (snapshot.compactions ?? []).map((at) => ({ at, before: 0, after: 0 })),
-      interrupted: !snapshot.running && wasCutShort(snapshot.messages),
+      // No event to go on here, so the transcript answers on its own: a reply the log records as
+      // `aborted` was stopped by hand, however long ago.
+      stopped: snapshot.running ? null : howItStopped(snapshot.messages),
       running: snapshot.running,
       approvals: snapshot.pendingApprovals,
       toolRuns,

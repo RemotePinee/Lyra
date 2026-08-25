@@ -22,7 +22,7 @@ import type {
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
 import { computeCost } from "../utils/pricing.ts";
-import { fetchWithRetry, retryStream, toolCallId } from "./retry.ts";
+import { fetchWithRetry, isRetryableError, retryStream, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 import { describeFetchError, joinUrl, truncate } from "./anthropic-messages.ts";
 
@@ -339,6 +339,8 @@ async function* streamResponses(
 		const aborted = options.signal?.aborted;
 		partial.stopReason = aborted ? "aborted" : "error";
 		partial.errorMessage = aborted ? "Aborted by user" : describeFetchError(error, options.signal);
+		// Recorded here because here is the last place it is knowable; see `errorRetryable`.
+		partial.errorRetryable = !aborted && isRetryableError(error);
 		partial.usage = computeCost(partial.usage, model);
 		yield {
 			type: "error",

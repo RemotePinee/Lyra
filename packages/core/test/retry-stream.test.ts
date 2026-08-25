@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { retryStream } from "../src/ai/retry.ts";
+import { fetchWithRetry, retryStream } from "../src/ai/retry.ts";
 
 /** A socket dying mid-stream, exactly as undici reports it. */
 function socketError(): Error {
@@ -101,6 +101,47 @@ test("an error that is not worth retrying is not retried", async () => {
 		/400/,
 	);
 	assert.equal(attempts, 1);
+});
+
+test("the two retries are stacked, and neither knows the other is counting", async () => {
+	/*
+	 * Every provider stacks them: `fetchWithRetry` to get the connection, `retryStream` to keep it.
+	 * They share one `onRetry` and each numbers its own attempts from 1, so what reached the window
+	 * was a number that restarted underneath the user — the fifth attempt of a request announcing
+	 * itself as 第 1 次, having already waited a quarter of a minute.
+	 *
+	 * Asserted rather than described, because the sequence is the whole reason the loop keeps a
+	 * count of its own.
+	 */
+	const raw: number[] = [];
+	const record = (info: { attempt: number }) => void raw.push(info.attempt);
+	const deadSocket: typeof globalThis.fetch = async () => {
+		throw socketError();
+	};
+
+	await assert.rejects(
+		collect(
+			retryStream(
+				async function* () {
+					await fetchWithRetry(deadSocket, "http://x", {}, { attempts: 3, sleep: noSleep, onRetry: record });
+					// oxlint-disable-next-line no-unreachable -- the yield is what types the generator
+					yield "never";
+				},
+				{ attempts: 3, reset: () => {}, sleep: noSleep, onRetry: record },
+			),
+		),
+		/terminated/,
+	);
+
+	assert.deepEqual(raw, [1, 2, 1, 1, 2, 2, 1, 2], "it goes backwards four times over nine attempts");
+
+	// What the loop does with it: count the request's own retries, so the number only ever goes up.
+	const shown = raw.map((_, index) => index + 1);
+	assert.deepEqual(shown, [1, 2, 3, 4, 5, 6, 7, 8]);
+	assert.ok(
+		shown.every((n, i) => i === 0 || n > shown[i - 1]),
+		"a count that can go down is not a count of anything the user is waiting for",
+	);
 });
 
 test("an aborted stream stops rather than starting over", async () => {
