@@ -1,48 +1,49 @@
 /**
  * The navigation pane: what you can go to, and what you have been in.
  *
- * Only the pane itself lives here. Which sessions belong in the list and how they group under
- * projects is in `sidebar/grouping`, a project's own block is `sidebar/ProjectGroup`, and one
- * conversation is `sidebar/SessionRow` — each of which has hover and overlap rules worth stating
- * once rather than reading past on the way to the layout.
+ * Two lists rather than one. A project orders its conversations by what they belong to and 「聊天」
+ * orders every conversation by when you last touched it, and no single list can be both — which is
+ * why the most recent conversation used to be one of the hardest things in the pane to find. The
+ * strip that switches between them is `sidebar/SidebarTabs`, the lists are `sidebar/ProjectList`
+ * and `sidebar/ChatList`. The strip and the current heading are held at the top by `position:
+ * sticky`; the only part of that JavaScript owns is where the fade below them starts, which is
+ * `sidebar/useStickyFade` and `sidebar/sticky.ts`.
+ *
+ * Only the pane itself is here. Which conversations are listed and what a row does is
+ * `sidebar/useSidebarLists`; the rules underneath it are `sidebar/grouping` and `sidebar/recency`.
  */
 
-import { AtSign, Bell, ChevronRight, Clock, GitPullRequest, Search, Settings as SettingsIcon, SquarePen } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Archive, ListFilter, SquarePen } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
-import { ScrollText } from "./ScrollText.tsx";
+import { usePopover } from "./Popover.tsx";
 import { Scroller } from "./Scroller.tsx";
-import { SearchField } from "./SearchField.tsx";
-import { UpdateBadge } from "./UpdateBadge.tsx";
-import { activeProviderLabel, groupSessions, listableSessions } from "./sidebar/grouping.ts";
-import { Collapsible } from "./sidebar/Collapsible.tsx";
-import { ProjectGroup, SESSION_PAGE } from "./sidebar/ProjectGroup.tsx";
-import { SessionRow } from "./sidebar/SessionRow.tsx";
-import { ShowMore } from "./sidebar/ShowMore.tsx";
+import { ArchiveToggle } from "./sidebar/ArchiveToggle.tsx";
+import { ChatList, CHAT_PAGE } from "./sidebar/ChatList.tsx";
+import { DestinationNav } from "./sidebar/DestinationNav.tsx";
+import { ListMenu, type SortKey } from "./sidebar/ListMenu.tsx";
+import { NavItem } from "./sidebar/NavItem.tsx";
+import { SESSION_PAGE } from "./sidebar/ProjectGroup.tsx";
+import { ProjectList } from "./sidebar/ProjectList.tsx";
+import { SidebarFoot } from "./sidebar/SidebarFoot.tsx";
+import { SidebarHead } from "./sidebar/SidebarHead.tsx";
+import { SidebarTabs, StripButton, type SidebarTab } from "./sidebar/SidebarTabs.tsx";
+import { useSidebarLists } from "./sidebar/useSidebarLists.ts";
+import { useStickyFade } from "./sidebar/useStickyFade.ts";
 
 /** Where the folded-project list is remembered. */
 const COLLAPSED_KEY = "ly-collapsed-projects";
-/**
- * Fold keys for the two sections, which are not projects and have no path.
- *
- * `§` because every project key is an absolute path and none of them can start with one, so the
- * two kinds share a store without a chance of collision.
- */
-const PINNED = "§pinned";
-const RECENT = "§recent";
+/** And which half of the pane you were last in — the two are looked at on different days. */
+const TAB_KEY = "ly-sidebar-tab";
+/** And what "most recent" means, which is a preference rather than a place. */
+const SORT_KEY = "ly-sidebar-sort";
 
 export function Sidebar() {
-	const settings = useApp((s) => s.settings);
-	const sessions = useApp((s) => s.sessions);
 	const workspace = useApp((s) => s.workspace);
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const scratchRoots = useApp((s) => s.scratchRoots);
-	const openSession = useApp((s) => s.openSession);
-	const setSessionArchived = useApp((s) => s.setSessionArchived);
 	const newSession = useApp((s) => s.newSession);
-	const setView = useApp((s) => s.setView);
-	const view = useApp((s) => s.view);
 	/**
 	 * As a drawer this pane covers the thing it navigates to, so anything that changes what is
 	 * behind it also has to get out of the way. Pushed, `dismissNav` does nothing and the
@@ -52,10 +53,26 @@ export function Sidebar() {
 
 	const [query, setQuery] = useState("");
 	const [searching, setSearching] = useState(false);
+	const [tab, setTab] = useState<SidebarTab>(() => (localStorage.getItem(TAB_KEY) === "chats" ? "chats" : "projects"));
+	/**
+	 * Whether the list is showing the archive instead.
+	 *
+	 * Not persisted, unlike the tab. Which of the two lists you prefer is a habit; being in the
+	 * archive is an errand, and coming back to an app that opens on the things you filed away is
+	 * being handed back a task you finished.
+	 */
+	const [archiveOpen, setArchiveOpen] = useState(false);
 	/** How many rows each project is showing. Absent means the default five. */
 	const [shown, setShown] = useState<Record<string, number>>({});
 	/** The same, for the 「最近」 section — one number, because there is only ever one of it. */
 	const [looseShown, setLooseShown] = useState(SESSION_PAGE);
+	/** And for the flat 「聊天」 list, which is every conversation there is. */
+	const [chatShown, setChatShown] = useState(CHAT_PAGE);
+	/** Which timestamp orders both halves and the archive. Persisted: it is a preference, not a mode. */
+	const [sort, setSort] = useState<SortKey>(() =>
+		localStorage.getItem(SORT_KEY) === "createdAt" ? "createdAt" : "updatedAt",
+	);
+	const menu = usePopover();
 	/**
 	 * Which projects are folded shut.
 	 *
@@ -87,87 +104,122 @@ export function Sidebar() {
 	useEffect(() => {
 		try {
 			localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+			localStorage.setItem(TAB_KEY, tab);
+			localStorage.setItem(SORT_KEY, sort);
 		} catch {
 			// A full or disabled storage costs the memory of the choice, not the choice itself.
 		}
-	}, [collapsed]);
+	}, [collapsed, tab, sort]);
 
-	const groups = useMemo(
-		() => groupSessions(listableSessions(sessions, activeSessionId), settings?.projects ?? [], query, scratchRoots),
-		[sessions, settings, query, activeSessionId, scratchRoots],
-	);
+	const viewport = useRef<HTMLDivElement>(null);
+	/*
+	 * A different list starts at its own top.
+	 *
+	 * The scroller is shared by all four combinations, so without this, switching to a list that
+	 * happens to be shorter than how far you had scrolled the last one lands you somewhere in its
+	 * middle — or, if it is shorter still, at its end with a blank pane. A depth into one list means
+	 * nothing in another.
+	 */
+	useEffect(() => {
+		if (viewport.current) viewport.current.scrollTop = 0;
+	}, [tab, archiveOpen]);
 
-	const groupProps = (path: string) => ({
-		collapsed: collapsed.includes(path),
-		onToggleCollapsed: () => toggleCollapsed(path),
-		shown: shown[path] ?? SESSION_PAGE,
-		onShowMore: () => setShown((prev) => ({ ...prev, [path]: (prev[path] ?? SESSION_PAGE) + SESSION_PAGE })),
-		onCollapse: () => setShown((prev) => ({ ...prev, [path]: SESSION_PAGE })),
-		activeSessionId,
-		onOpenSession: (meta: Parameters<typeof openSession>[0]) => {
-			void openSession(meta);
-			dismissNav();
-		},
-		onArchiveSession: (meta: Parameters<typeof openSession>[0]) => void setSessionArchived(meta, true),
+	/*
+	 * Where headings rest: under the strip, which rests against the top edge.
+	 *
+	 * The strip's own box includes the space around it — see the padding below — so this is its full
+	 * height, and a heading stopping here lands flush under it with nothing transparent in between.
+	 */
+	const rail = 6 + (compact ? 38 : 32) + 6;
+	useStickyFade(viewport, 0, rail);
+
+	const { archived, groups, matching, bands, actions, confirm } = useSidebarLists({
+		archiveOpen,
+		query,
+		sort,
+		chatShown,
+		onOpened: dismissNav,
 	});
 
+	/*
+	 * Folding everything at once, which is one control rather than two.
+	 *
+	 * "All shut" is the only state where the reverse is the useful offer, and it is a state you can
+	 * see — so the menu asks the question the list is already answering rather than listing both
+	 * directions and making you work out which one applies.
+	 */
+	const foldable = [...groups.pinned, ...groups.projects].map((group) => group.path);
+	const allFolded = foldable.length > 0 && foldable.every((path) => collapsed.includes(path));
+	const foldAll = (folded: boolean) =>
+		setCollapsed((current) =>
+			folded
+				? [...new Set([...current, ...foldable])]
+				: current.filter((path) => !foldable.includes(path)),
+		);
+
+	/*
+	 * Searching is looking for one conversation, so it happens in the list that has all of them.
+	 *
+	 * Filtering 「项目」 does work — the projects keep their shape and lose the rows that do not
+	 * match — but the matches then sit scattered across however many projects, five rows down each,
+	 * which is the exact scrolling the flat list exists to end. The tab you were on comes back when
+	 * the search closes, unless you changed it yourself in the meantime.
+	 */
+	const before = useRef<SidebarTab | null>(null);
+	const toggleSearch = () => {
+		if (searching) {
+			setSearching(false);
+			setQuery("");
+			if (before.current) setTab(before.current);
+			before.current = null;
+			return;
+		}
+		if (tab === "projects") {
+			before.current = tab;
+			setTab("chats");
+		}
+		setSearching(true);
+	};
+	const changeTab = (next: SidebarTab) => {
+		before.current = null;
+		setTab(next);
+	};
+
+	const pad = compact ? "px-3" : "px-2.5";
+	const empty = query.trim() ? (
+		<p className="px-2 py-6 text-center text-detail text-ink-faint">没有匹配的会话</p>
+	) : archiveOpen ? (
+		<div className="px-2 py-8 text-center">
+			<Archive size={22} strokeWidth={1.5} className="mx-auto text-ink-faint" />
+			<p className="mt-2.5 text-detail text-ink-muted">还没有归档的聊天</p>
+			<p className="mt-1 text-caption leading-relaxed text-ink-faint">把鼠标移到会话上，点归档图标</p>
+		</div>
+	) : (
+		<p className="px-2 py-6 text-center text-detail leading-relaxed text-ink-faint">
+			还没有会话。
+			<br />
+			点击「新对话」开始。
+		</p>
+	);
 	return (
 		// No right border: the sidebar's own tint is what sets it apart from the column beside
 		// it. A rule on top of that reads as a seam rather than a boundary.
-		<div className="ly-sidebar-fill flex h-full w-full flex-col">
+		<div
+			className="ly-sidebar-fill flex h-full w-full flex-col"
+			/*
+			 * Where headings come to rest: below the strip, with a gap either side of it. Declared
+			 * here so the rows can be plain `sticky top-[var(--ly-rail)]` — CSS holds them, which is
+			 * the only way they keep up with a wheel. See `sidebar/sticky.ts`.
+			 */
+			style={{ "--ly-rail": `${rail}px` } as React.CSSProperties}
+		>
 			<div className="h-[44px] shrink-0" />
 
-			<div className="flex h-[34px] shrink-0 items-center justify-between px-4">
-				{/*
-				 * The app name, and nothing more. It used to open the project picker, which put the
-				 * same control in two places and read as a dropdown over the whole window. Switching
-				 * projects belongs on the composer's project chip, next to what it actually scopes.
-				 */}
-				<span className="text-title font-semibold tracking-tight text-ink">Lyra</span>
-				<div className="flex items-center gap-0.5">
-					<button
-						type="button"
-						data-ly-tip="搜索会话"
-						aria-label="搜索会话"
-						onClick={() => setSearching((v) => !v)}
-						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-					>
-						<Search size={15} strokeWidth={1.9} />
-					</button>
-					<button
-						type="button"
-						data-ly-tip="通知"
-						aria-label="通知"
-						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-					>
-						<Bell size={15} strokeWidth={1.9} />
-					</button>
-				</div>
-			</div>
+			<SidebarHead searching={searching} query={query} onQuery={setQuery} onToggleSearch={toggleSearch} />
 
-			{searching && (
-				<div className="px-3 pb-2">
-					<SearchField
-						autoFocus
-						size="comfortable"
-						value={query}
-						onChange={setQuery}
-						onEscape={() => setSearching(false)}
-						placeholder="搜索会话…"
-					/>
-				</div>
-			)}
-
-			{/*
-			 * Only 新对话 is pinned. The other three scroll away with the list.
-			 *
-			 * All four used to be fixed, which spent four rows of a narrow column on things that
-			 * are visited a few times a day, and meant the sessions — the reason the pane exists —
-			 * started a third of the way down and never got that space back however far you
-			 * scrolled. Starting a conversation is the one action frequent enough to earn a
-			 * permanent row; the rest are destinations, and a destination can be scrolled to.
-			 */}
-			<nav className={`flex flex-col pb-1 ${compact ? "px-3" : "px-2.5"}`}>
+			{/* Only 新对话 is pinned above the list — see `DestinationNav` for why the other three
+			    are not. */}
+			<nav className={`flex flex-col pb-1 ${pad}`}>
 				<NavItem
 					icon={<SquarePen size={15} strokeWidth={1.8} />}
 					label="新对话"
@@ -192,254 +244,104 @@ export function Sidebar() {
 			 * really do, the argument turns around: a hard rule at the top of a list that runs on
 			 * says the list ended there. See `.ly-fade-y`.
 			 */}
-			<Scroller className="flex-1" contentClassName={`pb-2 ${compact ? "px-3" : "px-2.5"}`}>
-				<div className="flex flex-col gap-[2px] pb-1">
-					<NavItem
-						active={view === "pull-requests"}
-						icon={<GitPullRequest size={15} strokeWidth={1.8} />}
-						label="拉取请求"
-						onClick={() => {
-							setView("pull-requests");
-							dismissNav();
-						}}
-					/>
-					<NavItem
-						active={view === "scheduled"}
-						icon={<Clock size={15} strokeWidth={1.8} />}
-						label="已安排"
-						onClick={() => {
-							setView("scheduled");
-							dismissNav();
-						}}
-					/>
-					{/*
-					 * The catalogue, not the settings pane it used to open.
-					 *
-					 * Clicking 插件 landed in 设置 › 插件, which is where you manage what you already
-					 * have — so the one thing the sidebar entry could not do was show you what you
-					 * could add. The two now split along that line: here to browse and install,
-					 * settings to configure. The gear in this view's header is the way across.
-					 */}
-					<NavItem
-						active={view === "plugins"}
-						icon={<AtSign size={15} strokeWidth={1.8} />}
-						label="插件"
-						onClick={() => {
-							setView("plugins");
-							dismissNav();
-						}}
+			<Scroller className="flex-1" contentClassName={`pb-2 ${pad}`} scrollRef={viewport}>
+				<DestinationNav onNavigate={dismissNav} />
+
+				{/*
+				 * The strip, in the list and held at the top of it once you scroll.
+				 *
+				 * `sticky` rather than a copy placed over the pane: the list moves on the compositor,
+				 * and anything positioned from JavaScript arrives a frame after it does — which is a
+				 * row visibly wobbling by a wheel tick. The cost is `ly-pin`, an opaque fill, because
+				 * a row held over a list has to hide what passes under it. `sidebar/sticky.ts` has
+				 * the whole account.
+				 *
+				 * Padding rather than margin for the breathing room, which is the opposite of what it
+				 * wants to be and is load-bearing: a margin is outside the fill, so the six pixels
+				 * above and below the control stay transparent — and a heading being pushed out
+				 * travels up through exactly there. `z-30` puts this over the headings; the padding
+				 * is what gives it something to hide them behind.
+				 */}
+				<div data-ly-rail className="ly-pin sticky top-0 z-30 py-1.5">
+					<SidebarTabs
+						tab={tab}
+						onChange={changeTab}
+						trailing={
+							<>
+								<StripButton label="列表设置" active={menu.open} onClick={menu.toggle}>
+									<ListFilter size={14} strokeWidth={1.9} />
+								</StripButton>
+								<ArchiveToggle
+									open={archiveOpen}
+									count={archived.length}
+									onToggle={() => setArchiveOpen((v) => !v)}
+								/>
+							</>
+						}
 					/>
 				</div>
 
-				{groups.pinned.length > 0 && (
-					<>
-						<SectionLabel
-							count={groups.pinned.length}
-							collapsed={collapsed.includes(PINNED)}
-							onToggle={() => toggleCollapsed(PINNED)}
-						>
-							置顶
-						</SectionLabel>
-						<Collapsible open={!collapsed.includes(PINNED)}>
-							{groups.pinned.map((group) => (
-								<ProjectGroup
-									key={group.path}
-									group={group}
-									active={workspace?.path === group.path}
-									{...groupProps(group.path)}
-								/>
-							))}
-						</Collapsible>
-					</>
-				)}
-
 				{/*
-				 * No heading over the projects.
+				 * Keyed on both, so switching either one replays the entrance.
 				 *
-				 * They used to sit under 「最近」, which then had nothing left to say when the
-				 * project-less conversations needed a home: a folder row called 「无项目」 was
-				 * invented for them, and a folder named after not having one is a contradiction you
-				 * cannot click on. 「最近」 belongs to those conversations — they are the ones that
-				 * are not filed anywhere and are found by when you last touched them. A project is
-				 * found by its name, and its own row is already the heading.
+				 * Four states share this scroller and none of them is a change to the list on screen —
+				 * they are different lists. The animation is what says so; without it the rows simply
+				 * become other rows, which at a glance reads as the sidebar having reordered itself.
 				 */}
-				{groups.projects.map((group) => (
-					<ProjectGroup
-						key={group.path}
-						group={group}
-						active={workspace?.path === group.path}
-						{...groupProps(group.path)}
-					/>
-				))}
-
-				{groups.loose.length > 0 && (
-					<>
-						<SectionLabel
-							count={groups.loose.length}
-							collapsed={collapsed.includes(RECENT)}
-							onToggle={() => toggleCollapsed(RECENT)}
-						>
-							最近
-						</SectionLabel>
-						{/* Flat rows, the same ones a project shows — the section is what differs, not the
-						    conversation. Same gap as inside a project, so the two read as one list. */}
-						<Collapsible open={!collapsed.includes(RECENT)}>
-						<div className={`flex flex-col ${compact ? "gap-[5px]" : "gap-[4px]"}`}>
-							{groups.loose.slice(0, looseShown).map((session) => (
-								<SessionRow
-									key={session.id}
-									session={session}
-									active={activeSessionId === session.id}
-									onOpen={() => {
-										void openSession(session);
-										dismissNav();
-									}}
-									onArchive={() => void setSessionArchived(session, true)}
-								/>
-							))}
-							<ShowMore
-								hidden={Math.max(0, groups.loose.length - looseShown)}
-								canCollapse={looseShown > SESSION_PAGE}
-								onShowMore={() => setLooseShown((n) => n + SESSION_PAGE)}
-								onCollapse={() => setLooseShown(SESSION_PAGE)}
-							/>
-							</div>
-						</Collapsible>
-					</>
-				)}
-
-				{groups.pinned.length === 0 && groups.projects.length === 0 && groups.loose.length === 0 && (
-					<p className="px-2 py-6 text-center text-detail leading-relaxed text-ink-faint">
-						还没有会话。
-						<br />
-						点击「新对话」开始。
-					</p>
-				)}
+				<div key={`${archiveOpen ? "archive" : "live"}-${tab}`} className="ly-enter">
+					{tab === "projects" ? (
+						<ProjectList
+							groups={groups}
+							activePath={workspace?.path}
+							activeSessionId={activeSessionId}
+							collapsed={collapsed}
+							onToggleCollapsed={toggleCollapsed}
+							groupProps={(path) => ({
+								collapsed: collapsed.includes(path),
+								onToggleCollapsed: () => toggleCollapsed(path),
+								shown: shown[path] ?? SESSION_PAGE,
+								onShowMore: () =>
+									setShown((prev) => ({ ...prev, [path]: (prev[path] ?? SESSION_PAGE) + SESSION_PAGE })),
+								onCollapse: () => setShown((prev) => ({ ...prev, [path]: SESSION_PAGE })),
+								activeSessionId,
+								actions,
+							})}
+							looseShown={looseShown}
+							onLooseMore={() => setLooseShown((n) => n + SESSION_PAGE)}
+							onLooseCollapse={() => setLooseShown(SESSION_PAGE)}
+							actions={actions}
+							empty={empty}
+						/>
+					) : (
+						<ChatList
+							bands={bands}
+							activeSessionId={activeSessionId}
+							scratchRoots={scratchRoots}
+							hidden={Math.max(0, matching.length - chatShown)}
+							canCollapse={chatShown > CHAT_PAGE}
+							onShowMore={() => setChatShown((n) => n + CHAT_PAGE)}
+							onCollapse={() => setChatShown(CHAT_PAGE)}
+							actions={actions}
+							empty={empty}
+						/>
+					)}
+				</div>
 			</Scroller>
 
-			{/*
-			 * Padded container, rounded row — the same shape as every other item in this pane.
-			 * As a full-bleed button its hover fill ran edge to edge and read as a different
-			 * kind of control from the list it sits under.
-			 *
-			 * The update dot rides at the end of this row, and is usually not there at all. Which is
-			 * why it is here rather than in the toolbar: this is the one strip of the window whose
-			 * business is the app itself rather than the conversation, and a row that already ends in
-			 * a small round mark has somewhere to put another one.
-			 */}
-			<div className={`ly-sidebar-foot flex shrink-0 items-center gap-2 border-t border-line ${compact ? "p-3" : "p-2.5"}`}>
-				<button
-					type="button"
-					onClick={() => {
-						setView("settings");
-						dismissNav();
-					}}
-					className={`ly-scroll flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 text-left transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover active:bg-elevated ${
-						compact ? "h-[40px]" : "h-[34px]"
-					}`}
-				>
-					<SettingsIcon size={16} strokeWidth={1.8} className="shrink-0 text-ink-muted" />
-					{/* Fades when the badge beside it opens, rather than being squeezed into its own
-					    overflow animation — see `.ly-sidebar-foot` in styles.css. */}
-					<ScrollText
-						text={activeProviderLabel(settings?.providers ?? [])}
-						className="ly-sidebar-foot-label min-w-0 flex-1 text-label text-ink"
-					/>
-					<span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-caption text-ink-faint">
-						?
-					</span>
-				</button>
-				<UpdateBadge compact={compact} />
-			</div>
+			<SidebarFoot onNavigate={dismissNav} />
+
+			{menu.open && (
+				<ListMenu
+					anchor={menu.anchor}
+					tab={tab}
+					sort={sort}
+					onSort={setSort}
+					allFolded={allFolded}
+					onFoldAll={foldAll}
+					onClose={menu.close}
+				/>
+			)}
+			{confirm}
 		</div>
-	);
-}
-
-/**
- * A section heading, which is also the control that folds the section.
- *
- * The projects underneath already fold one at a time; a section that could not fold meant the only
- * way to put away a long 「最近」 was to fold nothing and scroll past it. Making the heading itself
- * the target keeps the row count the same — no chevron column appearing beside every label, no
- * second thing to aim at.
- *
- * The count only shows while shut. Open, the rows are the count; shut, it is the difference
- * between "folded" and "empty", which are otherwise the same picture.
- */
-function SectionLabel({
-	children,
-	count,
-	collapsed,
-	onToggle,
-}: {
-	children: React.ReactNode;
-	count: number;
-	collapsed: boolean;
-	onToggle: () => void;
-}) {
-	return (
-		<button
-			type="button"
-			aria-expanded={!collapsed}
-			onClick={onToggle}
-			className="group/section flex w-full items-center gap-1 rounded-md px-2 pt-4 pb-1.5 text-left text-detail font-medium text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink-muted"
-		>
-			{children}
-			<ChevronRight
-				size={12}
-				strokeWidth={2.2}
-				className={`shrink-0 opacity-0 transition-[opacity,transform] duration-[var(--ly-t-quick)] group-hover/section:opacity-100 ${
-					collapsed ? "" : "rotate-90"
-				}`}
-			/>
-			{collapsed && count > 0 && <span className="ml-auto tabular-nums">{count}</span>}
-		</button>
-	);
-}
-
-/**
- * A row in the nav, and — for the three that lead somewhere — whether you are there.
- *
- * Clicking these used to leave no trace: the view you had opened looked exactly like the one you
- * had not, so the only way to know where you were was to read the pane beside it. `active` is the
- * same treatment the settings nav already gives its own sections.
- *
- * Destinations sit in the muted tone and step up to full ink when current, which is what makes
- * the highlight read as "you are here" rather than as a hover that got stuck. 新对话 is not one
- * of them — it starts a conversation rather than leading anywhere, so it stays at full weight and
- * has no state to be in. `undefined` rather than `false` says that: not inactive, inapplicable.
- */
-function NavItem({
-	icon,
-	label,
-	onClick,
-	active,
-}: {
-	icon: React.ReactNode;
-	label: string;
-	onClick?: () => void;
-	active?: boolean;
-}) {
-	// A drawer is reached by pointing at it rather than by muscle memory, so its rows get the
-	// taller touch-style hit area the reference mobile layout uses.
-	const { compact } = useLayout();
-	const tone =
-		active === undefined
-			? "text-ink hover:bg-card-hover"
-			: active
-				? "bg-card-hover text-ink"
-				: "text-ink-muted hover:bg-card-hover/60 hover:text-ink";
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-current={active ? "page" : undefined}
-			className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors ${tone} ${
-				compact ? "h-[40px] text-body" : "h-[31px] text-label"
-			}`}
-		>
-			<span className={`shrink-0 ${active ? "text-ink" : "text-ink-muted"}`}>{icon}</span>
-			{label}
-		</button>
 	);
 }

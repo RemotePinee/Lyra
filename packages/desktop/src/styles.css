@@ -1029,6 +1029,23 @@
 }
 
 /*
+ * The browser does not get to move this one on its own.
+ *
+ * Scroll anchoring keeps whatever you were looking at still when content above it changes size.
+ * That is the right instinct for a document, and the wrong one for a pane whose content is replaced
+ * wholesale: switching the sidebar between its two lists sets `scrollTop` to zero — a depth into one
+ * list means nothing in another — and anchoring restored the old offset a frame later, having found
+ * the row you were "looking at" in a list you had just left. It did the same on launch, when the
+ * session list arrives and the pane goes from empty to full.
+ *
+ * The sidebar only, deliberately. The transcript wants exactly what anchoring gives: a thinking
+ * block folding open above where you are reading is the case it exists for.
+ */
+.ly-sidebar-fill .ly-scroll-view {
+  overflow-anchor: none;
+}
+
+/*
  * Thicker under the pointer, the way the platform's own does it.
  *
  * Two things at once: it is easier to hold, and it says the thing is grabbable before you commit
@@ -1123,17 +1140,46 @@
   initial-value: 0px;
 }
 
+/*
+ * How far down the top the softening starts, rather than starting at the edge.
+ *
+ * For a list with rows pinned over it — `position: sticky`, so they are inside this element and the
+ * mask applies to them too. Fading from the edge fades the pinned rows themselves; the first
+ * version of this feature dodged that by placing them outside the mask entirely, and paid for it by
+ * lagging the compositor a frame (`sidebar/sticky.ts` has the account). So instead the band they
+ * occupy is left at full strength and the fade begins at their undersides, where the list starts.
+ *
+ * What hides the list *behind* a pinned row is the row's own fill, not this. This only decides
+ * where the rows below it begin to soften.
+ *
+ * Left at zero — every other scroller in the app — every stop below collapses back onto the plain
+ * two-ended fade this used to be.
+ *
+ * Never interpolated, unlike the two depths above. It tracks rows the browser is placing on the
+ * compositor, so a transition would put the fade a frame behind the row it is supposed to start
+ * under; and it does not need one, because it moves with the scroll rather than between states.
+ */
+@property --ly-fade-inset {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 .ly-fade-y {
   mask-image: linear-gradient(
     to bottom,
-    transparent 0,
-    rgb(0 0 0 / 0.06) calc(var(--ly-fade-top) * 0.12),
-    rgb(0 0 0 / 0.19) calc(var(--ly-fade-top) * 0.26),
-    rgb(0 0 0 / 0.38) calc(var(--ly-fade-top) * 0.41),
-    rgb(0 0 0 / 0.6) calc(var(--ly-fade-top) * 0.57),
-    rgb(0 0 0 / 0.8) calc(var(--ly-fade-top) * 0.72),
-    rgb(0 0 0 / 0.94) calc(var(--ly-fade-top) * 0.86),
-    #000 var(--ly-fade-top),
+    /* The pinned band, kept at full strength: the rows held there are inside this element, so
+       softening it would fade the very rows it is supposed to start below. What hides the list
+       behind them is their own fill, not this. */ #000 0,
+    #000 var(--ly-fade-inset),
+    transparent var(--ly-fade-inset),
+    rgb(0 0 0 / 0.06) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.12),
+    rgb(0 0 0 / 0.19) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.26),
+    rgb(0 0 0 / 0.38) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.41),
+    rgb(0 0 0 / 0.6) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.57),
+    rgb(0 0 0 / 0.8) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.72),
+    rgb(0 0 0 / 0.94) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.86),
+    #000 calc(var(--ly-fade-inset) + var(--ly-fade-top)),
     #000 calc(100% - var(--ly-fade-bottom)),
     rgb(0 0 0 / 0.94) calc(100% - var(--ly-fade-bottom) * 0.86),
     rgb(0 0 0 / 0.8) calc(100% - var(--ly-fade-bottom) * 0.72),
@@ -2274,6 +2320,63 @@
 
 .ly-sidebar-fill {
   background: var(--color-sidebar);
+  /*
+   * What a pinned row in this pane is drawn on — see `.ly-pin`.
+   *
+   * A pinned row has to be opaque, and this is the one place in the app where that is a real cost
+   * rather than a detail: the pane is translucent by default, so a solid strip is a band the
+   * desktop does not show through. It is the price of `position: sticky`, and it is worth paying.
+   * The alternative — placing the rows by hand outside the mask so they need no fill — was built
+   * first, and it lagged the scroll by a frame: the list moves on the compositor and JavaScript
+   * cannot keep up with it, so every pinned row wobbled by however far the last wheel tick went.
+   *
+   * The same value under vibrancy too, deliberately not overridden there. The pane's own fill goes
+   * translucent in that mode, but `--color-sidebar` is still the nearest *opaque* match for it — a
+   * pinned row filled with the plain background colour, `--color-shell`, came out visibly flatter
+   * and darker than the material around it. It cannot be exact; what is actually behind the pane is
+   * the desktop, and nothing in CSS can sample that.
+   */
+  --ly-behind: var(--color-sidebar);
+}
+
+/* ---------------------------------------------------------------------------
+ * The sidebar's tab strip: a track with something floating in it.
+ *
+ * Written here rather than with utility classes because the obvious pair of tokens is wrong on one
+ * of the two themes, and that is worth stating once where it cannot be undone by accident.
+ * `bg-card` under `bg-elevated` — what the settings pages' `Segmented` uses — reads as a knob
+ * sitting *in* a slot on dark and as a knob sitting *in a hole* on light: every surface token steps
+ * from the background toward the foreground, so on a light theme "elevated" is darker than the card
+ * under it, and the selected tab came out as the recessed one.
+ *
+ * So the track is a veil of the foreground — a film that darkens a light pane and lightens a dark
+ * one, correct on both by construction — and the knob is `--color-float`, the one token that
+ * genuinely means "above the surface" in both directions: near-white on light, a step brighter than
+ * the page on dark.
+ * ------------------------------------------------------------------------- */
+
+.ly-tabs {
+  background: color-mix(in srgb, var(--color-ink) 7%, transparent);
+}
+
+.ly-tabs-knob {
+  background: var(--color-float);
+  /*
+   * A hairline and a short drop, which is most of what makes this read as lifted rather than as a
+   * differently-coloured rectangle. On light the fill is near-white on near-white, so without an
+   * edge the knob has no shape at all.
+   */
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 0.06),
+    0 1px 2px rgb(0 0 0 / 0.09),
+    0 2px 5px -2px rgb(0 0 0 / 0.06);
+}
+
+/* Dark themes carry it with the shadow alone: an outline over a dark page reads as a seam. */
+:root.dark .ly-tabs-knob {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 2px 6px -2px rgb(0 0 0 / 0.3);
 }
 
 /*

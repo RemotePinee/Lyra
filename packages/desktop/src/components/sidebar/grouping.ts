@@ -62,12 +62,10 @@ export function groupSessions(
 	for (const project of projects) {
 		byPath.set(project.path, { path: project.path, name: project.name, sessions: [] });
 	}
-	const roots = scratchRoots.filter(Boolean).map((root) => (root.endsWith("/") ? root : `${root}/`));
-	const isScratch = (cwd: string) => roots.some((root) => cwd.startsWith(root));
 
 	const loose: SessionMeta[] = [];
 	for (const session of filtered) {
-		if (isScratch(session.cwd)) {
+		if (isScratch(session.cwd, scratchRoots)) {
 			loose.push(session);
 			continue;
 		}
@@ -99,6 +97,20 @@ export function groupSessions(
 		 */
 		loose: loose.sort((a, b) => b.updatedAt - a.updatedAt),
 	};
+}
+
+/**
+ * Whether a conversation lives in a scratch directory rather than in a project.
+ *
+ * Exported because the flat 「聊天」 list needs the same answer for a different reason. There a row
+ * is captioned with the project it belongs to — the titles are no longer under a folder that says
+ * so — and a scratch session's `projectName` is a generated directory name like `owner-repo-6381`,
+ * which as a caption is worse than none.
+ */
+export function isScratch(cwd: string, scratchRoots: string[]): boolean {
+	return scratchRoots
+		.filter(Boolean)
+		.some((root) => cwd.startsWith(root.endsWith("/") ? root : `${root}/`));
 }
 
 /**

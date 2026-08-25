@@ -15,7 +15,7 @@
 
 import type { SessionMeta } from "@lyra/core";
 import { visibleActivity } from "@lyra/core/activity";
-import { Archive } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useLayout } from "../../layout.tsx";
 import { sessionTitle } from "../../sessionTitle.ts";
@@ -34,16 +34,56 @@ import { useTypedText } from "../TypedText.tsx";
  */
 const JUST_CREATED_MS = 1500;
 
+/**
+ * What a row can do, as one thing rather than four callbacks threaded through every list.
+ *
+ * Which of them exist is what tells a row where it is: a conversation in the sidebar can be
+ * archived, one in the archive can be restored or deleted, and neither list needs to be told which
+ * one it is beyond being handed the right set.
+ */
+export interface RowActions {
+	onOpen: (session: SessionMeta) => void;
+	onArchive?: (session: SessionMeta) => void;
+	onRestore?: (session: SessionMeta) => void;
+	onDelete?: (session: SessionMeta) => void;
+}
+
+/** Bind a set of actions to one conversation, for spreading onto its row. */
+export function rowActions(actions: RowActions, session: SessionMeta) {
+	const bind = (act: ((session: SessionMeta) => void) | undefined) => (act ? () => act(session) : undefined);
+	return {
+		onOpen: () => actions.onOpen(session),
+		onArchive: bind(actions.onArchive),
+		onRestore: bind(actions.onRestore),
+		onDelete: bind(actions.onDelete),
+	};
+}
+
 export function SessionRow({
 	session,
 	active,
+	caption,
+	onRestore,
+	onDelete,
 	onOpen,
 	onArchive,
 }: {
 	session: SessionMeta;
 	active: boolean;
+	/**
+	 * What this conversation belongs to, for the list that is not grouped by it.
+	 *
+	 * Under a project the folder row above already answers this and repeating it on every line
+	 * would be forty copies of the same word. In 「聊天」 there is no folder row, and without this
+	 * a screen of 「新对话」 is a screen of identical rows.
+	 */
+	caption?: string;
 	onOpen: () => void;
-	onArchive: () => void;
+	/** Absent in the archive, where a row is already filed away. */
+	onArchive?: () => void;
+	/** Both present only in the archive: put it back, or end it. */
+	onRestore?: () => void;
+	onDelete?: () => void;
 }) {
 	// Subscribed here rather than threaded through: it changes for reasons this row's other props
 	// know nothing about — a turn ending in a conversation nobody has open.
@@ -74,29 +114,82 @@ export function SessionRow({
 			<button
 				type="button"
 				onClick={onOpen}
-				className={`flex w-full items-center gap-2 rounded-lg pr-7 pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
-					compact ? "h-[34px]" : "h-[27px]"
-				} ${active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"}`}
+				// Room for however many buttons this row has. Reserved rather than overlaid: the pane
+				// is translucent, so there is no colour a gradient behind an icon could fade to.
+				className={`flex w-full items-center gap-2 rounded-lg pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
+					onRestore && onDelete ? "pr-12" : "pr-7"
+				} ${compact ? "h-[34px]" : "h-[27px]"} ${
+					active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"
+				}`}
 			>
 				{/* In the indent the titles already had, so nothing moved to make room for it. */}
 				<SessionStatus activity={visibleActivity(activity[session.id] ?? null, active)} />
 				<ScrollText text={title} className="ly-fade-tail min-w-0 flex-1" />
+				{/*
+				 * Yields to the pointer, the way a project's folded count does — the buttons live at
+				 * this end of the row, and the two drawn at once were not two things sharing a space
+				 * but a word and an icon on the same pixels.
+				 *
+				 * A third of the row at most, and the title gets the rest.
+				 *
+				 * Both of these are names that can run to any length, and giving the caption its
+				 * natural width let a long project name take two thirds of a narrow pane — leaving
+				 * four characters of the title, which is the one you are reading the row for. The
+				 * caption is what you glance at to tell two 「新对话」 apart, so it can afford to
+				 * be cut; the title cannot.
+				 */}
+				{caption && (
+					<span className="ml-1.5 max-w-[33%] shrink-0 truncate text-caption text-ink-faint transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-0">
+						{caption}
+					</span>
+				)}
 			</button>
 
 			{/* The strip never takes pointer events; only the button does. Anything wider would
 			    shadow the row button and cost it its hover. */}
 			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-100 focus-within:opacity-100">
-				<button
-					type="button"
-					data-ly-tip="归档会话"
-					// The settled name, not the one being typed: a label read aloud mid-rewrite is a
-					// truncation of a title nobody ever gave this conversation.
-					aria-label={`归档会话「${sessionTitle(session.title)}」`}
-					onClick={onArchive}
-					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
-				>
-					<Archive size={12.5} strokeWidth={1.8} />
-				</button>
+				{/*
+				 * The settled name in every label, not the one being typed: a title read aloud
+				 * mid-rewrite is a truncation of a name nobody ever gave this conversation.
+				 */}
+				{onRestore && (
+					<button
+						type="button"
+						data-ly-tip="取消归档"
+						aria-label={`取消归档「${sessionTitle(session.title)}」`}
+						onClick={onRestore}
+						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
+					>
+						<ArchiveRestore size={12.5} strokeWidth={1.8} />
+					</button>
+				)}
+				{/*
+				 * Red on hover only. An archive is a list of things you have already put away, so a
+				 * permanently red control on every row of it reads as a warning about the list
+				 * rather than as one button on one row.
+				 */}
+				{onDelete && (
+					<button
+						type="button"
+						data-ly-tip="删除"
+						aria-label={`删除「${sessionTitle(session.title)}」`}
+						onClick={onDelete}
+						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-danger"
+					>
+						<Trash2 size={12.5} strokeWidth={1.8} />
+					</button>
+				)}
+				{onArchive && (
+					<button
+						type="button"
+						data-ly-tip="归档会话"
+						aria-label={`归档会话「${sessionTitle(session.title)}」`}
+						onClick={onArchive}
+						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
+					>
+						<Archive size={12.5} strokeWidth={1.8} />
+					</button>
+				)}
 			</span>
 		</div>
 	);
