@@ -67,7 +67,7 @@ try {
 
 	const shot = await app.send<{ data: string }>("Page.captureScreenshot", { format: "png" });
 	await writeFile(out, Buffer.from(shot.data, "base64"));
-	console.log(out);
+	process.stdout.write(`${out}\n`);
 } finally {
 	await app.stop();
 }
