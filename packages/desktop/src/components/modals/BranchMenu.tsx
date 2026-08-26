@@ -123,7 +123,17 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					<Row
 						key={branch}
 						name={branch}
-						current={branch === branches?.current}
+						/*
+						 * From the workspace, not from the list this menu fetched.
+						 *
+						 * `branches.current` is a snapshot taken when the menu opened, and switching
+						 * does not refetch it — so the tick stayed on the branch you left until the
+						 * whole list was read again, which is what read as the check lagging behind.
+						 * The workspace's own branch is written the moment a switch is asked for
+						 * (`setBranchOptimistic`) and corrected if git refuses, so it is both faster
+						 * and the same thing the bar below the composer is showing.
+						 */
+						current={branch === (workspace?.branch ?? branches?.current)}
 						onSelect={() => void switchTo(branch)}
 					/>
 				))}

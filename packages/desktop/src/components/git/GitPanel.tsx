@@ -124,6 +124,38 @@ export function GitPanel() {
   }, [cwd]);
 
   /*
+   * Re-read from scratch when the checkout moves under us, and say so while it happens.
+   *
+   * Switching branch changes every answer this panel gives, and `git status` on a large repository
+   * takes long enough to notice — during which the list on screen belongs to the branch you just
+   * left. Showing the old branch's files under the new branch's name is worse than showing
+   * nothing: it is wrong, and nothing about it says so.
+   *
+   * Only on a real move. The poll behind `useLiveRefresh` runs every 1.5s while a turn works, and
+   * flashing a skeleton at that rate would make the panel unreadable — those re-reads replace the
+   * list in place, which is right for "the agent just edited a file".
+   */
+  const branch = workspace?.branch ?? null;
+  const [switching, setSwitching] = useState(false);
+  useEffect(() => {
+    if (!cwd) return;
+    let alive = true;
+    setSwitching(true);
+    void window.lyra.git
+      .status(cwd)
+      .then((next) => {
+        if (!alive) return;
+        setStatus(next);
+      })
+      .finally(() => {
+        if (alive) setSwitching(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cwd, branch]);
+
+  /*
    * Live while the agent works, not once it has finished.
    *
    * The edits this panel exists to show arrive throughout a turn, and re-reading only when the turn
@@ -308,6 +340,7 @@ export function GitPanel() {
       {view === "changes" && (
         <ChangesView
           key={status?.branch ?? "detached"}
+          loading={switching}
           status={status}
           cwd={workspace.path}
           busy={busy}

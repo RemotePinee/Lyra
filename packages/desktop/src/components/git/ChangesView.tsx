@@ -17,6 +17,7 @@ import { Text } from "../Text.tsx";
 import { FileDiffList } from "./FileDiffList.tsx";
 
 import { GroupHeader } from "./GroupHeader.tsx";
+import { SkeletonList } from "../Skeleton.tsx";
 import type { Act } from "./types.ts";
 
 /**
@@ -30,11 +31,14 @@ export function ChangesView({
   status,
   cwd,
   busy,
+  loading,
   act,
 }: {
   status: GitStatus | null;
   cwd: string;
   busy: boolean;
+  /** The checkout moved and this is being re-read; see `switching` in `GitPanel`. */
+  loading?: boolean;
   act: Act;
 }) {
   const [message, setMessage] = useState("");
@@ -81,6 +85,21 @@ export function ChangesView({
     if (ok) setMessage("");
   }
 
+  /*
+   * While the checkout is moving, stand in the shape of what is coming.
+   *
+   * Ahead of the empty state on purpose: mid-switch there is no answer yet, and 「工作区干净」 is an
+   * answer — the wrong one, stated confidently, for however long `git status` takes on a large
+   * repository.
+   */
+  if (loading) {
+    return (
+      <div className="ly-enter flex-1 px-1.5 pt-2">
+        <SkeletonList count={5} label="正在读取改动" />
+      </div>
+    );
+  }
+
   if (nothing) {
     return (
       <PanelEmpty icon={Check} title="工作区干净">
@@ -90,8 +109,9 @@ export function ChangesView({
   }
 
   return (
+    /* `ly-enter` so the list arrives rather than replacing the skeleton in one frame. */
     <>
-      <Scroller className="flex-1" contentClassName="px-1.5 pb-2" top="none" bottom="none">
+      <Scroller className="ly-enter flex-1" contentClassName="px-1.5 pb-2" top="none" bottom="none">
         {stagedPaths.length > 0 && (
           <GroupHeader
             label="已暂存"
