@@ -96,7 +96,15 @@ export function SidebarTabs({
 		 * where the control ends, the space around it belongs to its neighbours in the list, and
 		 * `layoutSticky`'s `gap` is what keeps it off the top edge when it is held.
 		 */
-		<div className="flex items-center gap-1.5">
+		/*
+		 * `min-w-0`, so the row can be narrower than its contents want to be.
+		 *
+		 * Without it a flex item never shrinks below its content, and the overflow goes *outside*
+		 * the pane rather than being absorbed — which is how the archive button ended up sliced in
+		 * half at the narrowest drag. The floor in `layout-widths` means this should not be reached
+		 * at the default type size; it is what happens when someone raises it.
+		 */
+		<div className="flex min-w-0 items-center gap-1.5">
 			{/*
 			 * As wide as its two labels, and no wider.
 			 *
@@ -105,7 +113,7 @@ export function SidebarTabs({
 			 * same control was a different size in every window. Its size is a property of what is
 			 * written on it. The buttons go to the far end on their own; see `ml-auto` below.
 			 */}
-			<div role="tablist" aria-label="侧边栏分区" className="ly-tabs relative flex shrink-0 rounded-lg p-[3px]">
+			<div role="tablist" aria-label="侧边栏分区" className="ly-tabs relative flex min-w-0 rounded-lg p-[3px]">
 				{/*
 				 * One fill that moves, rather than a fill per tab that appears and disappears.
 				 *
@@ -138,7 +146,9 @@ export function SidebarTabs({
 							{/* A step below the label's weight. The mark is there to be recognised at a
 							    glance, not read, and at the same strength it competes with the word. */}
 							<Icon size={13} strokeWidth={current ? 2 : 1.8} className="shrink-0" />
-							{label}
+							{/* The word is what yields when the row runs out of room; the mark beside it
+							    still says which tab this is. */}
+							<span className="truncate">{label}</span>
 						</button>
 					);
 				})}

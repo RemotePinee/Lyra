@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { SIDEBAR_MIN } from "../src/layout-widths.ts";
 import { startApp, type RunningApp } from "./app.ts";
 
 let app: RunningApp;
@@ -596,4 +597,58 @@ test("the archive pins its headings too, and closing returns to the live list", 
 		"and the live list is back, offering to archive again",
 	);
 	assert.equal(back.scrollTop, 0, "at its own top");
+});
+
+/**
+ * The narrowest the pane can be dragged, with everything still inside it.
+ *
+ * Last in the file because it reloads the window to apply a stored width.
+ *
+ * The floor used to be 208px while the strip row needs 216 plus the list's 10px of padding either
+ * side — so dragging all the way in put the archive button 18px past the pane's own edge, where it
+ * was simply cut in half. Nothing in that row shrank, so the overflow had nowhere to go but out.
+ */
+test("at its narrowest, the strip and its buttons are still inside the pane", async () => {
+	await app.evaluate(`(() => {
+		window.localStorage.setItem("dw:sidebar-width", String(${SIDEBAR_MIN}));
+		return true;
+	})()`);
+	await app.evaluate(`location.reload()`).catch(() => {});
+	for (let i = 0; i < 40; i++) {
+		const there = await app
+			.evaluate<boolean>(`Boolean(document.querySelector(".ly-sidebar-fill [data-ly-rail]"))`)
+			.catch(() => false);
+		if (there) break;
+		await new Promise((r) => setTimeout(r, 400));
+	}
+	await new Promise((r) => setTimeout(r, 600));
+
+	const fit = await app.evaluate<{
+		pane: number;
+		rowOverflow: number;
+		lastButtonPast: number;
+		buttons: number;
+	}>(`(() => {
+		const pane = document.querySelector(".ly-sidebar-fill").getBoundingClientRect();
+		const rail = document.querySelector("[data-ly-rail]");
+		const row = rail.firstElementChild;
+		const trailing = [...rail.querySelectorAll("button")].filter((b) => !b.closest(".ly-tabs"));
+		const last = trailing[trailing.length - 1].getBoundingClientRect();
+		return {
+			pane: Math.round(pane.width),
+			// Positive means the row wants more space than it has.
+			rowOverflow: row.scrollWidth - row.clientWidth,
+			// Positive means the control is drawn past the pane's edge.
+			lastButtonPast: Math.round(last.right - pane.right),
+			buttons: trailing.length,
+		};
+	})()`);
+
+	assert.equal(fit.pane, SIDEBAR_MIN, "the pane is at its floor");
+	assert.ok(fit.buttons >= 2, "both controls beside the strip are there to be measured");
+	assert.ok(fit.rowOverflow <= 1, `the row fits the width it is given (overflow ${fit.rowOverflow}px)`);
+	assert.ok(
+		fit.lastButtonPast <= 0,
+		`the last control is inside the pane, not past its edge (${fit.lastButtonPast}px)`,
+	);
 });

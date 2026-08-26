@@ -7,7 +7,19 @@
  */
 
 export const SIDEBAR_DEFAULT = 272;
-export const SIDEBAR_MIN = 208;
+/**
+ * Narrow enough to be worth dragging to, wide enough to draw the strip.
+ *
+ * Measured rather than chosen: the tab strip plus the two buttons beside it comes to 216px at the
+ * default type size, and the list's own padding takes 10px either side — so the pane needs 236 for
+ * the row to fit, and this leaves a few pixels over. The old floor was 208, which is 28px short:
+ * dragging all the way in cut the archive button in half, because nothing in that row shrinks.
+ *
+ * The row shrinks now too (`SidebarTabs`), so a larger type size degrades by narrowing the tabs
+ * rather than by pushing a control off the edge — this number is what keeps that from being needed
+ * at the size almost everyone runs.
+ */
+export const SIDEBAR_MIN = 240;
 /** Past this the sidebar is wider than the thing it navigates, which is not a use. */
 export const SIDEBAR_MAX = 420;
 
