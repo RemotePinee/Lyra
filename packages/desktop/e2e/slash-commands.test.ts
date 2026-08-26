@@ -196,26 +196,31 @@ test("Escape closes the list without touching what was typed", async () => {
 	assert.equal(await value(), "/rev", "and the text is still there — a slash is also how paths start");
 });
 
-test("a slash that is not at the start is ordinary text", async () => {
+test("a slash inside a word is ordinary text; a slash starting one offers commands", async () => {
 	/*
-	 * The composer is mostly used for prose, and prose contains paths, dates and fractions. A list
-	 * that opened on any slash would be in the way far more often than it helped — and a command is
-	 * the whole message by definition, so a name in the middle of a sentence could not be run even
-	 * if it were offered.
+	 * The line between the two is whether the slash begins a word.
+	 *
+	 * Prose is full of slashes that are not commands — paths, dates, and/or — and every one of them
+	 * has a character immediately before it. A slash reached for after a space is somebody starting
+	 * to type a command, whether or not they had already written a sentence first.
 	 */
 	await type("看看 src/main.ts");
 	assert.deepEqual(await menu(), [], "no list for a path");
 
-	// The shape someone actually hits: typing along, then a slash mid-sentence.
-	await type("阿斯加德夸克圣诞节卡上 /com");
-	assert.deepEqual(await menu(), [], "nor for a slash part-way through a sentence");
-
 	await type("请在 2026/08/26 之前完成");
 	assert.deepEqual(await menu(), [], "nor for a date");
 
-	// And clearing back to a bare slash brings it straight back.
-	await type("/");
-	assert.ok((await menu()).length > 0, "a leading one still opens it");
+	// The shape somebody actually hits: typing along, then reaching for a command.
+	await type("阿斯加德夸克圣诞节卡上 /com");
+	assert.ok((await menu()).length > 0, "a slash after a space does open the list");
+
+	await type("");
+});
+
+test("picking mid-sentence replaces the slash-word and leaves the sentence alone", async () => {
+	await type("啊手机壳打卡就是的 /comp");
+	await press("Enter");
+	assert.equal(await value(), "啊手机壳打卡就是的 /compact ", "the sentence survives being offered a completion");
 	await type("");
 });
 

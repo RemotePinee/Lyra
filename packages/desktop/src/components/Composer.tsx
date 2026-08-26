@@ -77,9 +77,25 @@ export function Composer() {
 	const [active, setActive] = useState(0);
 	const [dismissed, setDismissed] = useState(false);
 
-	/** What is being typed after the slash, or `null` when this is not a command line. */
+	/**
+	 * What is being typed after a slash, or `null` when nothing is.
+	 *
+	 * The slash has to start a word — beginning of the text, or straight after whitespace — and
+	 * what follows it has to run to the end of what has been typed. That is what separates a
+	 * command being chosen from the slashes that fill ordinary prose:
+	 *
+	 *   `/com`                 → offered
+	 *   `啊手机壳就是的 /com`    → offered; a sentence can end in a command being reached for
+	 *   `src/main.ts`          → not; the slash is inside a word
+	 *   `2026/08/26`           → not, same reason
+	 *   `/compact 参数`         → not; the name is settled and arguments are being typed
+	 *
+	 * An earlier version required the slash to be the very first character. That is the rule for
+	 * *running* a command and it stays the rule below — but it made a poor rule for *offering* one,
+	 * because the list simply never appeared for anyone who had already started typing.
+	 */
 	const term = useMemo(() => {
-		const match = /^\/([a-zA-Z0-9:_-]*)$/.exec(text);
+		const match = /(?:^|\s)\/([a-zA-Z0-9:_-]*)$/.exec(text);
 		return match ? match[1] : null;
 	}, [text]);
 
@@ -188,7 +204,15 @@ export function Composer() {
 	 * anything on its own, so nothing in it can fire from a stray Enter.
 	 */
 	function pick(command: { name: string }) {
-		setText(`/${command.name} `);
+		/*
+		 * Replace the slash-word being typed, not the whole field.
+		 *
+		 * `term` only matches a slash that starts a word and runs to the end, so the last slash in
+		 * the text is that word's start — anything before it is a sentence somebody wrote and must
+		 * survive being offered a completion.
+		 */
+		const at = text.lastIndexOf("/");
+		setText(`${at > 0 ? text.slice(0, at) : ""}/${command.name} `);
 		setDismissed(false);
 	}
 
