@@ -11,6 +11,24 @@ import type { SessionActivity } from "@lyra/core/activity";
 import { howItStopped, prune, rebuildToolRuns, todosFrom, without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
+/**
+ * The transcript read that is currently in flight, and the one queued behind it.
+ *
+ * Clicking down a list of conversations used to send one `sessions:transcript` per click. Each of
+ * those reads the whole session log from disk in the main process, parses it into objects, and
+ * structured-clones the result across the IPC boundary — for a long session that is several
+ * megabytes, three times over. The renderer already discarded every arrival but the last; the cost
+ * had been paid by then. Eighteen clicks took the main process from 156MB to 1.5GB, and a few
+ * rounds of that is the "Lyra 意外退出" crash: `JavaScript heap out of memory`.
+ *
+ * So the clicks are folded together instead. The first one goes immediately — a single click must
+ * not wait — and any that arrive while it is in flight replace each other, so exactly one more
+ * request follows for wherever the user actually stopped. Two reads instead of eighteen, and the
+ * selection still moves on every click because that is painted from the sidebar's own meta.
+ */
+let reading: string | null = null;
+let queued: SessionMeta | null = null;
+
 type Get = () => AppState;
 type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 
@@ -78,6 +96,7 @@ export function sessionSlice(set: Set, get: Get) {
       view: "chat",
     });
   },
+
 
   async openSession(meta: SessionMeta) {
     /*
@@ -184,10 +203,33 @@ export function sessionSlice(set: Set, get: Get) {
      * `general`, or `acme-widgets-42`. Handing that back as the workspace is how a conversation
      * that is explicitly in no project ended up displaying one, named after a path nobody chose.
      */
-    const [snapshot, workspace] = await Promise.all([
-      window.lyra.sessions.transcript(meta.projectId, meta.id),
-      projectLess ? Promise.resolve(null) : window.lyra.workspace.info(meta.cwd),
-    ]);
+    /*
+     * One read at a time; the newest pending click wins.
+     *
+     * Returning here is not dropping the click — the selection and the meta are already on screen
+     * from the state written above, and the read that is in flight will pick this up when it
+     * finishes. What is skipped is only the megabytes of duplicated work.
+     */
+    if (reading !== null) {
+      queued = meta;
+      return;
+    }
+    reading = meta.id;
+
+    let snapshot: Awaited<ReturnType<typeof window.lyra.sessions.transcript>>;
+    let workspace: Awaited<ReturnType<typeof window.lyra.workspace.info>>;
+    try {
+      [snapshot, workspace] = await Promise.all([
+        window.lyra.sessions.transcript(meta.projectId, meta.id),
+        projectLess ? Promise.resolve(null) : window.lyra.workspace.info(meta.cwd),
+      ]);
+    } finally {
+      reading = null;
+      // Whatever was clicked last while this was running is the one that still wants reading.
+      const next = queued;
+      queued = null;
+      if (next && next.id !== meta.id) void get().openSession(next);
+    }
 
     // A second click while this was in flight wins; discard the stale arrival.
     if (get().activeSessionId !== meta.id) return;
