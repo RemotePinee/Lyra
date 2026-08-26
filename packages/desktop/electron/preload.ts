@@ -79,6 +79,7 @@ const api: LyraApi = {
 			ipcRenderer.invoke("sessions:setArchived", projectId, sessionId, archived),
 		removeArchived: () => ipcRenderer.invoke("sessions:removeArchived"),
 		capabilities: (sessionId) => ipcRenderer.invoke("sessions:capabilities", sessionId),
+		compact: (sessionId) => ipcRenderer.invoke("sessions:compact", sessionId),
 		contextBreakdown: (sessionId) => ipcRenderer.invoke("sessions:contextBreakdown", sessionId),
 	},
 	agent: {
@@ -170,6 +171,12 @@ const api: LyraApi = {
 		start: () => ipcRenderer.invoke("sync:start"),
 		stop: () => ipcRenderer.invoke("sync:stop"),
 		rotateToken: () => ipcRenderer.invoke("sync:rotateToken"),
+	},
+	commands: {
+		list: (cwd) => ipcRenderer.invoke("commands:list", cwd),
+		create: (scope, name, cwd) => ipcRenderer.invoke("commands:create", scope, name, cwd),
+		reveal: (scope, cwd) => ipcRenderer.invoke("commands:reveal", scope, cwd),
+		open: (path) => ipcRenderer.invoke("commands:open", path),
 	},
 	plugins: {
 		list: (cwd) => ipcRenderer.invoke("plugins:list", cwd),

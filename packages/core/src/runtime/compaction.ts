@@ -233,6 +233,15 @@ export async function compactIfNeeded(
 	 * are sent in full every time, so the result lands above the line it was aiming for.
 	 */
 	overhead = 0,
+	/**
+	 * Compact now, whatever the conversation currently weighs.
+	 *
+	 * What `/compact` sets. Someone who has just finished one piece of work and is about to start
+	 * another knows something the threshold cannot: that the last two hours are done with, and
+	 * carrying them into the next thing is what will make it drift. Waiting for 80% would summarise
+	 * the new work along with the old.
+	 */
+	force = false,
 ): Promise<Compaction | null> {
 	/*
 	 * The provider's own count, not our estimate of it.
@@ -247,7 +256,7 @@ export async function compactIfNeeded(
 	 */
 	const measured = measureTotal(messages);
 	const used = measured.tokens;
-	if (used < model.contextWindow * THRESHOLD) return null;
+	if (!force && used < model.contextWindow * THRESHOLD) return null;
 
 	/*
 	 * Cut the oversized tool results first, and see whether that was enough.
@@ -270,7 +279,12 @@ export async function compactIfNeeded(
 		 * and being wrong in the eager direction sends a turn that does not fit — which comes back
 		 * the same size, with nothing left to cut.
 		 */
-		if (next < model.contextWindow * (THRESHOLD - PRUNE_MARGIN)) {
+		/*
+		 * Not when compaction was asked for by name. Cutting tool output is the cheap half of this
+		 * and it leaves the conversation itself untouched — which is precisely what someone typing
+		 * `/compact` wants dealt with.
+		 */
+		if (!force && next < model.contextWindow * (THRESHOLD - PRUNE_MARGIN)) {
 			return { messages: pruned, summary: "" };
 		}
 		// Not enough on its own, but everything below now works on the smaller conversation.

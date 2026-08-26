@@ -26,6 +26,7 @@ export function ComposerShell({
   left,
   right,
   onFiles,
+  onKeyDown,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -38,6 +39,16 @@ export function ComposerShell({
   right?: React.ReactNode;
   /** Supplied only where attachments are accepted; enables paste and drop. */
   onFiles?: (files: FileList | null) => void;
+  /**
+   * First refusal on every keystroke, for whatever is floating above the field.
+   *
+   * The slash-command list needs the arrow keys and Enter while it is open, and it is owned by
+   * the composer rather than by this component — so it has to be able to take them before the
+   * field's own handling runs. Calling `preventDefault` is how it says it did: this checks for
+   * that rather than for a return value, because that is already what stops the browser from
+   * acting on a key and there is no sense in having two ways to say the same thing.
+   */
+  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const field = useRef<HTMLTextAreaElement>(null);
 
@@ -116,6 +127,8 @@ export function ComposerShell({
               : undefined
           }
           onKeyDown={(e) => {
+            onKeyDown?.(e);
+            if (e.defaultPrevented) return;
             if (
               e.key === "Enter" &&
               !e.shiftKey &&

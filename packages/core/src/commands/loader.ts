@@ -1,0 +1,193 @@
+/**
+ * Slash commands: prompts the user has written down and can run by name.
+ *
+ * A command is a markdown file. Its body is a prompt template, its frontmatter says what the
+ * command is for, and typing `/name` in the composer sends the body instead of the name. That is
+ * the whole idea — the value is not in the mechanism but in not retyping the same careful
+ * instructions every week.
+ *
+ * Four directories are searched, and two of them are not ours:
+ *
+ *   <project>/.lyra/commands/**\/*.md     the project's own, shared through the repository
+ *   ~/.lyra/commands/**\/*.md             yours, everywhere
+ *   <project>/.claude/commands/**\/*.md   what Claude Code reads
+ *   ~/.claude/commands/**\/*.md
+ *
+ * Reading `.claude` is deliberate. That layout is what most people who write these already have,
+ * this repository included, and a command file is a prompt in a markdown file — there is nothing
+ * in it that belongs to one program. Refusing to read them would mean asking everyone to copy
+ * their commands across to be told the same thing back, which is a worse product for no reason
+ * beyond wanting our directory to be the only one that counts.
+ *
+ * Nested directories become namespaced names: `git/commit.md` is `/git:commit`. It is how the same
+ * convention names them elsewhere, and it keeps a folder of twenty related commands legible in a
+ * list.
+ */
+
+import { readdir, readFile } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
+import { parseFrontmatter } from "../skills/loader.ts";
+
+export interface SlashCommand {
+	/** What you type after the slash. Namespaced by directory: `git/commit.md` is `git:commit`. */
+	name: string;
+	/** One line, shown beside the name while choosing. */
+	description: string;
+	/** The prompt template, frontmatter removed. */
+	content: string;
+	/** Absolute path to the file, so the UI can open it for editing. */
+	path: string;
+	/** Whether it travels with the project or with the user. */
+	scope: "workspace" | "user";
+	/**
+	 * Which convention it was found under.
+	 *
+	 * Worth surfacing rather than hiding: someone who cannot find the file they are looking at is
+	 * usually looking in the wrong one of two directories that both exist.
+	 */
+	origin: "lyra" | "claude";
+	/** From frontmatter `argument-hint`. Shown as a placeholder once the command is chosen. */
+	argumentHint?: string;
+}
+
+export interface CommandDiagnostic {
+	path: string;
+	message: string;
+}
+
+/** Lowercase kebab-case, in colon-separated segments. */
+const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?::[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
+const MAX_DESCRIPTION = 200;
+/**
+ * How deep to walk into a commands directory.
+ *
+ * Deep enough for the one level of grouping people actually use, shallow enough that pointing
+ * this at a directory which happens to contain a checkout does not walk it.
+ */
+const MAX_DEPTH = 3;
+
+export interface CommandSource {
+	dir: string;
+	scope: SlashCommand["scope"];
+	origin: SlashCommand["origin"];
+}
+
+/**
+ * Every command directory that could apply, in the order that decides collisions.
+ *
+ * Project before user, ours before Claude's. The first is the ordinary rule for layered
+ * configuration — the repository you are in is more specific than your home directory. The second
+ * is only a tie-break, and it points this way so that a command written for Lyra can deliberately
+ * shadow one of the same name found elsewhere.
+ */
+export function commandSources(cwd: string | null, home: string): CommandSource[] {
+	const sources: CommandSource[] = [];
+	if (cwd) sources.push({ dir: join(cwd, ".lyra", "commands"), scope: "workspace", origin: "lyra" });
+	sources.push({ dir: join(home, "commands"), scope: "user", origin: "lyra" });
+	if (cwd) sources.push({ dir: join(cwd, ".claude", "commands"), scope: "workspace", origin: "claude" });
+	sources.push({ dir: join(claudeHome(), "commands"), scope: "user", origin: "claude" });
+	return sources;
+}
+
+/** Where Claude Code keeps its user-level configuration. */
+function claudeHome(): string {
+	return process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".claude");
+}
+
+export async function loadCommands(
+	sources: CommandSource[],
+): Promise<{ commands: SlashCommand[]; diagnostics: CommandDiagnostic[] }> {
+	const commands: SlashCommand[] = [];
+	const diagnostics: CommandDiagnostic[] = [];
+	const seen = new Set<string>();
+
+	for (const source of sources) {
+		for (const file of await walk(source.dir, MAX_DEPTH)) {
+			const raw = await readFile(file, "utf8").catch(() => null);
+			if (raw === null) continue;
+
+			const parsed = parseFrontmatter(raw);
+			if (!parsed) {
+				diagnostics.push({ path: file, message: "文件开头的 YAML 无法解析。" });
+				continue;
+			}
+			const { frontmatter, body } = parsed;
+
+			const name =
+				typeof frontmatter.name === "string" && frontmatter.name.trim()
+					? frontmatter.name.trim()
+					: nameFrom(source.dir, file);
+			if (!NAME_PATTERN.test(name)) {
+				diagnostics.push({ path: file, message: `命令名只能是小写字母、数字和连字符，用冒号分组；当前是“${name}”。` });
+				continue;
+			}
+
+			/*
+			 * A description is wanted but not required.
+			 *
+			 * A skill without one is unusable — the model picks skills by reading descriptions. A
+			 * command is picked by a person who already knows what they meant when they wrote it,
+			 * so refusing to load one over a missing line would be pedantry that costs the user a
+			 * command. The first line of the body stands in.
+			 */
+			const described =
+				typeof frontmatter.description === "string" && frontmatter.description.trim()
+					? frontmatter.description.trim()
+					: firstLine(body);
+			const description = described.length > MAX_DESCRIPTION ? `${described.slice(0, MAX_DESCRIPTION - 1)}…` : described;
+
+			// Earlier sources win; a later file of the same name is shadowed rather than an error.
+			if (seen.has(name)) continue;
+			seen.add(name);
+
+			const hint = frontmatter["argument-hint"];
+			commands.push({
+				name,
+				description,
+				content: body.trim(),
+				path: file,
+				scope: source.scope,
+				origin: source.origin,
+				argumentHint: typeof hint === "string" && hint.trim() ? hint.trim() : undefined,
+			});
+		}
+	}
+
+	commands.sort((a, b) => a.name.localeCompare(b.name));
+	return { commands, diagnostics };
+}
+
+/** `<dir>/git/commit.md` under `<dir>` becomes `git:commit`. */
+function nameFrom(dir: string, file: string): string {
+	return relative(dir, file)
+		.replace(/\.md$/i, "")
+		.split(sep)
+		.join(":")
+		.toLowerCase();
+}
+
+/** The first line with anything on it, minus the heading marks a template usually opens with. */
+function firstLine(body: string): string {
+	for (const line of body.split("\n")) {
+		const text = line.replace(/^#+\s*/, "").trim();
+		if (text) return text;
+	}
+	return "";
+}
+
+/** Every `.md` file under a directory, depth-limited, returning nothing when it does not exist. */
+async function walk(dir: string, depth: number): Promise<string[]> {
+	if (depth <= 0) return [];
+	const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+	if (!entries) return [];
+
+	const files: string[] = [];
+	for (const entry of entries) {
+		// A dotfile in a commands directory is editor debris, not a command.
+		if (entry.name.startsWith(".")) continue;
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) files.push(...(await walk(path, depth - 1)));
+		else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) files.push(path);
+	}
+	return files.sort();
+}

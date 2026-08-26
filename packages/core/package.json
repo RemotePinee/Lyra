@@ -12,6 +12,7 @@
 		"./tokens": "./src/tokens.ts",
 		"./activity": "./src/activity.ts",
 		"./trajectory-view": "./src/trajectory-view.ts",
+		"./commands-view": "./src/commands-view.ts",
 		"./schedule": "./src/config/schedule.ts",
 		"./install-record": "./src/plugins/install-record.ts"
 	},

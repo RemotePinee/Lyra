@@ -36,6 +36,7 @@ import type {
 	SessionMeta,
 	Settings,
 	Skill,
+	SlashCommand,
 	UserContent,
 } from "@lyra/core";
 
@@ -121,6 +122,8 @@ export interface LyraApi {
 		/** Delete every archived session at once. Returns the remaining list. */
 		removeArchived(): Promise<SessionMeta[]>;
 		capabilities(sessionId: string): Promise<AgentCapabilities | null>;
+		/** Summarise now. `reason` says why not, when it declines. */
+		compact(sessionId: string): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }>;
 		/** Null when the session is not open — this never boots one just to answer. */
 		contextBreakdown(sessionId: string): Promise<ContextBreakdown | null>;
 	};
@@ -250,6 +253,28 @@ export interface LyraApi {
 		start(): Promise<SyncStatus>;
 		stop(): Promise<SyncStatus>;
 		rotateToken(): Promise<SyncStatus>;
+	};
+	commands: {
+		/**
+		 * Every slash command that applies here, and the files that could not be read.
+		 *
+		 * Scanned on call rather than cached: these are text files people edit in another window,
+		 * and a list that needed a restart to notice would be wrong more often than right.
+		 */
+		list(cwd: string): Promise<{
+			commands: SlashCommand[];
+			diagnostics: { path: string; message: string }[];
+		}>;
+		/** Write a starter file and answer with its path, or say why it could not be written. */
+		create(
+			scope: "workspace" | "user",
+			name: string,
+			cwd: string,
+		): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+		/** Absolute path to the commands directory, created if missing. */
+		reveal(scope: "workspace" | "user", cwd: string): Promise<string>;
+		/** Open one command file for editing. */
+		open(path: string): Promise<void>;
 	};
 	plugins: {
 		/** Scan plugin and skill directories without needing an open session. */

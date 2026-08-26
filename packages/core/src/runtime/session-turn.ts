@@ -119,7 +119,7 @@ async function recordTurnEvent(log: SessionLog, event: AgentEvent): Promise<void
  * keeps one copy of what a summary message looks like, and lets the quoted standing request be
  * recomputed from the messages it was drawn from instead of going stale beside them.
  */
-function modelHistory(log: SessionLog, provider: ProviderConfig, model: ModelConfig): Message[] {
+export function modelHistory(log: SessionLog, provider: ProviderConfig, model: ModelConfig): Message[] {
 	const boundary = log.compaction;
 	if (!boundary) return log.messages;
 
@@ -193,7 +193,7 @@ async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig
  * a recorded session, a gateway — must have replaced this one too. Undefined when nothing was
  * overridden, which leaves the real provider in place.
  */
-function summaryStream(
+export function summaryStream(
 	override: AgentRunConfig["streamFn"] | undefined,
 	provider: ProviderConfig,
 	model: ModelConfig,

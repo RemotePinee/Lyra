@@ -147,6 +147,20 @@ export {
 	type SessionRecord,
 } from "./session/store.ts";
 export {
+	commandSources,
+	loadCommands,
+	type CommandDiagnostic,
+	type CommandSource,
+	type SlashCommand,
+} from "./commands/loader.ts";
+export {
+	expandCommand,
+	parseInvocation,
+	rankCommands,
+	splitArguments,
+	type Invocation,
+} from "./commands/expand.ts";
+export {
 	formatSkillCatalogue,
 	formatSkillInvocation,
 	loadSkills,

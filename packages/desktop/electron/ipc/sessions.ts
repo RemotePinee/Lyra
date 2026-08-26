@@ -160,6 +160,19 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 		return session ? session.contextBreakdown() : null;
 	});
 
+	/**
+	 * Summarise the conversation on request, rather than waiting for it to fill up.
+	 *
+	 * Answers with why it declined rather than with a bare false: "too short", "still running" and
+	 * "the summariser is unreachable" all mean different things to whoever just typed `/compact`.
+	 */
+	ipcMain.handle("sessions:compact", async (_event, sessionId: string) => {
+		const session = sessions.get(sessionId);
+		if (!session) return { ok: false as const, reason: "这个会话还没打开。" };
+		touchSession(sessionId);
+		return session.compact();
+	});
+
 	ipcMain.handle("sessions:capabilities", async (_event, sessionId: string): Promise<AgentCapabilities | null> => {
 		const session = sessions.get(sessionId);
 		if (!session) return null;

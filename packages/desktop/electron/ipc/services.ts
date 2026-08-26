@@ -10,6 +10,7 @@ import { buildIndex, indexStats, loadIndex, saveIndex, searchIndex } from "@lyra
 import { ipcMain } from "electron";
 import type { ProviderTestResult, SyncStatus } from "../ipc-types.ts";
 import { applySettings, settings } from "../app-settings.ts";
+import { registerCommandsIpc } from "./commands.ts";
 import { registerPluginsIpc } from "./plugins.ts";
 import { registerSystemIpc } from "./system.ts";
 import { sessions } from "../session-hub.ts";
@@ -53,6 +54,10 @@ export function registerServicesIpc(deps: ServicesIpcDeps): void {
 	// Scanning does not need a live session: the settings pages are usually opened before
 	// any conversation exists, and an empty plugin list there reads as "nothing installed".
 	registerPluginsIpc({ settings, saveSettings: applySettings });
+
+	// Same reason: the composer asks for these before the first turn, and the settings page
+	// before there is a session at all.
+	registerCommandsIpc();
 
 	registerSystemIpc();
 

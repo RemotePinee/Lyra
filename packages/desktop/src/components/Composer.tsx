@@ -1,8 +1,11 @@
 import type { UserContent } from "@lyra/core";
+// Through the browser-safe door: the main barrel reaches the filesystem, and this runs in a page.
+import { expandCommand, parseInvocation, rankCommands, type SlashCommand } from "@lyra/core/commands-view";
 import { CircleAlert, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
 import { openFromEvent } from "./image/viewer-store.ts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
+import { CommandMenu } from "./CommandMenu.tsx";
 import { ComposerSend, ComposerShell } from "./ComposerShell.tsx";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { EffortMenu, effortLabel } from "./EffortMenu.tsx";
@@ -61,6 +64,134 @@ export function Composer() {
 		useApp.getState().setComposerDraft("");
 	}, [draft]);
 	const [attachments, setAttachments] = useState<Attachment[]>([]);
+
+	/*
+	 * Slash commands.
+	 *
+	 * `dismissed` is what Escape sets: the list closes but the text stays, because someone who
+	 * typed `/` meaning a path should not have to delete it to be left alone. Any further edit
+	 * clears it, so the list comes back the moment the text changes again — a menu that stayed
+	 * shut until the field was emptied would be its own annoyance.
+	 */
+	const [commands, setCommands] = useState<SlashCommand[]>([]);
+	const [active, setActive] = useState(0);
+	const [dismissed, setDismissed] = useState(false);
+
+	/** What is being typed after the slash, or `null` when this is not a command line. */
+	const term = useMemo(() => {
+		const match = /^\/([a-zA-Z0-9:_-]*)$/.exec(text);
+		return match ? match[1] : null;
+	}, [text]);
+
+	/**
+	 * The few commands that do something to the app rather than say something to the model.
+	 *
+	 * Kept deliberately short. Every name taken here is a name a user cannot have for their own
+	 * command, so this is limited to the things that could not be written as a prompt at all: they
+	 * act on the session itself.
+	 */
+	const builtins = useMemo(
+		() => [
+			{
+				name: "compact",
+				description: "把之前的对话压缩成摘要，腾出上下文",
+				origin: "内置",
+				run: async () => {
+					if (!activeSessionId) return;
+					const result = await window.lyra.sessions.compact(activeSessionId);
+					if (result.ok) useApp.getState().notify("已把之前的对话压缩成摘要。");
+					else if (result.reason) useApp.getState().notify(result.reason, "warn");
+				},
+			},
+			{
+				name: "clear",
+				description: "开一个新对话",
+				origin: "内置",
+				run: async () => {
+					await useApp.getState().newSession();
+				},
+			},
+			{
+				name: "commands",
+				description: "管理斜杠命令，或新建一个",
+				origin: "内置",
+				run: () => {
+					useApp.getState().setSettingsSection("commands");
+					useApp.getState().setView("settings");
+				},
+			},
+		],
+		[activeSessionId],
+	);
+
+	/*
+	 * Built-ins first, so a file command cannot quietly take one of their names.
+	 *
+	 * `rankCommands` sorts what survives, and the dedup before it is what makes the precedence
+	 * real: a `compact.md` on disk is still listed by the settings page, it simply does not win
+	 * the name here.
+	 */
+	const matches = useMemo(() => {
+		if (term === null || dismissed) return [];
+		const reserved = new Set(builtins.map((entry) => entry.name));
+		const entries = [
+			...builtins,
+			...commands
+				.filter((command) => !reserved.has(command.name))
+				.map((command) => ({
+					name: command.name,
+					description: command.description,
+					argumentHint: command.argumentHint,
+					origin:
+						command.origin === "claude"
+							? command.scope === "workspace"
+								? "Claude · 项目"
+								: "Claude"
+							: command.scope === "workspace"
+								? "项目"
+								: "个人",
+					run: undefined,
+				})),
+		];
+		return rankCommands(entries, term).slice(0, 50);
+	}, [builtins, commands, term, dismissed]);
+
+	/*
+	 * Re-read the files whenever the list is about to be needed.
+	 *
+	 * These are markdown files people edit in another window, so a list cached at startup would be
+	 * wrong more often than right. Keyed on "is there a slash at all" rather than on the term, so
+	 * this is one read per time the menu opens rather than one per keystroke.
+	 */
+	const commandMode = term !== null;
+	useEffect(() => {
+		if (!commandMode) return;
+		let alive = true;
+		void window.lyra.commands.list(workspace?.path ?? "").then((result) => {
+			if (alive) setCommands(result.commands);
+		});
+		return () => {
+			alive = false;
+		};
+	}, [commandMode, workspace?.path]);
+
+	// A different set of matches means the old highlight is meaningless.
+	useEffect(() => {
+		setActive(0);
+	}, [term]);
+
+	/**
+	 * Put the chosen name in the field and leave the caret after it, ready for arguments.
+	 *
+	 * Chosen, not run — including for the built-ins, which have nothing to type after them. One
+	 * more keystroke is worth it for a rule with no exceptions: picking from this list never does
+	 * anything on its own, so nothing in it can fire from a stray Enter.
+	 */
+	function pick(command: { name: string }) {
+		setText(`/${command.name} `);
+		setDismissed(false);
+	}
+
 	const modelMenu = usePopover();
 	const effortMenu = usePopover();
 	const permissionMenu = usePopover();
@@ -91,9 +222,48 @@ export function Composer() {
 	async function submit() {
 		const trimmed = text.trim();
 		if (!trimmed && attachments.length === 0) return;
+
+		/*
+		 * A command becomes the prompt it stands for, here, before anything is sent.
+		 *
+		 * Expanded rather than sent as `/name` with the expansion hidden: what is in the transcript
+		 * is then exactly what the model was given, which is the difference between a conversation
+		 * you can audit and one where a step happened off-screen. It also costs nothing to explain
+		 * afterwards — the instructions are right there.
+		 *
+		 * Re-read when the list is empty, for the paste-and-send case where the menu never opened.
+		 * An unknown name is not an error: it goes out as typed, because `/` is also how people
+		 * write paths and a composer that rejected them would be wrong far more often than right.
+		 */
+		let outgoing = trimmed;
+		const invocation = parseInvocation(trimmed);
+
+		/*
+		 * A built-in acts on the session and sends nothing.
+		 *
+		 * Cleared first, because these are not instant — `/compact` is a model call — and a field
+		 * that still held `/compact` while it ran would invite a second press.
+		 */
+		const builtin = invocation ? builtins.find((entry) => entry.name === invocation.name) : undefined;
+		if (builtin) {
+			setText("");
+			setAttachments([]);
+			await builtin.run();
+			return;
+		}
+
+		if (invocation) {
+			const known =
+				commands.length > 0
+					? commands
+					: (await window.lyra.commands.list(workspace?.path ?? "").catch(() => ({ commands: [] }))).commands;
+			const command = known.find((c) => c.name === invocation.name);
+			if (command) outgoing = expandCommand(command, invocation.rest);
+		}
+
 		const content: UserContent[] = [
 			...attachments.map((a): UserContent => ({ type: "image", data: a.data, mimeType: a.mimeType })),
-			...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+			...(outgoing ? [{ type: "text" as const, text: outgoing }] : []),
 		];
 		setText("");
 		setAttachments([]);
@@ -163,11 +333,48 @@ export function Composer() {
 				</div>
 				)}
 
+				<div className="relative">
+				<CommandMenu
+					commands={matches}
+					term={term ?? ""}
+					active={active}
+					onPick={pick}
+					onHover={setActive}
+				/>
 				<ComposerShell
 					value={text}
-					onChange={setText}
+					onChange={(next) => {
+						setText(next);
+						// Any edit un-dismisses: Escape hid this list, it did not turn the feature off.
+						setDismissed(false);
+					}}
 					onSubmit={() => void submit()}
-					placeholder="随心输入"
+					onKeyDown={(event) => {
+						if (matches.length === 0) return;
+						/*
+						 * Never while an IME is composing.
+						 *
+						 * Enter commits a candidate in Chinese, Japanese and Korean input — taking it
+						 * here would make the field unusable for typing the language most of this app
+						 * is written in, and the bug would only appear for the people it appears for.
+						 */
+						if (event.nativeEvent.isComposing) return;
+
+						if (event.key === "ArrowDown") {
+							event.preventDefault();
+							setActive((index) => (index + 1) % matches.length);
+						} else if (event.key === "ArrowUp") {
+							event.preventDefault();
+							setActive((index) => (index - 1 + matches.length) % matches.length);
+						} else if (event.key === "Enter" || event.key === "Tab") {
+							event.preventDefault();
+							pick(matches[Math.min(active, matches.length - 1)]);
+						} else if (event.key === "Escape") {
+							event.preventDefault();
+							setDismissed(true);
+						}
+					}}
+					placeholder="随心输入，或输入 / 使用命令"
 					onFiles={(files) => void addFiles(files)}
 					attachments={
 						attachments.length > 0 ? (
@@ -339,6 +546,7 @@ export function Composer() {
 						</>
 					}
 				/>
+				</div>
 			</div>
 
 			{permissionMenu.open && <PermissionPicker anchor={permissionMenu.anchor} onClose={permissionMenu.close} />}

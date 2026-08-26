@@ -23,7 +23,8 @@ import { describeContext, describeSession, type SessionFacts, type SessionStatus
 import { SessionCapabilities } from "./session-capabilities.ts";
 import { scratchDir, sessionFacts } from "./session-facts.ts";
 import { SessionLog } from "./session-log.ts";
-import { driveTurn } from "./session-turn.ts";
+import { compactIfNeeded } from "./compaction.ts";
+import { driveTurn, modelHistory, summaryStream } from "./session-turn.ts";
 import { sessionTaskQueue, type TaskQueue } from "./task-queue.ts";
 
 export interface AgentSessionOptions {
@@ -122,6 +123,46 @@ export class AgentSession {
 	private facts(): SessionFacts {
 		const { log, can, cwd, settings, running } = this;
 		return sessionFacts({ log, can, cwd, settings, running });
+	}
+
+	/**
+	 * Summarise the conversation now, rather than when it runs out of room.
+	 *
+	 * What `/compact` calls. The boundary is stored exactly as it is when compaction happens on its
+	 * own — there is one way a session's history gets shortened, and this only changes what starts
+	 * it.
+	 *
+	 * Refused mid-turn: the running loop is holding its own copy of the history and would write its
+	 * own boundary at the end of the turn, over this one.
+	 */
+	async compact(): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }> {
+		if (this.running) return { ok: false, reason: "对话正在进行中，等它结束再压缩。" };
+
+		const resolved = resolveModel(this.settings, this.log.meta.modelId || this.settings.defaultModelId);
+		if (!resolved) return { ok: false, reason: "还没有配置模型。" };
+
+		const history = modelHistory(this.log, resolved.provider, resolved.model);
+		if (history.length <= 6) return { ok: false, reason: "对话还太短，没什么可压缩的。" };
+
+		const compaction = await compactIfNeeded(
+			history,
+			resolved.model,
+			resolved.provider,
+			summaryStream(this.streamFn, resolved.provider, resolved.model),
+			0,
+			true,
+		);
+		if (!compaction || compaction.kept === undefined) return { ok: false, reason: "这次没能压缩，稍后再试。" };
+
+		this.log.markCompaction(compaction.summary, compaction.kept);
+		await this.emit({
+			type: "compacted",
+			before: history.length,
+			after: compaction.messages.length,
+			summary: compaction.summary,
+			kept: compaction.kept,
+		});
+		return { ok: true, before: history.length, after: compaction.messages.length };
 	}
 
 	/** Drop the cached symbol index so the next `symbol` lookup re-reads it from disk. */
