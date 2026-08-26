@@ -72,15 +72,19 @@ export function Splitter({
 	 * a `cursor` here would only apply while it is over these nine pixels — so it would flicker
 	 * back to a text caret the moment the drag left the strip. Same reasoning as `ResizeHandle`.
 	 */
-	/**
-	 * Tears down a drag that `onPointerDown` started.
-	 *
-	 * The drag is armed in the event handler rather than in an effect — see `arm` — and this is
-	 * what those effects would have returned.
-	 */
-	const release = useRef<(() => void) | null>(null);
-	// Nothing left armed behind a seam that goes away mid-drag.
-	useEffect(() => () => release.current?.(), []);
+	useEffect(() => {
+		if (!active) return;
+		document.body.style.cursor = row ? "col-resize" : "row-resize";
+		document.body.style.userSelect = "none";
+		// Freezes the panes' own transitions, so they track the pointer instead of easing towards
+		// each intermediate share and never arriving.
+		document.documentElement.dataset.resizing = "";
+		return () => {
+			document.body.style.cursor = "";
+			document.body.style.userSelect = "";
+			delete document.documentElement.dataset.resizing;
+		};
+	}, [active, row]);
 
 	/*
 	 * The drag listens on the window, not on this element.
@@ -91,21 +95,8 @@ export function Splitter({
 	 * started. And capture is not what makes a drag work here anyway: the pointer spends the drag
 	 * over the panes either side, which do not deliver events to this element at all.
 	 */
-	/**
-	 * Arm the drag: listeners, cursor, and the flag that freezes the panes' transitions.
-	 *
-	 * Called synchronously from `onPointerDown`. It used to be two effects keyed on `active`, so
-	 * nothing was listening until `setState` had gone round through a render — and every move that
-	 * arrived meanwhile went nowhere. Recorded frame by frame against the sidebar's handle, that
-	 * cost two frames at the start of a drag and then arrived as one jump three times the size of
-	 * a normal step: the lurch that reads as juddering rather than as lag.
-	 */
-	const arm = () => {
-		document.body.style.cursor = row ? "col-resize" : "row-resize";
-		document.body.style.userSelect = "none";
-		// Freezes the panes' own transitions, so they track the pointer instead of easing towards
-		// each intermediate share and never arriving.
-		document.documentElement.dataset.resizing = "";
+	useEffect(() => {
+		if (!active) return;
 		/*
 		 * One update per frame — same reasoning as `ResizeHandle`.
 		 *
@@ -139,7 +130,6 @@ export function Splitter({
 			if (!frame) frame = requestAnimationFrame(apply);
 		};
 		const stop = (event: PointerEvent) => {
-			teardown();
 			dragging.current = false;
 			setActive(false);
 			// A drag almost always ends somewhere else — that is the point of it — so the grip is
@@ -156,20 +146,14 @@ export function Splitter({
 		window.addEventListener("pointermove", onMove);
 		window.addEventListener("pointerup", stop);
 		window.addEventListener("pointercancel", stop);
-
-		function teardown() {
+		return () => {
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", stop);
 			window.removeEventListener("pointercancel", stop);
 			// Nothing left scheduled against a seam that is no longer being dragged.
 			if (frame) cancelAnimationFrame(frame);
-			document.body.style.cursor = "";
-			document.body.style.userSelect = "";
-			delete document.documentElement.dataset.resizing;
-			release.current = null;
-		}
-		return teardown;
-	};
+		};
+	}, [active, row, containerRef]);
 
 	return (
 		<div
@@ -199,10 +183,6 @@ export function Splitter({
 				if (event.button !== 0) return;
 				event.preventDefault();
 				dragging.current = true;
-				// Armed before the state that lights the grip: the next move can arrive sooner than
-				// any render, and one that finds no listener is a frame the seam does not move.
-				release.current?.();
-				release.current = arm();
 				setActive(true);
 			}}
 			onDoubleClick={onEven}

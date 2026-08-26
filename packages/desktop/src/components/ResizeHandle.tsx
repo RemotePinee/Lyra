@@ -95,29 +95,10 @@ export function ResizeHandle({
 	 */
 	const [grip, setGrip] = useState<number | null>(null);
 	const start = useRef({ x: 0, width: 0 });
-	/**
-	 * Tears down a drag that `onMouseDown` started.
-	 *
-	 * The drag is armed in the event handler rather than in an effect, and this is what the effect
-	 * would otherwise have returned. Held in a ref so the unmount path can still reach it.
-	 */
-	const release = useRef<(() => void) | null>(null);
 
-	/**
-	 * Arm the drag: listeners, cursor, and the flag that freezes transitions.
-	 *
-	 * Called synchronously from `onMouseDown`, which is the entire point. It used to live in an
-	 * effect keyed on `active`, so pressing the edge only armed anything after `setState` had gone
-	 * round through a render — and every `mousemove` that arrived in the meantime was delivered to
-	 * nothing. Recorded frame by frame, the pane sat still for two frames and then jumped three
-	 * frames' worth in one: the lurch you feel at the start of every drag, and the reason it read
-	 * as juddering rather than as lag.
-	 *
-	 * Reads its props from the closure it was created in. They are fixed for the length of a drag
-	 * in every case that matters — the one exception is a window resized mid-drag, where `max`
-	 * would go stale until the pointer is released.
-	 */
-	const arm = () => {
+	useEffect(() => {
+		if (!active) return;
+
 		/*
 		 * One update per frame, not one per event.
 		 *
@@ -168,7 +149,6 @@ export function ResizeHandle({
 		 * cannot report that, because the pointer left this element long before the button came up.
 		 */
 		const stop = (event: MouseEvent) => {
-			teardown();
 			setActive(false);
 			/*
 			 * Commit what is on screen.
@@ -196,7 +176,7 @@ export function ResizeHandle({
 		// of easing towards each intermediate width and never arriving.
 		document.documentElement.dataset.resizing = "";
 
-		function teardown() {
+		return () => {
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", stop);
 			// A drag that ends mid-frame leaves nothing scheduled against an unmounted handle.
@@ -204,13 +184,8 @@ export function ResizeHandle({
 			document.body.style.cursor = "";
 			document.body.style.userSelect = "";
 			delete document.documentElement.dataset.resizing;
-			release.current = null;
-		}
-		return teardown;
-	};
-
-	// Nothing left armed behind a handle that goes away mid-drag.
-	useEffect(() => () => release.current?.(), []);
+		};
+	}, [active, edge, min, max, onResize, onPreview]);
 
 	/*
 	 * `mouseleave` is not enough to know the pointer has gone.
@@ -269,15 +244,6 @@ export function ResizeHandle({
 				if (event.button !== 0) return;
 				event.preventDefault();
 				start.current = { x: event.clientX, width };
-				/*
-				 * Armed here, before the state that redraws the grip.
-				 *
-				 * The listeners have to exist by the time the next `mousemove` arrives, and that can
-				 * be the very next event — sooner than any render. Waiting for one is what made every
-				 * drag begin with a stall and then a jump.
-				 */
-				release.current?.();
-				release.current = arm();
 				setActive(true);
 			}}
 			onDoubleClick={onReset}
