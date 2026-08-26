@@ -51,14 +51,6 @@ export function DragBand({ navOpen, sidebarWidth }: { navOpen: boolean; sidebarW
 	return (
 		<div
 			className="drag-region absolute top-0 left-0 z-40 h-[44px]"
-			/*
-			 * Marked so the sidebar's drag can keep this in step without a re-render.
-			 *
-			 * The strip covers the sidebar so the window can be dragged by it, which means its width
-			 * has to follow the sidebar's — and during a drag the sidebar's width is written straight
-			 * to the DOM. See `NavPane`'s `onPreview`.
-			 */
-			data-ly-drag-band
 			style={{ width: navOpen ? sidebarWidth : WINDOW_CONTROLS_LEFT }}
 		/>
 	);

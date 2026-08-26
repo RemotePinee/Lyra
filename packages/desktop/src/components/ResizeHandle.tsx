@@ -50,7 +50,6 @@ export function ResizeHandle({
 	min,
 	max,
 	onResize,
-	onPreview,
 	onReset,
 	label,
 }: {
@@ -59,26 +58,7 @@ export function ResizeHandle({
 	width: number;
 	min: number;
 	max: number;
-	/**
-	 * The width to keep. Called once when the drag ends, and on every keypress.
-	 *
-	 * With `onPreview` supplied this is the *commit* — the point at which the number is worth
-	 * putting into state and onto disk.
-	 */
 	onResize: (next: number) => void;
-	/**
-	 * Every frame of the drag, when the caller can show the new width without React.
-	 *
-	 * This exists because of what the alternative costs. Routing each frame through `onResize`
-	 * means a `setState` per frame, and the sidebar's width lives in a context whose value is
-	 * memoised on it — so a new context value is produced sixty times a second and every consumer
-	 * re-renders, transcript included. On a long conversation that is the whole frame budget spent
-	 * before the browser has laid anything out, which is what the judder was.
-	 *
-	 * A caller that can write a CSS variable instead gets the same pixels with no React work at
-	 * all. Optional: without it, `onResize` runs per frame exactly as before.
-	 */
-	onPreview?: (next: number) => void;
 	/** Double-click restores the default. */
 	onReset?: () => void;
 	label: string;
@@ -115,8 +95,6 @@ export function ResizeHandle({
 		 */
 		let frame = 0;
 		let pending: MouseEvent | null = null;
-		/** The last width shown, so the commit at the end is the width on screen. */
-		let latest: number | null = null;
 
 		const apply = () => {
 			frame = 0;
@@ -126,14 +104,8 @@ export function ResizeHandle({
 
 			const travel = event.clientX - start.current.x;
 			const next = edge === "end" ? start.current.width + travel : start.current.width - travel;
-			latest = Math.min(max, Math.max(min, next));
-			(onPreview ?? onResize)(latest);
-			/*
-			 * The grip tracks vertically while dragging, so it stays under the pointer.
-			 *
-			 * Only when it is being drawn: with a preview in play this `setState` would be the one
-			 * piece of React work left in the frame, and it re-renders the pane the handle sits in.
-			 */
+			onResize(Math.min(max, Math.max(min, next)));
+			// The grip tracks vertically while dragging, so it stays under the pointer.
 			const box = track.current?.getBoundingClientRect();
 			if (box) setGrip(Math.min(box.height, Math.max(0, event.clientY - box.top)));
 		};
@@ -150,14 +122,6 @@ export function ResizeHandle({
 		 */
 		const stop = (event: MouseEvent) => {
 			setActive(false);
-			/*
-			 * Commit what is on screen.
-			 *
-			 * Only meaningful with a preview: without one every frame already went through
-			 * `onResize` and state is current. With one, this is the first and only time the width
-			 * becomes React state and reaches storage.
-			 */
-			if (onPreview && latest !== null) onResize(latest);
 			if (!over(track.current, event)) setGrip(null);
 		};
 
@@ -185,7 +149,7 @@ export function ResizeHandle({
 			document.body.style.userSelect = "";
 			delete document.documentElement.dataset.resizing;
 		};
-	}, [active, edge, min, max, onResize, onPreview]);
+	}, [active, edge, min, max, onResize]);
 
 	/*
 	 * `mouseleave` is not enough to know the pointer has gone.

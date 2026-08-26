@@ -42,10 +42,6 @@ export function NavPane({
 }) {
 	const { compact, navOpen, setSidebarWidth, resetSidebarWidth, bounds } = useLayout();
 	const ref = useRef<HTMLElement>(null);
-	/** The frame whose width the drag writes directly; see the handle's `onPreview`. */
-	const frame = useRef<HTMLDivElement>(null);
-	/** The window-drag strip, which has to keep the same width. Found once, on first preview. */
-	const band = useRef<HTMLElement | null>(null);
 	/**
 	 * Suppresses the transition for one beat after the breakpoint moves.
 	 *
@@ -105,22 +101,9 @@ export function NavPane({
 		 * it. Nothing moved on screen: the scrollbar is where it was, the hairline is where it was.
 		 * Only the invisible hit area stepped aside.
 		 */
-		/*
-		 * `width` eases too, which it did not before.
-		 *
-		 * Only the ways of changing it that are *not* a drag ever see this. Double-clicking the
-		 * handle, nudging it with the arrow keys, or a window that narrowed past what both panes
-		 * need all move the edge in one step, and a step is the thing an ease is for — the content
-		 * beside it reflows once, on the way, instead of snapping between two paragraph shapes.
-		 *
-		 * A drag is the opposite case and is already covered: `ResizeHandle` sets `data-resizing`
-		 * on <html> for its duration, which zeroes every transition in the document, so the edge
-		 * tracks the pointer instead of easing toward each intermediate width and never arriving.
-		 */
 		<div
-			ref={frame}
 			className={`relative shrink-0 ${
-				snap ? "transition-none" : "transition-[margin-left,opacity,width] duration-[var(--ly-t-base)] ease-out"
+				snap ? "transition-none" : "transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out"
 			}`}
 			style={{ width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }}
 		>
@@ -138,26 +121,6 @@ export function NavPane({
 					width={width}
 					min={bounds.sidebar.min}
 					max={Math.min(bounds.sidebar.max, maxWidth ?? bounds.sidebar.max)}
-					/*
-					 * Every frame writes the two elements that show the width; only the last one
-					 * becomes state.
-					 *
-					 * Written onto the elements themselves rather than into a variable on `:root`.
-					 * Both express the same pixels, and they cost very different amounts: a custom
-					 * property on the root is inherited by the whole document, so setting one
-					 * invalidates style for every node in it. Measured over the same drag, that was
-					 * a median frame of 28.5ms against 16.7ms for touching two elements — worse
-					 * than the `setState` it was meant to replace.
-					 *
-					 * React overwrites both on the next render, which is exactly what commits the
-					 * drag: the value it writes is the one this last previewed.
-					 */
-					onPreview={(next) => {
-						const px = `${Math.round(next)}px`;
-						if (frame.current) frame.current.style.width = px;
-						band.current ??= document.querySelector<HTMLElement>("[data-ly-drag-band]");
-						if (band.current) band.current.style.width = px;
-					}}
 					onResize={setSidebarWidth}
 					onReset={resetSidebarWidth}
 					label="调整侧边栏宽度"
