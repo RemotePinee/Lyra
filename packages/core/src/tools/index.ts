@@ -6,6 +6,7 @@ import { globTool } from "./glob.ts";
 import { grepTool } from "./grep.ts";
 import { lsTool } from "./ls.ts";
 import { readTool } from "./read.ts";
+import { recallTool } from "./recall.ts";
 import { symbolTool } from "./symbol.ts";
 import { taskTool } from "./task.ts";
 import { previewTool } from "./preview.ts";
@@ -48,6 +49,7 @@ function staticTools(): Tool[] {
 		todoTool,
 		taskTool,
 		skillTool,
+		recallTool,
 		webFetchTool,
 		webSearchTool,
 		previewTool,
@@ -55,7 +57,7 @@ function staticTools(): Tool[] {
 }
 
 /** Tools a read-only agent may use. */
-export const READ_ONLY_TOOL_NAMES = ["read", "ls", "glob", "grep", "bash_output", "web_fetch"];
+export const READ_ONLY_TOOL_NAMES = ["read", "ls", "glob", "grep", "bash_output", "web_fetch", "recall"];
 
 export { bashOutputTool, bashTool, isReadOnlyCommand } from "./bash.ts";
 export { computeDiff, formatDiff, type DiffHunk, type DiffLine, type FileDiff } from "./diff.ts";
@@ -64,6 +66,7 @@ export { globToRegExp, globTool } from "./glob.ts";
 export { grepTool } from "./grep.ts";
 export { invalidateIndex, symbolTool } from "./symbol.ts";
 export { lsTool } from "./ls.ts";
+export { recallTool } from "./recall.ts";
 export { displayPath, resolveWorkspacePath } from "./paths.ts";
 export { hasRead, markRead, readTool } from "./read.ts";
 export { AGENTS_KEY, BUILTIN_AGENTS, taskTool, type AgentDefinition } from "./task.ts";
