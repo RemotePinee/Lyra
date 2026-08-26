@@ -55,7 +55,7 @@ async function seed(home: string): Promise<void> {
 
 const app = await startApp({ port: 9481, seed });
 try {
-	await new Promise((r) => setTimeout(r, 1200));
+	await new Promise((r) => setTimeout(r, 2500));
 	await app.evaluate(`(() => {
 		const field = document.querySelector("main textarea");
 		const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
@@ -63,7 +63,7 @@ try {
 		field.dispatchEvent(new Event("input", { bubbles: true }));
 		return true;
 	})()`);
-	await new Promise((r) => setTimeout(r, 700));
+	await new Promise((r) => setTimeout(r, 1200));
 
 	const shot = await app.send<{ data: string }>("Page.captureScreenshot", { format: "png" });
 	await writeFile(out, Buffer.from(shot.data, "base64"));
