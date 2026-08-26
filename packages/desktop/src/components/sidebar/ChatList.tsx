@@ -85,7 +85,16 @@ export function ChatList({
 								key={session.id}
 								session={session}
 								active={activeSessionId === session.id}
-								caption={isScratch(session.cwd, scratchRoots) ? undefined : session.projectName}
+								/*
+								 * Which project, as a tip rather than as a column.
+								 *
+								 * It used to be printed on every row, and in a list of forty that is a
+								 * second column of names competing with the titles for the same width —
+								 * the titles are what you are reading, and they were the ones being
+								 * truncated to make room. Kept for the moments you actually need it: it
+								 * is one hover away, alongside the full title.
+								 */
+								project={isScratch(session.cwd, scratchRoots) ? undefined : session.projectName}
 								{...rowActions(actions, session)}
 							/>
 						))}

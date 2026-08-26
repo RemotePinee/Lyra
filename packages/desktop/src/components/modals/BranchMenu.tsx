@@ -24,7 +24,7 @@ const lastSeen = new Map<string, BranchList>();
 export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => void }) {
 	const workspace = useApp((s) => s.workspace);
 	const refreshWorkspace = useApp((s) => s.refreshWorkspace);
-	const optimisticBranch = useApp((s) => s.setBranchOptimistic);
+	const setSwitching = useApp((s) => s.setSwitchingBranch);
 	const notify = useApp((s) => s.notify);
 
 	const [branches, setBranches] = useState<BranchList | null>(
@@ -51,35 +51,50 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 
 	async function switchTo(branch: string) {
 		if (!workspace) return;
-		// A remote branch is checked out under its short name; git sets up tracking itself.
-		const target = branch.includes("/") && !branches?.local.includes(branch)
-			? branch.split("/").slice(1).join("/")
-			: branch;
+		/*
+		 * Handed over whole, remote prefix and all.
+		 *
+		 * `switchBranch` is the one that knows what to do with it: it asks git whether
+		 * `refs/heads/<name>` exists and picks `switch` or `switch --track` accordingly, and
+		 * `--track` wants exactly the remote ref — `origin/foo` — from which it derives the local
+		 * name itself.
+		 *
+		 * Stripping the first segment here broke that. `origin/dependabot/npm_and_yarn/react-…`
+		 * arrived as `dependabot/npm_and_yarn/react-…`, which names neither a local branch nor a
+		 * remote ref, so git answered `fatal: invalid reference` — from an entry the menu had just
+		 * offered. The unit tests never saw it because they call `switchBranch("origin/…")`
+		 * directly, which was always right; the stripping only existed on this side.
+		 */
+		const target = branch;
 
 		/*
-		 * Close first, switch after.
+		 * Close first, switch after — and never show a name git has not confirmed.
 		 *
 		 * The menu used to stay open for the whole of `git switch` plus the workspace re-read that
-		 * follows it — on a large repository that is most of a second with the pointer already
-		 * moved on, and it reads as the click not having registered. Nothing in the menu is worth
-		 * watching during that time: the answer is a different branch name in the bar below and a
-		 * different set of changes in the Git panel, both of which are somewhere else.
+		 * follows it. On a large repository that is most of a second with the pointer already moved
+		 * on, and it reads as the click not having registered. Nothing in the menu is worth watching
+		 * during that time: the answer is a branch name in the bar below and a different set of
+		 * changes in the Git panel, both of which are somewhere else.
 		 *
-		 * The optimistic name goes into the workspace immediately for the same reason — the label
-		 * is the acknowledgement. A failure puts it back and says why, which is the one case where
-		 * showing the old name again is the honest thing to do.
+		 * The acknowledgement is a *loading state*, not the new name. Writing the target in
+		 * optimistically was faster to read but dishonest when the switch was refused — and it is
+		 * refused often, for ordinary reasons: uncommitted work in the way, a remote ref that
+		 * cannot be checked out by that name. The chip then said `plugins` for a moment and
+		 * snapped back to `main`, which claims something happened and then takes it back. Holding
+		 * the old name while the spinner runs says the same thing without ever being wrong.
 		 */
-		const previous = workspace.branch;
 		onClose();
-		optimisticBranch(target);
-
-		const result = await window.lyra.git.switchBranch(workspace.path, target);
-		if (!result.ok) {
-			optimisticBranch(previous);
-			notify(result.error ?? "切换分支失败", "error");
-			return;
+		setSwitching(target);
+		try {
+			const result = await window.lyra.git.switchBranch(workspace.path, target);
+			if (!result.ok) {
+				notify(result.error ?? "切换分支失败", "error");
+				return;
+			}
+			await refreshWorkspace();
+		} finally {
+			setSwitching(null);
 		}
-		await refreshWorkspace();
 	}
 
 	return (
@@ -129,9 +144,8 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 						 * `branches.current` is a snapshot taken when the menu opened, and switching
 						 * does not refetch it — so the tick stayed on the branch you left until the
 						 * whole list was read again, which is what read as the check lagging behind.
-						 * The workspace's own branch is written the moment a switch is asked for
-						 * (`setBranchOptimistic`) and corrected if git refuses, so it is both faster
-						 * and the same thing the bar below the composer is showing.
+						 * The workspace's branch is re-read the moment a switch lands, so it is both
+						 * current and the same thing the bar below the composer is showing.
 						 */
 						current={branch === (workspace?.branch ?? branches?.current)}
 						onSelect={() => void switchTo(branch)}

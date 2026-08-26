@@ -1604,6 +1604,45 @@
 }
 
 /*
+ * The hover card beside a conversation row.
+ *
+ * Its own pair rather than the toast's, because it arrives from a different place and means a
+ * different thing: a toast drops in from above and is an interruption, this slides a few pixels
+ * out of the row it belongs to and is an answer to where the pointer is resting. Short — it is
+ * shown after a deliberate pause, so the appearance itself must not add another one.
+ *
+ * Leaving is quicker than arriving and does not travel back: the pointer has already moved on, and
+ * a card retracing its path draws the eye back to where it no longer is.
+ */
+@keyframes ly-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ly-card-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.ly-card-in {
+  animation: ly-card-in 130ms var(--ly-e-out);
+}
+
+.ly-card-out {
+  animation: ly-card-out 110ms ease-in forwards;
+}
+
+/*
  * A value replacing a value.
  *
  * For text that changes in place — a level's name, the sentence describing it. Swapped outright,
@@ -2419,6 +2458,15 @@
    * line, because the bubble is positioned rather than laid out in a column that can squeeze it.
    */
   text-wrap: pretty;
+  /*
+   * Line breaks in the tip are respected; runs of spaces are not.
+   *
+   * A tip is usually one phrase and stays one line. A few carry more than that — a conversation
+   * row says which project and when, on their own lines — and without this they arrived as one
+   * run-on sentence with the newlines collapsed. `pre-line` keeps the breaks the caller wrote and
+   * still wraps anything too long, which `pre` would not.
+   */
+  white-space: pre-line;
   background: color-mix(in srgb, var(--color-ink) 92%, transparent);
   color: var(--color-shell);
   box-shadow: 0 4px 14px -4px rgb(0 0 0 / 0.3);

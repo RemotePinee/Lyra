@@ -245,13 +245,16 @@ export interface AppState {
   /** Re-read git state for the current project, after a branch switch or an external change. */
   refreshWorkspace(): Promise<void>;
   /**
-   * Show a branch name before git has finished moving to it.
+   * Which branch a switch is currently trying to reach, or null when none is.
    *
-   * The switch itself takes as long as it takes, and until it returns there is nothing on screen
-   * that acknowledges the click. Writing the name straight in is that acknowledgement; the caller
-   * puts the old one back if the switch is refused.
+   * Not the name itself. Writing the target straight into the workspace made a refused switch look
+   * like a successful one that then bounced back — the chip read `plugins` for a moment and
+   * snapped to `main`, which is worse than no feedback at all: it says the thing happened and then
+   * unsays it. This drives a loading state instead, so the name on screen is only ever a branch
+   * git has actually confirmed.
    */
-  setBranchOptimistic(branch: string | null): void;
+  switchingBranch: string | null;
+  setSwitchingBranch(branch: string | null): void;
   /** Work without a project. Sessions still run; they just have no repo behind them. */
   clearWorkspace(): Promise<void>;
   /** Rename a project, or drop it from the list without touching anything on disk. */
@@ -295,6 +298,7 @@ export const useApp = create<AppState>((set, get) => ({
   settings: null,
   sessions: [],
   workspace: null,
+  switchingBranch: null,
   scratchRoots: [],
   scratchCwd: null,
   composerDraft: "",

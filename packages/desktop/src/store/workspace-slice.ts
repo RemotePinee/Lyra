@@ -54,9 +54,8 @@ export function workspaceSlice(set: Set, get: Get) {
     });
   },
 
-  setBranchOptimistic(branch: string | null) {
-    const workspace = get().workspace;
-    if (workspace) set({ workspace: { ...workspace, branch } });
+  setSwitchingBranch(switchingBranch: string | null) {
+    set({ switchingBranch });
   },
 
   async refreshWorkspace() {

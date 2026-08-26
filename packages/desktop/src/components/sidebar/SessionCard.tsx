@@ -1,0 +1,228 @@
+/**
+ * What a conversation row cannot say in one line, on hover.
+ *
+ * The row is a title and nothing else — deliberately, because in a pane 240px wide a second column
+ * of names competes with the titles for the space the titles need. Everything that used to be
+ * fighting for that space, and several things that were never shown at all, live here instead.
+ *
+ * A card rather than a tooltip. The app's tips are one string on an inverted surface, which is
+ * right for 「关闭」 and wrong for four labelled figures — those want alignment, marks, and a rule
+ * between the identity of the thing and the numbers about it.
+ *
+ * Portalled to `<body>`: the sidebar is a scroller that clips its overflow, and a card pinned
+ * beside a row would be cut off at the pane's edge — which is exactly where it needs to be.
+ */
+
+import { Coins, FolderOpen, GitBranch, Hash, Zap } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import type { SessionMeta } from "@lyra/core";
+import { formatTokens } from "../RunningIndicator.tsx";
+
+/**
+ * How long the pointer has to rest before this appears.
+ *
+ * Long enough that running the pointer down the list to reach something does not strobe a card at
+ * every row on the way, short enough that stopping on a row and waiting does not feel like waiting.
+ */
+const OPEN_DELAY_MS = 420;
+/** Matches `.ly-card-out`; the card is unmounted once it has played. */
+const LEAVE_MS = 110;
+/** Distance from the row, matching the gap the app's tooltips keep. */
+const GAP = 8;
+/** Above the tooltips (200), because this is the one thing the pointer is deliberately holding. */
+const CARD_Z = 210;
+
+/** `2026-08-26 17:50`, or a relative day count for anything recent — whichever reads faster. */
+function when(at: number): string {
+	const days = Math.floor((Date.now() - at) / 86_400_000);
+	if (days === 0) {
+		return new Date(at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+	}
+	if (days === 1) return "昨天";
+	if (days < 30) return `${days} 天前`;
+	return new Date(at).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+
+/**
+ * How much of the input never had to be re-read.
+ *
+ * Against everything that was sent, not against the total: output tokens are generated rather than
+ * read, so counting them in the denominator makes a well-cached session look worse the more it
+ * says back. Null when nothing has been sent at all, which is not a 0% hit rate — it is no data.
+ */
+function cacheHitRate(usage: SessionMeta["usage"]): number | null {
+	const sent = usage.input + usage.cacheRead;
+	if (sent <= 0) return null;
+	return usage.cacheRead / sent;
+}
+
+/** The last segment or two of a path, which is what identifies it at a glance. */
+function shortPath(path: string): string {
+	const home = path.replace(/^\/Users\/[^/]+/, "~");
+	const parts = home.split("/").filter(Boolean);
+	return parts.length <= 3 ? home : `…/${parts.slice(-2).join("/")}`;
+}
+
+/**
+ * One figure with a word for what it is.
+ *
+ * The number alone was ambiguous — 97 and 57% and 1.0k in a row read as three unrelated readings,
+ * and the marks are too small to carry the meaning on their own. The label goes above rather than
+ * beside so three of them tile evenly however wide the values run.
+ */
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+	return (
+		<div className="flex min-w-0 flex-col gap-0.5">
+			<span className="flex items-center gap-1 text-caption text-ink-faint">
+				<span className="shrink-0">{icon}</span>
+				{label}
+			</span>
+			<span className="truncate text-detail text-ink tabular-nums">{value}</span>
+		</div>
+	);
+}
+
+function Row({ icon, children, mono }: { icon: React.ReactNode; children: React.ReactNode; mono?: boolean }) {
+	return (
+		<div className="flex items-center gap-1.5 text-detail text-ink-muted">
+			<span className="shrink-0 text-ink-faint">{icon}</span>
+			<span className={`min-w-0 truncate ${mono ? "font-mono" : ""}`}>{children}</span>
+		</div>
+	);
+}
+
+export function SessionCard({
+	session,
+	anchor,
+	project,
+	leaving,
+}: {
+	session: SessionMeta;
+	/** The row's rectangle, in viewport coordinates. */
+	anchor: DOMRect;
+	/** Shown only where the list is not already grouped by project. */
+	project?: string;
+	/** Playing its exit; see `useSessionCard`. */
+	leaving?: boolean;
+}) {
+	const card = useRef<HTMLDivElement>(null);
+	const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+
+	/*
+	 * Placed after measuring, in a layout effect, so it is never painted at the wrong spot first.
+	 *
+	 * To the right of the row where there is room, and flipped to the left where there is not —
+	 * the sidebar can be dragged wide enough that its right edge is most of the way across the
+	 * window. Vertically it is clamped rather than flipped: a card that jumped above the pointer
+	 * near the foot of a list would be harder to follow than one that simply stops travelling.
+	 */
+	useLayoutEffect(() => {
+		const box = card.current?.getBoundingClientRect();
+		if (!box) return;
+		const right = anchor.right + GAP;
+		const left = right + box.width > window.innerWidth - GAP ? anchor.left - GAP - box.width : right;
+		const top = Math.min(Math.max(GAP, anchor.top - 6), window.innerHeight - box.height - GAP);
+		setAt({ left: Math.max(GAP, left), top });
+	}, [anchor]);
+
+	const usage = session.usage;
+	const hit = cacheHitRate(usage);
+
+	return createPortal(
+		<div
+			ref={card}
+			role="tooltip"
+			style={{ zIndex: CARD_Z, left: at?.left ?? -9999, top: at?.top ?? -9999, opacity: at ? undefined : 0 }}
+			className={`ly-glass-solid pointer-events-none fixed w-[248px] overflow-hidden rounded-[12px] border border-line-soft ${
+				leaving ? "ly-card-out" : "ly-card-in"
+			}`}
+		>
+			<div className="flex items-start gap-2 px-3 pt-2.5 pb-2">
+				{/* Three lines at most: a title derived from a long first message can be a paragraph. */}
+				<p className="line-clamp-3 min-w-0 flex-1 text-label leading-[18px] text-ink">{session.title}</p>
+				<span className="mt-[1px] shrink-0 text-caption text-ink-faint tabular-nums">{when(session.updatedAt)}</span>
+			</div>
+
+			<div className="flex flex-col gap-1 border-t border-line-soft px-3 py-2">
+				{project && <Row icon={<GitBranch size={11.5} strokeWidth={1.9} />}>{project}</Row>}
+				<Row icon={<FolderOpen size={11.5} strokeWidth={1.9} />} mono>
+					{shortPath(session.cwd)}
+				</Row>
+			</div>
+
+			{/*
+			 * Numbers last, and only the ones that mean something on their own.
+			 *
+			 * Message count answers "how long is this", tokens answer "what did it cost", and the
+			 * hit rate answers "was most of that re-read for free" — which is the one that changes
+			 * what anyone does next, and the one nothing in the app was showing.
+			 */}
+			<div className="flex items-center justify-between gap-2 border-t border-line-soft px-3 py-2">
+				<Stat icon={<Hash size={11} strokeWidth={2} />} label="消息" value={String(session.messageCount)} />
+				<Stat icon={<Zap size={11} strokeWidth={2} />} label="用量" value={formatTokens(usage.total)} />
+				{hit !== null && (
+					<Stat icon={<Coins size={11} strokeWidth={2} />} label="缓存" value={`${Math.round(hit * 100)}%`} />
+				)}
+			</div>
+		</div>,
+		document.body,
+	);
+}
+
+/**
+ * Hover state for one row, with the delay and the teardown that go with it.
+ *
+ * Returned as props rather than rendered here, so the row keeps ownership of its own markup — and
+ * so a row that unmounts mid-hover (the list re-sorts constantly) takes its timer with it.
+ */
+export function useSessionCard(): {
+	anchor: DOMRect | null;
+	leaving: boolean;
+	bind: { onMouseEnter: (event: React.MouseEvent<HTMLElement>) => void; onMouseLeave: () => void };
+} {
+	const [anchor, setAnchor] = useState<DOMRect | null>(null);
+	/*
+	 * Held on screen for the length of the exit animation.
+	 *
+	 * Dropping the anchor the moment the pointer leaves unmounts the card, and a card React has
+	 * already removed cannot animate — it simply blinks out, which beside a 130ms entrance reads as
+	 * a glitch rather than as a dismissal. Marking it first and removing it after is what gives the
+	 * animation something to play on; same arrangement as the toast stack.
+	 */
+	const [leaving, setLeaving] = useState(false);
+	const open = useRef<number | undefined>(undefined);
+	const close = useRef<number | undefined>(undefined);
+
+	useEffect(
+		() => () => {
+			window.clearTimeout(open.current);
+			window.clearTimeout(close.current);
+		},
+		[],
+	);
+
+	return {
+		anchor,
+		leaving,
+		bind: {
+			onMouseEnter: (event) => {
+				const box = event.currentTarget.getBoundingClientRect();
+				window.clearTimeout(open.current);
+				window.clearTimeout(close.current);
+				// Coming back before the exit finished is a re-entry, not a second arrival.
+				setLeaving(false);
+				open.current = window.setTimeout(() => setAnchor(box), OPEN_DELAY_MS);
+			},
+			onMouseLeave: () => {
+				window.clearTimeout(open.current);
+				setLeaving(true);
+				close.current = window.setTimeout(() => {
+					setAnchor(null);
+					setLeaving(false);
+				}, LEAVE_MS);
+			},
+		},
+	};
+}

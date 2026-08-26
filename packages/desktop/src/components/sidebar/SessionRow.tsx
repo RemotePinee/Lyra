@@ -20,6 +20,7 @@ import { useState } from "react";
 import { useLayout } from "../../layout.tsx";
 import { sessionTitle } from "../../sessionTitle.ts";
 import { useApp } from "../../store.ts";
+import { SessionCard, useSessionCard } from "./SessionCard.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { SessionStatus } from "../SessionStatus.tsx";
 import { useTypedText } from "../TypedText.tsx";
@@ -62,7 +63,7 @@ export function rowActions(actions: RowActions, session: SessionMeta) {
 export function SessionRow({
 	session,
 	active,
-	caption,
+	project,
 	onRestore,
 	onDelete,
 	onOpen,
@@ -71,13 +72,14 @@ export function SessionRow({
 	session: SessionMeta;
 	active: boolean;
 	/**
-	 * What this conversation belongs to, for the list that is not grouped by it.
+	 * What this conversation belongs to, shown on hover rather than on the row.
 	 *
-	 * Under a project the folder row above already answers this and repeating it on every line
-	 * would be forty copies of the same word. In 「聊天」 there is no folder row, and without this
-	 * a screen of 「新对话」 is a screen of identical rows.
+	 * Under a project the folder row above already answers this, so it is only passed by 「聊天」,
+	 * where there is no folder row. It used to be printed inline; a second column of names in a
+	 * list of forty competes with the titles for a pane that is 240px wide, and the titles are the
+	 * thing being read. In the tip it costs nothing and is there when it is wanted.
 	 */
-	caption?: string;
+	project?: string;
 	onOpen: () => void;
 	/** Absent in the archive, where a row is already filed away. */
 	onArchive?: () => void;
@@ -104,13 +106,23 @@ export function SessionRow({
 	 */
 	const [justCreated] = useState(() => Date.now() - session.createdAt < JUST_CREATED_MS);
 	const title = useTypedText(sessionTitle(session.title));
+	/*
+	 * Everything the row cannot fit, on a pause rather than on every render.
+	 *
+	 * The row shows a title; the card shows the full one plus where it lives and what it has cost.
+	 * Both lists use it — under a project the folder above already names the project, so only 「聊天」
+	 * passes one, but the path and the figures are worth having in either.
+	 */
+	const card = useSessionCard();
 
 	return (
 		<div
+			{...card.bind}
 			className={`ly-scroll group/session relative rounded-lg transition-colors duration-[var(--ly-t-quick)] active:bg-elevated ${
 				justCreated ? "ly-drop" : ""
 			} ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
 		>
+			{card.anchor && <SessionCard session={session} anchor={card.anchor} project={project} leaving={card.leaving} />}
 			<button
 				type="button"
 				onClick={onOpen}
@@ -125,24 +137,6 @@ export function SessionRow({
 				{/* In the indent the titles already had, so nothing moved to make room for it. */}
 				<SessionStatus activity={visibleActivity(activity[session.id] ?? null, active)} />
 				<ScrollText text={title} className="ly-fade-tail min-w-0 flex-1" />
-				{/*
-				 * Yields to the pointer, the way a project's folded count does — the buttons live at
-				 * this end of the row, and the two drawn at once were not two things sharing a space
-				 * but a word and an icon on the same pixels.
-				 *
-				 * A third of the row at most, and the title gets the rest.
-				 *
-				 * Both of these are names that can run to any length, and giving the caption its
-				 * natural width let a long project name take two thirds of a narrow pane — leaving
-				 * four characters of the title, which is the one you are reading the row for. The
-				 * caption is what you glance at to tell two 「新对话」 apart, so it can afford to
-				 * be cut; the title cannot.
-				 */}
-				{caption && (
-					<span className="ml-1.5 max-w-[33%] shrink-0 truncate text-caption text-ink-faint transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-0">
-						{caption}
-					</span>
-				)}
 			</button>
 
 			{/* The strip never takes pointer events; only the button does. Anything wider would

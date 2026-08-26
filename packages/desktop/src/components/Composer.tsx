@@ -44,6 +44,7 @@ export function Composer() {
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	// "底部面板" in Settings → 常规. Saved but read by nothing until now.
 	const showBottomPanel = useApp((s) => s.settings?.editor.showBottomPanel) ?? true;
+	const switchingBranch = useApp((s) => s.switchingBranch);
 	const send = useApp((s) => s.send);
 	const abort = useApp((s) => s.abort);
 	const { compact } = useLayout();
@@ -345,9 +346,18 @@ export function Composer() {
 						active={projectMenu.open}
 					/>
 					{workspace?.branch && (
+						/*
+						 * The name stays put while a switch runs; the mark says it is running.
+						 *
+						 * Which is the whole point — see `BranchMenu`. Showing the target name early
+						 * reads well right up until git refuses, and then the chip has claimed
+						 * something that did not happen. A pulsing branch mark is honest about both
+						 * outcomes and still answers the click immediately.
+						 */
 						<Chip
-							icon={<GitBranch size={13} strokeWidth={1.8} />}
+							icon={<GitBranch size={13} strokeWidth={1.8} className={switchingBranch ? "ly-pulse" : undefined} />}
 							label={workspace.branch}
+							busy={Boolean(switchingBranch)}
 							onClick={branchMenu.toggle}
 							active={branchMenu.open}
 						/>
@@ -587,24 +597,29 @@ function Chip({
 	label,
 	onClick,
 	active,
+	busy,
 }: {
 	icon: React.ReactNode;
 	label: string;
 	onClick: (event: React.MouseEvent<HTMLElement>) => void;
 	active?: boolean;
+	/** Something is being changed about what this names; the label is held until it lands. */
+	busy?: boolean;
 }) {
 	const rolls = useRolled(label);
 
 	return (
 		<button
 			type="button"
-			data-ly-tip={label}
+			data-ly-tip={busy ? "正在切换分支…" : label}
 			aria-haspopup="menu"
 			aria-expanded={active}
+			aria-busy={busy || undefined}
 			onClick={onClick}
-			className={`ly-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors duration-[var(--ly-t-quick)] ${
-				active ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
-			}`}
+			/* Dimmed while it is being changed, so the name reads as "still this, for now". */
+			className={`ly-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-[color,background-color,opacity] duration-[var(--ly-t-quick)] ${
+				busy ? "opacity-60" : ""
+			} ${active ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"}`}
 		>
 			<span className="shrink-0 text-ink-faint">{icon}</span>
 			{/* Keyed on the label so switching project or branch rolls the new one in. `ScrollText`
