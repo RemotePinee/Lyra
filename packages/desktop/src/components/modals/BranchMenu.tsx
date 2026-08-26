@@ -24,13 +24,13 @@ const lastSeen = new Map<string, BranchList>();
 export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => void }) {
 	const workspace = useApp((s) => s.workspace);
 	const refreshWorkspace = useApp((s) => s.refreshWorkspace);
+	const optimisticBranch = useApp((s) => s.setBranchOptimistic);
 	const notify = useApp((s) => s.notify);
 
 	const [branches, setBranches] = useState<BranchList | null>(
 		() => (workspace ? (lastSeen.get(workspace.path) ?? null) : null),
 	);
 	const [query, setQuery] = useState("");
-	const [busy, setBusy] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!workspace) return;
@@ -50,20 +50,36 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	const remote = (branches?.remote ?? []).filter(match);
 
 	async function switchTo(branch: string) {
-		if (!workspace || busy) return;
-		setBusy(branch);
+		if (!workspace) return;
 		// A remote branch is checked out under its short name; git sets up tracking itself.
 		const target = branch.includes("/") && !branches?.local.includes(branch)
 			? branch.split("/").slice(1).join("/")
 			: branch;
+
+		/*
+		 * Close first, switch after.
+		 *
+		 * The menu used to stay open for the whole of `git switch` plus the workspace re-read that
+		 * follows it — on a large repository that is most of a second with the pointer already
+		 * moved on, and it reads as the click not having registered. Nothing in the menu is worth
+		 * watching during that time: the answer is a different branch name in the bar below and a
+		 * different set of changes in the Git panel, both of which are somewhere else.
+		 *
+		 * The optimistic name goes into the workspace immediately for the same reason — the label
+		 * is the acknowledgement. A failure puts it back and says why, which is the one case where
+		 * showing the old name again is the honest thing to do.
+		 */
+		const previous = workspace.branch;
+		onClose();
+		optimisticBranch(target);
+
 		const result = await window.lyra.git.switchBranch(workspace.path, target);
-		setBusy(null);
 		if (!result.ok) {
+			optimisticBranch(previous);
 			notify(result.error ?? "切换分支失败", "error");
 			return;
 		}
 		await refreshWorkspace();
-		onClose();
 	}
 
 	return (
@@ -108,7 +124,6 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 						key={branch}
 						name={branch}
 						current={branch === branches?.current}
-						busy={busy === branch}
 						onSelect={() => void switchTo(branch)}
 					/>
 				))}
@@ -117,7 +132,7 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					<>
 						<MenuLabel>远程</MenuLabel>
 						{remote.map((branch) => (
-							<Row key={branch} name={branch} busy={busy === branch} onSelect={() => void switchTo(branch)} />
+							<Row key={branch} name={branch} onSelect={() => void switchTo(branch)} />
 						))}
 					</>
 				)}
@@ -129,20 +144,17 @@ export function BranchMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 function Row({
 	name,
 	current,
-	busy,
 	onSelect,
 }: {
 	name: string;
 	current?: boolean;
-	busy?: boolean;
 	onSelect: () => void;
 }) {
 	return (
 		<MenuItem
-			icon={<GitBranch size={13} strokeWidth={1.8} className={busy ? "ly-pulse" : undefined} />}
+			icon={<GitBranch size={13} strokeWidth={1.8} />}
 			title={name}
 			selected={current}
-			disabled={busy}
 			trailing={current ? <Check size={13} strokeWidth={2.2} className="shrink-0 text-ink" /> : undefined}
 			onClick={onSelect}
 		>

@@ -244,6 +244,14 @@ export interface AppState {
   openWorkspace(path: string): Promise<void>;
   /** Re-read git state for the current project, after a branch switch or an external change. */
   refreshWorkspace(): Promise<void>;
+  /**
+   * Show a branch name before git has finished moving to it.
+   *
+   * The switch itself takes as long as it takes, and until it returns there is nothing on screen
+   * that acknowledges the click. Writing the name straight in is that acknowledgement; the caller
+   * puts the old one back if the switch is refused.
+   */
+  setBranchOptimistic(branch: string | null): void;
   /** Work without a project. Sessions still run; they just have no repo behind them. */
   clearWorkspace(): Promise<void>;
   /** Rename a project, or drop it from the list without touching anything on disk. */

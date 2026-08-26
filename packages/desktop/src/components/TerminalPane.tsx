@@ -3,7 +3,6 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { SquareTerminal } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PanelEmpty } from "./PanelEmpty.tsx";
 import { useApp } from "../store.ts";
 import { useSide } from "../sideStore.ts";
 import { useTerminals } from "../store/terminals.ts";
@@ -43,7 +42,7 @@ export function TerminalPane() {
 	 */
 	const size = useRef({ cols: 80, rows: 24 });
 	const [exited, setExited] = useState<number | null>(null);
-	const tabs = useTerminals((s) => (workspace?.path ? s.tabs[workspace.path] : undefined)) ?? [];
+	const tabs = useTerminals((s) => s.tabs[workspace?.path ?? ""]) ?? [];
 
 	/*
 	 * Run what the transcript handed over.
@@ -69,8 +68,20 @@ export function TerminalPane() {
 		term.current?.focus();
 	}, [pending, ready]);
 
-	const cwd = workspace?.path;
-	const active = useTerminals((s) => (cwd ? s.active[cwd] : undefined));
+	/**
+	 * Which directory this pane's shells belong to. Empty string means "no project".
+	 *
+	 * Not a reason to refuse. The registry already resolves anything that is not a project to the
+	 * home directory (`resolve` in `terminal-registry.ts`), so a shell with nowhere in particular to
+	 * be starts in `~` — which is what a terminal does everywhere else on the machine. Refusing to
+	 * open one until a project is chosen made the app the only terminal that needs permission to
+	 * exist.
+	 *
+	 * The empty string is also a usable key: every project-less window shares one set of tabs,
+	 * which is right, because they all share the same directory.
+	 */
+	const cwd = workspace?.path ?? "";
+	const active = useTerminals((s) => s.active[cwd]);
 
 	/*
 	 * Find out what this project already has running before drawing anything.
@@ -81,7 +92,6 @@ export function TerminalPane() {
 	 * by looking at it.
 	 */
 	useEffect(() => {
-		if (!cwd) return;
 		let cancelled = false;
 		void window.lyra.terminal.list(cwd).then(async (tabs) => {
 			if (cancelled) return;
@@ -268,15 +278,7 @@ export function TerminalPane() {
 		if (term.current) term.current.options.theme = paletteFromTheme();
 	}, [appearance]);
 
-	if (!workspace) {
-		return (
-			<PanelEmpty icon={SquareTerminal} title="终端">
-				先打开一个项目，终端会在它的目录里启动。
-			</PanelEmpty>
-		);
-	}
-
-	const empty = Boolean(cwd) && tabs.length === 0;
+	const empty = tabs.length === 0;
 
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col">

@@ -54,6 +54,11 @@ export function workspaceSlice(set: Set, get: Get) {
     });
   },
 
+  setBranchOptimistic(branch: string | null) {
+    const workspace = get().workspace;
+    if (workspace) set({ workspace: { ...workspace, branch } });
+  },
+
   async refreshWorkspace() {
     const current = get().workspace;
     if (!current) return;

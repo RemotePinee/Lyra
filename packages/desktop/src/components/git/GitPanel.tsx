@@ -14,6 +14,7 @@ import { BranchesView } from "./BranchesView.tsx";
 import { ChangesView } from "./ChangesView.tsx";
 import { HistoryView } from "./HistoryView.tsx";
 import { RepoPicker } from "./RepoPicker.tsx";
+import { useCountUp } from "../useCountUp.ts";
 
 type View = "changes" | "history" | "branches";
 
@@ -180,6 +181,7 @@ export function GitPanel() {
 
   const changeCount =
     (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0);
+  const shownCount = useCountUp(changeCount);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -258,7 +260,15 @@ export function GitPanel() {
             <entry.icon size={12} strokeWidth={1.8} className="shrink-0" />
             {entry.label}
             {entry.id === "changes" && changeCount > 0 && (
-              <span className="text-ink-faint tabular-nums">{changeCount}</span>
+              /*
+               * Travels to the new figure rather than jumping to it — the same treatment the
+               * change bar above the composer gives its counts. Switching branch can move this
+               * from 3 to 40, and a number that lands without moving reads as a different number
+               * appearing rather than as this one having changed.
+               */
+              <span className="text-ink-faint tabular-nums">
+                {Math.round(shownCount)}
+              </span>
             )}
           </button>
         ))}
@@ -276,8 +286,17 @@ export function GitPanel() {
         </div>
       )}
 
+      {/*
+       * Keyed on the branch, so a switch replays the entry animation.
+       *
+       * Without it the list simply contains different files a moment later, with nothing to say
+       * that the ground moved — which is the one thing worth signalling when the branch changed
+       * underneath it. Re-mounting is affordable here: the view holds no scroll position or
+       * selection worth carrying across a branch it no longer belongs to.
+       */}
       {view === "changes" && (
         <ChangesView
+          key={status?.branch ?? "detached"}
           status={status}
           cwd={workspace.path}
           busy={busy}

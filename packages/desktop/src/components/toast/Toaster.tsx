@@ -18,7 +18,7 @@
  * the pointer.
  */
 
-import { CircleAlert, Info, TriangleAlert, X } from "lucide-react";
+import { CircleAlert, Info, MessageCirclePlus, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -40,6 +40,45 @@ const TONE = {
 export function Toaster() {
 	const notices = useApp((s) => s.notices);
 	const remove = useApp((s) => s.dismissNotice);
+	const newSession = useApp((s) => s.newSession);
+	const setComposerDraft = useApp((s) => s.setComposerDraft);
+
+	/**
+	 * Hand an error to a fresh conversation, already written up, and stop there.
+	 *
+	 * An error message is the beginning of a question, not the end of one — and the app already
+	 * holds everything needed to ask it well: what failed, which project, which branch. Copying
+	 * that out by hand is work the user should not be doing at the moment something has just gone
+	 * wrong.
+	 *
+	 * The draft is *not* sent. Asking about a failure is a judgement call — sometimes the message
+	 * is self-explanatory, sometimes it is worth a look, and a turn that starts itself would spend
+	 * tokens on the first kind. What this does is remove the typing, leaving the decision.
+	 *
+	 * A project-less window still works: `newSession` falls back to the scratch directory, and the
+	 * prompt simply omits the lines it has nothing to put in.
+	 */
+	const investigate = useCallback(
+		async (message: string) => {
+			const { workspace } = useApp.getState();
+			const context = [
+				workspace?.name ? `项目：${workspace.name}` : null,
+				workspace?.branch ? `分支：${workspace.branch}` : null,
+			].filter(Boolean);
+
+			await newSession();
+			setComposerDraft(
+				[
+					"Lyra 界面报了一个错误，帮我查清原因并给出可执行的解决办法。",
+					"",
+					"错误信息：",
+					message,
+					...(context.length > 0 ? ["", ...context] : []),
+				].join("\n"),
+			);
+		},
+		[newSession, setComposerDraft],
+	);
 
 	const groups = useMemo(() => groupNotices(notices), [notices]);
 	const shown = useMemo(() => visibleToasts(groups), [groups]);
@@ -160,6 +199,28 @@ export function Toaster() {
 						    the least legible way to say something went wrong. */}
 						<tone.Icon size={13} strokeWidth={2} className={`mt-[2.5px] shrink-0 ${tone.mark}`} />
 						<span className="min-w-0 leading-[18px] break-words">{group.message}</span>
+						{/*
+						 * Only on errors, and only ever one per card.
+						 *
+						 * A warning is usually something you already understand — the disk is full, the
+						 * branch has moved on — and an "ask about this" button beside every one of them
+						 * would be a button nobody presses. An error is the case where the next thing
+						 * the user wants is an explanation.
+						 */}
+						{group.level === "error" && (
+							<button
+								type="button"
+								onClick={() => {
+									void investigate(group.message);
+									dismiss(group);
+								}}
+								className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+								data-ly-tip="新开一个对话来排查"
+								aria-label="新开一个对话来排查"
+							>
+								<MessageCirclePlus size={12} strokeWidth={2} />
+							</button>
+						)}
 						{/* Said once with a count, rather than the same card three times over. */}
 						{group.ids.length > 1 && (
 							<span className="mt-[1px] shrink-0 rounded-full bg-card-hover px-1.5 text-caption text-ink-muted tabular-nums">

@@ -117,15 +117,25 @@ export function PanelMenu() {
 				<Popover anchor={menu.anchor} onClose={menu.close} placement="bottom" align="end" width="default">
 					<MenuBody>
 						<MenuLabel>面板</MenuLabel>
-						{definitions.map((def) => {
+						{/*
+						 * Absent, not greyed.
+						 *
+						 * The list used to show everything and disable what could not be opened, on the
+						 * reasoning that a stated reason beats an unexplained gap. In practice it is four
+						 * grey rows out of eight — a menu where half the items are things you have to
+						 * read before you can ignore them, every time you open it. What a panel needs in
+						 * order to exist is not something to be told each time; it is obvious the moment
+						 * you have a project open, because the panel is simply there.
+						 */}
+						{definitions
+							.filter((def) => !def.unavailable)
+							.map((def) => {
 							const shown = has(tree, def.kind);
 							return (
 								<MenuItem
 									key={def.kind}
 									icon={<def.icon size={13.5} strokeWidth={1.8} />}
 									hint={def.shortcut}
-									disabled={Boolean(def.unavailable)}
-									title={def.unavailable}
 									// A tick, not a highlight: this is a set of things that are either
 									// in the window or not, and every row is independently either.
 									trailing={shown ? <Check size={13} strokeWidth={2.2} className="shrink-0 text-ink" /> : undefined}
