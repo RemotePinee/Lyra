@@ -48,6 +48,24 @@ test("a reconnect still beats everything, including text arriving", () => {
 	assert.equal(moodFor(undefined, undefined, true, true), "connecting");
 });
 
+test("the words for reaching the web are not the words for the network dropping", () => {
+	/*
+	 * The orb is right for both — a fetch and a dropped socket are the same picture, wires trying to
+	 * find each other — and the words are not. This pool is written for going out to the web, so a
+	 * turn whose connection had just died announced 「Loading the page…」 next to 「连接中断，14 秒
+	 * 后重试」: two accounts of the same moment, one of them wrong.
+	 *
+	 * `RunningIndicator` drops the phrase entirely while retrying, because the countdown beside it
+	 * already says what is happening and for how long. This pins what that phrase would have been,
+	 * so the mistake is visible here rather than only on screen.
+	 */
+	const words = [0, 1, 2, 3].map((tick) => phraseFor("connecting", tick, 0));
+	assert.ok(
+		words.some((word) => word.includes("page") || word.includes("web")),
+		`the pool is about fetching pages (${words.join(", ")})`,
+	);
+});
+
 test("a tool nobody mapped falls back rather than picking something wrong", () => {
 	assert.equal(moodFor("some_future_tool", "doing a thing"), "breathing");
 });

@@ -32,3 +32,9 @@ docs/
 
 # 本机的工作约定，不进仓库
 AGENTS.local.md
+
+# Git worktrees an agent checked out to work in parallel. They are whole copies of this
+# repository, so leaving them untracked means the sidebar's Git panel reports "1 change" on a
+# branch where everything is committed — and every tool that walks the tree reads the copy as a
+# second set of sources.
+.claude/worktrees/

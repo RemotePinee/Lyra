@@ -103,7 +103,18 @@ export function RunningIndicator() {
 	 * tool started, which is exactly the moment anybody is looking at them.
 	 */
 	const mood = moodFor(fresh ? toolName : undefined, fresh ? summary : undefined, Boolean(retrying), writing);
-	const phrase = phraseFor(mood, tick, elapsed);
+	/*
+	 * No phrase while reconnecting, because the line already has one.
+	 *
+	 * The orb is right — a dropped connection and a page fetch are the same picture, wires trying to
+	 * find each other. The words are not: `connecting`'s pool is written for going out to the web,
+	 * so a turn whose socket had just died announced 「Loading the page…」 immediately to the left of
+	 * 「连接中断，14 秒后重试」. Two accounts of the same moment, one of them wrong.
+	 *
+	 * Dropped rather than given a pool of its own: the countdown on the right says what is happening
+	 * and how long it will take, and anything here would be the same fact in fewer words.
+	 */
+	const phrase = retrying ? null : phraseFor(mood, tick, elapsed);
 
 	return (
 		/*
@@ -142,10 +153,14 @@ export function RunningIndicator() {
 			 * elapsed, tokens, why the wait is long — is reference, and sits a step back. They were
 			 * the same weight before, which made a row of five things with no order to read them in.
 			 */}
-			<span key={phrase} className="ly-fade-in">
-				{phrase}…
-			</span>
-			<span className="text-ink-faint">·</span>
+			{phrase && (
+				<>
+					<span key={phrase} className="ly-fade-in">
+						{phrase}…
+					</span>
+					<span className="text-ink-faint">·</span>
+				</>
+			)}
 			{startedAt && <span className="text-ink-faint tabular-nums">{formatElapsed(now - startedAt)}</span>}
 			{total > 0 && (
 				<>
