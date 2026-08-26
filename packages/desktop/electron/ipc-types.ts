@@ -349,6 +349,14 @@ export interface LyraApi {
 	 * lands — the renderer never has to care whether it was already running.
 	 */
 	onTrayCommand(handler: (command: string) => void): () => void;
+	/**
+	 * Something failed in the main process with nowhere to report it.
+	 *
+	 * Surfaced rather than swallowed: an error the window cannot see is one the user cannot act on,
+	 * and the alternative — Electron's own modal crash dialog — takes the whole app hostage over
+	 * what is usually a dropped connection. Quiet I/O codes never get this far; see `QUIET_IO`.
+	 */
+	onMainError(handler: (payload: { origin: string; message: string }) => void): () => void;
 	updates: {
 		/** Whether a newer release exists. Never throws: offline is a normal answer, not an error. */
 		check(force?: boolean): Promise<{

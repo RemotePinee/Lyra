@@ -57,7 +57,19 @@ export class SyncServer {
 		server.on("upgrade", (request, socket, head) => {
 			const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 			if (url.pathname !== "/ws" || !this.authorize(url.searchParams.get("token"))) {
-				socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+				/*
+				 * The refusal is a courtesy, and the socket may already be gone.
+				 *
+				 * A client that gave up between opening the connection and this line leaves a pipe
+				 * with nothing at the far end, and writing to one throws `EPIPE` — which, on a raw
+				 * socket from `upgrade`, has no listener and reaches the top of the main process.
+				 * The connection is being closed either way; failing to say why is not worth taking
+				 * the app down for.
+				 */
+				socket.on("error", () => {});
+				try {
+					socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+				} catch {}
 				socket.destroy();
 				return;
 			}

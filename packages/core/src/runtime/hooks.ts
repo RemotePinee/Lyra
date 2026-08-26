@@ -107,6 +107,26 @@ export async function runHook(
 			resolve({ exitCode: code, stdout, stderr, timedOut: false });
 		});
 
+		/*
+		 * A hook is under no obligation to read its stdin, and most do not.
+		 *
+		 * The payload goes in anyway, because a hook that *does* want it should find it there. What
+		 * that costs is a pipe whose reader may be gone: a script that never reads, or exits early,
+		 * leaves this end writing into nothing, and once the payload exceeds the pipe buffer — 64KB,
+		 * which a tool call with a large argument reaches — the write fails with `EPIPE`.
+		 *
+		 * `child.on("error")` above does not cover it. That reports a process which could not be
+		 * spawned; this is a stream that could not be written, and a stream's `error` with no
+		 * listener is rethrown. Asynchronously, from inside `WriteWrap.onWriteComplete`, with a
+		 * stack ending in Node's internals — so in the main process it arrived as Electron's
+		 * "A JavaScript error occurred in the main process" over the whole app, naming nothing that
+		 * would lead anyone here.
+		 *
+		 * Ignoring it is the correct outcome, not a papering over: the hook has already declined to
+		 * read what it was offered, and the exit code it returns is what actually matters. That is
+		 * still collected by the `close` handler.
+		 */
+		child.stdin.on("error", () => {});
 		child.stdin.end(JSON.stringify(payload));
 	});
 }

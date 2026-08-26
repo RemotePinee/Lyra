@@ -196,6 +196,12 @@ const api: LyraApi = {
 		ipcRenderer.on("window:fullscreen", listener);
 		return () => ipcRenderer.removeListener("window:fullscreen", listener);
 	},
+	/** An error that reached the top of the main process. See `reportToTopLevel` in `main.ts`. */
+	onMainError: (handler) => {
+		const listener = (_e: Electron.IpcRendererEvent, payload: { origin: string; message: string }) => handler(payload);
+		ipcRenderer.on("app:mainError", listener);
+		return () => ipcRenderer.removeListener("app:mainError", listener);
+	},
 	/** What the status bar menu was asked for. One channel, because the commands are one kind. */
 	onTrayCommand: (handler) => {
 		const listener = (_e: Electron.IpcRendererEvent, command: string) => handler(command);

@@ -218,8 +218,26 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 		if (live && live.epoch === epoch) live.attached = false;
 	};
 
+	/**
+	 * Send keystrokes to a shell that may already have stopped listening.
+	 *
+	 * `terminals` is cleaned up in `onExit`, so an id that names a finished shell is normally gone
+	 * by the time anything writes to it — but there is a window between the shell closing its end
+	 * of the pipe and that event arriving, and a write landing in it fails with `EPIPE`. The
+	 * renderer keeps typing into a pane that has not yet been told its shell is over, so the window
+	 * is not theoretical: exiting a shell and pressing a key was enough.
+	 *
+	 * Unhandled, that reached the top of the main process and Electron put up "A JavaScript error
+	 * occurred in the main process" over the whole app — a modal crash report for the least
+	 * consequential failure there is. Nothing is lost by dropping the write: there is no longer
+	 * anything on the other end to receive it.
+	 *
+	 * `resize` beside this has said the same thing for its own reason since it was written.
+	 */
 	const write = (id: string, data: string): void => {
-		terminals.get(id)?.pty.write(data);
+		try {
+			terminals.get(id)?.pty.write(data);
+		} catch {}
 	};
 
 	const resize = (id: string, cols: number, rows: number): void => {
@@ -230,7 +248,11 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 	};
 
 	const kill = (id: string): void => {
-		terminals.get(id)?.pty.kill();
+		// Killing something that has already died is not a failure worth propagating; the point of
+		// the call is that the shell is gone afterwards, and it is.
+		try {
+			terminals.get(id)?.pty.kill();
+		} catch {}
 		terminals.delete(id);
 	};
 

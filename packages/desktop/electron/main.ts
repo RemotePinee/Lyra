@@ -189,6 +189,41 @@ if (process.argv.includes(WINDOWS_RUNNER_FLAG)) {
 
 app.setName("Lyra");
 
+/**
+ * Errors that reach the top of the main process without a home.
+ *
+ * Without this, Electron's own handler runs: a modal dialog reading "A JavaScript error occurred in
+ * the main process" over the whole window, with a stack trace in it and one button. For a genuine
+ * fault that is arguably right. For the ones that actually arrive it is not — they are asynchronous
+ * I/O failures whose only meaning is "the other end went away", and they are unattributable at the
+ * top level because the stack ends inside Node's stream machinery rather than anywhere in this app.
+ *
+ * `EPIPE` is the one that prompted this: a pty whose shell had just exited, written to in the
+ * window before its exit event arrived. Both ends of that are now guarded at the source, which is
+ * where a known failure belongs — this exists for the ones nobody has thought of yet, because the
+ * cost of guessing wrong is the entire app becoming a crash report.
+ *
+ * Quiet only for the errors that carry no information. Anything else is reported to the window,
+ * which surfaces it the way every other failure is surfaced — and, since the toast now offers it,
+ * with a way to ask about it. The process stays up either way: a desktop app that dies on a
+ * dropped socket loses whatever the person was in the middle of.
+ */
+const QUIET_IO = new Set(["EPIPE", "ECONNRESET", "ECONNABORTED", "ERR_STREAM_DESTROYED"]);
+
+function reportToTopLevel(error: unknown, origin: string): void {
+	const code = (error as NodeJS.ErrnoException | undefined)?.code;
+	if (code && QUIET_IO.has(code)) return;
+
+	const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+	console.error(`[${origin}]`, message);
+	for (const win of BrowserWindow.getAllWindows()) {
+		win.webContents.send("app:mainError", { origin, message });
+	}
+}
+
+process.on("uncaughtException", (error) => reportToTopLevel(error, "uncaughtException"));
+process.on("unhandledRejection", (reason) => reportToTopLevel(reason, "unhandledRejection"));
+
 app.whenReady().then(async () => {
 	/*
 	 * Before anything reads or writes it: the home directory was called `.deepwise` until the app

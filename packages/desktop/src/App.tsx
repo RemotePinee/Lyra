@@ -43,6 +43,25 @@ export function App() {
 	}, [appearance]);
 	useEffect(() => watchSystemTheme(() => useApp.getState().settings?.appearance ?? appearance!), [appearance]);
 
+	/*
+	 * Failures from the main process, shown the way every other failure is.
+	 *
+	 * They used to have nowhere to go, so Electron showed them itself — a modal dialog over the
+	 * whole app saying "A JavaScript error occurred in the main process", which is both alarming
+	 * and useless: the stack ends in Node's internals and the one button just dismisses it. As a
+	 * toast it is legible, it does not block anything, and it carries the same 「新开一个对话来排查」
+	 * button as any other error, which is the first thing anyone wants when they see one.
+	 *
+	 * Only the ones worth reading arrive here; `QUIET_IO` in `main.ts` drops the rest.
+	 */
+	useEffect(
+		() =>
+			window.lyra.onMainError(({ message }) => {
+				useApp.getState().notify(message.split("\n")[0] || "主进程出错", "error");
+			}),
+		[],
+	);
+
 	// Before the `ready` gate below, so a command sent to a window that is still booting is not
 	// dropped for the one or two frames the boot screen is up.
 	useTrayCommands();
