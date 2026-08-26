@@ -60,8 +60,18 @@ export type AgentEvent =
 	 * Its own event rather than a notice, because it is a fact about the conversation that
 	 * outlives the moment: everything before it is a summary now, and someone reading the
 	 * transcript later needs to know that. Notices are transient by design and this is not.
+	 *
+	 * It carries the summary and the boundary because this event *is* where compaction is stored.
+	 * Before, it recorded only that compaction had happened and the summary lived in the running
+	 * loop's own array — so the next prompt rebuilt its history from the log, got every original
+	 * message back, and compacted again. A conversation could not get smaller than the log, which
+	 * only grows: that is the whole of "stuck at 80%, compacting every turn".
+	 *
+	 * `kept` counts the real messages that survived, newest-first, so the boundary can be resolved
+	 * against the log rather than against the loop's array — the two are not the same once a run
+	 * has compacted, and an index into one is meaningless in the other.
 	 */
-	| { type: "compacted"; before: number; after: number }
+	| { type: "compacted"; before: number; after: number; summary?: string; kept?: number }
 	/**
 	 * The connection dropped and the turn is being retried.
 	 *

@@ -11,7 +11,7 @@
  */
 
 import type { Message } from "../types.ts";
-import type { SessionMeta, SessionRecord, SessionRecordInput } from "./store.ts";
+import type { Boundary, SessionMeta, SessionRecord, SessionRecordInput } from "./store.ts";
 
 export interface SessionStorage {
 	create(cwd: string, modelId: string, title?: string): Promise<SessionMeta>;
@@ -22,7 +22,7 @@ export interface SessionStorage {
 	load(
 		projectId: string,
 		sessionId: string,
-	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[] } | null>;
+	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[]; compaction: Boundary | null } | null>;
 	listSessions(): Promise<SessionMeta[]>;
 	rebuildIndex(): Promise<SessionMeta[]>;
 	truncateFrom(

@@ -69,10 +69,21 @@ function fakeStream(summary: string) {
 	};
 }
 
+/**
+ * Just the messages, for the tests that only care what the model would be sent.
+ *
+ * Compaction also reports what to store — the summary and the boundary — because that is what
+ * makes it outlive the run. Those are checked on their own, below.
+ */
+async function compact(...args: Parameters<typeof compactIfNeeded>): Promise<Message[] | null> {
+	const result = await compactIfNeeded(...args);
+	return result?.messages ?? null;
+}
+
 test("a conversation below the threshold is left alone", async () => {
 	const messages = conversation(4, 200);
 	assert.ok(estimateTokens(messages) < MODEL.contextWindow * 0.8, "precondition: under the threshold");
-	assert.equal(await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("summary") as never), null);
+	assert.equal(await compact(messages, MODEL, PROVIDER, fakeStream("summary") as never), null);
 });
 
 test("a conversation over the threshold is replaced by a summary plus the recent turns", async () => {
@@ -80,7 +91,7 @@ test("a conversation over the threshold is replaced by a summary plus the recent
 	const before = estimateTokens(messages);
 	assert.ok(before > MODEL.contextWindow * 0.8, `precondition: ${before} tokens is over the threshold`);
 
-	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("以前做过的事") as never);
+	const compacted = await compact(messages, MODEL, PROVIDER, fakeStream("以前做过的事") as never);
 	assert.ok(compacted, "it should have compacted");
 	if (!compacted) return;
 
@@ -107,7 +118,7 @@ test("a tool result is never separated from the call it answers", async () => {
 	 * that would break it if the boundary were taken literally.
 	 */
 	const messages = conversation(20, 900);
-	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("s") as never);
+	const compacted = await compact(messages, MODEL, PROVIDER, fakeStream("s") as never);
 	assert.ok(compacted);
 	if (!compacted) return;
 
@@ -138,7 +149,7 @@ test("a conversation too short to summarise is still cut down where it can be", 
 	const huge = [user("x".repeat(40_000)), reply("y".repeat(40_000)), toolResult("c", "z".repeat(40_000))];
 	assert.ok(estimateTokens(huge) > MODEL.contextWindow * 0.8);
 
-	const result = await compactIfNeeded(huge, MODEL, PROVIDER, fakeStream("s") as never);
+	const result = await compact(huge, MODEL, PROVIDER, fakeStream("s") as never);
 	assert.ok(result, "something came back rather than a refusal");
 	assert.equal(result.length, huge.length, "no message was dropped — there was nothing to drop");
 	assert.ok(estimateTokens(result) < estimateTokens(huge), "but it weighs less");
@@ -149,7 +160,7 @@ test("a conversation too short to summarise is still cut down where it can be", 
 test("a conversation with nothing oversized in it is still left alone", async () => {
 	// The other half of the case above: nothing to summarise *and* nothing to cut.
 	const short = [user("hi"), reply("hello"), toolResult("c", "ok")];
-	assert.equal(await compactIfNeeded(short, MODEL, PROVIDER, fakeStream("s") as never), null);
+	assert.equal(await compact(short, MODEL, PROVIDER, fakeStream("s") as never), null);
 });
 
 test("a summary that never arrives is not a reason to leave the window full", async () => {
@@ -170,7 +181,7 @@ test("a summary that never arrives is not a reason to leave the window full", as
 		return reply("   ");
 	};
 
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, empty as never);
+	const result = await compact(messages, MODEL, PROVIDER, empty as never);
 	assert.ok(result, "it still came back with something sendable");
 	assert.ok(result.length < messages.length, "by dropping the oldest turns");
 	assert.ok(estimateTokens(result) < estimateTokens(messages), "and it weighs less");
@@ -187,7 +198,7 @@ test("a conversation already inside the window is left alone even when summarisi
 		yield { type: "start" as const, partial: reply("") };
 		return reply("   ");
 	};
-	assert.equal(await compactIfNeeded(small, MODEL, PROVIDER, empty as never), null);
+	assert.equal(await compact(small, MODEL, PROVIDER, empty as never), null);
 });
 
 test("the summary request is condensed to fit, not sent whole", async () => {
@@ -205,7 +216,7 @@ test("the summary request is condensed to fit, not sent whole", async () => {
 		return reply("摘要");
 	};
 
-	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, spy as never);
+	const compacted = await compact(messages, MODEL, PROVIDER, spy as never);
 	assert.ok(compacted, "it must still compact");
 	assert.ok(
 		sentTokens < MODEL.contextWindow,
@@ -221,7 +232,7 @@ test("a reduction is kept even when it is not a halving", async () => {
 	const messages = conversation(30, 1200);
 	const before = estimateTokens(messages);
 	// A long summary, so the saving is real but modest.
-	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要".repeat(400)) as never);
+	const compacted = await compact(messages, MODEL, PROVIDER, fakeStream("摘要".repeat(400)) as never);
 	assert.ok(compacted, "a partial saving is still a saving");
 	if (!compacted) return;
 	assert.ok(estimateTokens(compacted) < before);
@@ -233,7 +244,7 @@ test("the kept tail is bounded by size, not by a message count", async () => {
 		...conversation(20, 900),
 		...Array.from({ length: 6 }, (_, i) => reply(`huge ${i} ${"z".repeat(20_000)}`)),
 	];
-	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never);
+	const compacted = await compact(messages, MODEL, PROVIDER, fakeStream("摘要") as never);
 	assert.ok(compacted, "it must compact rather than give up");
 	if (!compacted) return;
 	assert.ok(
@@ -286,7 +297,7 @@ test("compaction goes by what the provider measured, not by our guess at it", as
 		`the estimate alone would not trigger (${estimateTokens(messages)})`,
 	);
 
-	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("之前做过的事") as never);
+	const compacted = await compact(messages, MODEL, PROVIDER, fakeStream("之前做过的事") as never);
 	assert.ok(compacted, "but the measured usage does, so the history is summarised");
 	assert.ok(compacted.length < messages.length, "and the result is shorter than what went in");
 });
@@ -372,7 +383,7 @@ test("cutting alone is enough when the bulk is tool output, and no summary is as
 	];
 	assert.ok(estimateTokens(messages) > MODEL.contextWindow * 0.8, "it is over the line to begin with");
 
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, counting as never);
+	const result = await compact(messages, MODEL, PROVIDER, counting as never);
 	assert.ok(result, "something came back");
 	assert.equal(asked, 0, "and no summary was requested");
 	assert.equal(result.length, messages.length, "nothing was dropped — only cut");
@@ -401,7 +412,7 @@ test("when a summary is needed, the result has to fit — not merely be smaller"
 	// The tail alone is over the window, so keeping it and calling that a success is the bug.
 	assert.ok(estimateTokens(messages.slice(-4)) > MODEL.contextWindow * 0.6, "and its tail is heavy");
 
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("以前做过的事") as never);
+	const result = await compact(messages, MODEL, PROVIDER, fakeStream("以前做过的事") as never);
 	assert.ok(result, "it compacted");
 	assert.ok(
 		estimateTokens(result) < MODEL.contextWindow * 0.8,
@@ -414,7 +425,7 @@ test("the tail never begins with a tool result orphaned from its call", async ()
 	// Dropping a call and keeping its answer is rejected by both APIs, so a cut in the middle of a
 	// pair is not a smaller conversation — it is a failed request.
 	const messages = conversation(40, 1200);
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never);
+	const result = await compact(messages, MODEL, PROVIDER, fakeStream("摘要") as never);
 	assert.ok(result);
 	// [summary, acknowledgement, ...tail]
 	assert.notEqual(result[2]?.role, "toolResult", `the tail starts on a whole turn (${result[2]?.role})`);
@@ -440,7 +451,7 @@ test("the newest thing the user asked for is quoted, not paraphrased", async () 
 		...Array.from({ length: 8 }, (_, i) => [reply(`步骤 ${i} ${"x".repeat(1200)}`), toolResult(`t${i}`, "x".repeat(1200))]).flat(),
 	];
 
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("讨论了一些问题") as never);
+	const result = await compact(messages, MODEL, PROVIDER, fakeStream("讨论了一些问题") as never);
 	assert.ok(result, "it compacted");
 
 	const head = result[0];
@@ -458,7 +469,7 @@ test("a request still in the kept tail is not quoted a second time", async () =>
 	 */
 	const asked = "只改这一个文件";
 	const messages: Message[] = [...conversation(40, 1200), user(asked), reply("好")];
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("之前的事") as never);
+	const result = await compact(messages, MODEL, PROVIDER, fakeStream("之前的事") as never);
 	assert.ok(result);
 	const head = result[0].content.map((b) => (b.type === "text" ? b.text : "")).join("");
 	assert.ok(!head.includes(asked), "the one still in the tail is not repeated at the top");
@@ -479,7 +490,7 @@ test("the runtime's own nudges are not mistaken for what the user wants", async 
 		{ role: "user", content: [{ type: "text", text: "继续" }], timestamp: 1, synthetic: true },
 		...Array.from({ length: 8 }, (_, i) => [reply(`步骤 ${i} ${"x".repeat(1200)}`), toolResult(`t${i}`, "x".repeat(1200))]).flat(),
 	];
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never);
+	const result = await compact(messages, MODEL, PROVIDER, fakeStream("摘要") as never);
 	assert.ok(result);
 	const head = result[0].content.map((b) => (b.type === "text" ? b.text : "")).join("");
 	assert.ok(head.includes(real), "the real request is what carries across");
@@ -501,7 +512,7 @@ test("compaction leaves room for the prompt and the schemas, not just for the me
 	const overhead = 3000; // 30% of this fixture's window, as a real prompt plus schemas can be.
 	const messages = conversation(40, 1200);
 
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never, overhead);
+	const result = await compact(messages, MODEL, PROVIDER, fakeStream("摘要") as never, overhead);
 	assert.ok(result, "it compacted");
 
 	/*
@@ -522,18 +533,18 @@ test("compacting twice in a row is a no-op, because the first pass actually got 
 	 * next turn compacts again, and every turn after it. One pass has to be enough.
 	 */
 	const overhead = 3000;
-	const once = await compactIfNeeded(conversation(40, 1200), MODEL, PROVIDER, fakeStream("摘要") as never, overhead);
+	const once = await compact(conversation(40, 1200), MODEL, PROVIDER, fakeStream("摘要") as never, overhead);
 	assert.ok(once);
 
-	const twice = await compactIfNeeded(once, MODEL, PROVIDER, fakeStream("再摘要") as never, overhead);
+	const twice = await compact(once, MODEL, PROVIDER, fakeStream("再摘要") as never, overhead);
 	assert.equal(twice, null, "the second pass finds nothing to do");
 });
 
 test("a bigger overhead leaves less room, and the result reflects that", async () => {
 	// Same conversation, different fixed cost: the tail that survives has to be smaller.
 	const messages = conversation(40, 1200);
-	const light = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never, 0);
-	const heavy = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never, 4000);
+	const light = await compact(messages, MODEL, PROVIDER, fakeStream("摘要") as never, 0);
+	const heavy = await compact(messages, MODEL, PROVIDER, fakeStream("摘要") as never, 4000);
 	assert.ok(light && heavy);
 	assert.ok(
 		estimateTokens(heavy) <= estimateTokens(light),
@@ -555,7 +566,7 @@ test("a summariser that throws does not take the turn down with it", async () =>
 	});
 	const messages = conversation(40, 1200);
 
-	const result = await compactIfNeeded(messages, MODEL, PROVIDER, throwing as never);
+	const result = await compact(messages, MODEL, PROVIDER, throwing as never);
 	assert.ok(result, "it came back rather than throwing");
 	assert.ok(estimateTokens(result) < estimateTokens(messages), "and smaller, by dropping history");
 });
@@ -571,10 +582,49 @@ test("repeated failure converges instead of asking again every turn", async () =
 		next: () => Promise.reject(new Error("HTTP 503: model_unavailable")),
 		[Symbol.asyncIterator]() { return this; },
 	});
-	const first = await compactIfNeeded(conversation(40, 1200), MODEL, PROVIDER, throwing as never);
+	const first = await compact(conversation(40, 1200), MODEL, PROVIDER, throwing as never);
 	assert.ok(first);
 	assert.ok(estimateTokens(first) < MODEL.contextWindow * 0.8, "the first pass got under the threshold");
 
-	const second = await compactIfNeeded(first, MODEL, PROVIDER, throwing as never);
+	const second = await compact(first, MODEL, PROVIDER, throwing as never);
 	assert.equal(second, null, "and the next turn has nothing to do");
+});
+
+test("trimming a little off a large history is not a compaction", async () => {
+	/*
+	 * The shape of "stuck at 83%", built to the exact size that exposes it.
+	 *
+	 * A history that is just over the line, plus one oversized tool result whose trimming saves a
+	 * few hundred tokens. The old rule compared "measured minus estimated saving" against the
+	 * threshold and accepted anything under it, so this landed at 78% of the window on paper and
+	 * was declared compacted. The turn then went out at the size it arrived, came back the same,
+	 * and pruned again next turn with nothing left to cut.
+	 *
+	 * Both halves of that sum are estimates. Being wrong in the eager direction costs a turn that
+	 * cannot be sent, so it has to clear the line by a margin or summarise instead.
+	 */
+	/*
+	 * Sized exactly rather than by a helper's granularity: the window this has to land inside is
+	 * ten points wide, and `conversation()` moves in steps larger than that.
+	 */
+	const history: Message[] = [user("do the work")];
+	for (let i = 0; i < 8; i++) {
+		history.push(reply(`step ${i} ${"x".repeat(1400)}`));
+		history.push(toolResult(`c${i}`, `result ${i} ${"x".repeat(1400)}`));
+	}
+	const withOne = [...history, reply("再看一眼"), toolResult("fresh", "n".repeat(9_950))];
+
+	const total = estimateTokens(withOne);
+	assert.ok(total > MODEL.contextWindow * 0.8, `over the line to begin with (${total})`);
+	// Trimming alone lands between the old rule's line and the new one's, which is the whole point.
+	const trimmed = estimateTokens(pruneToolResults(withOne));
+	assert.ok(trimmed > MODEL.contextWindow * 0.7, `trimming does not clear the margin (${trimmed})`);
+	assert.ok(trimmed < MODEL.contextWindow * 0.8, `but would have satisfied the old rule (${trimmed})`);
+
+	const result = await compact(withOne, MODEL, PROVIDER, fakeStream("摘要") as never);
+	assert.ok(result, "it compacted");
+	assert.ok(
+		result.length < withOne.length,
+		`by summarising, not by trimming one result (${withOne.length} → ${result.length})`,
+	);
 });

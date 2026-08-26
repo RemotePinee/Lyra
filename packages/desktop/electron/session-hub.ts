@@ -143,7 +143,7 @@ export async function activateSession(projectId: string, sessionId: string): Pro
 		extraTools: browser.tools,
 		emit: (event) => broadcast(sessionId, event),
 	});
-	session.restore(loaded.messages);
+	session.restore(loaded.messages, loaded.compaction);
 	await session.initialize();
 	sessions.set(sessionId, session);
 	browsers.set(sessionId, browser.dispose);

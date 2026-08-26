@@ -14,7 +14,7 @@ import type { AgentEvent, AgentEventSink, QueuedTask } from "../agent/events.ts"
 import type { AgentRunConfig } from "../agent/loop.ts";
 import type { Settings } from "../config/settings.ts";
 import { resolveModel } from "../config/settings.ts";
-import type { SessionMeta } from "../session/store.ts";
+import type { Boundary, SessionMeta } from "../session/store.ts";
 import type { SessionStorage } from "../session/storage.ts";
 import type { ApprovalDecision, ApprovalRequest, Message, ThinkingLevel, Tool, UserContent } from "../types.ts";
 import { ApprovalGate, sessionApprovalGate } from "./approvals.ts";
@@ -87,9 +87,16 @@ export class AgentSession {
 		return this.log.messages;
 	}
 
-	/** Adopt a transcript read back from disk. */
-	restore(messages: Message[]): void {
-		this.log.restore(messages);
+	/**
+	 * Adopt a transcript read back from disk, and where the model's view of it begins.
+	 *
+	 * Both, because they are two halves of one fact. Restoring the messages without the boundary
+	 * reopens a compacted session on its full history: correct on screen, and back over the context
+	 * window on the first prompt — which then compacts again, from scratch, having thrown away the
+	 * summary it paid for last time.
+	 */
+	restore(messages: Message[], compaction: Boundary | null = null): void {
+		this.log.restore(messages, compaction);
 	}
 
 	get running(): boolean {

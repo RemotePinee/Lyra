@@ -10,6 +10,7 @@ import { RepetitionWatch } from "./repetition.ts";
 import { failTruncatedCalls, runTools } from "./tool-run.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { readTodos } from "../tools/todo.ts";
+import type { Compaction } from "../runtime/compaction.ts";
 import type {
 	ApprovalDecision,
 	ApprovalRequest,
@@ -54,10 +55,10 @@ export interface AgentRunConfig {
 	/** Messages the user typed while the agent was mid-turn. Drained between turns. */
 	drainSteering?: () => Message[];
 	/**
-	 * Called before each request. Return a replacement message list to compact history
-	 * when it approaches the context window.
+	 * Called before each request. Return a replacement history to compact it when the conversation
+	 * approaches the context window, along with what to record so the compaction outlives this run.
 	 */
-	compact?: (messages: Message[], model: ModelConfig) => Promise<Message[] | null>;
+	compact?: (messages: Message[], model: ModelConfig) => Promise<Compaction | null>;
 	/**
 	 * Replaces the provider call. Tests script turns through this so loop behaviour can be
 	 * checked without a network round trip.
@@ -140,11 +141,23 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 
 		if (config.compact) {
 			const before = messages.length;
-			const compacted = await config.compact(messages, config.model);
-			if (compacted) {
+			const compaction = await config.compact(messages, config.model);
+			if (compaction) {
 				messages.length = 0;
-				messages.push(...compacted);
-				await emit({ type: "compacted", before, after: compacted.length });
+				messages.push(...compaction.messages);
+				/*
+				 * The summary and the boundary travel with the event because the event is where they
+				 * are stored. Everything below this line in the loop works on `messages`, which is
+				 * this run's own array and dies with it — so a compaction that went no further than
+				 * here was undone the moment the next prompt rebuilt its history from the log.
+				 */
+				await emit({
+					type: "compacted",
+					before,
+					after: compaction.messages.length,
+					summary: compaction.summary,
+					kept: compaction.kept,
+				});
 			}
 		}
 

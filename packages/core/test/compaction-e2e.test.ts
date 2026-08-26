@@ -106,3 +106,141 @@ test("a session that overflows its window compacts, and says so", async () => {
 		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
 	}
 });
+
+test("a compaction still applies on the next prompt, rather than being redone from scratch", async () => {
+	/*
+	 * The failure this exists for, which every other test in the file walked straight past.
+	 *
+	 * Compaction used to hand a shorter array back to the running loop and stop there. The loop's
+	 * array dies with the run — so the next prompt rebuilt its history from the log, which keeps
+	 * every original message, and arrived at exactly the size it had been before. It compacted
+	 * again, paid for another summary, and ended the turn no smaller than it started.
+	 *
+	 * From the outside that is a session pinned near its limit: "compacting" on every turn, the
+	 * percentage never moving. Nothing about the cut itself was wrong, which is why unit tests on
+	 * the cut all passed while the window stayed full.
+	 *
+	 * The claim has to be stated carefully, because the obvious version of it does not test
+	 * anything. "The last request is shorter than the log" passes either way: the loop compacts
+	 * in-memory before every request, so of course what goes out is small. What was broken is that
+	 * the *work* was thrown away — so the test is that a compacted session, given one short prompt,
+	 * does not compact all over again. Under the old behaviour it must, because it starts from the
+	 * full log every time; under the fixed one there is nothing left to do.
+	 */
+	const root = await mkdtemp(join(tmpdir(), "ly-compact-keep-"));
+	const seen: Message[][] = [];
+	const events: AgentEvent[] = [];
+
+	const session = new AgentSession({
+		cwd: root,
+		settings: SETTINGS,
+		store: new SessionStore(join(root, "sessions")),
+		emit: (event) => {
+			events.push(event);
+		},
+		streamFn: async (context) => {
+			seen.push([...context.messages]);
+			return reply("回复".repeat(400));
+		},
+	});
+	await session.initialize();
+
+	try {
+		for (let i = 0; i < 6; i++) {
+			await session.prompt([{ type: "text", text: `第 ${i} 个问题${"，说详细些".repeat(60)}` }]);
+		}
+		const count = () => events.filter((e) => e.type === "compacted").length;
+		const before = count();
+		assert.ok(before >= 1, "precondition: the window filled and compaction ran");
+
+		/*
+		 * A short prompt, so nothing about it could push the conversation over on its own. Whatever
+		 * happens next is a consequence of what the session believes its history to be.
+		 */
+		await session.prompt([{ type: "text", text: "再来一个" }]);
+
+		assert.equal(
+			count(),
+			before,
+			`a session that has already been compacted does not compact again on the next short prompt (${count() - before} extra passes)`,
+		);
+
+		// And the request that went out really was the condensed history.
+		const last = seen[seen.length - 1];
+		assert.ok(
+			last.length < session.messages.length,
+			`built from the summary and the tail (${last.length} sent, ${session.messages.length} in the log)`,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+	}
+});
+
+test("reopening a compacted session does not hand the model its whole history back", async () => {
+	/*
+	 * The same fact, across a restart. The boundary is stored in the log beside the summary, so a
+	 * session read back from disk knows where the model's view begins — otherwise every reopen
+	 * starts over the window and pays for a summary to get back to where it already was.
+	 */
+	const root = await mkdtemp(join(tmpdir(), "ly-compact-reopen-"));
+	const store = new SessionStore(join(root, "sessions"));
+	const seen: Message[][] = [];
+	const reopenedEvents: AgentEvent[] = [];
+
+	const first = new AgentSession({
+		cwd: root,
+		settings: SETTINGS,
+		store,
+		emit: () => {},
+		streamFn: async () => reply("回复".repeat(400)),
+	});
+	await first.initialize();
+
+	try {
+		for (let i = 0; i < 6; i++) {
+			await first.prompt([{ type: "text", text: `第 ${i} 个问题${"，说详细些".repeat(60)}` }]);
+		}
+
+		const loaded = await store.load(first.meta.projectId, first.meta.id);
+		assert.ok(loaded, "the session is on disk");
+		if (!loaded) return;
+		assert.ok(loaded.compaction, "and the boundary was written down with it");
+
+		const reopened = new AgentSession({
+			cwd: root,
+			settings: SETTINGS,
+			store,
+			meta: loaded.meta,
+			emit: (event) => {
+				reopenedEvents.push(event);
+			},
+			streamFn: async (context) => {
+				seen.push([...context.messages]);
+				return reply("好");
+			},
+		});
+		reopened.restore(loaded.messages, loaded.compaction);
+		await reopened.initialize();
+
+		await reopened.prompt([{ type: "text", text: "接着来" }]);
+
+		/*
+		 * Nothing to compact, because the boundary came back with the messages. Without it the
+		 * reopened session starts over its window and pays for a summary to reach a state it was
+		 * already in when it was closed.
+		 */
+		assert.equal(
+			reopenedEvents.filter((e) => e.type === "compacted").length,
+			0,
+			"a reopened session is already inside its window",
+		);
+
+		const sent = seen[seen.length - 1];
+		assert.ok(
+			sent.length < loaded.messages.length,
+			`it sends the summary and the tail (${sent.length}), not the full transcript (${loaded.messages.length})`,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+	}
+});

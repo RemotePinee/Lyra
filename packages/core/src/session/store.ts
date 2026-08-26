@@ -55,6 +55,18 @@ export type SessionRecord =
 	 */
 	| { seq: number; ts: number; type: "truncate"; afterSeq: number };
 
+/**
+ * Where the model's view of a session begins, once history has been summarised.
+ *
+ * `keptFrom` indexes into the restored message list; `summary` stands in for everything before it,
+ * and is empty when that history was dropped rather than condensed — which is a different thing to
+ * tell the model, and so a difference worth storing.
+ */
+export interface Boundary {
+	summary: string;
+	keptFrom: number;
+}
+
 /** `Omit` over a union collapses it into one shape; distribute so each variant keeps its own fields. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -194,25 +206,48 @@ export class SessionStore implements SessionStorage {
 	async load(
 		projectId: string,
 		sessionId: string,
-	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[] } | null> {
+	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[]; compaction: Boundary | null } | null> {
 		let meta: SessionMeta | null = null;
 		// Kept with their sequence numbers so a truncate record can drop the right tail.
 		let entries: { seq: number; message: Message }[] = [];
 		/*
-		 * Where history was summarised, as a position in the transcript.
+		 * Where history was summarised, as positions in the transcript.
 		 *
-		 * Recorded at load rather than derived, because after the fact there is nothing in the
-		 * messages themselves to show it happened — the summary lives only in the running
-		 * session's memory, while the log keeps every original message.
+		 * Recorded at load rather than derived, because there is nothing in the messages themselves
+		 * to show it happened: the log keeps every original message either way. The window draws a
+		 * divider at each of these.
 		 */
 		const compactions: number[] = [];
+		/*
+		 * And the newest of them in full, which is what the *model* is given.
+		 *
+		 * The transcript and the model's view diverge at this point, on purpose — the reader scrolls
+		 * back through everything, the model is handed the summary and what followed it. Only the
+		 * latest boundary matters: each compaction summarises the one before it, so the newest is
+		 * the only one still standing for anything.
+		 */
+		let compaction: Boundary | null = null;
 		for await (const record of this.read(projectId, sessionId)) {
 			if (record.type === "meta") meta = record.meta;
-			else if (record.type === "event" && record.event.type === "compacted") compactions.push(entries.length);
-			else if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
+			else if (record.type === "event" && record.event.type === "compacted") {
+				compactions.push(entries.length);
+				/*
+				 * `kept` is absent on records written before compaction was stored, and on pruning
+				 * passes that moved no boundary. Both mean the same thing here: no boundary to
+				 * restore, so the session opens on its full history and compacts again if it has to.
+				 */
+				const { summary, kept } = record.event;
+				if (kept !== undefined) {
+					compaction = { summary: summary ?? "", keptFrom: Math.max(0, entries.length - kept) };
+				}
+			} else if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
 			else if (record.type === "title" && meta) meta.title = record.title;
 			else if (record.type === "archive" && meta) meta.archived = record.archived;
-			else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
+			else if (record.type === "truncate") {
+				entries = entries.filter((e) => e.seq <= record.afterSeq);
+				// A rewind past the boundary retires it: the tail it was paired with is gone.
+				if (compaction && compaction.keptFrom > entries.length) compaction = null;
+			}
 			if (meta) meta.seq = record.seq;
 		}
 		if (!meta) return null;
@@ -220,7 +255,7 @@ export class SessionStore implements SessionStorage {
 		meta.messageCount = messages.length;
 		// Seed the append queue's view so a reopened session keeps numbering where it left off.
 		this.latestMeta.set(this.keyFor(meta), meta);
-		return { meta, messages, compactions };
+		return { meta, messages, compactions, compaction };
 	}
 
 	// -------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import type {
 	StreamEvent,
 	ThinkingLevel,
 } from "../types.ts";
+import { droppedMessage, lastRequest, summaryMessages } from "./compaction.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 import type { SessionCapabilities } from "./session-capabilities.ts";
 import type { SessionLog } from "./session-log.ts";
@@ -67,7 +68,7 @@ export async function driveTurn(input: TurnInputs): Promise<void> {
 	const first = await runTurn(config, onEvent);
 	await continueWhileWorkRemains(first, {
 		run: (messages) => runTurn({ ...config, messages, systemPrompt }, onEvent),
-		messages: () => input.log.messages,
+		messages: () => modelHistory(input.log, input.provider, input.model),
 		todos: () => (input.can.state.get(TODOS_KEY) as TodoItem[] | undefined) ?? [],
 		aborted: () => input.signal.aborted,
 		notify: (message) => input.emit({ type: "notice", level: "info", message }),
@@ -97,7 +98,36 @@ async function recordTurnEvent(log: SessionLog, event: AgentEvent): Promise<void
 		});
 	}
 	if (event.type === "message_end") await log.commit(event.message);
+	/*
+	 * Compaction is written down here, where the log is in reach and the message count is current.
+	 *
+	 * `kept` is absent when nothing was summarised away — pruning oversized tool results rewrites
+	 * what is sent without moving where history begins, and it is cheap and idempotent enough to
+	 * simply run again next turn.
+	 */
+	if (event.type === "compacted" && event.kept !== undefined) {
+		log.markCompaction(event.summary ?? "", event.kept);
+	}
 	await log.emit(event);
+}
+
+/**
+ * The history as the model should see it: everything, or the summary and what followed it.
+ *
+ * The log keeps every message and the boundary says where the model's view starts. Rebuilding the
+ * synthetic head from the stored summary on each turn — rather than storing the head itself —
+ * keeps one copy of what a summary message looks like, and lets the quoted standing request be
+ * recomputed from the messages it was drawn from instead of going stale beside them.
+ */
+function modelHistory(log: SessionLog, provider: ProviderConfig, model: ModelConfig): Message[] {
+	const boundary = log.compaction;
+	if (!boundary) return log.messages;
+
+	const tail = log.messages.slice(boundary.keptFrom);
+	if (!boundary.summary) return [droppedMessage(), ...tail];
+
+	const older = log.messages.slice(0, boundary.keptFrom);
+	return [...summaryMessages(boundary.summary, lastRequest(older), provider, model), ...tail];
 }
 
 async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig; systemPrompt: string }> {
@@ -106,7 +136,7 @@ async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig
 	const turn = await prepareTurn({
 		cwd,
 		tools: can.tools,
-		messages: log.messages,
+		messages: modelHistory(log, input.provider, input.model),
 		systemPrompt: await buildSystemPrompt({
 			cwd,
 			tools: can.tools,

@@ -1,5 +1,6 @@
 import type { streamAssistant } from "../ai/index.ts";
 import type { QueuedTask } from "../agent/events.ts";
+import type { Compaction } from "../runtime/compaction.ts";
 import type { TurnMiddleware } from "../runtime/turn.ts";
 import type { Skill } from "../skills/loader.ts";
 import type { Message, ModelConfig, Provider, ProviderConfig, Tool } from "../types.ts";
@@ -159,7 +160,7 @@ export interface CompactionStrategy {
 		model: ModelConfig,
 		provider: ProviderConfig,
 		streamFn?: typeof streamAssistant,
-	): Promise<Message[] | null>;
+	): Promise<Compaction | null>;
 }
 
 /**
