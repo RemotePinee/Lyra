@@ -144,21 +144,19 @@ export function sessionSlice(set: Set, get: Get) {
       running: false,
       todos: [],
       /*
-       * The meter belongs to the turn being left behind, and so does the clock.
+       * This conversation's own meter, not whichever one last started a turn.
        *
-       * Both are single values for the whole app while any number of conversations can be running
-       * at once, so leaving them alone here meant the running line in *this* conversation counted
-       * from whenever some other one last started a turn. Starting a second conversation while the
-       * first was working and then clicking back to the first showed its 41s / 439.8k as 5s / 16.4k
-       * — not reset, but reporting the other conversation's turn under this one's name.
+       * The pair is one value for the whole app while any number of conversations can be running,
+       * so leaving it alone showed the other conversation's numbers under this one's name — 41s /
+       * 439.8k reading as 5s / 16.4k. Clearing it instead traded a wrong number for no number, and
+       * a turn that is still working with a blank where its clock should be is the worse of the
+       * two: the one thing a long turn needs to say is how long it has been going.
        *
-       * Cleared rather than restored because there is nothing to restore from: what a turn already
-       * spent is not in the transcript. `apply-event` seeds the clock from the next event that
-       * arrives, so a conversation still working starts counting again from here — honest about
-       * being a partial count, where the old behaviour was confidently wrong.
+       * So it is read back from `turns`, which `apply-event` keeps for every session including the
+       * ones off screen. Absent means no turn is in flight here, which is the honest null.
        */
-      turnStartedAt: null,
-      turnTokens: 0,
+      turnStartedAt: get().turns[meta.id]?.startedAt ?? null,
+      turnTokens: get().turns[meta.id]?.tokens ?? 0,
       // Belongs to the turn being left behind; see the note in `newSession`.
       retrying: null,
       stopped: null,

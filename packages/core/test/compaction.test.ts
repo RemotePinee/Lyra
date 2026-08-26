@@ -192,3 +192,43 @@ test("the kept tail is bounded by size, not by a message count", async () => {
 		"and the result must be smaller than what it started with",
 	);
 });
+
+/**
+ * The case that let a window fill to 100% with nothing stopping it.
+ *
+ * Compaction decided on `estimateTokens` — characters over 3.5, messages only — while the request
+ * that has to fit is measured by the provider and carries the system prompt and every tool schema
+ * besides. Both errors point the same way. A real conversation reported 200.7k of a 200k window in
+ * the context panel and something in the eighties to this function, so it never crossed 80% and
+ * never ran: the estimate could not reach the threshold it was being compared against.
+ *
+ * Short text with a large measured usage is exactly that shape, and is what a CJK conversation
+ * full of tool results looks like from here.
+ */
+test("compaction goes by what the provider measured, not by our guess at it", async () => {
+	const heavy: AssistantMessage = {
+		...reply("好的。"),
+		// 9.5k of a 10k window, as the provider counted it — the estimate of this text is ~3 tokens.
+		usage: { ...emptyUsage(), input: 9000, cacheRead: 500, output: 10, total: 9510 },
+	};
+	const messages: Message[] = [
+		user("第一个问题"),
+		reply("第一个回答"),
+		user("第二个问题"),
+		reply("第二个回答"),
+		user("第三个问题"),
+		reply("第三个回答"),
+		user("第四个问题"),
+		heavy,
+	];
+
+	// The old test for the same thing: by the estimate alone this is nowhere near the threshold.
+	assert.ok(
+		estimateTokens(messages) < MODEL.contextWindow * 0.8,
+		`the estimate alone would not trigger (${estimateTokens(messages)})`,
+	);
+
+	const compacted = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("之前做过的事") as never);
+	assert.ok(compacted, "but the measured usage does, so the history is summarised");
+	assert.ok(compacted.length < messages.length, "and the result is shorter than what went in");
+});

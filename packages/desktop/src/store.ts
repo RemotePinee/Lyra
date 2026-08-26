@@ -153,8 +153,26 @@ export interface AppState {
    * has been going or what it is costing. Both are tracked from the agent's own events so the
    * indicator reports the real thing rather than a guess.
    */
+  /**
+   * The turn meter for the conversation on screen: when it started, and what it has spent.
+   *
+   * Mirrors `turns[activeSessionId]` so the running line can read two plain values. See `turns`
+   * for why the real copy is per-session.
+   */
   turnStartedAt: number | null;
   turnTokens: number;
+  /**
+   * The same meter, for every conversation that has a turn in flight.
+   *
+   * Turns run in conversations you are not looking at, and the pair above is one value for the
+   * whole app — so opening another conversation used to leave this one's clock reading whatever
+   * the last turn to start had set, and clearing it on the way in traded a wrong number for no
+   * number at all. Neither is what a conversation still working should say about itself.
+   *
+   * Keyed by session because that is what the fact belongs to. `apply-event` maintains it for
+   * every session including the ones off screen, and `openSession` reads this one's back out.
+   */
+  turns: Record<string, { startedAt: number; tokens: number }>;
   /** Keyed by toolCallId so results can land on the card the model is still streaming. */
   toolRuns: Record<string, ToolRun>;
   approvals: PendingApproval[];
@@ -272,6 +290,7 @@ export const useApp = create<AppState>((set, get) => ({
   running: false,
   turnStartedAt: null,
   turnTokens: 0,
+  turns: {},
   toolRuns: {},
   approvals: [],
   activity: {},

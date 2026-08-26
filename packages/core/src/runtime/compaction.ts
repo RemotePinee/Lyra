@@ -10,6 +10,7 @@
 import type { CompactionStrategy } from "../kernel/services.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { estimateTokens } from "../tokens.ts";
+import { measureTotal } from "./context.ts";
 import type { Message, ModelConfig, ProviderConfig } from "../types.ts";
 
 /** Start compacting at this fraction of the context window. */
@@ -82,10 +83,38 @@ export async function compactIfNeeded(
 	 */
 	streamFn: typeof streamAssistant = streamAssistant,
 ): Promise<Message[] | null> {
-	const used = estimateTokens(messages);
+	/*
+	 * The provider's own count, not our estimate of it.
+	 *
+	 * `estimateTokens` is characters over 3.5. That is a fair average over English prose and code
+	 * and badly low on CJK and on dense JSON — and it counts only the messages, while the request
+	 * that has to fit also carries the system prompt, every tool schema and the skill catalogue.
+	 * Both errors point the same way, so a conversation sitting at 200.7k of a 200k window reported
+	 * something in the eighties and never crossed this line: the whole mechanism for staying inside
+	 * the window was reading a number that could not reach its own threshold.
+	 *
+	 * `measureTotal` is what the context panel shows, so what triggers compaction is now the same
+	 * figure the user is watching fill up. It falls back to the estimate before the first reply has
+	 * landed, which is the only point at which there is nothing measured to use.
+	 */
+	const measured = measureTotal(messages);
+	const used = measured.tokens;
 	if (used < model.contextWindow * THRESHOLD) return null;
 	// Too short to have a past worth summarising, whatever it weighs.
 	if (messages.length <= KEEP_MIN + 2) return null;
+
+	/*
+	 * The same correction applied per message, so the cut lands where it is meant to.
+	 *
+	 * The threshold above now uses the measured total, but the budget below is still spent one
+	 * message at a time and there is no per-message figure from the provider to spend it against.
+	 * Scaling the estimate by however wrong it was overall is the closest thing available — and
+	 * without it the two halves disagree: on a conversation the estimator reads at a third of its
+	 * real size, "keep the most recent 30%" keeps very nearly everything, and the summary replaces
+	 * a stretch too small to be worth the request.
+	 */
+	const raw = estimateTokens(messages);
+	const scale = measured.measured && raw > 0 ? used / raw : 1;
 
 	// Keep recent turns until their budget is spent, then cut — never between an assistant
 	// message and the tool results answering it, which both APIs reject.
@@ -93,7 +122,7 @@ export async function compactIfNeeded(
 	let cut = messages.length;
 	let kept = 0;
 	while (cut > 1) {
-		const next = estimateTokens([messages[cut - 1]]);
+		const next = estimateTokens([messages[cut - 1]]) * scale;
 		if (messages.length - cut >= KEEP_MIN && kept + next > keepBudget) break;
 		kept += next;
 		cut--;

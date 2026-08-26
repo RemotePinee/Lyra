@@ -108,7 +108,19 @@ export function buildContextBreakdown(input: {
  * than from a guess. Anything said since has never been in a request, so only that tail is
  * estimated. Before the first reply there is nothing to measure and the estimate stands alone.
  */
-function measureTotal(messages: Message[]): { measured: boolean; tokens: number } {
+/**
+ * What the conversation actually weighs, preferring the provider's own count.
+ *
+ * Exported because compaction needs the same number this reports. It used to decide on
+ * `estimateTokens` alone — characters over 3.5 — which is a guess that runs low on CJK and on
+ * dense JSON, and which counts only the messages while the request also carries the system prompt
+ * and every tool schema. Between the two, a conversation that had filled its window read as barely
+ * two thirds full, so the one mechanism for staying inside the window never ran.
+ *
+ * `usage.input + cacheRead` is the whole request as the provider measured it, overhead included,
+ * so anything after the last settled reply is estimated and added on top.
+ */
+export function measureTotal(messages: Message[]): { measured: boolean; tokens: number } {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
 		if (message.role !== "assistant" || message.stopReason === "pending") continue;

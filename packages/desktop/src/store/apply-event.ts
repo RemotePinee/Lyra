@@ -63,6 +63,42 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
     }
   }
 
+  /*
+   * The same, for the turn meter: every conversation's clock, not just the one on screen.
+   *
+   * It lives here rather than in the branches below because those return early for anything that
+   * is not the active session — which is exactly the case this exists for. A turn running in a
+   * conversation you are not watching has an elapsed time and a token count the whole time; it was
+   * simply nobody's job to write them down, so coming back to it showed a blank where the clock
+   * should be.
+   */
+  {
+    const turns = { ...get().turns };
+    const meter = turns[sessionId];
+    if (event.type === "agent_start") {
+      // Kept if it is already running: a continuation is the same turn, not a new one.
+      turns[sessionId] = { startedAt: meter?.startedAt ?? Date.now(), tokens: meter?.tokens ?? 0 };
+    } else if (event.type === "message_start" && event.message.role === "assistant") {
+      // Usage lands per assistant reply, so a turn with several tool rounds accumulates.
+      if (meter) turns[sessionId] = { ...meter, tokens: meter.tokens + event.message.usage.total };
+    } else if (event.type === "retry" && event.resume) {
+      /*
+       * A turn being picked back up after the connection died, which arrives *after* `agent_end`
+       * has already stood the clock down. Start it again rather than leaving the line blank for
+       * the whole wait — the same reading the running row takes of `resume`.
+       */
+      turns[sessionId] = { startedAt: meter?.startedAt ?? Date.now(), tokens: meter?.tokens ?? 0 };
+    } else if (event.type === "agent_end") {
+      delete turns[sessionId];
+    }
+    set({ turns });
+    // And mirror it onto the pair the running line reads, while this is the session on screen.
+    if (sessionId === get().activeSessionId) {
+      const now = turns[sessionId];
+      set({ turnStartedAt: now?.startedAt ?? null, turnTokens: now?.tokens ?? 0 });
+    }
+  }
+
   if (sessionId !== get().activeSessionId) {
     if (event.type === "title") {
       set({
