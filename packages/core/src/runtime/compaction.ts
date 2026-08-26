@@ -10,6 +10,7 @@
 import type { CompactionStrategy } from "../kernel/services.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { estimateTokens } from "../tokens.ts";
+import { pruneToolResults } from "./prune.ts";
 import { measureTotal } from "./context.ts";
 import type { Message, ModelConfig, ProviderConfig } from "../types.ts";
 
@@ -23,9 +24,17 @@ const THRESHOLD = 0.8;
  * than the window on its own, at which point compacting saved nothing and was abandoned — so the
  * conversation sailed past the limit with nothing to stop it.
  */
-const KEEP_BUDGET = 0.3;
+const KEEP_BUDGET = 0.16;
 /** Never fewer than this, however big they are: the agent cannot work without its last exchange. */
 const KEEP_MIN = 4;
+/**
+ * What the conversation must weigh once compaction is done.
+ *
+ * Lower than the threshold that triggers it, and that gap is the whole point: coming back to just
+ * under the trigger means the next few messages cross it again, so a long turn spends its time
+ * summarising instead of working. Landing at 60% buys room for real work before the next pass.
+ */
+const SAFE_AFTER = 0.6;
 /**
  * How much of the window the summary request itself may occupy.
  *
@@ -100,8 +109,31 @@ export async function compactIfNeeded(
 	const measured = measureTotal(messages);
 	const used = measured.tokens;
 	if (used < model.contextWindow * THRESHOLD) return null;
+
+	/*
+	 * Cut the oversized tool results first, and see whether that was enough.
+	 *
+	 * Cheapest thing first, and by a wide margin: cutting is string work, summarising is a model
+	 * call that is slow, billed, and least reliable exactly when the window is tight. A conversation
+	 * that has run three greps over a large repository is mostly those three results, so this alone
+	 * routinely brings it back under the line — and when it does, no request is made at all.
+	 *
+	 * The measurement afterwards is an estimate of the saving rather than a fresh reading from the
+	 * provider: nothing has been sent since, so there is no new `usage` to read. Subtracting what
+	 * was removed from what was measured keeps the two in the same units.
+	 */
+	const pruned = pruneToolResults(messages);
+	if (pruned !== messages) {
+		const saved = Math.max(0, estimateTokens(messages) - estimateTokens(pruned));
+		const rawAll = estimateTokens(messages);
+		const scaled = measured.measured && rawAll > 0 ? saved * (used / rawAll) : saved;
+		if (used - scaled < model.contextWindow * THRESHOLD) return pruned;
+		// Not enough on its own, but everything below now works on the smaller conversation.
+		messages = pruned;
+	}
+
 	// Too short to have a past worth summarising, whatever it weighs.
-	if (messages.length <= KEEP_MIN + 2) return null;
+	if (messages.length <= KEEP_MIN + 2) return messages === pruned ? pruned : null;
 
 	/*
 	 * The same correction applied per message, so the cut lands where it is meant to.
@@ -136,9 +168,30 @@ export async function compactIfNeeded(
 	const summary = await summarize(older, model, provider, streamFn);
 	if (!summary) return null;
 
+	/*
+	 * What the user actually asked for, carried across verbatim.
+	 *
+	 * A summary is a paraphrase, and the thing that survives paraphrase worst is an instruction. A
+	 * conversation that began 「先找原因先别修改代码」 and later said 「那进行彻底的修复」 has two
+	 * instructions that contradict each other on purpose — the second supersedes the first — and a
+	 * summary written from both is as likely to carry the first. The turn after compaction then
+	 * explains why it has not started, and it is right about the history it was handed.
+	 *
+	 * So the newest thing a person typed is quoted rather than described. Only when it fell inside
+	 * the summarised span: if it is still in the tail it is already there in full, and repeating it
+	 * would be the same instruction twice with nothing to say which is current.
+	 */
+	const standing = lastRequest(older);
 	const head: Message = {
 		role: "user",
-		content: [{ type: "text", text: `<session-summary>\n${summary}\n</session-summary>` }],
+		content: [
+			{
+				type: "text",
+				text: standing
+					? `<session-summary>\n${summary}\n</session-summary>\n\n<standing-request>\nThis is the most recent thing the user asked for, quoted exactly. It is current and supersedes anything in the summary above that disagrees with it.\n\n${standing}\n</standing-request>`
+					: `<session-summary>\n${summary}\n</session-summary>`,
+			},
+		],
 		timestamp: Date.now(),
 		synthetic: true,
 	};
@@ -153,16 +206,43 @@ export async function compactIfNeeded(
 		timestamp: Date.now(),
 	};
 
-	const compacted = [head, acknowledgement, ...recent];
 	/*
-	 * Any reduction is worth keeping.
+	 * Keep dropping the oldest of what was kept until the result actually fits.
 	 *
-	 * This used to insist on halving the history and throw the summary away otherwise — which
-	 * meant the times it saved 40% were treated the same as the times it failed, and the next
-	 * turn arrived at a history that was larger still. Smaller is the goal; how much smaller is
-	 * whatever the conversation allows.
+	 * This used to end at "any reduction is worth keeping" — build the replacement, check it was
+	 * smaller than what it replaced, and hand it back. Smaller is not the requirement. A window at
+	 * 277k that compacts to 250k has been compacted and still cannot be sent, and the next turn
+	 * arrives at a conversation that is over the line with nothing left to try. Shrinking was being
+	 * treated as success when the only success is fitting.
+	 *
+	 * So the target is absolute, and the loop converges on it. The summary is written once — that
+	 * is the part that costs a request — and what varies afterwards is how much of the recent tail
+	 * is kept beside it, which costs nothing to reconsider.
+	 *
+	 * Tool results are dropped with the call they answer. Sending one without the other is rejected
+	 * by both APIs, so a cut in the middle of a pair is not a smaller conversation, it is a failed
+	 * request.
 	 */
-	return estimateTokens(compacted) < used ? compacted : null;
+	const target = model.contextWindow * SAFE_AFTER;
+	const scaled = (list: Message[]) => estimateTokens(list) * scale;
+
+	let kept_ = recent;
+	let compacted = [head, acknowledgement, ...kept_];
+	while (scaled(compacted) > target && kept_.length > 1) {
+		let drop = 1;
+		// Never leave a tool result whose call has just been dropped.
+		while (drop < kept_.length && kept_[drop].role === "toolResult") drop++;
+		kept_ = kept_.slice(drop);
+		compacted = [head, acknowledgement, ...kept_];
+	}
+
+	/*
+	 * A summary that did not shrink anything is not worth the message it arrived in.
+	 *
+	 * Compared in one unit — the scaled estimate — because the alternative was comparing an
+	 * estimate against a measured total, where the estimator's own error decided the answer.
+	 */
+	return scaled(compacted) < scaled(messages) ? compacted : null;
 }
 
 async function summarize(
@@ -231,4 +311,31 @@ function clip(text: string, limit: number): string {
 	const head = Math.ceil(limit * 0.7);
 	const tail = limit - head;
 	return `${text.slice(0, head)}\n…（省略 ${text.length - limit} 字）…\n${text.slice(-tail)}`;
+}
+
+/**
+ * The newest thing a person actually typed in this stretch of conversation.
+ *
+ * Synthetic messages are excluded: the runtime's own nudges — "continue", the summary head from a
+ * previous compaction — are not requests, and treating one as the standing instruction would pin
+ * the conversation to a sentence nobody wrote.
+ *
+ * Text only, and bounded. An instruction is prose; the image pasted with it has already been
+ * summarised along with everything else, and quoting a screenshot back in full would undo the
+ * saving this whole pass exists for.
+ */
+function lastRequest(messages: Message[], limit = 2000): string | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "user" || message.synthetic) continue;
+		const text = message.content
+			.filter((block): block is { type: "text"; text: string } => block.type === "text")
+			.map((block) => block.text)
+			.join("\n")
+			.trim();
+		if (!text) continue;
+		const points = [...text];
+		return points.length <= limit ? text : `${points.slice(0, limit).join("")}…`;
+	}
+	return null;
 }
