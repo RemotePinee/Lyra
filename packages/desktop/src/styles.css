@@ -144,10 +144,20 @@
    * actually gets the Chinese. Left to `-apple-system` the system picks PingFang itself, at its
    * own unadjusted scale, and the correction never applies.
    */
-  --font-sans: "Inter Variable", "Lyra CJK", -apple-system, BlinkMacSystemFont, "PingFang SC",
+  /*
+   * `Lyra CJK` leads both stacks.
+   *
+   * It carries a CJK-only `unicode-range`, so latin never reaches it and the face after it is what
+   * actually draws the text. Anywhere it sat further down, a western face that happens to include
+   * a few CJK punctuation glyphs claimed them first — Menlo and `-apple-system` both do — and a
+   * full-width comma set by a western face floats at mid-height instead of sitting at the bottom
+   * left of its box. It also skipped the 104% size match, leaving Chinese a size smaller than the
+   * latin beside it.
+   */
+  --font-sans: "Lyra CJK", "Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo,
-    "Lyra CJK", "PingFang SC", monospace;
+  --font-mono: "Lyra CJK", "JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+    "PingFang SC", monospace;
 
   /* -------------------------------------------------------------------------
    * The type scale
@@ -237,7 +247,21 @@
   body {
     background: var(--color-shell);
     color: var(--color-ink);
-    font-family: var(--ly-ui-font, var(--font-sans));
+    /*
+     * `Lyra CJK` first, ahead of whatever font is configured.
+     *
+     * It is safe there — the face carries a CJK-only `unicode-range`, so every latin glyph falls
+     * straight past it to the chosen font — and it has to be there, because the chosen font is a
+     * whole stack that replaces this one. `--font-sans` lists `Lyra CJK`; the default `uiFont` in
+     * Appearance does not, and since that value is always set the fallback in `var()` never runs.
+     * So the adjustment was reachable only by users who had never opened the settings.
+     *
+     * What that cost: Chinese lost its 104% size match and rendered a size down from the latin
+     * beside it, and CJK punctuation fell through to `-apple-system` — which is a western face, so
+     * it sets a full-width comma the western way, floating at mid-height instead of sitting at the
+     * bottom-left of its box. 「加德克拉斯，123」 with the comma halfway up the line.
+     */
+    font-family: "Lyra CJK", var(--ly-ui-font, var(--font-sans));
     font-size: var(--ly-ui-size, 13px);
     line-height: 1.6;
     /*
@@ -491,7 +515,8 @@
   }
 
   .prose-dw code {
-    font-family: var(--ly-code-font, var(--font-mono));
+    /* Same reasoning as `body`: CJK-only range, so it only catches what the mono face gets wrong. */
+    font-family: "Lyra CJK", var(--ly-code-font, var(--font-mono));
     font-size: var(--text-code);
     background: var(--color-card-hover);
     color: var(--color-ink);

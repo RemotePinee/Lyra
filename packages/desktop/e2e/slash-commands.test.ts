@@ -56,7 +56,20 @@ async function seed(home: string): Promise<void> {
 			disabledPlugins: [],
 			alwaysAllow: [],
 			sync: { enabled: false, port: 4525, token: null },
-			appearance: { theme: "dark" },
+			/*
+			 * The font stack exactly as the Appearance page writes it.
+			 *
+			 * Not the same as the stylesheet's `--font-sans`, and the difference is where a bug hid:
+			 * that variable lists `Lyra CJK` and this does not. Seeding without these values leaves
+			 * `--ly-ui-font` unset, the `var()` fallback runs, and the test exercises a path no real
+			 * install is ever on.
+			 */
+			appearance: {
+				theme: "dark",
+				uiFont: '"Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
+				codeFont:
+					'"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
+			},
 		}),
 	);
 }
@@ -185,13 +198,48 @@ test("Escape closes the list without touching what was typed", async () => {
 
 test("a slash that is not at the start is ordinary text", async () => {
 	/*
-	 * The composer is mostly used for prose, and prose contains paths and fractions. A list that
-	 * opened on any slash would be in the way far more often than it helped.
+	 * The composer is mostly used for prose, and prose contains paths, dates and fractions. A list
+	 * that opened on any slash would be in the way far more often than it helped — and a command is
+	 * the whole message by definition, so a name in the middle of a sentence could not be run even
+	 * if it were offered.
 	 */
 	await type("看看 src/main.ts");
 	assert.deepEqual(await menu(), [], "no list for a path");
 
+	// The shape someone actually hits: typing along, then a slash mid-sentence.
+	await type("阿斯加德夸克圣诞节卡上 /com");
+	assert.deepEqual(await menu(), [], "nor for a slash part-way through a sentence");
+
+	await type("请在 2026/08/26 之前完成");
+	assert.deepEqual(await menu(), [], "nor for a date");
+
+	// And clearing back to a bare slash brings it straight back.
 	await type("/");
-	assert.ok((await menu()).length > 0, "but a leading one still opens it");
+	assert.ok((await menu()).length > 0, "a leading one still opens it");
 	await type("");
+});
+
+test("a space after the name closes the list, because the name is settled", async () => {
+	await type("/compact");
+	assert.ok((await menu()).length > 0, "still choosing");
+	await type("/compact ");
+	assert.deepEqual(await menu(), [], "now typing arguments, not choosing a command");
+	await type("");
+});
+
+test("CJK punctuation is drawn by the CJK face, whatever font is configured", async () => {
+	/*
+	 * `，` sat at mid-height instead of at the bottom-left of its box, but only after a latin run:
+	 * 「…128930， 123」 rendered it floating, 「…克拉斯，123」 did not.
+	 *
+	 * The cause is which face claims U+FF0C. Inter declares a latin-only `unicode-range` so it
+	 * passes, and the next entry in the configured stack is `-apple-system` — a western face that
+	 * does carry CJK punctuation and sets it the western way. `Lyra CJK` (PingFang, `size-adjust`
+	 * 104%) was further down the list, and behind `-apple-system` it never got the chance.
+	 *
+	 * Asserted on the resolved stack rather than on pixels: the rule is "the CJK face is consulted
+	 * first", and that is a fact about the cascade, not about a screenshot.
+	 */
+	const family = await app.evaluate<string>(`getComputedStyle(document.body).fontFamily`);
+	assert.match(family, /^["']?Lyra CJK/, `the CJK face leads the stack (${family})`);
 });
