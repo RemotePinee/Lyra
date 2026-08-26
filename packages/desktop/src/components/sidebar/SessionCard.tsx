@@ -13,7 +13,7 @@
  * beside a row would be cut off at the pane's edge — which is exactly where it needs to be.
  */
 
-import { Coins, FolderOpen, GitBranch, Hash, Zap } from "lucide-react";
+import { Coins, FolderOpen, MessagesSquare, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -58,11 +58,16 @@ function cacheHitRate(usage: SessionMeta["usage"]): number | null {
 	return usage.cacheRead / sent;
 }
 
-/** The last segment or two of a path, which is what identifies it at a glance. */
-function shortPath(path: string): string {
-	const home = path.replace(/^\/Users\/[^/]+/, "~");
-	const parts = home.split("/").filter(Boolean);
-	return parts.length <= 3 ? home : `…/${parts.slice(-2).join("/")}`;
+/**
+ * The directory's own name, not the road to it.
+ *
+ * `~/Downloads/源码-plfx` says the same thing as `源码-plfx` plus three segments nobody is reading
+ * — and the row above already carried the project, which for a checkout is that same word again.
+ * One name, once.
+ */
+function folderName(path: string): string {
+	const parts = path.split("/").filter(Boolean);
+	return parts[parts.length - 1] ?? path;
 }
 
 /**
@@ -74,12 +79,21 @@ function shortPath(path: string): string {
  */
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
 	return (
-		<div className="flex min-w-0 flex-col gap-0.5">
+		/*
+		 * Centred, and each taking an equal third.
+		 *
+		 * Left-aligned under a label of a different width, the three figures landed at three
+		 * unrelated x positions — 39 under 「消息」, 22.9k under 「用量」, 0% under 「缓存」 — which reads
+		 * as three separate things rather than as one row of readings. Centring pins each number to
+		 * the middle of the word it belongs to, and `flex-1` keeps the columns even as the values
+		 * change width.
+		 */
+		<div className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
 			<span className="flex items-center gap-1 text-caption text-ink-faint">
 				<span className="shrink-0">{icon}</span>
 				{label}
 			</span>
-			<span className="truncate text-detail text-ink tabular-nums">{value}</span>
+			<span className="max-w-full truncate text-detail text-ink tabular-nums">{value}</span>
 		</div>
 	);
 }
@@ -145,11 +159,16 @@ export function SessionCard({
 				<span className="mt-[1px] shrink-0 text-caption text-ink-faint tabular-nums">{when(session.updatedAt)}</span>
 			</div>
 
-			<div className="flex flex-col gap-1 border-t border-line-soft px-3 py-2">
-				{project && <Row icon={<GitBranch size={11.5} strokeWidth={1.9} />}>{project}</Row>}
-				<Row icon={<FolderOpen size={11.5} strokeWidth={1.9} />} mono>
-					{shortPath(session.cwd)}
-				</Row>
+			{/*
+			 * One line, and a folder mark on it.
+			 *
+			 * There were two: the project, and the full path. For a checkout those are the same word
+			 * twice over — 「源码-plfx」 above 「~/Downloads/源码-plfx」 — and the mark on the first was
+			 * a branch, which this has no way of knowing: `SessionMeta` records where a conversation
+			 * ran, not what was checked out at the time. A stale branch name would be worse than none.
+			 */}
+			<div className="border-t border-line-soft px-3 py-2">
+				<Row icon={<FolderOpen size={11.5} strokeWidth={1.9} />}>{project ?? folderName(session.cwd)}</Row>
 			</div>
 
 			{/*
@@ -159,8 +178,8 @@ export function SessionCard({
 			 * hit rate answers "was most of that re-read for free" — which is the one that changes
 			 * what anyone does next, and the one nothing in the app was showing.
 			 */}
-			<div className="flex items-center justify-between gap-2 border-t border-line-soft px-3 py-2">
-				<Stat icon={<Hash size={11} strokeWidth={2} />} label="消息" value={String(session.messageCount)} />
+			<div className="flex items-start gap-2 border-t border-line-soft px-3 py-2">
+				<Stat icon={<MessagesSquare size={11} strokeWidth={2} />} label="消息" value={String(session.messageCount)} />
 				<Stat icon={<Zap size={11} strokeWidth={2} />} label="用量" value={formatTokens(usage.total)} />
 				{hit !== null && (
 					<Stat icon={<Coins size={11} strokeWidth={2} />} label="缓存" value={`${Math.round(hit * 100)}%`} />

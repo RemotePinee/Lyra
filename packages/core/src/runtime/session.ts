@@ -152,7 +152,20 @@ export class AgentSession {
 			0,
 			true,
 		);
-		if (!compaction || compaction.kept === undefined) return { ok: false, reason: "这次没能压缩，稍后再试。" };
+		/*
+		 * Two different outcomes, and they used to say the same thing.
+		 *
+		 * `null` means the pass ran and decided the result would not be smaller — on a short or
+		 * already-compacted conversation that is the correct answer, not a failure, and telling
+		 * someone to "try again later" invites them to keep pressing something that will keep
+		 * declining for the same good reason.
+		 *
+		 * `kept === undefined` is the other one: pruning trimmed some oversized tool output but no
+		 * boundary moved, so there is nothing to record. Worth saying plainly too — the window did
+		 * get a little smaller, just not by summarising anything.
+		 */
+		if (!compaction) return { ok: false, reason: "已经够紧凑了，这次压缩不会更小。" };
+		if (compaction.kept === undefined) return { ok: false, reason: "只裁掉了几段过长的工具输出，没有需要总结的历史。" };
 
 		this.log.markCompaction(compaction.summary, compaction.kept);
 		await this.emit({

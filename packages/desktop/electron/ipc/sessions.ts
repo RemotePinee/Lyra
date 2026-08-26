@@ -25,6 +25,7 @@ import {
 	activateSession,
 	broadcast,
 	disposeSession,
+	ensureLiveSession,
 	getOrCreateSession,
 	sessions,
 	snapshot,
@@ -167,9 +168,20 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	 * "the summariser is unreachable" all mean different things to whoever just typed `/compact`.
 	 */
 	ipcMain.handle("sessions:compact", async (_event, sessionId: string) => {
-		const session = sessions.get(sessionId);
-		if (!session) return { ok: false as const, reason: "这个会话还没打开。" };
-		touchSession(sessionId);
+		/*
+		 * Bring the session up if it is not already, rather than refusing.
+		 *
+		 * Clicking a conversation reads its transcript and deliberately does *not* start an agent
+		 * for it — that costs a second of loading skills and spawning MCP servers, and "let me see
+		 * what this said" should not pay it. Which left `/compact` looking at `sessions` and finding
+		 * nothing, so a conversation the user was plainly looking at answered 「这个会话还没打开」.
+		 *
+		 * `ensureLiveSession` is the entry point for exactly this — running something on a
+		 * conversation as opposed to reading it. Compaction is a model call either way, so the
+		 * activation it may have to do first is not the expensive part.
+		 */
+		const session = await ensureLiveSession(sessionId);
+		if (!session) return { ok: false as const, reason: "找不到这个会话。" };
 		return session.compact();
 	});
 
