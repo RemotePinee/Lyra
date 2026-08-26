@@ -10,6 +10,8 @@ import { FileText, Folder, GitCompare, Globe, History, ListTodo, MessageCirclePl
 import { BrowserPanel } from "../components/BrowserPanel.tsx";
 import { FileBrowser } from "../components/FileBrowser.tsx";
 import { FilePanel } from "../components/FilePanel.tsx";
+import { FileActions } from "../components/files/FileActions.tsx";
+import { FileTitle } from "../components/files/FileTitle.tsx";
 import { GitPanel } from "../components/git/GitPanel.tsx";
 import { SideChat } from "../components/SideChat.tsx";
 import { TaskPanel } from "../components/TaskPanel.tsx";
@@ -17,6 +19,14 @@ import { TerminalPane } from "../components/TerminalPane.tsx";
 import { TerminalTabs } from "../components/TerminalTabs.tsx";
 import { TrajectoryPanel } from "../components/trajectory/TrajectoryPanel.tsx";
 import { registerPanels, type PanelDefinition } from "./registry.ts";
+
+/**
+ * The tree's portion when it opens beside the file.
+ *
+ * Enough for a filename at a couple of levels of indent, and no more: what anyone is reading is on
+ * the other side of the boundary. Matches the proportion full screen gives the pair.
+ */
+const TREE_SHARE = 0.3;
 
 const needsWorkspace = (state: { workspace: boolean }) => (state.workspace ? undefined : "先打开一个项目");
 const needsSession = (state: { session: boolean }) => (state.session ? undefined : "先开始一个对话");
@@ -28,7 +38,18 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		icon: Folder,
 		shortcut: "⌘P",
 		unavailable: needsWorkspace,
-		companion: { kind: "file", side: "bottom" },
+		/*
+		 * To the left of the file, and narrower than it.
+		 *
+		 * This is the direction that only happens when the file pane is already there and the tree
+		 * is being asked for — from the dropdown's 「在面板中打开」, usually with the file filling the
+		 * window. There is width to give in that situation, and names belong on the left of what
+		 * they name. `share` is the tree's own portion: enough for a filename, no more.
+		 *
+		 * The other direction — opening the file when the tree is already here — stacks instead, so
+		 * the tree keeps the column width it has. See the `file` panel below.
+		 */
+		companion: { kind: "file", side: "left", share: TREE_SHARE },
 		render: FileBrowser,
 	},
 	/*
@@ -48,17 +69,29 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		shortcut: "⌥⌘P",
 		unavailable: needsWorkspace,
 		/*
-		 * Under the tree, taking rather more than half of it.
+		 * Under the tree, not beside it.
 		 *
-		 * Under, not beside: the panels share one column of a window whose width is mostly the
-		 * conversation's, and splitting that column again gives a tree too narrow for a filename
-		 * and a file too narrow for a line of code. Height is what a column has to spare.
+		 * Clicking a file is the common way this pane opens, and the tree is already occupying a
+		 * column — putting the file next to it splits that column again, and a dock column halved
+		 * gives a tree too narrow for a filename and a file too narrow for a line of code. Height is
+		 * what a column has to spare, so height is what the file takes.
 		 *
-		 * Even, because neither is the point: you look at both. Full screen is where the tree gets
-		 * narrower than the file — a different axis, and its own proportion. See `FULL_SCREEN_RATIO`.
+		 * Note this is deliberately not the mirror of the tree's own companion. The two describe
+		 * different situations rather than one arrangement: this one is "the tree is here and needs
+		 * to keep its width", and the tree's is "the file is already filling the space, make room at
+		 * the side for names".
 		 */
 		companion: { kind: "files", side: "bottom" },
 		render: FilePanel,
+		/*
+		 * The file's name in place of the pane's, with the tree behind it.
+		 *
+		 * 「文件内容」 names a category nobody was in doubt about, on the one row that could have said
+		 * which file — and this pane is very often the one left open after its companion tree has been
+		 * closed, at which point it had neither a name nor a way to reach another file. See `FileTitle`.
+		 */
+		header: FileTitle,
+		actions: FileActions,
 	},
 	{
 		kind: "chat",

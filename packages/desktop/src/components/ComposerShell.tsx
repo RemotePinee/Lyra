@@ -27,6 +27,7 @@ export function ComposerShell({
   right,
   onFiles,
   onKeyDown,
+  fieldRef,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -49,8 +50,17 @@ export function ComposerShell({
    * acting on a key and there is no sense in having two ways to say the same thing.
    */
   onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  /**
+   * The field itself, for a caller that has to put the caret in it.
+   *
+   * Text can arrive here from outside — a suggestion card, a review being opened — and landing it
+   * without the focus leaves the user looking at a sentence they now have to click on before they
+   * can change a word of it. Optional: only the caller that needs it passes one.
+   */
+  fieldRef?: React.RefObject<HTMLTextAreaElement | null>;
 }) {
-  const field = useRef<HTMLTextAreaElement>(null);
+  const own = useRef<HTMLTextAreaElement>(null);
+  const field = fieldRef ?? own;
 
   /*
    * Grow with the text, but never past a third of the window.
@@ -69,7 +79,7 @@ export function ComposerShell({
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, [value]);
+  }, [value, field]);
 
   return (
     <div

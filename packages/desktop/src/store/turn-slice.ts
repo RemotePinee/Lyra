@@ -15,7 +15,7 @@ type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>
 
 export function turnSlice(set: Set, get: Get) {
   return {
-  async send(content: UserContent[]) {
+  async send(content: UserContent[], options: { synthetic?: boolean } = {}) {
     const { workspace, settings, scratchCwd } = get();
     let sessionId = get().activeSessionId;
     /*
@@ -42,7 +42,13 @@ export function turnSlice(set: Set, get: Get) {
      * which reads as a swallowed message. The agent's own copy replaces this one when
      * `message_start` arrives.
      */
-    const pending: Message = { role: "user", content, timestamp: Date.now() };
+    const pending: Message = {
+      role: "user",
+      content,
+      timestamp: Date.now(),
+      // Composed by the app rather than typed — 「继续」. The transcript hides these; see `rows.tsx`.
+      ...(options.synthetic ? { synthetic: true } : {}),
+    };
     set({
       messages: [...get().messages, pending],
       pendingUserMessage: pending,
@@ -120,7 +126,7 @@ export function turnSlice(set: Set, get: Get) {
       }
     }
 
-    await window.lyra.agent.prompt(sessionId, content);
+    await window.lyra.agent.prompt(sessionId, content, options);
   },
 
   /**
@@ -153,7 +159,11 @@ export function turnSlice(set: Set, get: Get) {
      * spins up would show an answer to a question that has already been withdrawn. Cutting
      * first makes the screen agree with what is about to be sent.
      */
-    const pending: Message = { role: "user", content, timestamp: Date.now() };
+    const pending: Message = {
+      role: "user",
+      content,
+      timestamp: Date.now(),
+    };
     set({
       messages: [...get().messages.slice(0, index), pending],
       pendingUserMessage: pending,

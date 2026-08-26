@@ -118,6 +118,14 @@ export function SessionRow({
 	return (
 		<div
 			{...card.bind}
+			/*
+			 * How deep the title has to dissolve on hover: as wide as this row's own controls.
+			 *
+			 * The archive has three, everywhere else has one — a fixed depth would either leave the
+			 * archive's buttons sitting on legible text or dissolve far more than the one button
+			 * elsewhere ever covers.
+			 */
+			style={{ "--ly-row-controls": onRestore && onDelete ? "58px" : "34px" } as React.CSSProperties}
 			className={`ly-scroll group/session relative rounded-lg transition-colors duration-[var(--ly-t-quick)] active:bg-elevated ${
 				justCreated ? "ly-drop" : ""
 			} ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
@@ -126,10 +134,25 @@ export function SessionRow({
 			<button
 				type="button"
 				onClick={onOpen}
-				// Room for however many buttons this row has. Reserved rather than overlaid: the pane
-				// is translucent, so there is no colour a gradient behind an icon could fade to.
-				className={`flex w-full items-center gap-2 rounded-lg pl-2 text-left text-label transition-colors duration-[var(--ly-t-quick)] ${
-					onRestore && onDelete ? "pr-12" : "pr-7"
+				/*
+				 * The room for the controls appears with the controls, and not before.
+				 *
+				 * Reserved permanently — `pr-12` in the archive, `pr-7` elsewhere — every row in a
+				 * list of forty was short by that much all of the time, for buttons that are only
+				 * there while you are pointing at one; in a pane dragged wide it read as a column of
+				 * dead space down the right-hand side.
+				 *
+				 * Reserving *on hover* is what both halves need. The padding is what actually keeps
+				 * the title out from under the icons: the pane is translucent, so there is no colour
+				 * a gradient behind an icon could fade to, and `ly-fade-tail` softens the title's end
+				 * rather than hiding it — text under a button stays half-legible, and the two read as
+				 * overlapping. The mask still runs, over the width being given up, which is what
+				 * keeps the last word from being sliced mid-letter while the padding eases in.
+				 */
+				className={`flex w-full items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
+					onRestore && onDelete
+						? "pr-2 group-hover/session:pr-12 group-focus-within/session:pr-12"
+						: "pr-2 group-hover/session:pr-7 group-focus-within/session:pr-7"
 				} ${compact ? "h-[34px]" : "h-[27px]"} ${
 					active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"
 				}`}

@@ -39,13 +39,15 @@ export interface SessionsIpcDeps {
 	saveSettings(next: Settings): Promise<void>;
 }
 
-export function registerSessionsIpc({ store: readStore, settings: readSettings, saveSettings }: SessionsIpcDeps): void {
+export function registerSessionsIpc({
+	store: readStore,
+	settings: readSettings,
+	saveSettings,
+}: SessionsIpcDeps): void {
 	const store = readStore();
 
 	ipcMain.handle("sessions:list", async () => store.listSessions());
 
-	
-	
 	/**
 	 * Bring a session up: replay its log, load its skills, spawn its MCP servers.
 	 *
@@ -59,7 +61,9 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	 * Callers that act on a session — prompting, changing its model — have a session id but no
 	 * project id, so the project is recovered from the index.
 	 */
-	async function ensureSession(sessionId: string): Promise<AgentSession | null> {
+	async function ensureSession(
+		sessionId: string,
+	): Promise<AgentSession | null> {
 		const existing = sessions.get(sessionId);
 		if (existing) {
 			touchSession(sessionId);
@@ -69,11 +73,14 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 		return meta ? activateSession(meta.projectId, sessionId) : null;
 	}
 
-	ipcMain.handle("sessions:create", async (_event, cwd: string, modelId: string) => {
-		const session = await getOrCreateSession(cwd, modelId);
-		if (modelId) await session.setModel(modelId);
-		return snapshot(session);
-	});
+	ipcMain.handle(
+		"sessions:create",
+		async (_event, cwd: string, modelId: string) => {
+			const session = await getOrCreateSession(cwd, modelId);
+			if (modelId) await session.setModel(modelId);
+			return snapshot(session);
+		},
+	);
 
 	/**
 	 * Read a transcript without starting anything.
@@ -89,44 +96,57 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	 * Both read the same file the turn was written to — there is no second record of what happened
 	 * and no chance of the two disagreeing.
 	 */
-	ipcMain.handle("sessions:trajectory", async (_event, projectId: string, sessionId: string) =>
-		readTrajectory(store as never, projectId, sessionId),
+	ipcMain.handle(
+		"sessions:trajectory",
+		async (_event, projectId: string, sessionId: string) =>
+			readTrajectory(store as never, projectId, sessionId),
 	);
 
-	ipcMain.handle("sessions:fork", async (_event, projectId: string, sessionId: string, seq: number) =>
-		forkSession(store as never, projectId, sessionId, seq),
+	ipcMain.handle(
+		"sessions:fork",
+		async (_event, projectId: string, sessionId: string, seq: number) =>
+			forkSession(store as never, projectId, sessionId, seq),
 	);
 
-	ipcMain.handle("sessions:transcript", async (_event, projectId: string, sessionId: string) => {
-		// A live session is the authority — it holds messages from the turn in flight and
-		// knows whether it is running.
-		const live = sessions.get(sessionId);
-		if (live) {
-			touchSession(sessionId);
-			return snapshot(live);
-		}
+	ipcMain.handle(
+		"sessions:transcript",
+		async (_event, projectId: string, sessionId: string) => {
+			// A live session is the authority — it holds messages from the turn in flight and
+			// knows whether it is running.
+			const live = sessions.get(sessionId);
+			if (live) {
+				touchSession(sessionId);
+				return snapshot(live);
+			}
 
-		const loaded = await store.load(projectId, sessionId);
-		if (!loaded) return null;
-		return {
-			meta: loaded.meta,
-			messages: loaded.messages,
-			running: false,
-			pendingApprovals: [],
-			compactions: loaded.compactions,
-		};
-	});
+			const loaded = await store.load(projectId, sessionId);
+			if (!loaded) return null;
+			return {
+				meta: loaded.meta,
+				messages: loaded.messages,
+				running: false,
+				pendingApprovals: [],
+				compactions: loaded.compactions,
+			};
+		},
+	);
 
-	ipcMain.handle("sessions:open", async (_event, projectId: string, sessionId: string) => {
-		const session = await activateSession(projectId, sessionId);
-		return session ? snapshot(session) : null;
-	});
+	ipcMain.handle(
+		"sessions:open",
+		async (_event, projectId: string, sessionId: string) => {
+			const session = await activateSession(projectId, sessionId);
+			return session ? snapshot(session) : null;
+		},
+	);
 
-	ipcMain.handle("sessions:remove", async (_event, projectId: string, sessionId: string) => {
-		await disposeSession(sessionId);
-		await store.delete(projectId, sessionId);
-		await removeSessionArtifacts(lyraHome(), sessionId);
-	});
+	ipcMain.handle(
+		"sessions:remove",
+		async (_event, projectId: string, sessionId: string) => {
+			await disposeSession(sessionId);
+			await store.delete(projectId, sessionId);
+			await removeSessionArtifacts(lyraHome(), sessionId);
+		},
+	);
 
 	ipcMain.handle(
 		"sessions:setArchived",
@@ -141,8 +161,12 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	ipcMain.handle("sessions:removeArchived", async () => {
 		const archived = (await store.listSessions()).filter((s) => s.archived);
 		await Promise.all(archived.map((s) => disposeSession(s.id)));
-		await store.deleteMany(archived.map((s) => ({ projectId: s.projectId, id: s.id })));
-		await Promise.all(archived.map((s) => removeSessionArtifacts(lyraHome(), s.id)));
+		await store.deleteMany(
+			archived.map((s) => ({ projectId: s.projectId, id: s.id })),
+		);
+		await Promise.all(
+			archived.map((s) => removeSessionArtifacts(lyraHome(), s.id)),
+		);
 		return store.listSessions();
 	});
 
@@ -156,10 +180,13 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 	 * is not a cheaper panel, it is a broken one. Anyone opening it is about to use this session
 	 * anyway, so the agent it warms is one that was going to start moments later regardless.
 	 */
-	ipcMain.handle("sessions:contextBreakdown", async (_event, sessionId: string): Promise<ContextBreakdown | null> => {
-		const session = await ensureSession(sessionId);
-		return session ? session.contextBreakdown() : null;
-	});
+	ipcMain.handle(
+		"sessions:contextBreakdown",
+		async (_event, sessionId: string): Promise<ContextBreakdown | null> => {
+			const session = await ensureSession(sessionId);
+			return session ? session.contextBreakdown() : null;
+		},
+	);
 
 	/**
 	 * Summarise the conversation on request, rather than waiting for it to fill up.
@@ -185,55 +212,81 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 		return session.compact();
 	});
 
-	ipcMain.handle("sessions:capabilities", async (_event, sessionId: string): Promise<AgentCapabilities | null> => {
-		const session = sessions.get(sessionId);
-		if (!session) return null;
-		touchSession(sessionId);
-		const status = await session.status();
-		return {
-			skills: status.skills,
-			skillDiagnostics: status.skillDiagnostics,
-			plugins: status.plugins,
-			pluginDiagnostics: status.pluginDiagnostics,
-			mcp: status.mcp,
-			agents: status.agents.map((a) => ({
-				name: a.name,
-				description: a.description,
-				source: a.source,
-				tools: a.tools,
-			})),
-			toolNames: status.toolNames,
-		};
-	});
-
-	ipcMain.handle("agent:prompt", async (_event, sessionId: string, content: UserContent[]) => {
-		const session = await ensureSession(sessionId);
-		if (!session) throw new Error(`Session ${sessionId} is not open.`);
-		// Deliberately not awaited: the turn streams events back over IPC and can run for minutes.
-		void session.prompt(content).catch((error: unknown) => {
-			broadcast(sessionId, {
-				type: "notice",
-				level: "error",
-				message: error instanceof Error ? error.message : String(error),
-			});
-			broadcast(sessionId, { type: "agent_end", reason: "error", error: String(error) });
-		});
-	});
+	ipcMain.handle(
+		"sessions:capabilities",
+		async (_event, sessionId: string): Promise<AgentCapabilities | null> => {
+			const session = sessions.get(sessionId);
+			if (!session) return null;
+			touchSession(sessionId);
+			const status = await session.status();
+			return {
+				skills: status.skills,
+				skillDiagnostics: status.skillDiagnostics,
+				plugins: status.plugins,
+				pluginDiagnostics: status.pluginDiagnostics,
+				mcp: status.mcp,
+				agents: status.agents.map((a) => ({
+					name: a.name,
+					description: a.description,
+					source: a.source,
+					tools: a.tools,
+				})),
+				toolNames: status.toolNames,
+			};
+		},
+	);
 
 	ipcMain.handle(
-		"agent:editMessage",
-		async (_event, sessionId: string, messageIndex: number, content: UserContent[]) => {
+		"agent:prompt",
+		async (
+			_event,
+			sessionId: string,
+			content: UserContent[],
+			options?: { synthetic?: boolean },
+		) => {
 			const session = await ensureSession(sessionId);
 			if (!session) throw new Error(`Session ${sessionId} is not open.`);
-			// Not awaited, same as `prompt`: the re-run streams back over IPC and can take minutes.
-			void session.editAndResend(messageIndex, content).catch((error: unknown) => {
+			// Deliberately not awaited: the turn streams events back over IPC and can run for minutes.
+			void session.prompt(content, options).catch((error: unknown) => {
 				broadcast(sessionId, {
 					type: "notice",
 					level: "error",
 					message: error instanceof Error ? error.message : String(error),
 				});
-				broadcast(sessionId, { type: "agent_end", reason: "error", error: String(error) });
+				broadcast(sessionId, {
+					type: "agent_end",
+					reason: "error",
+					error: String(error),
+				});
 			});
+		},
+	);
+
+	ipcMain.handle(
+		"agent:editMessage",
+		async (
+			_event,
+			sessionId: string,
+			messageIndex: number,
+			content: UserContent[],
+		) => {
+			const session = await ensureSession(sessionId);
+			if (!session) throw new Error(`Session ${sessionId} is not open.`);
+			// Not awaited, same as `prompt`: the re-run streams back over IPC and can take minutes.
+			void session
+				.editAndResend(messageIndex, content)
+				.catch((error: unknown) => {
+					broadcast(sessionId, {
+						type: "notice",
+						level: "error",
+						message: error instanceof Error ? error.message : String(error),
+					});
+					broadcast(sessionId, {
+						type: "agent_end",
+						reason: "error",
+						error: String(error),
+					});
+				});
 		},
 	);
 
@@ -241,29 +294,49 @@ export function registerSessionsIpc({ store: readStore, settings: readSettings, 
 		sessions.get(sessionId)?.abort();
 	});
 
-	ipcMain.handle("agent:approve", async (_event, sessionId: string, requestId: string, decision: ApprovalDecision) => {
-		const session = sessions.get(sessionId);
-		if (!session) return;
-		session.resolveApproval(requestId, decision);
-		if (decision === "always") {
-			const request = session.listPendingApprovals().find((p) => p.id === requestId);
-			const settings = readSettings();
-			if (request && !settings.alwaysAllow.includes(request.request.subject)) {
-				await saveSettings({ ...settings, alwaysAllow: [...settings.alwaysAllow, request.request.subject] });
+	ipcMain.handle(
+		"agent:approve",
+		async (
+			_event,
+			sessionId: string,
+			requestId: string,
+			decision: ApprovalDecision,
+		) => {
+			const session = sessions.get(sessionId);
+			if (!session) return;
+			session.resolveApproval(requestId, decision);
+			if (decision === "always") {
+				const request = session
+					.listPendingApprovals()
+					.find((p) => p.id === requestId);
+				const settings = readSettings();
+				if (
+					request &&
+					!settings.alwaysAllow.includes(request.request.subject)
+				) {
+					await saveSettings({
+						...settings,
+						alwaysAllow: [...settings.alwaysAllow, request.request.subject],
+					});
+				}
 			}
-		}
-	});
+		},
+	);
 
-	ipcMain.handle("agent:setModel", async (_event, sessionId: string, modelId: string) => {
-		const live = sessions.get(sessionId);
-		if (live) {
-			// Returns false once the conversation has started; the model is settled by then.
-			await live.setModel(modelId);
-			return;
-		}
-		// Not warm: write the choice straight to the log rather than starting an agent for it.
-		// The same rule applies — a stored session with messages keeps the model it ran on.
-		const meta = (await store.listSessions()).find((s) => s.id === sessionId);
-		if (meta && meta.messageCount === 0) await store.append(meta, { type: "meta", meta: { ...meta, modelId } });
-	});
+	ipcMain.handle(
+		"agent:setModel",
+		async (_event, sessionId: string, modelId: string) => {
+			const live = sessions.get(sessionId);
+			if (live) {
+				// Returns false once the conversation has started; the model is settled by then.
+				await live.setModel(modelId);
+				return;
+			}
+			// Not warm: write the choice straight to the log rather than starting an agent for it.
+			// The same rule applies — a stored session with messages keeps the model it ran on.
+			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
+			if (meta && meta.messageCount === 0)
+				await store.append(meta, { type: "meta", meta: { ...meta, modelId } });
+		},
+	);
 }

@@ -116,9 +116,15 @@ export interface AppState {
    *
    * Opening a review's conversation fills in what to ask rather than asking it: the user should
    * see the question, be able to change it, and press send themselves. Consumed on read.
+   *
+   * `replace` decides what happens to whatever is already in the field, and the two callers want
+   * opposite things. A review or an error arrives while you may be part-way through typing, and
+   * discarding that would lose work — those append. A suggestion card is a choice between four
+   * alternatives, so pressing a second one means "that one instead": appending there stacks three
+   * unrelated requests into one message nobody wrote.
    */
-  composerDraft: string;
-  setComposerDraft(text: string): void;
+  composerDraft: { text: string; replace: boolean };
+  setComposerDraft(text: string, replace?: boolean): void;
 
   activeSessionId: string | null;
   meta: SessionMeta | null;
@@ -269,7 +275,13 @@ export interface AppState {
   setSessionArchived(meta: SessionMeta, archived: boolean): Promise<void>;
   deleteArchivedSessions(): Promise<void>;
 
-  send(content: UserContent[]): Promise<void>;
+  /**
+   * `synthetic` marks a message the app composed on the user's behalf — 「继续」.
+   *
+   * It reaches the model like any other, and the transcript does not draw it: putting words in
+   * someone's mouth in their own voice is worse than the button having no visible effect.
+   */
+  send(content: UserContent[], options?: { synthetic?: boolean }): Promise<void>;
   /** Replace a message and re-run from there; everything after it is discarded. */
   editMessage(index: number, content: UserContent[]): Promise<void>;
   /** Re-send the user message that produced the reply at `index`. */
@@ -301,7 +313,7 @@ export const useApp = create<AppState>((set, get) => ({
   switchingBranch: null,
   scratchRoots: [],
   scratchCwd: null,
-  composerDraft: "",
+  composerDraft: { text: "", replace: false },
   activeSessionId: null,
   meta: null,
   messages: [],
@@ -382,7 +394,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   setView: (view) => set({ view }),
-  setComposerDraft: (composerDraft) => set({ composerDraft }),
+  setComposerDraft: (text, replace = false) => set({ composerDraft: { text, replace } }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
   setPluginFocus: (pluginFocus) => set({ pluginFocus }),
   bumpExtensions: () => set((state) => ({ extensionsNonce: state.extensionsNonce + 1 })),

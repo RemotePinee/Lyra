@@ -128,7 +128,11 @@ export interface LyraApi {
 		contextBreakdown(sessionId: string): Promise<ContextBreakdown | null>;
 	};
 	agent: {
-		prompt(sessionId: string, content: UserContent[]): Promise<void>;
+		/**
+		 * `synthetic` marks a message the app composed on the user's behalf — 「继续」 — so the
+		 * transcript does not show it as something they typed. See `Session.prompt`.
+		 */
+		prompt(sessionId: string, content: UserContent[], options?: { synthetic?: boolean }): Promise<void>;
 		/** Replace a message and re-run from there, discarding everything after it. */
 		editMessage(sessionId: string, messageIndex: number, content: UserContent[]): Promise<void>;
 		abort(sessionId: string): Promise<void>;
@@ -220,10 +224,26 @@ export interface LyraApi {
 	};
 	/** A real pseudo-terminal, one per tab. */
 	terminal: {
-		/** Every shell this directory already has — the pane's tabs. */
+		/** Every shell this directory already has. */
 		list(cwd: string): Promise<TerminalTab[]>;
+		/**
+		 * Every shell there is — the pane's tabs.
+		 *
+		 * Not filed under the current project: leaving a project is not a reason to stop showing a
+		 * terminal that is still running. Where a *new* shell starts is the only thing the project
+		 * decides. See `listAll` in `terminal-registry.ts`.
+		 */
+		listAll(): Promise<TerminalTab[]>;
 		/** Start another shell here. Always a new one: this is what the tab strip's `+` does. */
 		open(cwd: string, cols: number, rows: number): Promise<AttachedTerminal>;
+		/**
+		 * Start the app's first shell now, so opening the pane later costs nothing.
+		 *
+		 * Does nothing if any shell is already running. The shell is left unattached, so it does
+		 * not send anything to a pane that is not showing it — it only records, and the first
+		 * `attach` replays that recording into a prompt that is already finished.
+		 */
+		prewarm(cwd: string, cols: number, rows: number): void;
 		/**
 		 * Connect to a shell that already exists.
 		 *

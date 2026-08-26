@@ -163,24 +163,41 @@ export function defaultDrop(tree: DockNode): DropAt {
 const COLUMN_LIMIT = 2;
 
 /**
- * Give a freshly opened pane the share its panel asked for.
+ * Give a freshly opened pane the share its panel asked for, out of what it shares with its partner.
  *
  * `insert` halves whatever it splits, which is the right default and the wrong one for a pair: a
  * file tree wants a column and the file wants the rest. Expressed as *this pane's* share of the
  * two, so a panel declares how much room it needs without knowing which side it landed on.
+ *
+ * The partner has to be named. This used to assume it was the neighbour on the left — `at - 1` —
+ * which holds when the new pane is inserted *after* it (`bottom`, `right`) and is simply a
+ * different pane when it is inserted before (`top`, `left`). Opening the tree to the left of the
+ * file therefore divided the tree against the *conversation*, and set the conversation to 70% of
+ * the window while the pair it was supposed to be dividing kept its even split.
  */
-function withShare(tree: DockNode, kind: PaneKind | null, share: number | undefined): DockNode {
-	if (!kind || share === undefined) return tree;
+function withShare(
+	tree: DockNode,
+	kind: PaneKind | null,
+	partner: PaneKind | null | undefined,
+	share: number | undefined,
+): DockNode {
+	if (!kind || !partner || share === undefined) return tree;
 	const path = pathTo(tree, kind);
+	const partnerPath = pathTo(tree, partner);
 	// No parent to divide: it is the only pane there, and there is nothing to share with.
-	if (!path || path.length === 0) return tree;
+	if (!path || path.length === 0 || !partnerPath) return tree;
 	const parent = path.slice(0, -1);
-	const at = path[path.length - 1];
+	// Only siblings have a boundary between them to move.
+	if (parent.join() !== partnerPath.slice(0, -1).join()) return tree;
 	const split = nodeAt(tree, parent);
 	if (split?.type !== "split") return tree;
 
+	const at = path[path.length - 1];
+	const beside = partnerPath[partnerPath.length - 1];
+	if (Math.abs(at - beside) !== 1) return tree;
+
 	// `resize` names a boundary by the child on its near side, so ask for the near one's share.
-	const near = at === 0 ? 0 : at - 1;
+	const near = Math.min(at, beside);
 	const pair = (split.sizes[near] ?? 0) + (split.sizes[near + 1] ?? 0);
 	const mine = at === near ? share : 1 - share;
 	return resize(tree, parent, near, mine * pair);
@@ -228,6 +245,23 @@ function ratioOf(tree: DockNode, panes: PaneKind[]): number {
 	return near + far > 0 ? near / (near + far) : 0.5;
 }
 
+/**
+ * What is left of full screen once the tree has changed shape.
+ *
+ * Panes that are no longer there stop being part of it; when none of them are, full screen is over.
+ * Nothing else about it is reconsidered — the ratio and the axis describe a pair that is still a
+ * pair, and re-deriving them here would overwrite a boundary the user had dragged.
+ */
+function survivingMaximized(
+	maximized: DockState["maximized"],
+	present: PaneKind[],
+): DockState["maximized"] {
+	if (!maximized) return null;
+	const panes = maximized.panes.filter((kind) => present.includes(kind));
+	if (panes.length === 0) return null;
+	return panes.length === maximized.panes.length ? maximized : { ...maximized, panes };
+}
+
 /** Persist, unless the dock has not been pointed at a project yet. */
 function save(scope: string | null, tree: DockNode): void {
 	writeTree(storageKey(scope), tree);
@@ -250,15 +284,22 @@ export const useDock = create<DockState>((set, get) => {
 			// one thing guaranteed to still be there.
 			focused: present.includes(focused) ? focused : "conversation",
 			/*
-			 * Full screen is dropped by any change to the shape of the tree.
+			 * Full screen survives a change to the tree, minus whatever left it.
 			 *
-			 * It is a path, and a path means something different — or nothing — once panes have
-			 * moved: closing a pane can collapse the split it was in, and the same indexes then
-			 * lead somewhere unrelated. Checking that the node still exists is not enough, because
-			 * a node existing at those indexes is exactly what happens when it is the wrong one.
-			 * Leaving full screen is a mild surprise; showing the wrong pane full screen is not.
+			 * This used to be dropped outright by any reshaping, on the grounds that it was a path
+			 * into the tree and a path means something else once panes move. It is not a path — it
+			 * is a set of pane kinds — so the reason went away and the behaviour stayed, and what it
+			 * cost was the two most ordinary things you do while full screen: clicking a file in a
+			 * maximised tree collapsed the whole layout back to normal instead of showing the file
+			 * beside it, and closing one of a maximised pair dropped the other one out of full
+			 * screen along with it.
+			 *
+			 * A kind that is no longer in the tree is dropped, and full screen ends when nothing is
+			 * left of it. Callers that need it gone for a reason of their own — `open`, for a panel
+			 * that would otherwise be invisible behind the maximised one — pass `maximized: null`
+			 * explicitly through `extra`.
 			 */
-			maximized: maximized && tree === get().tree ? maximized : null,
+			maximized: survivingMaximized(maximized, present),
 			...extra,
 		});
 		if (persist) save(scope, tree);
@@ -274,7 +315,7 @@ export const useDock = create<DockState>((set, get) => {
 		adopted: false,
 
 		open: (kind, beside) => {
-			const tree = get().tree;
+			const { tree, maximized } = get();
 			// Already open: bring it to attention rather than doing nothing, which is what the
 			// narrow layout and the keyboard both need from this.
 			if (has(tree, kind)) {
@@ -286,7 +327,25 @@ export const useDock = create<DockState>((set, get) => {
 			// between a file browser and two unrelated panels.
 			const paired = beside && has(tree, beside.kind);
 			const at = paired ? { side: beside.side, kind: beside.kind } : defaultDrop(tree);
-			commit(withShare(insert(tree, kind, at), paired ? kind : null, beside?.share), { focused: kind });
+			const next = withShare(insert(tree, kind, at), paired ? kind : null, beside?.kind, beside?.share);
+			/*
+			 * Opened beside a pane that is full screen? Then it is full screen too.
+			 *
+			 * Clicking a file in a maximised tree is the case: the file pane is being opened
+			 * *because of* the tree, and the answer to "where does it go" is "next to the thing
+			 * that asked for it" whether or not that thing is filling the dock. Collapsing the
+			 * layout instead threw away the full screen the user had chosen, to show them the file
+			 * in a pane a third of the size.
+			 *
+			 * Anything else ends full screen, because the panel that was just asked for would
+			 * otherwise open behind the maximised one and appear not to have opened at all.
+			 */
+			const partner = paired && maximized?.panes.includes(beside.kind) ? maximized : null;
+			const panes = partner ? kinds(next).filter((each) => each === kind || partner.panes.includes(each)) : null;
+			commit(next, {
+				focused: kind,
+				maximized: partner && panes ? { ...partner, panes, ratio: ratioOf(next, panes) } : null,
+			});
 		},
 
 		close: (kind) => commit(remove(get().tree, kind)),
@@ -308,7 +367,15 @@ export const useDock = create<DockState>((set, get) => {
 			else set({ focused: kind });
 		},
 
-		moveTo: (kind, at) => commit(move(get().tree, kind, at)),
+		/*
+		 * Rearranging ends full screen, because the two are asking for opposite things.
+		 *
+		 * Full screen is "show me only this"; moving a pane is "show me where everything goes".
+		 * Keeping both would move a pane to a place the user cannot see, and — worse — a pane in
+		 * flight is briefly *out* of the tree, so the set would quietly lose it on the way past and
+		 * hand back a pane that is no longer part of the full screen it was dragged out of.
+		 */
+		moveTo: (kind, at) => commit(move(get().tree, kind, at), { maximized: null }),
 
 		/**
 		 * Show what a drop would do, by inserting into the layout the carried pane has left.
@@ -325,7 +392,7 @@ export const useDock = create<DockState>((set, get) => {
 		 * region at all — shows `rest` itself, with the carried pane simply not in the dock. It is
 		 * being carried; the ghost is where it is.
 		 */
-		preview: (rest, kind, at) => commit(at ? insert(rest, kind, at) : rest, undefined, false),
+		preview: (rest, kind, at) => commit(at ? insert(rest, kind, at) : rest, { maximized: null }, false),
 
 		// Not through `commit`: this runs on every frame of a splitter drag, and the pane set is
 		// unchanged by definition — a resize cannot orphan the focused pane.

@@ -1,20 +1,23 @@
 /**
- * Which directories are open, what is in them, and which rows that adds up to.
+ * One view of the tree: what is open (shared), what is being searched for (not), and the rows those
+ * two add up to.
  *
- * Lazily expanded, one directory at a time. A project with a `node_modules` in it has more paths
- * than anything would ever want to walk up front, and the only ones that matter are the ones you
- * have actually opened on the way to what you were looking for.
+ * The tree is drawn in two places — the file pane, and the dropdown under the open file's name — and
+ * the split here is what makes those two the same tree rather than two trees that resemble each
+ * other. Which directories are open lives in `store/fileTree.ts`, so opening `src/` in one opens it
+ * in the other and neither loses it when its pane is closed.
  *
- * Kept apart from the component so the tree's state and the tree's drawing can be read separately —
- * and so the operations in `useFileActions` can say "re-read these two directories" without
- * reaching into a component's setState.
+ * The filter and the search scope stay here, per view. They are a question being asked right now by
+ * whoever is looking: typing a name into the dropdown to find something should not rewrite the
+ * search field in the panel behind it, and closing the dropdown should not leave a filter applied
+ * to a tree nobody typed into.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { FileEntry } from "../../../electron/ipc-types.ts";
 import { useApp } from "../../store.ts";
-import { isDescendantPath, joinPath, relativeTo } from "./paths.ts";
+import { useFileTreeStore } from "../../store/fileTree.ts";
 
 export interface TreeNode {
 	entry: FileEntry;
@@ -45,23 +48,16 @@ export interface FileTree {
 }
 
 export function useFileTree(root: string | null): FileTree {
-	const [children, setChildren] = useState<Record<string, FileEntry[]>>({});
-	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	const children = useFileTreeStore((s) => s.children);
+	const expanded = useFileTreeStore((s) => s.expanded);
 	const [filter, setFilter] = useState("");
 	const [scope, setScope] = useState<string | null>(null);
 
-	const load = useCallback(async (dir: string) => {
-		const entries = await window.lyra.files.list(dir);
-		setChildren((current) => ({ ...current, [dir]: entries }));
-		return entries;
-	}, []);
-
-	const refresh = useCallback(
-		async (dirs: Iterable<string>) => {
-			await Promise.all([...new Set(dirs)].map((dir) => load(dir)));
-		},
-		[load],
-	);
+	// Idempotent, so every view can say which project it is looking at without the second one
+	// throwing away what the first has already loaded.
+	useEffect(() => {
+		useFileTreeStore.getState().setRoot(root);
+	}, [root]);
 
 	/*
 	 * Re-read the tree when a turn ends.
@@ -72,84 +68,22 @@ export function useFileTree(root: string | null): FileTree {
 	 * open gets re-read, since those are the ones being looked at.
 	 */
 	const running = useApp((s) => s.running);
-	// A ref, so ending a turn re-reads whatever is open now without re-running on every expand.
-	const openDirs = useRef(expanded);
-	openDirs.current = expanded;
-
-	const refreshOpen = useCallback(async () => {
-		if (!root) return;
-		await refresh([root, ...openDirs.current]);
-	}, [root, refresh]);
-
 	useEffect(() => {
 		if (running || !root) return;
-		void refreshOpen();
-	}, [running, root, refreshOpen]);
+		void useFileTreeStore.getState().refreshOpen();
+	}, [running, root]);
 
-	// Opening a different project starts from scratch rather than showing the old tree.
+	/*
+	 * A filter that outlived what it was filtering.
+	 *
+	 * The scope is a directory, and a directory can be renamed or deleted out from under it — by the
+	 * agent, mid-turn, while the dropdown that set it is closed. Dropped when its folder stops
+	 * existing, rather than leaving the tree narrowed to a path that resolves to nothing and reads
+	 * as an empty project.
+	 */
 	useEffect(() => {
-		setChildren({});
-		setExpanded(new Set());
-		setFilter("");
-		setScope(null);
-		if (root) void load(root);
-	}, [root, load]);
-
-	const expand = useCallback(
-		(path: string) => {
-			setExpanded((current) => {
-				if (current.has(path)) return current;
-				const next = new Set(current);
-				next.add(path);
-				return next;
-			});
-			void load(path);
-		},
-		[load],
-	);
-
-	const collapse = useCallback((path: string) => {
-		setExpanded((current) => {
-			if (!current.has(path)) return current;
-			const next = new Set(current);
-			next.delete(path);
-			return next;
-		});
-	}, []);
-
-	const toggle = useCallback(
-		(path: string) => {
-			setExpanded((current) => {
-				const next = new Set(current);
-				if (next.has(path)) next.delete(path);
-				else {
-					next.add(path);
-					void load(path);
-				}
-				return next;
-			});
-		},
-		[load],
-	);
-
-	const collapseAll = useCallback(() => setExpanded(new Set()), []);
-
-	const reveal = useCallback(
-		async (path: string) => {
-			if (!root || !isDescendantPath(root, path)) return;
-			// Every segment but the last: the last one is the file itself, which has nothing to open.
-			const segments = relativeTo(root, path).split(/[/\\]/).slice(0, -1);
-			let dir = root;
-			const opened: string[] = [];
-			for (const segment of segments) {
-				dir = joinPath(dir, segment);
-				opened.push(dir);
-				await load(dir);
-			}
-			if (opened.length > 0) setExpanded((current) => new Set([...current, ...opened]));
-		},
-		[root, load],
-	);
+		if (scope && !(scope in children)) setScope(null);
+	}, [scope, children]);
 
 	/**
 	 * Flatten the opened parts of the tree into the rows actually on screen.
@@ -188,6 +122,10 @@ export function useFileTree(root: string | null): FileTree {
 		return out;
 	}, [root, scope, children, expanded, filter]);
 
+	// Bound once: the store's actions never change identity, and the callers below put several of
+	// them in dependency arrays.
+	const store = useRef(useFileTreeStore.getState()).current;
+
 	return {
 		children,
 		expanded,
@@ -196,13 +134,13 @@ export function useFileTree(root: string | null): FileTree {
 		setFilter,
 		scope,
 		setScope,
-		load,
-		refresh,
-		refreshOpen,
-		toggle,
-		expand,
-		collapse,
-		collapseAll,
-		reveal,
+		load: store.load,
+		refresh: store.refresh,
+		refreshOpen: store.refreshOpen,
+		toggle: store.toggle,
+		expand: store.expand,
+		collapse: store.collapse,
+		collapseAll: store.collapseAll,
+		reveal: store.reveal,
 	};
 }

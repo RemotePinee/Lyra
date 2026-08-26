@@ -6,16 +6,38 @@ import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 
 const CARDS = [
-	{ icon: Telescope, tint: "text-info", label: "探索并理解代码", prompt: "帮我梳理这个项目的整体架构：入口在哪里、核心模块怎么划分、数据是怎么流动的。" },
-	{ icon: Hammer, tint: "text-violet", label: "构建新功能、应用或工具", prompt: "我想新增一个功能，先帮我确认现有代码里应该改哪些文件，再给出实现方案。" },
-	{ icon: RefreshCw, tint: "text-ok", label: "审查代码并提出修改建议", prompt: "审查当前工作区未提交的改动，指出其中的缺陷和风险，按严重程度排序。" },
-	{ icon: Bug, tint: "text-accent", label: "修复问题和失败", prompt: "帮我定位一个问题的根因。先复现，再定位，最后给出最小改动的修复。" },
+	{
+		icon: Telescope,
+		tint: "text-info",
+		label: "探索并理解代码",
+		prompt:
+			"帮我梳理这个项目的整体架构：入口在哪里、核心模块怎么划分、数据是怎么流动的。",
+	},
+	{
+		icon: Hammer,
+		tint: "text-violet",
+		label: "构建新功能、应用或工具",
+		prompt:
+			"我想新增一个功能，先帮我确认现有代码里应该改哪些文件，再给出实现方案。",
+	},
+	{
+		icon: RefreshCw,
+		tint: "text-ok",
+		label: "审查代码并提出修改建议",
+		prompt:
+			"审查当前工作区未提交的改动，指出其中的缺陷和风险，按严重程度排序。",
+	},
+	{
+		icon: Bug,
+		tint: "text-accent",
+		label: "修复问题和失败",
+		prompt: "帮我定位一个问题的根因。先复现，再定位，最后给出最小改动的修复。",
+	},
 ];
 
 export function EmptyState() {
 	const scratchCwd = useApp((s) => s.scratchCwd);
 	const workspace = useApp((s) => s.workspace);
-	const send = useApp((s) => s.send);
 	const { compact } = useLayout();
 
 	/** No project behind this conversation, and that was the choice — see the composer's chip. */
@@ -28,7 +50,10 @@ export function EmptyState() {
 			 * two rows of cards do not all fit, and a card you cannot reach is worse than one
 			 * you have to scroll to.
 			 */}
-			<Scroller className="flex-1" contentClassName={`flex flex-col py-4 ${compact ? "px-4" : "px-8"}`}>
+			<Scroller
+				className="flex-1"
+				contentClassName={`flex flex-col py-4 ${compact ? "px-4" : "px-8"}`}
+			>
 				{/*
 				 * `m-auto` and not `justify-center`: a centred flex child that outgrows its
 				 * parent gets clipped at the top with no way to scroll back up to it.
@@ -54,15 +79,17 @@ export function EmptyState() {
 							"想聊点什么？"
 						) : (
 							<>
-								要在{" "}
-								{/*
+								要在 {/*
 								 * The project name carries itself.
 								 *
 								 * It used to be underlined with a dotted rule, which is the convention for
 								 * "there is a definition behind this" — and there is not. A heading that
 								 * hints at an interaction it does not have is worse than a plain one.
 								 */}
-								<span className="text-ink">{workspace?.name ?? "未选择项目"}</span> 内开发什么？
+								<span className="text-ink">
+									{workspace?.name ?? "未选择项目"}
+								</span>{" "}
+								内开发什么？
 							</>
 						)}
 					</h1>
@@ -84,11 +111,43 @@ export function EmptyState() {
 								<button
 									key={card.label}
 									type="button"
-									onClick={() => void send([{ type: "text", text: card.prompt }])}
-									className="group flex min-h-[72px] flex-col justify-between gap-2 rounded-[11px] border border-line bg-transparent p-3 text-left transition-all duration-[var(--ly-t-base)] hover:-translate-y-0.5 hover:border-ink-faint/60 hover:bg-card/60 active:translate-y-0"
+									/*
+									 * Into the composer, not out to the agent.
+									 *
+									 * These read as suggestions and sit directly under the cursor's path
+									 * to the input, so pressing one used to start a turn — and a turn that
+									 * was not asked for costs a request, some tokens, and whatever the
+									 * agent decides to do before it can be stopped. As a draft the card is
+									 * a starting point: read it, change it, add the detail it is missing,
+									 * and send it when it says what you meant.
+									 *
+									 * Replacing, not appending. These four are alternatives — pressing a
+									 * second one means "that one instead", and stacking them produced a
+									 * message asking for an architecture tour, a new feature and a code
+									 * review at once.
+									 */
+									onClick={() =>
+										useApp.getState().setComposerDraft(card.prompt, true)
+									}
+									/*
+									 * Stacked from the top, not spread to the edges.
+									 *
+									 * With `justify-between` the label was pinned to the bottom of the
+									 * card, so a one-line label sat lower than a two-line one and the
+									 * four captions started at two different heights. Ordinary flow puts
+									 * every label the same distance under its own mark; the cards are a
+									 * uniform height anyway, so what varies is the space left below.
+									 */
+									className="group flex min-h-[72px] flex-col gap-2 rounded-[11px] border border-line bg-transparent p-3 text-left transition-all duration-[var(--ly-t-base)] hover:-translate-y-0.5 hover:border-ink-faint/60 hover:bg-card/60 active:translate-y-0"
 								>
-									<card.icon size={17} strokeWidth={1.7} className={`shrink-0 ${card.tint}`} />
-									<span className="text-label leading-snug text-ink">{card.label}</span>
+									<card.icon
+										size={17}
+										strokeWidth={1.7}
+										className={`shrink-0 ${card.tint}`}
+									/>
+									<span className="text-label leading-snug text-ink">
+										{card.label}
+									</span>
 								</button>
 							))}
 						</div>

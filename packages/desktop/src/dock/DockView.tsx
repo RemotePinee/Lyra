@@ -19,14 +19,14 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLayout } from "../layout.tsx";
 import { TOOLBAR_RESERVED } from "../components/WindowControls.tsx";
 import { useApp } from "../store.ts";
-import { renderPanel, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
-import { CollapsedBar, type CollapsedItem } from "./CollapsedBar.tsx";
+import { renderPanel, renderPanelActions, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
 import { pct } from "./css.ts";
 import { HEADER_PAD, PANEL_MIN_WIDTH_PX, paneFloor } from "./geometry.ts";
 import { DockPane } from "./DockPane.tsx";
 import { Splitter } from "./Splitter.tsx";
 import { fitTree, layoutPanes, layoutSplitters, type Box, type SplitterBox } from "./layout.ts";
 import { useDock } from "./store.ts";
+import { canToggleMaximized } from "./visibility.ts";
 import type { PaneKind } from "./tree.ts";
 import { useBoxSize } from "./useBoxSize.ts";
 import { useDockDrag } from "./useDockDrag.ts";
@@ -253,8 +253,6 @@ export function DockView({
 		return { label: def?.label ?? kind, icon: def ? <def.icon size={12.5} strokeWidth={1.8} /> : undefined };
 	};
 
-	const items: CollapsedItem[] = present.map((kind) => ({ kind, ...describe(kind) }));
-
 	/*
 	 * Which pane, if any, has to make room for the traffic lights.
 	 *
@@ -267,14 +265,24 @@ export function DockView({
 	 * origin or it does not.
 	 */
 	const corner =
-		navOpen || compact || nativeFullScreen
+		navOpen || nativeFullScreen
 			? null
-			: (boxes.find((box) => box.left === 0 && box.top === 0)?.kind ?? null);
+			: compact
+				? /*
+					 * The narrow layout shows one pane over the whole dock, so that pane is the corner
+					 * — always, rather than only when it happens to be laid out at the origin. It used
+					 * to be excluded here on the assumption that the sidebar covers the corner, which
+					 * is true at every width except this one: at this width the sidebar is a drawer
+					 * over the window, and with it closed the pane's own title started underneath the
+					 * three buttons the system paints there.
+					 */
+					focusedPane
+				: (boxes.find((box) => box.left === 0 && box.top === 0)?.kind ?? null);
+
+
 
 	return (
 		<div className="ly-dock relative flex min-h-0 min-w-0 flex-1 flex-col">
-			{compact && <CollapsedBar items={items} focused={focusedPane} onFocus={(kind) => useDock.getState().focus(kind)} />}
-
 			{/* Marked so the drop geometry can be measured from outside — see `e2e/dock.test.ts`. */}
 			<div ref={containerRef} data-dock-panes className="relative min-h-0 min-w-0 flex-1">
 				{splitters.map((handle) => (
@@ -372,11 +380,22 @@ export function DockView({
 							draggable={!compact && live.length > 1}
 							onDragStart={(event) => start(kind, event)}
 							onMove={(side) => useDock.getState().moveTo(kind, { side, kind: null })}
-							actions={kind === "conversation" ? actions : undefined}
+							/*
+							 * The conversation carries the window's panel menu; a panel carries its own
+							 * controls. Both land left of full screen and close — see `PaneHeader`.
+							 */
+							actions={kind === "conversation" ? actions : renderPanelActions(kind)}
 							title={kind === "conversation" ? undefined : renderPanelHeader(kind)}
 							inset={corner === kind ? CORNER_RESERVED : 0}
-							onToggleMaximized={() =>
-								useDock.getState().toggleMaximized(kind, definitions.find((def) => def.kind === kind)?.companion?.kind)
+							// Absent where full screen is not on offer, which is what hides the button —
+							// see `canToggleMaximized` for the rule and the bug it was written for.
+							onToggleMaximized={
+								canToggleMaximized(kind, { compact, maximized })
+									? () =>
+											useDock
+												.getState()
+												.toggleMaximized(kind, definitions.find((def) => def.kind === kind)?.companion?.kind)
+									: undefined
 							}
 							onClose={kind === "conversation" ? undefined : () => useDock.getState().close(kind)}
 							onFocus={() => useDock.getState().focus(kind)}

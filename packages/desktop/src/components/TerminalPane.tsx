@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useApp } from "../store.ts";
 import { useSide } from "../sideStore.ts";
 import { useTerminals } from "../store/terminals.ts";
+import { rememberTerminalSize } from "../terminal-prewarm.ts";
 
 /**
  * A real shell, in the panel.
@@ -15,10 +16,14 @@ import { useTerminals } from "../store/terminals.ts";
  * redraw, no Ctrl-C, and anything full-screen — an editor, a pager, an interactive installer —
  * is simply unusable. Those are most of the reasons to want a terminal at all.
  *
- * The shell is not owned here. It lives in the main process, keyed by project directory, and this
- * connects to whichever of that project's shells the tab strip has selected. So this component
- * mounting is not a terminal starting, and it unmounting is not one ending — see
- * `electron/terminal-registry.ts`.
+ * The shell is not owned here. It lives in the main process, and this connects to whichever one the
+ * tab strip has selected. So this component mounting is not a terminal starting, and it unmounting
+ * is not one ending — see `electron/terminal-registry.ts`.
+ *
+ * Nor is it owned by the project. Everything in here used to be keyed by the current directory, so
+ * changing projects tore the terminal down and built another, and leaving every project left the
+ * pane blank — while the shells carried on running where nobody could reach them. The project
+ * decides one thing only: where a shell starts when you ask for a new one.
  */
 export function TerminalPane() {
 	const workspace = useApp((s) => s.workspace);
@@ -42,7 +47,7 @@ export function TerminalPane() {
 	 */
 	const size = useRef({ cols: 80, rows: 24 });
 	const [exited, setExited] = useState<number | null>(null);
-	const tabs = useTerminals((s) => s.tabs[workspace?.path ?? ""]) ?? [];
+	const tabs = useTerminals((s) => s.tabs);
 
 	/*
 	 * Run what the transcript handed over.
@@ -69,34 +74,37 @@ export function TerminalPane() {
 	}, [pending, ready]);
 
 	/**
-	 * Which directory this pane's shells belong to. Empty string means "no project".
+	 * Where a *new* shell would start. Empty string means "no project", which is home.
 	 *
-	 * Not a reason to refuse. The registry already resolves anything that is not a project to the
+	 * Read at the moment one is opened rather than depended on, because it is the only thing the
+	 * project decides here. Nothing else in this pane is keyed by it: a terminal you started is
+	 * yours until you close it, and changing projects — or leaving all of them — is not a reason to
+	 * take it away and hand back a different one. Making it a dependency is exactly what used to
+	 * tear down the terminal and rebuild it on every project change.
+	 *
+	 * Not a reason to refuse, either. The registry resolves anything that is not a project to the
 	 * home directory (`resolve` in `terminal-registry.ts`), so a shell with nowhere in particular to
-	 * be starts in `~` — which is what a terminal does everywhere else on the machine. Refusing to
-	 * open one until a project is chosen made the app the only terminal that needs permission to
-	 * exist.
-	 *
-	 * The empty string is also a usable key: every project-less window shares one set of tabs,
-	 * which is right, because they all share the same directory.
+	 * be starts in `~` — which is what a terminal does everywhere else on the machine.
 	 */
 	const cwd = workspace?.path ?? "";
-	const active = useTerminals((s) => s.active[cwd]);
+	const active = useTerminals((s) => s.active);
 
 	/*
-	 * Find out what this project already has running before drawing anything.
+	 * Find out what is already running before drawing anything.
 	 *
-	 * Coming back to a project with two shells in it should show two tabs and the one that was in
-	 * front, not a third shell nobody asked for. Only when there is genuinely nothing does this
-	 * open one — which is the first-ever visit, and the only time a terminal is actually started
-	 * by looking at it.
+	 * Coming back to two shells should show two tabs and the one that was in front, not a third
+	 * shell nobody asked for. Only when there is genuinely nothing does this open one — which is
+	 * the first-ever visit, and the only time a terminal is actually started by looking at it.
+	 *
+	 * Once, on mount. A shell is not a view of the current project, so there is nothing here for a
+	 * project change to invalidate.
 	 */
 	useEffect(() => {
 		let cancelled = false;
-		void window.lyra.terminal.list(cwd).then(async (tabs) => {
+		void window.lyra.terminal.listAll().then(async (tabs) => {
 			if (cancelled) return;
 			if (tabs.length > 0) {
-				useTerminals.getState().sync(cwd, tabs);
+				useTerminals.getState().sync(tabs);
 				return;
 			}
 			/*
@@ -113,27 +121,38 @@ export function TerminalPane() {
 			 * takes to lose. `size` is what the last mounted terminal measured — see the layout
 			 * effect below — and 80×24 only stands in when nothing has been measured yet.
 			 */
-			const opened = await window.lyra.terminal.open(cwd, size.current.cols, size.current.rows);
+			const opened = await window.lyra.terminal.open(
+				useApp.getState().workspace?.path ?? "",
+				size.current.cols,
+				size.current.rows,
+			);
 			if (cancelled) return;
-			useTerminals.getState().sync(cwd, [{ id: opened.id, title: opened.title }]);
+			useTerminals.getState().sync([{ id: opened.id, title: opened.title }]);
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [cwd]);
+	}, []);
 
 	/*
 	 * The terminal itself belongs to the pane, not to the shell it happens to be showing.
 	 *
-	 * Built as soon as there is a project, before anything is connected — because its measurement
-	 * is what a *new* shell has to be born at, and the effect that opens one runs after this. Tied
-	 * to the active tab instead, the first shell of a project was opened before any terminal
-	 * existed and so at a guessed 80×24; in a pane 38 columns wide its greeting came out wrapped
-	 * mid-word and stayed that way, since a later resize cannot re-wrap what is already written.
+	 * Built unconditionally, before anything is connected — because its measurement is what a *new*
+	 * shell has to be born at, and the effect that opens one runs after this. Tied to the active tab
+	 * instead, the first shell of a project was opened before any terminal existed and so at a
+	 * guessed 80×24; in a pane 38 columns wide its greeting came out wrapped mid-word and stayed
+	 * that way, since a later resize cannot re-wrap what is already written.
+	 *
+	 * Built once and never on a project change. It used to be keyed by the current directory, which
+	 * made changing projects dispose the terminal and construct another — the pane visibly blanked
+	 * and refilled for a change that has nothing to do with the shell you were using. With no
+	 * project it refused to build at all, which is what left the pane a white rectangle: the effect
+	 * above had already found the home shell and put a tab in the strip, so `empty` was false and
+	 * the offer to start one was skipped too — no terminal, and nothing saying why.
 	 */
 	useLayoutEffect(() => {
 		const element = host.current;
-		if (!element || !cwd) return;
+		if (!element) return;
 
 		const terminal = new Terminal({
 			fontFamily: readVar("--ly-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -154,6 +173,9 @@ export function TerminalPane() {
 		term.current = terminal;
 		fit.current = fitter;
 		size.current = { cols: terminal.cols, rows: terminal.rows };
+		// What the next launch's prewarmed shell is born at, so its prompt is folded where this pane
+		// would have folded it. See `terminal-prewarm.ts`.
+		rememberTerminalSize(terminal.cols, terminal.rows);
 
 		/*
 		 * The pty has to be told the new size, or every program running in it keeps wrapping to
@@ -176,7 +198,7 @@ export function TerminalPane() {
 			term.current = null;
 			fit.current = null;
 		};
-	}, [cwd]);
+	}, []);
 
 	/*
 	 * Connect the terminal to whichever tab is in front.
@@ -186,7 +208,7 @@ export function TerminalPane() {
 	 */
 	useEffect(() => {
 		const terminal = term.current;
-		if (!terminal || !cwd || !active) return;
+		if (!terminal || !active) return;
 
 		// Whatever the previous tab left on screen is not this tab's. The replay below redraws it.
 		terminal.reset();
@@ -242,8 +264,9 @@ export function TerminalPane() {
 			if (id !== sessionId.current) return;
 			sessionId.current = null;
 			// The tab goes with the shell that backed it: a strip listing a shell that has exited
-			// is a list of things that do not exist.
-			if (cwd) useTerminals.getState().remove(cwd, id);
+			// is a list of things that do not exist. Including the project-less strip, which is
+			// keyed by the empty string rather than being absent.
+			useTerminals.getState().remove(id);
 			setExited(code);
 		});
 
@@ -271,7 +294,7 @@ export function TerminalPane() {
 			if (sessionId.current) window.lyra.terminal.detach(sessionId.current, connection.current);
 			sessionId.current = null;
 		};
-	}, [cwd, active]);
+	}, [active]);
 
 	// Repaint on a theme change rather than rebuilding the shell under the user.
 	useEffect(() => {
@@ -301,7 +324,12 @@ export function TerminalPane() {
 			 * purpose. The way out is the same + the header carries, offered here too because an
 			 * empty pane is where you look.
 			 */}
-			{empty && cwd && (
+			{/*
+			 * `cwd` may legitimately be the empty string — that is how a window with no project says
+			 * "wherever home is", and the registry resolves it. Gating on its truthiness left the
+			 * pane blank in exactly that case: no tabs, and no offer to start one either.
+			 */}
+			{empty && (
 				<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-7 pb-6 text-center">
 					<SquareTerminal size={30} strokeWidth={1.35} className="text-ink-faint" />
 					<p className="text-label text-ink-muted">这里没有终端了。</p>
@@ -310,7 +338,7 @@ export function TerminalPane() {
 						onClick={() => {
 							// The measured size, like everywhere else a shell is started — see `size`.
 							void window.lyra.terminal.open(cwd, size.current.cols, size.current.rows).then((opened) => {
-								useTerminals.getState().add(cwd, { id: opened.id, title: opened.title });
+								useTerminals.getState().add({ id: opened.id, title: opened.title });
 							});
 						}}
 						className="rounded-lg border border-hairline px-3 py-1.5 text-label text-ink transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"

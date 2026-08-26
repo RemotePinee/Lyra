@@ -68,7 +68,8 @@ export function DockPane({
 	title?: React.ReactNode;
 	/** Room for the traffic lights, when this pane covers the window's top-left corner. */
 	inset?: number;
-	onToggleMaximized: () => void;
+	/** Absent where full screen is not on offer — the dock decides; see `DockView`. */
+	onToggleMaximized?: () => void;
 	onClose?: () => void;
 	onFocus: () => void;
 	/** Reported when the flight home ends, so the pane can be handed back to the dock's layout. */
@@ -181,7 +182,6 @@ export function DockPane({
 				carried={Boolean(carried)}
 				hideTitle={kind === "conversation"}
 				title={title}
-				canMaximize={kind !== "conversation"}
 				onDragStart={onDragStart}
 				onMove={onMove}
 				actions={actions}

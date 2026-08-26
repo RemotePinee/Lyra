@@ -44,7 +44,6 @@ export function PaneHeader({
 	carried,
 	hideTitle,
 	title,
-	canMaximize,
 	onDragStart,
 	onMove,
 	actions,
@@ -70,8 +69,6 @@ export function PaneHeader({
 	hideTitle?: boolean;
 	/** Drawn in place of the name, for a panel whose header is a control. */
 	title?: React.ReactNode;
-	/** Panels can fill the dock; the conversation already is what the dock is showing. */
-	canMaximize?: boolean;
 	onDragStart: (event: React.PointerEvent<HTMLElement>) => void;
 	/** ⌥ and an arrow, for the same rearrangement without a pointer. */
 	onMove: (side: DropSide) => void;
@@ -100,7 +97,18 @@ export function PaneHeader({
 	 * line up with the traffic lights.
 	 */
 	lift?: number;
-	onToggleMaximized: () => void;
+	/**
+	 * Absent where full screen means nothing — the conversation, which is already what the dock is
+	 * showing, and the collapsed layout, where one pane is all there is room for.
+	 *
+	 * Decided by the dock and passed in, rather than inferred here from `draggable`. It used to be
+	 * `canMaximize && draggable`, and `draggable` is false whenever the dock is showing a single
+	 * pane — which is precisely what maximising a pane on its own produces. So the control removed
+	 * itself on arrival: every pane without a companion could be made full screen and then only
+	 * closed, with an Esc nothing on screen mentioned as the way back. Whether a pane can be
+	 * dragged and whether it can leave full screen are different questions.
+	 */
+	onToggleMaximized?: () => void;
 	/** Absent for the conversation, which is not a pane you can put away. */
 	onClose?: () => void;
 }) {
@@ -177,13 +185,14 @@ export function PaneHeader({
 			<div className="no-drag flex shrink-0 items-center gap-0.5">
 				{actions}
 				{/*
-				 * Only on panels, and only where there is something to maximise *from*.
+				 * Only where there is something to maximise *from*.
 				 *
 				 * The conversation is what the window is already showing — offering to make it
 				 * fill the window is offering to do nothing. In the collapsed layout the same is
-				 * true of every pane, since one of them is all there is room for.
+				 * true of every pane, since one of them is all there is room for. Both of those are the
+				 * dock's call, not this component's — see `onToggleMaximized`.
 				 */}
-				{canMaximize && draggable && (
+				{onToggleMaximized && (
 					<HeaderButton
 						tip={maximized ? "退出全屏（Esc）" : "全屏"}
 						label={maximized ? `退出全屏：${label}` : `全屏：${label}`}

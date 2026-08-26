@@ -13,8 +13,11 @@
  * running and keeps recording what it writes, and the next attach replays that recording into the
  * fresh xterm, which redraws to exactly what was on screen before.
  *
- * A directory can have several, which is what the pane's tabs are: `open` always starts a new one,
- * `list` reports what a project already has, and `attach` connects to one by id.
+ * Several can be running at once, which is what the pane's tabs are: `open` always starts a new
+ * one, `listAll` reports every shell there is, and `attach` connects to one by id. A shell is
+ * started *in* a directory but not filed under it — leaving a project does not hide a terminal that
+ * is still running. `prewarm` starts the first one before anybody asks, which is what makes opening
+ * the pane instant rather than a third of a second of empty rectangle.
  *
  * The window is reached through a getter rather than held: it is replaced when the app is reopened
  * from the dock, and a captured reference would go on writing to a window nobody can see.
@@ -39,7 +42,7 @@ export interface LiveTerminal {
 	pty: IPty;
 	cwd: string;
 	attached: boolean;
-	/** What the tab is called. Numbered per directory, and kept when its neighbours close. */
+	/** What the tab is called. Numbered across every shell, and kept when its neighbours close. */
 	title: string;
 	/** Raw output, in the chunks it arrived in, capped by `SCROLLBACK_BYTES`. */
 	scrollback: string[];
@@ -129,12 +132,28 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 			.map(([id, live]) => ({ id, title: live.title }));
 
 	/**
+	 * Every shell there is, whatever directory it was started in.
+	 *
+	 * What the pane's tab strip shows. Shells are still *started* somewhere — a new one opens in the
+	 * project you are in, or in home when you are in none — but they are not filed under it: leaving
+	 * a project is not a reason to stop showing a terminal that is running, any more than closing a
+	 * folder in an editor closes the terminal you were building in. The strip used to be keyed by
+	 * the current project, so changing projects swapped it for a different set and moving to no
+	 * project at all emptied it, while every one of those shells carried on running unseen.
+	 */
+	const listAll = (): TerminalTab[] => [...terminals].map(([id, live]) => ({ id, title: live.title }));
+
+	/**
 	 * Start another shell here.
 	 *
 	 * Always a new one — this is what the tab strip's `+` does. Joining an existing shell is
 	 * `attach`, and which of them a freshly opened pane wants is the pane's decision.
+	 *
+	 * `attached` is false only for `prewarm`: a shell nobody has asked to see yet must not have its
+	 * output forwarded to a pane that is not showing it, and must stay eligible for `retireIdle`.
+	 * It still records everything, which is the entire point — the first attach replays it.
 	 */
-	const open = (cwd: string, cols: number, rows: number): Attached => {
+	const open = (cwd: string, cols: number, rows: number, attached = true): Attached => {
 		const dir = resolve(cwd);
 		retireIdle(terminals, dir);
 
@@ -152,8 +171,8 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 		const live: LiveTerminal = {
 			pty: child,
 			cwd: dir,
-			title: nextTitle(terminals, dir),
-			attached: true,
+			title: nextTitle(terminals),
+			attached,
 			scrollback: [],
 			bytes: 0,
 			touched: ++clock,
@@ -174,6 +193,28 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 		});
 		terminals.set(id, live);
 		return { id, title: live.title, pid: child.pid, epoch: 1, replay: "" };
+	};
+
+	/**
+	 * Have this directory's first shell running before anyone opens the pane.
+	 *
+	 * A shell takes about a third of a second to reach its prompt — spawn is immediate, the rest is
+	 * the login files and whatever the prompt itself shells out to. Started when the pane opens,
+	 * that third of a second is the pane: an empty rectangle, then a prompt. Started at launch, the
+	 * prompt is already in `scrollback` and the first attach replays it in one frame, which is the
+	 * difference between a terminal that opens and a terminal that is simply there.
+	 *
+	 * Idempotent, and deliberately only ever the first shell in the app: the strip shows every shell
+	 * regardless of where it was started, so one already running is one the pane can open onto
+	 * instantly — there is nothing to gain by predicting a second. The strip's `+` is a shell the
+	 * user asked for while watching, where a moment of starting is legible rather than a stall.
+	 *
+	 * Unattached, so this cannot cost anything that is on screen — `retireIdle` may take it back if
+	 * sixteen shells are somehow alive, and a prediction is the right thing to lose first.
+	 */
+	const prewarm = (cwd: string, cols: number, rows: number): void => {
+		if (terminals.size > 0) return;
+		open(cwd, cols, rows, false);
 	};
 
 	/**
@@ -256,7 +297,7 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 		terminals.delete(id);
 	};
 
-	return { list, open, attach, detach, write, resize, kill };
+	return { list, listAll, open, prewarm, attach, detach, write, resize, kill };
 }
 
 
@@ -281,9 +322,15 @@ function retireIdle(terminals: Map<string, LiveTerminal>, keep: string): void {
 	}
 }
 
-/** `终端 1`, `终端 2`, … per directory, never reusing a number a live tab still has. */
-function nextTitle(terminals: Map<string, LiveTerminal>, cwd: string): string {
-	const taken = new Set([...terminals.values()].filter((live) => live.cwd === cwd).map((live) => live.title));
+/**
+ * `终端 1`, `终端 2`, … never reusing a number a live tab still has.
+ *
+ * Across every shell, not per directory. The strip shows all of them side by side, so numbering
+ * within a directory produced two tabs both called 「终端 1」 the moment a shell was started
+ * somewhere else — a strip whose entire job is to let you pick one by name.
+ */
+function nextTitle(terminals: Map<string, LiveTerminal>): string {
+	const taken = new Set([...terminals.values()].map((live) => live.title));
 	for (let n = 1; ; n++) {
 		const title = `终端 ${n}`;
 		if (!taken.has(title)) return title;

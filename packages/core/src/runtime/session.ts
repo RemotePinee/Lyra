@@ -217,12 +217,29 @@ export class AgentSession {
 	 * Send a prompt. If the agent is already running, the message is queued as steering and
 	 * picked up between turns instead of starting a second concurrent run.
 	 */
-	async prompt(content: UserContent[], options: { thinking?: ThinkingLevel; origin?: "side-chat" } = {}): Promise<void> {
+	async prompt(
+		content: UserContent[],
+		options: {
+			thinking?: ThinkingLevel;
+			origin?: "side-chat";
+			/**
+			 * The message is the app asking on the user's behalf, not the user typing.
+			 *
+			 * 「继续」 is the case: it says the same thing the user would have typed, and it is not
+			 * something they wrote. Marked so the transcript does not put words in their mouth, and
+			 * so the three places that look for "the last thing actually asked for" — retrying,
+			 * compaction's standing instruction, whether a conversation has any real content — all
+			 * see past it to the request it is continuing.
+			 */
+			synthetic?: boolean;
+		} = {},
+	): Promise<void> {
 		const message: Message = {
 			role: "user",
 			content,
 			timestamp: Date.now(),
 			...(options.origin ? { origin: options.origin } : {}),
+			...(options.synthetic ? { synthetic: true } : {}),
 		};
 
 		if (this.running) {

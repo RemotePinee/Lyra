@@ -59,10 +59,26 @@ export function Composer() {
 	 * losing it would be worse than an awkward join.
 	 */
 	const draft = useApp((s) => s.composerDraft);
+	const field = useRef<HTMLTextAreaElement>(null);
 	useEffect(() => {
-		if (!draft) return;
-		setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${draft}` : draft));
+		if (!draft.text) return;
+		setText((current) =>
+			draft.replace || !current.trim() ? draft.text : `${current.trimEnd()}\n\n${draft.text}`,
+		);
 		useApp.getState().setComposerDraft("");
+		/*
+		 * And put the caret in it.
+		 *
+		 * What arrives this way is a starting point rather than a finished message — a suggestion
+		 * card, a review to describe — so the next thing anybody does is edit it. Landing the text
+		 * without the focus makes that a click they have to find first. At the end, not selected:
+		 * this is a draft to add to, not one to type over.
+		 */
+		const el = field.current;
+		if (el) {
+			el.focus();
+			el.setSelectionRange(el.value.length, el.value.length);
+		}
 	}, [draft]);
 	const [attachments, setAttachments] = useState<Attachment[]>([]);
 
@@ -376,6 +392,7 @@ export function Composer() {
 					onHover={setActive}
 				/>
 				<ComposerShell
+					fieldRef={field}
 					value={text}
 					onChange={(next) => {
 						setText(next);

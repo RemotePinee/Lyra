@@ -27,6 +27,9 @@ import { useShortcuts } from "./shortcuts.ts";
 import { useSide } from "./sideStore.ts";
 import { useApp } from "./store.ts";
 import { useTrayCommands } from "./tray-commands.ts";
+import { useFileTreeStore } from "./store/fileTree.ts";
+import { useOpenFile } from "./store/openFile.ts";
+import { useTerminalPrewarm } from "./terminal-prewarm.ts";
 import { applyAppearance, watchSystemTheme } from "./theme.ts";
 
 export function App() {
@@ -36,6 +39,12 @@ export function App() {
 	useEffect(() => {
 		void bootstrap();
 	}, [bootstrap]);
+
+	// A shell running before the terminal is opened, so opening it costs nothing. Idle-scheduled
+	// and idempotent — see `terminal-prewarm.ts`.
+	useTerminalPrewarm();
+	// Whose files these are. Owned here rather than by the file pane, which is not always mounted.
+	useProjectFiles();
 
 	const appearance = useApp((s) => s.settings?.appearance);
 	useEffect(() => {
@@ -233,4 +242,24 @@ function ChatShell() {
 			/>
 		</div>
 	);
+}
+
+/**
+ * Let go of the last project's files when the window moves to another one.
+ *
+ * Both halves of the file browser are panes that can be closed, and neither of them is the right
+ * place to decide this: the tree used to do it in an effect of its own, so closing the tree and
+ * then changing projects left the editor showing a file — and holding unsaved edits for it — from
+ * a project that is no longer open. The paths mean nothing here, and the drafts belong to a file
+ * this project does not have.
+ *
+ * Mounted at the root, which is the one place guaranteed to be watching.
+ */
+function useProjectFiles(): void {
+	const root = useApp((s) => s.workspace?.path ?? null);
+
+	useEffect(() => {
+		useFileTreeStore.getState().setRoot(root);
+		useOpenFile.getState().clear();
+	}, [root]);
 }

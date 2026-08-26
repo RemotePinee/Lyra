@@ -1,9 +1,12 @@
 /**
  * The terminal pane's tabs, drawn in place of its title.
  *
- * A project can have several shells running at once — one on a dev server, one for git, one for
- * whatever you are actually doing — and switching between them should not involve arranging panes.
- * So the pane's header carries the strip, the way a terminal emulator does.
+ * Several shells can be running at once — one on a dev server, one for git, one for whatever you
+ * are actually doing — and switching between them should not involve arranging panes. So the pane's
+ * header carries the strip, the way a terminal emulator does.
+ *
+ * Every shell, not the current project's: a terminal you started stays reachable when you move to
+ * another project or to none at all. See `store/terminals.ts`.
  *
  * The strip is bounded and scrolls. It shares its row with the pane's grip in the centre and the
  * full-screen and close buttons at the right, and those have to stay reachable however many tabs
@@ -20,9 +23,8 @@ import { useApp } from "../store.ts";
 import { useTerminals } from "../store/terminals.ts";
 
 export function TerminalTabs() {
-	const cwd = useApp((s) => s.workspace?.path) ?? "";
-	const tabs = useTerminals((s) => s.tabs[cwd]) ?? [];
-	const active = useTerminals((s) => s.active[cwd]);
+	const tabs = useTerminals((s) => s.tabs);
+	const active = useTerminals((s) => s.active);
 	const strip = useRef<HTMLDivElement>(null);
 
 	/*
@@ -59,16 +61,21 @@ export function TerminalTabs() {
 		markEdges();
 	}, [active, markEdges]);
 
-	if (!cwd) return null;
-
+	/*
+	 * Where a new shell starts: the current project, or home when there is none.
+	 *
+	 * Read here, at the moment one is asked for, and nowhere else. The strip used to be keyed by
+	 * this — and to return `null` when it was empty, so with no project open there was no strip at
+	 * all and no way back to a shell that was still running.
+	 */
 	const openAnother = async () => {
-		const opened = await window.lyra.terminal.open(cwd, 80, 24);
-		useTerminals.getState().add(cwd, { id: opened.id, title: opened.title });
+		const opened = await window.lyra.terminal.open(useApp.getState().workspace?.path ?? "", 80, 24);
+		useTerminals.getState().add({ id: opened.id, title: opened.title });
 	};
 
 	const close = (id: string) => {
 		window.lyra.terminal.kill(id);
-		useTerminals.getState().remove(cwd, id);
+		useTerminals.getState().remove(id);
 	};
 
 	return (
@@ -96,7 +103,7 @@ export function TerminalTabs() {
 						>
 							<button
 								type="button"
-								onClick={() => useTerminals.getState().select(cwd, tab.id)}
+								onClick={() => useTerminals.getState().select(tab.id)}
 								className="py-1 text-detail whitespace-nowrap"
 							>
 								{tab.title}

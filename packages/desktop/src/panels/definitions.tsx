@@ -49,3 +49,9 @@ export function renderPanelHeader(kind: PanelKind) {
 	const Header = allPanels().find((p) => p.kind === kind)?.header;
 	return Header ? <Header /> : null;
 }
+
+/** A panel's own controls, for the header's button row. */
+export function renderPanelActions(kind: PanelKind) {
+	const Actions = allPanels().find((p) => p.kind === kind)?.actions;
+	return Actions ? <Actions /> : null;
+}

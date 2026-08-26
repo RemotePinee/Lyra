@@ -12,7 +12,6 @@
  */
 
 import { Folder } from "lucide-react";
-import { useEffect } from "react";
 import { useDock } from "../dock/store.ts";
 import { companionOf } from "../panels/definitions.tsx";
 import { FileTree } from "./files/FileTree.tsx";
@@ -27,12 +26,10 @@ export function FileBrowser() {
 	const root = workspace?.path ?? null;
 
 	/*
-	 * A file open in one project has no meaning in the next: same editor, different paths, and any
-	 * unsaved edits belong to a file this project does not have.
+	 * Letting go of the last project's file is not this pane's job — see `useProjectFiles` in
+	 * `App.tsx`. It used to be done here, in an effect that only ran while this pane was mounted, so
+	 * closing the tree and then changing projects left the editor holding a file from the old one.
 	 */
-	useEffect(() => {
-		useOpenFile.getState().clear();
-	}, [root]);
 
 	if (!workspace || !root) {
 		return (

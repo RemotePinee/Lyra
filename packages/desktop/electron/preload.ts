@@ -83,7 +83,7 @@ const api: LyraApi = {
 		contextBreakdown: (sessionId) => ipcRenderer.invoke("sessions:contextBreakdown", sessionId),
 	},
 	agent: {
-		prompt: (sessionId, content) => ipcRenderer.invoke("agent:prompt", sessionId, content),
+		prompt: (sessionId, content, options) => ipcRenderer.invoke("agent:prompt", sessionId, content, options),
 		editMessage: (sessionId, messageIndex, content) =>
 			ipcRenderer.invoke("agent:editMessage", sessionId, messageIndex, content),
 		abort: (sessionId) => ipcRenderer.invoke("agent:abort", sessionId),
@@ -145,7 +145,9 @@ const api: LyraApi = {
 	},
 	terminal: {
 		list: (cwd) => ipcRenderer.invoke("terminal:list", cwd),
+		listAll: () => ipcRenderer.invoke("terminal:list-all"),
 		open: (cwd, cols, rows) => ipcRenderer.invoke("terminal:open", cwd, cols, rows),
+		prewarm: (cwd, cols, rows) => ipcRenderer.send("terminal:prewarm", cwd, cols, rows),
 		attach: (id, cols, rows) => ipcRenderer.invoke("terminal:attach", id, cols, rows),
 		detach: (id, epoch) => ipcRenderer.send("terminal:detach", id, epoch),
 		// `send`, not `invoke`: keystrokes must not wait for a round trip to echo.

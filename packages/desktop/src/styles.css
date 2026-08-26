@@ -2738,7 +2738,8 @@
 .group\/session:focus-within .ly-fade-tail,
 .group\/project:hover .ly-fade-tail,
 .group\/project:focus-within .ly-fade-tail {
-  --ly-fade-right: 30px;
+  /* As wide as the controls that are landing on it — the row says how many it has. */
+  --ly-fade-right: var(--ly-row-controls, 30px);
 }
 
 /*
@@ -2847,6 +2848,43 @@
     width var(--ly-t-base) var(--ly-e-out),
     height var(--ly-t-base) var(--ly-e-out),
     opacity var(--ly-t-quick) var(--ly-e-soft);
+}
+
+/*
+ * A pane arriving.
+ *
+ * Its neighbours ease into their new sizes — that is the `transition` above — but the new pane
+ * itself has no previous size to ease from, so it simply appeared. Next to three edges gliding
+ * into place, one box blinking into existence is the thing the eye reports, and it made the whole
+ * rearrangement read as not animated at all.
+ *
+ * Opacity only. A pane may be carrying a transform of its own while it is dragged, and scaling a
+ * box that holds a terminal or a webview re-rasterises its whole subtree for the length of the
+ * animation.
+ *
+ * On mount, which is exactly when a pane opens — and, since a closed pane is unmounted, never
+ * replayed for one that was already there. Panes restored at launch play it behind the boot
+ * screen, where there is nothing to see.
+ */
+.ly-dock-pane {
+  animation: ly-pane-in var(--ly-t-base) var(--ly-e-out);
+}
+
+@keyframes ly-pane-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * Nothing arrives mid-drag.
+ *
+ * The carried pane is re-inserted into the tree on every preview, so without this it would replay
+ * its entrance at every region the pointer crossed.
+ */
+:root[data-dock-dragging] .ly-dock-pane,
+:root[data-dock-settling] .ly-dock-pane {
+  animation: none;
 }
 
 /*

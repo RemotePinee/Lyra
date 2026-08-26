@@ -74,6 +74,16 @@ export interface PanelDefinition {
 	 * strip of tabs *is* the title once there is more than one of something in a pane.
 	 */
 	header?: ComponentType;
+	/**
+	 * Drawn in the header's controls, left of full screen and close.
+	 *
+	 * For what you do to whatever the panel is showing, as opposed to what you do to the pane. The
+	 * file panel puts its wrap/format/open-in marks here; they used to be a labelled toolbar across
+	 * the top of the file, which cost a line of the file on every file for four controls that never
+	 * change. The conversation's own panel menu arrives by a different route — it belongs to the
+	 * window rather than to a panel.
+	 */
+	actions?: ComponentType;
 }
 
 const registered: PanelDefinition[][] = [];

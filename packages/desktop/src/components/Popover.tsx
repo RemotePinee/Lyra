@@ -11,7 +11,16 @@
  * third avoided by never scrolling at all.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { Scroller } from "./Scroller.tsx";
@@ -118,12 +127,17 @@ const MARGIN = 12;
  * Null for a point anchor (a right-click) and whenever the menu simply cannot fit in its
  * column — being clipped is worse than overlapping.
  */
-function columnBounds(anchor: Anchor, width: number): { left: number; right: number } | null {
+function columnBounds(
+	anchor: Anchor,
+	width: number,
+): { left: number; right: number } | null {
 	if (!(anchor instanceof HTMLElement)) return null;
 	const column = anchor.closest("main, aside, .ly-panel");
 	if (!column) return null;
 	const rect = column.getBoundingClientRect();
-	return rect.width - 8 < width ? null : { left: rect.left + 4, right: rect.right - 4 };
+	return rect.width - 8 < width
+		? null
+		: { left: rect.left + 4, right: rect.right - 4 };
 }
 
 /**
@@ -132,8 +146,30 @@ function columnBounds(anchor: Anchor, width: number): { left: number; right: num
  * Right-clicking a second row used to leave the first menu on screen — and worse, the first
  * one's pending exit timer would then fire and close the *new* menu 120ms later. One at a
  * time, enforced at the point of mounting, removes both.
+ *
+ * "Other" means unrelated, not merely earlier — see `PopoverChain`.
  */
-const openPopovers = new Set<{ close: () => void }>();
+const openPopovers = new Set<PopoverHandle>();
+
+interface PopoverHandle {
+	close: () => void;
+	/** 1 for a popover opened from the window, one more for each one it is opened inside. */
+	depth: number;
+}
+
+/**
+ * The popovers this one is inside, outermost first.
+ *
+ * A menu opened from within a menu is not a rival to it. The file tree in the editor's header is a
+ * popover, and right-clicking a row in it opens the file menu — which is also a popover, portalled
+ * to `<body>` like every other. Without knowing the two are related, mounting the second closed the
+ * first, so the tree vanished the instant you right-clicked it and the menu was left pointing at
+ * nothing; and any click on that menu counted as a click outside the tree.
+ *
+ * Passed through React's tree rather than the DOM: a portal moves the elements, not the context, so
+ * anything rendered inside a popover's `children` can still see which popovers it is under.
+ */
+const PopoverChain = createContext<PopoverHandle[]>([]);
 
 export function Popover({
 	anchor,
@@ -151,7 +187,11 @@ export function Popover({
 	bodyClassName = "",
 }: PopoverProps) {
 	const ref = useRef<HTMLDivElement>(null);
-	const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0, left: 0, top: 0 });
+	const [style, setStyle] = useState<React.CSSProperties>({
+		opacity: 0,
+		left: 0,
+		top: 0,
+	});
 	/**
 	 * Set while the exit animation plays, before the caller is told to unmount.
 	 *
@@ -196,18 +236,30 @@ export function Popover({
 	// A pending exit must not outlive the component either.
 	useEffect(() => () => window.clearTimeout(exitTimer.current), []);
 
-	// One menu at a time. Registered on mount, so opening this one dismisses whatever was up.
+	/*
+	 * One menu at a time, except for the menus this one is inside.
+	 *
+	 * Registered on mount, so opening this one dismisses whatever unrelated thing was up while
+	 * leaving its own ancestors alone — a menu opened from within a menu is part of it, not a rival.
+	 */
 	const onCloseRef = useRef(onClose);
 	onCloseRef.current = onClose;
+	const ancestors = useContext(PopoverChain);
+	const self = useRef<PopoverHandle>({
+		close: () => onCloseRef.current(),
+		depth: ancestors.length + 1,
+	}).current;
+	const chain = useMemo(() => [...ancestors, self], [ancestors, self]);
 	useLayoutEffect(() => {
-		const self = { close: () => onCloseRef.current() };
-		for (const other of openPopovers) other.close();
+		for (const other of openPopovers) {
+			if (!chain.includes(other)) other.close();
+		}
 		openPopovers.clear();
-		openPopovers.add(self);
+		for (const each of chain) openPopovers.add(each);
 		return () => {
 			openPopovers.delete(self);
 		};
-	}, []);
+	}, [chain, self]);
 
 	// Measure after paint: the popover's own size decides whether it fits above the anchor.
 	useLayoutEffect(() => {
@@ -229,18 +281,25 @@ export function Popover({
 			 * placed for it. Whether it fits above the trigger was decided on the wrong number, and
 			 * a panel that answered "yes" wrongly settled over the control it points at.
 			 */
-			if (fixed !== undefined) element.style.width = `${Math.min(fixed, limit)}px`;
+			if (fixed !== undefined)
+				element.style.width = `${Math.min(fixed, limit)}px`;
 			const box = element.getBoundingClientRect();
 			const w = Math.min(fixed ?? box.width, limit);
 
 			const fitsAbove = a.top - box.height - GAP >= MARGIN;
-			const fitsBelow = a.bottom + box.height + GAP <= window.innerHeight - MARGIN;
+			const fitsBelow =
+				a.bottom + box.height + GAP <= window.innerHeight - MARGIN;
 
 			// Stay inside the trigger's own column when it has room, otherwise inside the window.
 			const column = columnBounds(anchor, w);
 			const minLeft = Math.max(MARGIN, column ? column.left : MARGIN);
-			const maxLeft = Math.min(window.innerWidth - MARGIN, column ? column.right : window.innerWidth - MARGIN) - w;
-			const clampX = (x: number) => Math.min(Math.max(minLeft, x), Math.max(minLeft, maxLeft));
+			const maxLeft =
+				Math.min(
+					window.innerWidth - MARGIN,
+					column ? column.right : window.innerWidth - MARGIN,
+				) - w;
+			const clampX = (x: number) =>
+				Math.min(Math.max(minLeft, x), Math.max(minLeft, maxLeft));
 
 			let left: number;
 			/*
@@ -275,13 +334,28 @@ export function Popover({
 				resolved = "right";
 				const fitsRight = a.right + GAP + w <= maxLeft + w;
 				left = clampX(fitsRight ? a.right + GAP : a.left - GAP - w);
-				const top = Math.min(Math.max(MARGIN, a.top - 4), window.innerHeight - box.height - MARGIN);
+				const top = Math.min(
+					Math.max(MARGIN, a.top - 4),
+					window.innerHeight - box.height - MARGIN,
+				);
 				anchorEdge = { top };
 				origin = `${fitsRight ? "0px" : "100%"} ${clamp(a.top + a.height / 2 - top, 0, box.height)}px`;
 			} else {
 				resolved =
-					placement === "top" ? (fitsAbove || !fitsBelow ? "top" : "bottom") : fitsBelow || !fitsAbove ? "bottom" : "top";
-				left = clampX(align === "start" ? a.left : align === "center" ? a.left + a.width / 2 - w / 2 : a.right - w);
+					placement === "top"
+						? fitsAbove || !fitsBelow
+							? "top"
+							: "bottom"
+						: fitsBelow || !fitsAbove
+							? "bottom"
+							: "top";
+				left = clampX(
+					align === "start"
+						? a.left
+						: align === "center"
+							? a.left + a.width / 2 - w / 2
+							: a.right - w,
+				);
 				/*
 				 * Neither side has room: slide it into the window rather than scroll inside it.
 				 *
@@ -294,9 +368,18 @@ export function Popover({
 				 * Only when *both* sides fail. With room on either side the menu still hangs off the
 				 * cursor, which is where the pointer expects to find it.
 				 */
-				shifted = !fitsAbove && !fitsBelow && box.height + MARGIN * 2 <= window.innerHeight;
+				shifted =
+					!fitsAbove &&
+					!fitsBelow &&
+					box.height + MARGIN * 2 <= window.innerHeight;
 				anchorEdge = shifted
-					? { top: clamp(a.bottom + GAP, MARGIN, window.innerHeight - box.height - MARGIN) }
+					? {
+							top: clamp(
+								a.bottom + GAP,
+								MARGIN,
+								window.innerHeight - box.height - MARGIN,
+							),
+						}
 					: resolved === "top"
 						? { bottom: window.innerHeight - a.top + GAP }
 						: { top: a.bottom + GAP };
@@ -337,16 +420,38 @@ export function Popover({
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				event.stopPropagation();
-				dismiss();
-			}
+			if (event.key !== "Escape") return;
+			/*
+			 * The innermost one goes first, and only it.
+			 *
+			 * These listen in the capture phase, so the handlers run outermost-first — the order
+			 * they were mounted in — and `stopPropagation` meant the *outer* menu swallowed the key
+			 * and closed, taking the inner one down with it. Escape in a right-click menu should
+			 * dismiss that menu and leave you in the tree it was opened from.
+			 */
+			let deepest = self.depth;
+			for (const other of openPopovers)
+				deepest = Math.max(deepest, other.depth);
+			if (self.depth !== deepest) return;
+			event.stopPropagation();
+			dismiss();
 		};
 		const onPointerDown = (event: MouseEvent) => {
 			const target = event.target as Node;
 			// Clicking the trigger again is its own toggle; do not double-handle it here.
 			if (ref.current?.contains(target)) return;
 			if (anchor instanceof HTMLElement && anchor.contains(target)) return;
+			/*
+			 * A press inside a popover opened from this one is not a press outside this one.
+			 *
+			 * They are portalled siblings in the DOM, so `contains` cannot see the relationship —
+			 * the depth on the element can. Choosing 「重命名」 in a file menu would otherwise close
+			 * the tree the menu was acting on, at the moment the tree needs to show the rename.
+			 */
+			const within =
+				target instanceof Element ? target.closest("[data-ly-popover]") : null;
+			if (within && Number(within.getAttribute("data-ly-popover")) > self.depth)
+				return;
 			dismiss();
 		};
 		window.addEventListener("keydown", onKey, true);
@@ -355,7 +460,7 @@ export function Popover({
 			window.removeEventListener("keydown", onKey, true);
 			window.removeEventListener("mousedown", onPointerDown, true);
 		};
-	}, [anchor, dismiss]);
+	}, [anchor, dismiss, self]);
 
 	// Frosted: every surface a menu opens over paints a background of its own for it to blur.
 	const surface = "ly-glass";
@@ -375,36 +480,49 @@ export function Popover({
 	 * window should not be a descendant of anything in it.
 	 */
 	return createPortal(
-		<div
-			ref={ref}
-			role={role}
-			aria-label={label}
-			style={style}
-			/*
-			 * Above everything, including the side panel.
-			 *
-			 * Both used to be z-50, so the winner was whichever came later in the DOM — the
-			 * panel — and a menu opened near it was simply cut in half. A popover is transient
-			 * and belongs on top of whatever it was opened over, always.
-			 */
-			className={`${surface} fixed z-[60] flex flex-col overflow-hidden rounded-[10px] border border-line ${
-				leaving ? "ly-pop-out" : placed ? "ly-pop-in" : ""
-			} ${className}`}
-		>
-			{header && <div className="shrink-0 border-b border-line-soft">{header}</div>}
+		/* Everything drawn in here is inside this popover, and so must not close it. */
+		<PopoverChain.Provider value={chain}>
+			<div
+				ref={ref}
+				role={role}
+				aria-label={label}
+				// How deeply nested this one is, for the press-outside test above — the only way a
+				// portalled sibling can tell an ancestor from an unrelated surface.
+				data-ly-popover={self.depth}
+				style={style}
+				/*
+				 * Above everything, including the side panel.
+				 *
+				 * Both used to be z-50, so the winner was whichever came later in the DOM — the
+				 * panel — and a menu opened near it was simply cut in half. A popover is transient
+				 * and belongs on top of whatever it was opened over, always.
+				 */
+				className={`${surface} fixed z-[60] flex flex-col overflow-hidden rounded-[10px] border border-line ${
+					leaving ? "ly-pop-out" : placed ? "ly-pop-in" : ""
+				} ${className}`}
+			>
+				{header && (
+					<div className="shrink-0 border-b border-line-soft">{header}</div>
+				)}
 
-			{/*
-			 * The app's own scroller, not `overflow: auto` — so a menu that outgrows the gap it was
-			 * placed in gets the same overlaid bar and softened edge as every other list in the
-			 * window. Three menus used to reach for `Scroller` themselves and the rest scrolled with
-			 * a native bar; making it the surface's job is what makes the answer the same everywhere.
-			 */}
-			<Scroller className="min-h-0 flex-auto" contentClassName={`overflow-x-hidden ${bodyClassName}`}>
-				{children}
-			</Scroller>
+				{/*
+				 * The app's own scroller, not `overflow: auto` — so a menu that outgrows the gap it was
+				 * placed in gets the same overlaid bar and softened edge as every other list in the
+				 * window. Three menus used to reach for `Scroller` themselves and the rest scrolled with
+				 * a native bar; making it the surface's job is what makes the answer the same everywhere.
+				 */}
+				<Scroller
+					className="min-h-0 flex-auto"
+					contentClassName={`overflow-x-hidden ${bodyClassName}`}
+				>
+					{children}
+				</Scroller>
 
-			{footer && <div className="shrink-0 border-t border-line-soft">{footer}</div>}
-		</div>,
+				{footer && (
+					<div className="shrink-0 border-t border-line-soft">{footer}</div>
+				)}
+			</div>
+		</PopoverChain.Provider>,
 		document.body,
 	);
 }
@@ -433,7 +551,8 @@ export function usePopover() {
 		/** Open against a specific element. */
 		openAt: (element: HTMLElement) => setAnchor(element),
 		/** Open at the cursor — right-click acts on a whole row, so the row is not the anchor. */
-		openAtPoint: (event: React.MouseEvent) => setAnchor({ x: event.clientX, y: event.clientY }),
+		openAtPoint: (event: React.MouseEvent) =>
+			setAnchor({ x: event.clientX, y: event.clientY }),
 		close: () => setAnchor(null),
 	};
 }
@@ -444,4 +563,10 @@ export function usePopover() {
  * The definitions moved to `Menu.tsx`; a popover is a positioned surface and a menu is what is
  * often put on one, which is a relationship rather than an identity.
  */
-export { MenuBody, MenuItem, MenuLabel, MenuSearch, MenuSeparator } from "./Menu.tsx";
+export {
+	MenuBody,
+	MenuItem,
+	MenuLabel,
+	MenuSearch,
+	MenuSeparator,
+} from "./Menu.tsx";
