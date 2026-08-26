@@ -20,6 +20,8 @@ import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout
 
 /** Below this the sidebar and a readable content column no longer fit side by side. */
 const COMPACT_MAX = 760;
+/** The narrowest the conversation may be squeezed to before the sidebar starts giving way. */
+const CONTENT_MIN = 420;
 /** Above this the dock can hold panes beside the conversation without starving either. */
 const WIDE_MIN = 1180;
 
@@ -216,7 +218,6 @@ export function useLayout(): LayoutValue {
 }
 
 /** What the dock keeps for itself before the sidebar is allowed any more of the window. */
-const CONTENT_MIN = 420;
 
 /**
  * How wide the sidebar is actually drawn, which is not always how wide it was set to be.
