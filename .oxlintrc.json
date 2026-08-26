@@ -4,6 +4,7 @@
     "typescript",
     "unicorn",
     "react",
+    "react-hooks",
     "react-perf",
     "import",
     "jsx-a11y"
@@ -71,7 +72,9 @@
       {
         "allowAsProps": true
       }
-    ]
+    ],
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn"
   },
   "overrides": [
     {
@@ -102,6 +105,17 @@
       ],
       "rules": {
         "no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/core/src/**",
+        "packages/desktop/electron/**",
+        "packages/agent-cli/**"
+      ],
+      "rules": {
+        "react-hooks/rules-of-hooks": "off",
+        "react-hooks/exhaustive-deps": "off"
       }
     }
   ],

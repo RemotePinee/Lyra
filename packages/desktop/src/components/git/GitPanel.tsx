@@ -146,6 +146,21 @@ export function GitPanel() {
     [refresh],
   );
 
+  /*
+   * Above every early return, because it is a hook.
+   *
+   * There are three exits below this line — no workspace, still scanning, no checkout — and a hook
+   * placed after them runs on some renders and not others. React counts hooks per render and
+   * refuses a count that changes: switching between conversations flips `workspace` and `scanning`
+   * often enough that clicking down a list of them was enough to take the window out with
+   * "Rendered fewer hooks than expected" (#310).
+   *
+   * Nothing below needs it before this point, and computing a count from a null status is free.
+   */
+  const changeCount =
+    (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0);
+  const shownCount = useCountUp(changeCount);
+
   if (!workspace) {
     return (
       <PanelEmpty icon={GitBranch} title="Git">
@@ -178,10 +193,6 @@ export function GitPanel() {
       </PanelEmpty>
     );
   }
-
-  const changeCount =
-    (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0);
-  const shownCount = useCountUp(changeCount);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
