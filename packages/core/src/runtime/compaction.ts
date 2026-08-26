@@ -34,7 +34,7 @@ const KEEP_MIN = 4;
  * under the trigger means the next few messages cross it again, so a long turn spends its time
  * summarising instead of working. Landing at 60% buys room for real work before the next pass.
  */
-const SAFE_AFTER = 0.6;
+const SAFE_AFTER = 0.5;
 /**
  * How much of the window the summary request itself may occupy.
  *
@@ -74,9 +74,10 @@ export function compactWith(
 	model: ModelConfig,
 	provider: ProviderConfig,
 	streamFn?: typeof streamAssistant,
+	overhead = 0,
 ): Promise<Message[] | null> {
 	if (strategy) return strategy.compact(messages, model, provider, streamFn);
-	return compactIfNeeded(messages, model, provider, streamFn ?? streamAssistant);
+	return compactIfNeeded(messages, model, provider, streamFn ?? streamAssistant, overhead);
 }
 
 export async function compactIfNeeded(
@@ -91,6 +92,17 @@ export async function compactIfNeeded(
 	 * know the cut lands where it should.
 	 */
 	streamFn: typeof streamAssistant = streamAssistant,
+	/**
+	 * What the request carries besides the conversation: the system prompt and every tool schema.
+	 *
+	 * Passed in because it is fixed while the conversation is not, and conflating the two is what
+	 * made compaction run forever. The measured total covers both, so deriving a per-message scale
+	 * from it spreads the overhead across the messages — and then halving the conversation appears
+	 * to halve the overhead too. It does not: the prompt and the schemas are sent in full every
+	 * time. A conversation compacted against that arithmetic lands above the line it was aiming
+	 * for, trips the threshold on the very next turn, and compacts again.
+	 */
+	overhead = 0,
 ): Promise<Message[] | null> {
 	/*
 	 * The provider's own count, not our estimate of it.
@@ -124,10 +136,11 @@ export async function compactIfNeeded(
 	 */
 	const pruned = pruneToolResults(messages);
 	if (pruned !== messages) {
-		const saved = Math.max(0, estimateTokens(messages) - estimateTokens(pruned));
 		const rawAll = estimateTokens(messages);
-		const scaled = measured.measured && rawAll > 0 ? saved * (used / rawAll) : saved;
-		if (used - scaled < model.contextWindow * THRESHOLD) return pruned;
+		const saved = Math.max(0, rawAll - estimateTokens(pruned));
+		// Again on the conversation alone: the overhead is unaffected by cutting a tool result.
+		const factor = measured.measured && rawAll > 0 ? Math.max(0, used - overhead) / rawAll : 1;
+		if (used - saved * factor < model.contextWindow * THRESHOLD) return pruned;
 		// Not enough on its own, but everything below now works on the smaller conversation.
 		messages = pruned;
 	}
@@ -145,8 +158,16 @@ export async function compactIfNeeded(
 	 * real size, "keep the most recent 30%" keeps very nearly everything, and the summary replaces
 	 * a stretch too small to be worth the request.
 	 */
+	/*
+	 * The correction applies to the messages alone, never to the overhead.
+	 *
+	 * `used` is the whole request as the provider counted it — prompt, schemas and history — and
+	 * `raw` estimates only the history. Dividing one by the other and calling it a per-message
+	 * factor bakes a constant into a variable.
+	 */
 	const raw = estimateTokens(messages);
-	const scale = measured.measured && raw > 0 ? used / raw : 1;
+	const conversation = Math.max(0, used - overhead);
+	const scale = measured.measured && raw > 0 ? conversation / raw : 1;
 
 	// Keep recent turns until their budget is spent, then cut — never between an assistant
 	// message and the tool results answering it, which both APIs reject.
@@ -166,7 +187,7 @@ export async function compactIfNeeded(
 	const recent = messages.slice(cut);
 
 	const summary = await summarize(older, model, provider, streamFn);
-	if (!summary) return null;
+	if (!summary) return dropOldest(messages, model, overhead, scale);
 
 	/*
 	 * What the user actually asked for, carried across verbatim.
@@ -223,7 +244,13 @@ export async function compactIfNeeded(
 	 * by both APIs, so a cut in the middle of a pair is not a smaller conversation, it is a failed
 	 * request.
 	 */
-	const target = model.contextWindow * SAFE_AFTER;
+	/*
+	 * What the conversation may weigh, which is the window's share minus what is spent before it.
+	 *
+	 * The overhead is paid on every request whatever the history looks like, so the budget the
+	 * summary and the tail have to fit inside is the remainder — not the whole window.
+	 */
+	const target = Math.max(0, model.contextWindow * SAFE_AFTER - overhead);
 	const scaled = (list: Message[]) => estimateTokens(list) * scale;
 
 	let kept_ = recent;
@@ -265,10 +292,26 @@ async function summarize(
 		{ thinking: "off", maxTokens: Math.min(8000, model.maxOutputTokens) },
 	);
 
+	/*
+	 * A failed request here is a declined summary, not a failed turn.
+	 *
+	 * The stream throws on a dropped socket and on an HTTP error, and nothing caught it — so a
+	 * relay answering 503 did not merely leave the conversation uncompacted, it took the whole turn
+	 * down from inside the step that was trying to make the turn possible. Retrying then failed the
+	 * same way, at the same point, for as long as the relay stayed down.
+	 *
+	 * The caller's answer to `null` is to drop the oldest turns instead, which needs no request at
+	 * all. That is the right outcome when the summariser is unreachable: less history, but a turn
+	 * that can be sent.
+	 */
 	let final: Awaited<ReturnType<typeof stream.next>>;
-	do {
-		final = await stream.next();
-	} while (!final.done);
+	try {
+		do {
+			final = await stream.next();
+		} while (!final.done);
+	} catch {
+		return null;
+	}
 
 	const message = final.value;
 	if (message.stopReason === "error" || message.stopReason === "aborted") return null;
@@ -338,4 +381,54 @@ function lastRequest(messages: Message[], limit = 2000): string | null {
 		return points.length <= limit ? text : `${points.slice(0, limit).join("")}…`;
 	}
 	return null;
+}
+
+/**
+ * Getting under the line without a model, for when the summary could not be had.
+ *
+ * Summarising is a request, and a request fails — the relay is out of credentials, the key is
+ * refused, the turn is cancelled. Answering that with `null` reads as "no compaction was needed",
+ * and the caller carries on with a conversation that is over the window. The next turn measures the
+ * same overfull history, asks for the same summary, and fails the same way. That is a conversation
+ * pinned at its limit, spending a request per turn to stay there, which is exactly what a full
+ * window feels like from the outside: it says it is compacting and nothing ever changes.
+ *
+ * Losing the oldest exchanges outright is worse than summarising them and better than every
+ * alternative on offer here, because the alternative is a turn that cannot be sent at all. The
+ * transcript keeps everything; what is dropped is what gets *replayed* to the model.
+ *
+ * Cuts on whole units. A tool result whose call has been dropped is rejected by both APIs, so a
+ * boundary in the middle of a pair would turn one unsendable request into another.
+ */
+function dropOldest(messages: Message[], model: ModelConfig, overhead: number, scale: number): Message[] | null {
+	const target = Math.max(0, model.contextWindow * SAFE_AFTER - overhead);
+	const weight = (list: Message[]) => estimateTokens(list) * scale;
+
+	let start = 0;
+	while (start < messages.length - 1 && weight(messages.slice(start)) > target) {
+		start++;
+		// Never begin on an answer whose question has just been dropped.
+		while (start < messages.length && messages[start].role === "toolResult") start++;
+	}
+	if (start === 0) return null;
+
+	/*
+	 * A marker in place of what went, because silence here is its own bug.
+	 *
+	 * Without it the conversation simply begins in the middle, and a model with no idea that
+	 * anything preceded it will cheerfully re-derive work that was already done. Saying that the
+	 * history was dropped rather than summarised is also the honest account: no one read it.
+	 */
+	const notice: Message = {
+		role: "user",
+		content: [
+			{
+				type: "text",
+				text: "<dropped-history>\nEarlier turns were removed to fit the context window. Summarising them was not possible, so they are gone rather than condensed — do not assume anything about what came before. Ask, or re-read the files you need.\n</dropped-history>",
+			},
+		],
+		timestamp: Date.now(),
+		synthetic: true,
+	};
+	return [notice, ...messages.slice(start)];
 }

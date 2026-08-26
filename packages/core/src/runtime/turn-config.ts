@@ -25,6 +25,7 @@ import type {
 } from "../types.ts";
 import { lyraHome } from "../session/store.ts";
 import { compactWith } from "./compaction.ts";
+import { textTokens, toolTokens } from "./context.ts";
 import { writePreview } from "./previews.ts";
 import { runSubAgent } from "./sub-agent.ts";
 import type { TurnContext } from "./turn.ts";
@@ -112,8 +113,23 @@ export function buildTurnConfig(
 			beforeToolCall: deps.beforeToolCall,
 			afterToolCall: deps.afterToolCall,
 			// The session's own stream override applies here too; summarising is a model call.
+			/*
+			 * The session's own stream override applies here too; summarising is a model call.
+			 *
+			 * The overhead is handed over rather than inferred. Compaction has to know what the
+			 * request carries besides the history — this prompt and these schemas, in full, every
+			 * time — because a budget that treats them as part of the conversation shrinks them on
+			 * paper when the conversation is cut, and the result lands over the line it was aiming
+			 * for. That is a conversation which compacts on every single turn.
+			 */
 			compact: (messages, model) =>
-				compactWith(messages, model, deps.provider, deps.summaryStream(deps.provider)),
+				compactWith(
+					messages,
+					model,
+					deps.provider,
+					deps.summaryStream(deps.provider),
+					textTokens(systemPrompt) + toolTokens(turn.tools),
+				),
 			streamFn: deps.streamFn,
 	};
 }

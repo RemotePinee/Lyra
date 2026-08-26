@@ -311,6 +311,7 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
           ...get().compactions,
           { at: get().messages.length, before: event.before, after: event.after },
         ],
+        compactedAt: Date.now(),
       });
       break;
 
@@ -339,6 +340,7 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
         running: false,
         retrying: null,
         approvals: [],
+        compactedAt: null,
         pendingUserMessage: null,
         turnStartedAt: null,
         messages: settled,

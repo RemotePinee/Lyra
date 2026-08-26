@@ -20,11 +20,20 @@ import { useApp } from "../store.ts";
  */
 const TOOL_HOLD_MS = 2000;
 
+/**
+ * How long the compaction notice stays on the running line.
+ *
+ * Long enough to be read by someone who was watching, short enough that it is gone before it
+ * becomes part of the furniture. The clock ticks four times a second, so it expires on its own.
+ */
+const COMPACTED_NOTICE_MS = 8000;
+
 export function RunningIndicator() {
 	const startedAt = useApp((s) => s.turnStartedAt);
 	const tokens = useApp((s) => s.turnTokens);
 	const messages = useApp((s) => s.messages);
 	const retrying = useApp((s) => s.retrying);
+	const compactedAt = useApp((s) => s.compactedAt);
 	const [now, setNow] = useState(() => Date.now());
 	/*
 	 * The phrase advances on its own clock, slower than the seconds.
@@ -177,6 +186,20 @@ export function RunningIndicator() {
 			 * the reason this particular turn is taking so long, and it stops being true the
 			 * moment the turn does.
 			 */}
+			{/*
+			 * Said once, where the turn's other business is said, and then gone.
+			 *
+			 * This used to be a rule drawn across the transcript, which is a permanent seam through
+			 * someone's work in exchange for a fact about one request. It is worth knowing while it
+			 * is happening — a turn that pauses to summarise is a turn that is doing something — and
+			 * worth nothing at all a minute later.
+			 */}
+			{!retrying && compactedAt !== null && now - compactedAt < COMPACTED_NOTICE_MS && (
+				<>
+					<span className="text-ink-faint">·</span>
+					<span className="ly-fade-in text-ink-faint">已压缩较早的对话</span>
+				</>
+			)}
 			{retrying && (
 				<>
 					<span className="text-ink-faint">·</span>

@@ -33,7 +33,7 @@ export interface ContextBreakdown {
 }
 
 /** What a tool costs on the wire: the schema the provider is given, every single request. */
-function toolTokens(tools: Tool[]): number {
+export function toolTokens(tools: Tool[]): number {
 	if (tools.length === 0) return 0;
 	const text = tools
 		.map((tool) => `${tool.name}${tool.description}${JSON.stringify(tool.parameters)}`)
@@ -41,7 +41,7 @@ function toolTokens(tools: Tool[]): number {
 	return Math.ceil(text.length / 3.5);
 }
 
-function textTokens(text: string): number {
+export function textTokens(text: string): number {
 	return text ? Math.ceil(text.length / 3.5) : 0;
 }
 
@@ -121,12 +121,47 @@ export function buildContextBreakdown(input: {
  * so anything after the last settled reply is estimated and added on top.
  */
 export function measureTotal(messages: Message[]): { measured: boolean; tokens: number } {
+	/*
+	 * Nothing measured before the last compaction counts.
+	 *
+	 * A reply's `usage` records the request that produced it — the conversation as it was at that
+	 * moment. Compaction then rewrites that conversation, and the replies kept in the tail carry on
+	 * reporting the size of a history that no longer exists. Reading the newest of them gives the
+	 * pre-compaction total for a post-compaction conversation.
+	 *
+	 * That is not merely stale, it is self-sustaining: compaction returns something well inside the
+	 * window, the next check reads the old number, decides the window is still full, and compacts
+	 * again. Every turn, with a summary request each time, on a conversation that had already been
+	 * cut to a third of the limit.
+	 *
+	 * So a reply older than the newest summary is not evidence about the present. There is no new
+	 * measurement to replace it with — nothing has been sent since — and the estimate is what is
+	 * left, which is exactly what it is for.
+	 */
+	const compactedAt = lastCompactionAt(messages);
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
 		if (message.role !== "assistant" || message.stopReason === "pending") continue;
+		if (compactedAt !== null && message.timestamp < compactedAt) break;
 		const total = message.usage.input + message.usage.cacheRead + message.usage.output;
 		if (total <= 0) break;
 		return { measured: true, tokens: total + estimateTokens(messages.slice(i + 1)) };
 	}
 	return { measured: false, tokens: estimateTokens(messages) };
+}
+
+/**
+ * When the conversation was last rewritten by compaction, or null if it never was.
+ *
+ * Recognised by the summary the head carries. It is written by `runtime/compaction`, is always
+ * synthetic, and is the only message in a conversation that is a rewrite of everything before it.
+ */
+function lastCompactionAt(messages: Message[]): number | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "user" || !message.synthetic) continue;
+		const text = message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+		if (text.includes("<session-summary>")) return message.timestamp;
+	}
+	return null;
 }

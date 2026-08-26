@@ -273,21 +273,17 @@ export function Conversation() {
           )}
 
           {visibleRuns.map((run, index) =>
-            run.kind === "compaction" ? (
-              /*
-               * Where it happened, not at the end.
-               *
-               * Everything above this line is a summary as far as the model is concerned, and
-               * everything below is verbatim — which is only useful if the line is at the
-               * boundary. Pinned to the bottom it said the opposite of what it meant: that the
-               * work still arriving had already been summarised away.
-               */
-              <div key={`compaction-${index}`} className="mb-2.5 flex items-center gap-2 text-caption text-ink-faint">
-                <span className="h-px flex-1 bg-line-soft" />
-                <span>以上内容已压缩为摘要</span>
-                <span className="h-px flex-1 bg-line-soft" />
-              </div>
-            ) : run.kind === "message" ? (
+            /*
+             * Compaction leaves no mark in the transcript.
+             *
+             * There was a rule across the conversation here saying everything above it had been
+             * summarised. True, and about the request rather than about anything being read — so it
+             * spent a permanent line, and a visible seam through the middle of someone's work, on
+             * an implementation detail. It is mentioned once on the running line while the turn is
+             * still going (see `RunningIndicator`) and then it is gone, which is the weight it
+             * deserves.
+             */
+            run.kind === "compaction" ? null : run.kind === "message" ? (
               <MessageRow
                 key={messageKey(run.message, run.index)}
                 message={run.message}

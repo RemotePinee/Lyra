@@ -152,13 +152,42 @@ test("a conversation with nothing oversized in it is still left alone", async ()
 	assert.equal(await compactIfNeeded(short, MODEL, PROVIDER, fakeStream("s") as never), null);
 });
 
-test("a summary that comes back empty leaves the history as it was", async () => {
-	const messages = conversation(20, 900);
+test("a summary that never arrives is not a reason to leave the window full", async () => {
+	/*
+	 * Summarising is a request, and requests fail — the relay is out of credentials, the key is
+	 * refused. This used to answer `null`, which the caller reads as "no compaction was needed",
+	 * and the turn goes out over the window. The next turn measures the same overfull history, asks
+	 * for the same summary, fails the same way: a conversation pinned at its limit, spending a
+	 * request per turn to stay there. From the outside it says it is compacting and nothing ever
+	 * changes.
+	 *
+	 * Losing the oldest turns outright is worse than condensing them and better than a turn that
+	 * cannot be sent. The transcript keeps everything either way.
+	 */
+	const messages = conversation(40, 1200);
 	const empty = async function* () {
 		yield { type: "start" as const, partial: reply("") };
 		return reply("   ");
 	};
-	assert.equal(await compactIfNeeded(messages, MODEL, PROVIDER, empty as never), null);
+
+	const result = await compactIfNeeded(messages, MODEL, PROVIDER, empty as never);
+	assert.ok(result, "it still came back with something sendable");
+	assert.ok(result.length < messages.length, "by dropping the oldest turns");
+	assert.ok(estimateTokens(result) < estimateTokens(messages), "and it weighs less");
+
+	const head = result[0].content.map((b) => (b.type === "text" ? b.text : "")).join("");
+	assert.ok(head.includes("dropped"), "and says so, rather than beginning mid-conversation in silence");
+	assert.notEqual(result[1]?.role, "toolResult", "the survivors start on a whole unit");
+});
+
+test("a conversation already inside the window is left alone even when summarising fails", async () => {
+	// The failure only matters when something had to be done.
+	const small = [user("hi"), reply("hello")];
+	const empty = async function* () {
+		yield { type: "start" as const, partial: reply("") };
+		return reply("   ");
+	};
+	assert.equal(await compactIfNeeded(small, MODEL, PROVIDER, empty as never), null);
 });
 
 test("the summary request is condensed to fit, not sent whole", async () => {
@@ -455,4 +484,97 @@ test("the runtime's own nudges are not mistaken for what the user wants", async 
 	const head = result[0].content.map((b) => (b.type === "text" ? b.text : "")).join("");
 	assert.ok(head.includes(real), "the real request is what carries across");
 	assert.ok(!head.includes("<standing-request>\n继续"), "not the nudge");
+});
+
+/*
+ * The overhead is paid on every request and never shrinks. Treating it as part of the conversation
+ * is what made compaction run on every single turn.
+ *
+ * The measured total covers the prompt, the tool schemas and the history together. Dividing it by
+ * an estimate of the history alone produces a per-message factor with a constant baked into it —
+ * so cutting the history in half appears to halve the prompt and the schemas too. It does not.
+ * Compaction aimed for 60% of the window, landed just over 80%, and the next turn tripped the
+ * threshold again: 162.3k of 200k, over and over, with a summary request each time.
+ */
+
+test("compaction leaves room for the prompt and the schemas, not just for the messages", async () => {
+	const overhead = 3000; // 30% of this fixture's window, as a real prompt plus schemas can be.
+	const messages = conversation(40, 1200);
+
+	const result = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never, overhead);
+	assert.ok(result, "it compacted");
+
+	/*
+	 * The whole request has to fit, not just its history. Measured the way the next turn will
+	 * measure it — overhead plus conversation — because that is the number that decides whether
+	 * this compaction bought anything at all.
+	 */
+	const whole = overhead + estimateTokens(result);
+	assert.ok(
+		whole < MODEL.contextWindow * 0.8,
+		`the next turn will not trip the threshold (${whole} of ${MODEL.contextWindow})`,
+	);
+});
+
+test("compacting twice in a row is a no-op, because the first pass actually got under the line", async () => {
+	/*
+	 * The observable form of the loop: if the result of compaction still trips the threshold, the
+	 * next turn compacts again, and every turn after it. One pass has to be enough.
+	 */
+	const overhead = 3000;
+	const once = await compactIfNeeded(conversation(40, 1200), MODEL, PROVIDER, fakeStream("摘要") as never, overhead);
+	assert.ok(once);
+
+	const twice = await compactIfNeeded(once, MODEL, PROVIDER, fakeStream("再摘要") as never, overhead);
+	assert.equal(twice, null, "the second pass finds nothing to do");
+});
+
+test("a bigger overhead leaves less room, and the result reflects that", async () => {
+	// Same conversation, different fixed cost: the tail that survives has to be smaller.
+	const messages = conversation(40, 1200);
+	const light = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never, 0);
+	const heavy = await compactIfNeeded(messages, MODEL, PROVIDER, fakeStream("摘要") as never, 4000);
+	assert.ok(light && heavy);
+	assert.ok(
+		estimateTokens(heavy) <= estimateTokens(light),
+		`the heavier request keeps less history (${estimateTokens(heavy)} vs ${estimateTokens(light)})`,
+	);
+});
+
+test("a summariser that throws does not take the turn down with it", async () => {
+	/*
+	 * The worst of the failure modes, and the one that was live. The stream throws on a dropped
+	 * socket and on an HTTP error — a relay answering 503 — and nothing caught it. So compaction did
+	 * not merely decline: it threw out of the step that exists to make the turn possible, taking the
+	 * turn with it. The retry failed at the same point, for as long as the relay stayed down.
+	 */
+	// Throws on the first pull, which is what a refused request looks like from here.
+	const throwing = () => ({
+		next: () => Promise.reject(new Error("HTTP 503: model_unavailable")),
+		[Symbol.asyncIterator]() { return this; },
+	});
+	const messages = conversation(40, 1200);
+
+	const result = await compactIfNeeded(messages, MODEL, PROVIDER, throwing as never);
+	assert.ok(result, "it came back rather than throwing");
+	assert.ok(estimateTokens(result) < estimateTokens(messages), "and smaller, by dropping history");
+});
+
+test("repeated failure converges instead of asking again every turn", async () => {
+	/*
+	 * What "stuck at 80%" was: over the line, summary fails, nothing changes, next turn measures the
+	 * same history and tries again. One pass has to get under the line even with no summariser at
+	 * all, and the pass after it must find nothing to do.
+	 */
+	// Throws on the first pull, which is what a refused request looks like from here.
+	const throwing = () => ({
+		next: () => Promise.reject(new Error("HTTP 503: model_unavailable")),
+		[Symbol.asyncIterator]() { return this; },
+	});
+	const first = await compactIfNeeded(conversation(40, 1200), MODEL, PROVIDER, throwing as never);
+	assert.ok(first);
+	assert.ok(estimateTokens(first) < MODEL.contextWindow * 0.8, "the first pass got under the threshold");
+
+	const second = await compactIfNeeded(first, MODEL, PROVIDER, throwing as never);
+	assert.equal(second, null, "and the next turn has nothing to do");
 });

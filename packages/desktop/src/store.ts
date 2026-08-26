@@ -173,6 +173,15 @@ export interface AppState {
    * every session including the ones off screen, and `openSession` reads this one's back out.
    */
   turns: Record<string, { startedAt: number; tokens: number }>;
+  /**
+   * When the history was last summarised, so the running line can mention it and move on.
+   *
+   * A rule across the transcript said the same thing permanently, which is more attention than the
+   * fact deserves: what was compacted is a property of the request, not of the conversation anyone
+   * is reading. It belongs where the other things the turn is doing are said, and it belongs there
+   * for as long as they are.
+   */
+  compactedAt: number | null;
   /** Keyed by toolCallId so results can land on the card the model is still streaming. */
   toolRuns: Record<string, ToolRun>;
   approvals: PendingApproval[];
@@ -291,6 +300,7 @@ export const useApp = create<AppState>((set, get) => ({
   turnStartedAt: null,
   turnTokens: 0,
   turns: {},
+  compactedAt: null,
   toolRuns: {},
   approvals: [],
   activity: {},
