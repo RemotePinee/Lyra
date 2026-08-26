@@ -1,5 +1,6 @@
 import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "../useLiveRefresh.ts";
 
 import type { GitStatus } from "../../../electron/ipc-types.ts";
 import type { RepoRef } from "../../../electron/git.ts";
@@ -121,10 +122,14 @@ export function GitPanel() {
     setStatus(await window.lyra.git.status(cwd));
   }, [cwd]);
 
-  // Re-read when a turn ends: the agent's edits are the changes this panel is here to show.
-  useEffect(() => {
-    if (!running) void refresh();
-  }, [running, refresh]);
+  /*
+   * Live while the agent works, not once it has finished.
+   *
+   * The edits this panel exists to show arrive throughout a turn, and re-reading only when the turn
+   * settled meant watching an agent rewrite a file and seeing nothing here for minutes. See
+   * `useLiveRefresh` for why this polls rather than listening to tool results.
+   */
+  useLiveRefresh(refresh, running);
 
   /** Wraps an operation so every one of them reports the same way and re-reads after. */
   const act = useCallback(

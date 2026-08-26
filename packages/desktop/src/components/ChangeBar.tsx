@@ -1,5 +1,7 @@
 import { GitCommitVertical } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useCountUp } from "./useCountUp.ts";
+import { useLiveRefresh } from "./useLiveRefresh.ts";
 import { useDock } from "../dock/store.ts";
 import { useApp } from "../store.ts";
 
@@ -39,14 +41,16 @@ export function ChangeBar() {
     setStat({ added: next.added, removed: next.removed, files: next.files });
   }, [cwd, isRepo]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  useLiveRefresh(refresh, running);
 
-  // The agent writes files as it works; re-count once each turn settles.
-  useEffect(() => {
-    if (!running) void refresh();
-  }, [running, refresh]);
+  /*
+   * Travelled to, not jumped to.
+   *
+   * The same treatment the token counter gets: a number that lands in steps of thirty reads as a
+   * glitch, and the movement is what makes it legible as counting rather than as replacing.
+   */
+  const added = useCountUp(stat?.added ?? 0);
+  const removed = useCountUp(stat?.removed ?? 0);
 
   if (!stat || stat.files === 0) return null;
 
@@ -59,10 +63,10 @@ export function ChangeBar() {
         className="ly-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
       >
         <span className="font-mono text-detail text-ok">
-          +{stat.added.toLocaleString()}
+          +{Math.round(added).toLocaleString()}
         </span>
         <span className="font-mono text-detail text-danger">
-          −{stat.removed.toLocaleString()}
+          −{Math.round(removed).toLocaleString()}
         </span>
       </button>
 

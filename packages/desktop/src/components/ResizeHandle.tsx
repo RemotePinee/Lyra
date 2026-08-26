@@ -79,13 +79,40 @@ export function ResizeHandle({
 	useEffect(() => {
 		if (!active) return;
 
-		const onMove = (event: MouseEvent) => {
+		/*
+		 * One update per frame, not one per event.
+		 *
+		 * `mousemove` fires faster than the screen refreshes — noticeably so on a 120Hz trackpad —
+		 * and this handler did three expensive things every time: a `setState` that re-renders the
+		 * whole window, a `getBoundingClientRect` that forces layout synchronously, and a second
+		 * `setState`. Several of those inside one frame is a layout thrash, and with a multi-pane
+		 * dock on the other side of the drag it showed up as the panes juddering while the handle
+		 * moved smoothly.
+		 *
+		 * Coalescing to `requestAnimationFrame` means the work happens exactly as often as it can
+		 * be seen, and the measurement happens at the point in the frame where layout is settled
+		 * anyway.
+		 */
+		let frame = 0;
+		let pending: MouseEvent | null = null;
+
+		const apply = () => {
+			frame = 0;
+			const event = pending;
+			pending = null;
+			if (!event) return;
+
 			const travel = event.clientX - start.current.x;
 			const next = edge === "end" ? start.current.width + travel : start.current.width - travel;
 			onResize(Math.min(max, Math.max(min, next)));
 			// The grip tracks vertically while dragging, so it stays under the pointer.
 			const box = track.current?.getBoundingClientRect();
 			if (box) setGrip(Math.min(box.height, Math.max(0, event.clientY - box.top)));
+		};
+
+		const onMove = (event: MouseEvent) => {
+			pending = event;
+			if (!frame) frame = requestAnimationFrame(apply);
 		};
 		/*
 		 * Let go of the grip too, unless the pointer came to rest back on the edge.
@@ -116,6 +143,8 @@ export function ResizeHandle({
 		return () => {
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", stop);
+			// A drag that ends mid-frame leaves nothing scheduled against an unmounted handle.
+			if (frame) cancelAnimationFrame(frame);
 			document.body.style.cursor = "";
 			document.body.style.userSelect = "";
 			delete document.documentElement.dataset.resizing;

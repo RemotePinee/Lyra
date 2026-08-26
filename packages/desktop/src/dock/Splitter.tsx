@@ -97,8 +97,22 @@ export function Splitter({
 	 */
 	useEffect(() => {
 		if (!active) return;
-		const onMove = (event: PointerEvent) => {
-			if (!dragging.current) return;
+		/*
+		 * One update per frame — same reasoning as `ResizeHandle`.
+		 *
+		 * Pointer events outrun the display, and each one here measured two elements and set state
+		 * twice. Several of those per frame is a layout thrash, and it is felt as the panes
+		 * juddering while the seam itself tracks the pointer perfectly.
+		 */
+		let frame = 0;
+		let pending: PointerEvent | null = null;
+
+		const apply = () => {
+			frame = 0;
+			const event = pending;
+			pending = null;
+			if (!event || !dragging.current) return;
+
 			const container = containerRef.current?.getBoundingClientRect();
 			if (!container) return;
 			report.current(shareFromPointer(current.current, row ? event.clientX : event.clientY, container));
@@ -108,6 +122,12 @@ export function Splitter({
 				const along = row ? event.clientY - box.top : event.clientX - box.left;
 				setGrip(Math.min(row ? box.height : box.width, Math.max(0, along)));
 			}
+		};
+
+		const onMove = (event: PointerEvent) => {
+			if (!dragging.current) return;
+			pending = event;
+			if (!frame) frame = requestAnimationFrame(apply);
 		};
 		const stop = (event: PointerEvent) => {
 			dragging.current = false;
@@ -130,6 +150,8 @@ export function Splitter({
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", stop);
 			window.removeEventListener("pointercancel", stop);
+			// Nothing left scheduled against a seam that is no longer being dragged.
+			if (frame) cancelAnimationFrame(frame);
 		};
 	}, [active, row, containerRef]);
 
