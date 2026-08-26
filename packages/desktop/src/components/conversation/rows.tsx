@@ -16,6 +16,7 @@ import { UserMessage } from "../UserMessage.tsx";
 import { useApp } from "../../store.ts";
 import { RotateCcw } from "lucide-react";
 import { Text } from "../Text.tsx";
+import { useConfirmer } from "../Confirm.tsx";
 import { isNudge } from "./grouping.ts";
 import { LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
 
@@ -110,6 +111,7 @@ function AssistantRow({
 }) {
   const running = useApp((s) => s.running);
   const retryFrom = useApp((s) => s.retryFrom);
+  const confirm = useConfirmer();
 
   const own = message.content.slice(0, upTo);
 
@@ -177,12 +179,35 @@ function AssistantRow({
           <button
             type="button"
             disabled={running}
-            onClick={() => void retryFrom(index)}
+            /*
+             * Asked first: this discards the turn rather than resuming it.
+             *
+             * The word sits at the end of a failure message, where it reads as "undo the error" —
+             * and what it actually does is throw away everything the turn had done and pay for the
+             * whole thing again. The row underneath offers 继续, which is what most people mean
+             * here; see `ResumeRow`.
+             */
+            onClick={() =>
+              confirm.ask({
+                title: "重新生成这次回答？",
+                detail: (
+                  <>
+                    这会丢掉本轮已经做过的工作——读过的文件、跑过的命令——并从你最后一条消息重新开始，
+                    重新消耗一次 token。
+                    <br />
+                    想保留这些、从中断处接着做，请用下面那行的「继续」。
+                  </>
+                ),
+                confirmLabel: "重新生成",
+                onConfirm: () => void retryFrom(index),
+              })
+            }
             className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink disabled:opacity-40"
           >
             <RotateCcw size={10.5} strokeWidth={1.9} />
             重试
           </button>
+          {confirm.element}
         </div>
       )}
 

@@ -56,24 +56,72 @@ export function isRetryableStatus(status: number): boolean {
 }
 
 /**
- * How long to wait, honouring the server's own answer when it gives one.
+ * The longest wait worth sitting through inside one turn.
  *
- * `Retry-After` comes as either seconds or an HTTP date. A server under rate limiting knows
- * better than any backoff curve we could pick, so its number wins — capped, because a relay
- * asking us to wait ten minutes is not something to do silently inside one turn.
+ * A relay asking for ten minutes is not something to do silently. A minute is: it is shorter than
+ * the turn that is already in flight, and the alternative — giving up — throws away everything the
+ * turn has assembled so far.
  */
-export function retryDelay(attempt: number, response?: Response): number {
-	const header = response?.headers.get("retry-after");
+const MAX_WAIT_MS = 60_000;
+
+/**
+ * How long the server itself said to wait, in milliseconds, or null if it did not say.
+ *
+ * Two places to look, because servers disagree about where to put it. `Retry-After` is the
+ * standard one and comes as either seconds or an HTTP date. The body is the other, and ignoring it
+ * is what made this useless against the relay in front of us: it answers a 503 with
+ * `{"error":{"code":"model_unavailable","reset_seconds":54,"reset_time":"53s"}}` and no header at
+ * all, so every wait fell back to the curve below and the whole retry budget was spent in a couple
+ * of seconds against an outage it had been told would last just under a minute.
+ *
+ * Only well-known keys, and only numbers that look like a wait. Scanning for any number in the
+ * body would eventually find a model name with digits in it and sleep for that long.
+ */
+export function serverDelay(header: string | null, body?: string): number | null {
 	if (header) {
 		const seconds = Number(header);
 		const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
-		if (Number.isFinite(ms) && ms > 0) return Math.min(ms, 30_000);
+		if (Number.isFinite(ms) && ms > 0) return ms;
 	}
-	// 600ms, 1.8s, 5.4s — with jitter, so a fleet of clients does not return in lockstep.
+	if (!body) return null;
+	/*
+	 * Regex rather than `JSON.parse`, deliberately.
+	 *
+	 * The field is nested — and nested differently per provider — so parsing would mean knowing
+	 * every shape in advance. What is stable is the key next to a number, and an error body is
+	 * small enough that scanning it costs nothing.
+	 */
+	const seconds = body.match(/"(?:reset_seconds|retry_after|retry_after_seconds|retryAfter)"\s*:\s*(\d+(?:\.\d+)?)/);
+	if (seconds) {
+		const ms = Number(seconds[1]) * 1000;
+		if (ms > 0) return ms;
+	}
+	// `"reset_time":"53s"` — the same fact as a string, which some of them send instead.
+	const written = body.match(/"(?:reset_time|retry_after)"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+	if (written) {
+		const ms = Number(written[1]) * 1000;
+		if (ms > 0) return ms;
+	}
+	return null;
+}
+
+/**
+ * How long to wait, honouring the server's own answer when it gives one.
+ *
+ * A server under load knows better than any curve we could pick, so its number wins outright —
+ * only capped, never shortened. Ours is the fallback, and it starts where a person would expect a
+ * retry to start rather than where a tight loop would: the first version began at 600ms and
+ * tripled, which spent three attempts inside two and a half seconds and read as the app hammering
+ * a server that had just said it was busy.
+ */
+export function retryDelay(attempt: number, response?: Response, body?: string): number {
+	const said = serverDelay(response?.headers.get("retry-after") ?? null, body);
+	if (said !== null) return Math.min(said, MAX_WAIT_MS);
+	// 2s, 5s, 12.5s, 31s, 60s — with jitter, so a fleet of clients does not return in lockstep.
 	// The ceiling is applied *after* the jitter: capping first lets the ±25% push the result
 	// back over the limit, which is what the test caught.
-	const base = 600 * 3 ** (attempt - 1);
-	return Math.min(base * (0.75 + Math.random() * 0.5), 20_000);
+	const base = 2000 * 2.5 ** (attempt - 1);
+	return Math.min(base * (0.75 + Math.random() * 0.5), MAX_WAIT_MS);
 }
 
 /**
@@ -97,9 +145,21 @@ export async function fetchWithRetry(
 		try {
 			const response = await doFetch(url, init);
 			if (attempt < attempts && isRetryableStatus(response.status)) {
-				// The body is not read: nothing has been shown to anyone, and a fresh attempt
-				// replaces it entirely.
-				const delay = retryDelay(attempt, response);
+				/*
+				 * The body is read, off a clone, purely to find out how long to wait.
+				 *
+				 * It used to be skipped on the grounds that nothing had been shown to anyone and a
+				 * fresh attempt replaces it entirely — true of the *content*, and it cost us the one
+				 * number that mattered. The relay puts `reset_seconds` in there and no `Retry-After`
+				 * header, so without this every 503 was retried on the blind curve and the budget was
+				 * gone long before the outage was. A clone, so the response the caller may still
+				 * return is untouched; failures here fall back to the curve rather than throwing.
+				 */
+				const body = await response
+					.clone()
+					.text()
+					.catch(() => undefined);
+				const delay = retryDelay(attempt, response, body);
 				options.onRetry?.({ attempt, delayMs: delay, reason: `HTTP ${response.status}` });
 				await sleep(delay);
 				continue;

@@ -81,11 +81,20 @@ export function turnSlice(set: Set, get: Get) {
           toolRuns: {},
           approvals: [],
           loadingSession: false,
-          // Straight into the list rather than waiting on a round trip: `agent:prompt`
-          // does not resolve until the turn ends, which would leave the row you are
-          // actively talking to missing from the sidebar for the whole reply. The
-          // title arrives with the refresh at `agent_end`.
-          sessions: [listed, ...get().sessions],
+          /*
+           * Straight into the list rather than waiting on a round trip: `agent:prompt` does not
+           * resolve until the turn ends, which would leave the row you are actively talking to
+           * missing from the sidebar for the whole reply. The title arrives with the refresh at
+           * `agent_end`.
+           *
+           * Filtered by id first. Prepending unconditionally assumes this session cannot already
+           * be listed, which is true of the id but not of the array: anything that rebuilds the
+           * list — a refresh landing between `create` writing the index and this line running —
+           * puts it there first, and the sidebar then shows the same conversation twice until the
+           * next rebuild quietly drops one. Cheap, and it makes the invariant hold by construction
+           * rather than by timing.
+           */
+          sessions: [listed, ...get().sessions.filter((s) => s.id !== listed.id)],
         });
         void window.lyra.sessions
           .capabilities(sessionId)

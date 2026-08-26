@@ -123,6 +123,11 @@ export interface Settings {
 	 *
 	 * Only the connection is retried — a stream already delivering text never is. Worth raising
 	 * on a flaky relay, worth setting to 1 when you would rather see failures immediately.
+	 *
+	 * Five by default rather than three. A relay that has run out of credentials for a model
+	 * answers 503 with a reset time just under a minute, and the waits are spaced to sit that out
+	 * (see `ai/retry`) — at three attempts the budget ran out well before the outage did, and a
+	 * turn that had already spent a minute reading files died for a wait it could have survived.
 	 */
 	retryAttempts: number;
 	/** Last level chosen above "off", restored when fast mode is switched back off. */
@@ -236,7 +241,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	defaultModelId: null,
 	permissionMode: "auto",
 	thinking: "medium",
-	retryAttempts: 3,
+	retryAttempts: 5,
 	appearance: DEFAULT_APPEARANCE,
 	hooks: [],
 	scheduledTasks: [],

@@ -1,4 +1,5 @@
 import { useApp } from "../store.ts";
+import { useConfirmer } from "./Confirm.tsx";
 import { hasRetryPoint } from "../store/derive.ts";
 
 /**
@@ -25,6 +26,7 @@ export function ResumeRow() {
 	const stopped = useApp((s) => s.stopped);
 	const messages = useApp((s) => s.messages);
 	const todos = useApp((s) => s.todos);
+	const confirm = useConfirmer();
 
 	const unfinished = todos.filter((todo) => todo.status !== "completed").length;
 	/*
@@ -43,7 +45,13 @@ export function ResumeRow() {
 	 * middle, *that* is the news, and 「计划还有 3 项未完成」 buries it under a number.
 	 */
 	const note =
-		stopped === "user" ? "已暂停" : stopped === "interrupt" ? "上次执行被中断" : `计划还有 ${unfinished} 项未完成`;
+		stopped === "user"
+			? "已暂停"
+			: stopped === "error"
+				? "上次请求失败，进度已保留"
+				: stopped === "interrupt"
+					? "上次执行被中断"
+					: `计划还有 ${unfinished} 项未完成`;
 	/*
 	 * What 继续 says, matched to what actually happened.
 	 *
@@ -54,7 +62,7 @@ export function ResumeRow() {
 	const carryOn =
 		stopped === "user"
 			? "继续，从暂停的地方接着做。"
-			: stopped === "interrupt"
+			: stopped === "error" || stopped === "interrupt"
 				? "继续，从中断的地方接着做。"
 				: "继续，把清单里没做完的做完。";
 
@@ -83,12 +91,37 @@ export function ResumeRow() {
 				<button
 					type="button"
 					data-ly-tip="丢掉这次的回答，重新生成"
-					onClick={() => void retryFrom(messages.length - 1)}
+					/*
+					 * Asked first, because this one is the expensive mistake.
+					 *
+					 * 继续 and 重试 sit next to each other and read as two flavours of the same
+					 * offer, and they are opposites: one keeps everything the turn did and adds to
+					 * it, the other throws all of it away and pays for it again. On a turn that had
+					 * already spent several hundred thousand tokens reading a codebase, pressing the
+					 * wrong one costs that much a second time — and nothing about the word 「重试」
+					 * says so.
+					 */
+					onClick={() =>
+						confirm.ask({
+							title: "重新生成这次回答？",
+							detail: (
+								<>
+									这会丢掉本轮已经做过的工作——读过的文件、跑过的命令、写到一半的回答——
+									并从你最后一条消息重新开始，重新消耗一次 token。
+									<br />
+									想保留这些、只把没做完的做完，请选「继续」。
+								</>
+							),
+							confirmLabel: "重新生成",
+							onConfirm: () => void retryFrom(messages.length - 1),
+						})
+					}
 					className="rounded px-1 text-ink-muted underline decoration-line underline-offset-2 transition-colors hover:text-ink"
 				>
 					重试
 				</button>
 			)}
+			{confirm.element}
 		</div>
 	);
 }

@@ -45,14 +45,15 @@ export function without(cache: Cache, id: string): Cache {
  *
  * `"user"` is the stop button: the work is fine, it is just not moving. `"interrupt"` is
  * everything that took the turn away without being asked — a crash, a quit, a machine going to
- * sleep. `null` is a turn that finished.
+ * sleep. `"error"` is a request that failed: the relay was out of credentials, the key was
+ * refused, the model was gone. `null` is a turn that finished.
  *
- * Two states rather than one because the offer reads differently. Being told 「上次执行被中断」
- * about a pause you performed yourself a second ago is the app describing your own click back to
- * you as an accident, and the two words that follow — 继续, 重试 — are the same either way, so the
- * only thing the sentence does is get it wrong.
+ * Three states rather than one because the offer reads differently in each. Being told
+ * 「上次执行被中断」 about a pause you performed yourself a second ago is the app describing your
+ * own click back to you as an accident; being told it about an HTTP 503 says nothing about the one
+ * thing worth knowing, which is that the work is still there.
  */
-export type TurnStop = "user" | "interrupt" | null;
+export type TurnStop = "user" | "interrupt" | "error" | null;
 
 /**
  * The reason lives in two places, and both are needed.
@@ -61,13 +62,21 @@ export type TurnStop = "user" | "interrupt" | null;
  * afterwards, in a `stopReason` that survives being written to disk and read back next week. The
  * event wins where they differ, because a turn stopped while a tool was running has already had
  * its last reply settled as `toolUse` and leaves nothing in the log to say who stopped it.
+ *
+ * A failed request is the case this used to miss entirely, and it was the most common one. The
+ * turn ends with an assistant message carrying `stopReason: "error"` and no tool calls, which
+ * `wasCutShort` reads as a turn that finished — so nothing was offered, and a turn that had spent
+ * a minute reading files could only be started over from the top. The work is on disk either way;
+ * the only question is whether anything says so.
  */
 export function howItStopped(messages: Message[], reason?: string): TurnStop {
 	if (reason === "aborted") return "user";
+	if (reason === "error") return "error";
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
 		if (message.role !== "assistant") continue;
 		if (message.stopReason === "aborted") return "user";
+		if (message.stopReason === "error") return "error";
 		break;
 	}
 	return wasCutShort(messages) ? "interrupt" : null;

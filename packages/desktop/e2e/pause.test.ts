@@ -234,6 +234,22 @@ async function press(label: string): Promise<void> {
 	})()`);
 }
 
+/**
+ * Press a button anywhere on the page, for the confirmation dialog.
+ *
+ * `press` looks inside `main` because that is where the conversation is; the dialog is a portal
+ * and deliberately is not there. Clicked directly rather than through the overlay, so this tests
+ * what the button does rather than whether the overlay lets a synthetic event through.
+ */
+async function pressAnywhere(label: string): Promise<boolean> {
+	return app.evaluate<boolean>(`(() => {
+		const buttons = [...document.querySelectorAll("button")].filter((b) => b.textContent?.trim() === ${JSON.stringify(label)});
+		if (buttons.length === 0) return false;
+		buttons[buttons.length - 1].click();
+		return true;
+	})()`);
+}
+
 /** Everything the transcript currently says, for asking what is and is not in it. */
 async function transcript(): Promise<string> {
 	return app.evaluate<string>(`(document.querySelector("main")?.innerText ?? "")`);
@@ -299,7 +315,16 @@ test("重试 throws the half-written reply away and has the answer again", async
 	// There is something to throw away, which is what makes its absence below mean anything.
 	assert.ok((await transcript()).includes(HALF), "the pause had already lost the half-written reply");
 
+	/*
+	 * Two steps now, and the first one is the point.
+	 *
+	 * 重试 discards everything the turn did and pays for it again, and it sits one word away from
+	 * 继续, which does the opposite — so it asks before doing it. Pressing the button alone must
+	 * leave the transcript exactly as it was.
+	 */
 	await press("重试");
+	assert.ok((await transcript()).includes(HALF), "asking is not doing: the half-written reply is still there");
+	assert.ok(await pressAnywhere("重新生成"), "the confirmation is on screen");
 
 	assert.ok(await untilTranscript("这次答完了"), `重试 never produced a new answer — asked ${requests} time(s)`);
 

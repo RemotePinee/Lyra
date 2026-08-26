@@ -66,6 +66,7 @@ export function sessionSlice(set: Set, get: Get) {
       running: false,
       todos: [],
       turnStartedAt: null,
+      turnTokens: 0,
       // Belongs to the turn being left behind; carrying it over would report this conversation's
       // connection as broken on the strength of another one's — or, for `stopped`, offer to
       // resume a blank conversation on the strength of a pause in the last one.
@@ -142,6 +143,22 @@ export function sessionSlice(set: Set, get: Get) {
       approvals: [],
       running: false,
       todos: [],
+      /*
+       * The meter belongs to the turn being left behind, and so does the clock.
+       *
+       * Both are single values for the whole app while any number of conversations can be running
+       * at once, so leaving them alone here meant the running line in *this* conversation counted
+       * from whenever some other one last started a turn. Starting a second conversation while the
+       * first was working and then clicking back to the first showed its 41s / 439.8k as 5s / 16.4k
+       * — not reset, but reporting the other conversation's turn under this one's name.
+       *
+       * Cleared rather than restored because there is nothing to restore from: what a turn already
+       * spent is not in the transcript. `apply-event` seeds the clock from the next event that
+       * arrives, so a conversation still working starts counting again from here — honest about
+       * being a partial count, where the old behaviour was confidently wrong.
+       */
+      turnStartedAt: null,
+      turnTokens: 0,
       // Belongs to the turn being left behind; see the note in `newSession`.
       retrying: null,
       stopped: null,

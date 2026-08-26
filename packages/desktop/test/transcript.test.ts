@@ -172,13 +172,21 @@ test("a turn the app never came back from is an interruption", () => {
 	assert.equal(howItStopped([asked, reply("pending")]), "interrupt");
 });
 
-test("an error is left to the retry the failed message already carries", () => {
+test("a failed request is a turn to be resumed, not only one to be re-asked", () => {
 	/*
-	 * Not "interrupt": the reply itself puts 重试 under the error text, next to what went wrong.
-	 * A second offer at the bottom of the transcript would be the same button, further from the
-	 * thing it is about.
+	 * This used to answer `null`, on the reasoning that the failed reply already puts 重试 under
+	 * the error text and a second offer would be the same button further away. The two are not the
+	 * same button, which is the whole of the mistake: 重试 discards the turn and asks again, and
+	 * for a turn that had spent a minute reading a codebase before a 503 that is the expensive
+	 * answer to a question nobody asked. `error` is what makes 继续 appear, and 继续 keeps the
+	 * work.
 	 */
-	assert.equal(howItStopped([asked, reply("error")], "error"), null);
+	assert.equal(howItStopped([asked, reply("error")], "error"), "error");
+	// And from the transcript alone, days later, with no event to go by.
+	assert.equal(howItStopped([asked, reply("error")]), "error");
+	// Still distinct from a pause and from a crash: the three say different things to the user.
+	assert.equal(howItStopped([asked, reply("aborted")], "aborted"), "user");
+	assert.equal(howItStopped([asked, reply("pending")]), "interrupt");
 });
 
 test("there is nothing to re-ask when nobody has asked anything", () => {
