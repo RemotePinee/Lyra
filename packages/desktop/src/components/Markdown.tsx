@@ -33,7 +33,15 @@ export function Markdown({ text, className = "" }: { text: string; className?: s
 
 	// The class rides alongside `prose-dw` rather than replacing it, so a caller can dial the
 	// size or colour down — reasoning is secondary text — without losing the block styling.
-	return <div className={`prose-dw ${className}`}>{renderBlocks(clean)}</div>;
+	/*
+	 * `min-w-0`, because this is often a flex child and its contents are not all shrinkable.
+	 *
+	 * A flex item defaults to `min-width: auto`, which means "at least as wide as my contents" —
+	 * and a code block holding an unbroken 40-character hash has contents that do not wrap. Without
+	 * this the item grows to fit it, `pre`'s own `overflow-x` never comes into play because there
+	 * is nothing left to overflow, and the width is pushed up through every ancestor instead.
+	 */
+	return <div className={`prose-dw min-w-0 ${className}`}>{renderBlocks(clean)}</div>;
 }
 
 function renderBlocks(source: string): ReactNode {

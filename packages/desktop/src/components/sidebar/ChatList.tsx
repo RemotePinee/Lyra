@@ -9,7 +9,9 @@
  * into 「过去 30 天」 the rows say nothing about when, and the heading is the only thing that does.
  */
 
+import { useRef } from "react";
 import { useLayout } from "../../layout.tsx";
+import { useReflow } from "./useReflow.ts";
 import { isScratch } from "./grouping.ts";
 import type { RecencyBand } from "./recency.ts";
 import { rowActions, SessionRow, type RowActions } from "./SessionRow.tsx";
@@ -64,11 +66,21 @@ export function ChatList({
 	empty: React.ReactNode;
 }) {
 	const { compact } = useLayout();
+	const host = useRef<HTMLDivElement>(null);
+	/*
+	 * Which conversations are in which band, as one string.
+	 *
+	 * Re-measuring on every render would be a `getBoundingClientRect` per row per keystroke in the
+	 * filter box; the composition changing is the same information for a fraction of the work — and
+	 * it is exactly when a row can have moved.
+	 */
+	const shape = bands.map((band) => `${band.key}:${band.sessions.map((one) => one.id).join(",")}`).join("|");
+	useReflow(host, shape);
 
 	if (bands.length === 0) return <>{empty}</>;
 
 	return (
-		<>
+		<div ref={host}>
 			{bands.map((band, index) => (
 				// The gap sits on the band rather than on its heading — see `BandHead`. The first
 				// band gets none: it opens the list, and a list that starts with a gap reads as
@@ -102,6 +114,6 @@ export function ChatList({
 				</div>
 			))}
 			<ShowMore hidden={hidden} canCollapse={canCollapse} onShowMore={onShowMore} onCollapse={onCollapse} />
-		</>
+		</div>
 	);
 }

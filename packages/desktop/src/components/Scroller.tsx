@@ -159,7 +159,21 @@ export function Scroller({
 				 * class where a fade is possible: a mask promotes the scroller to its own composited
 				 * layer, and there is no reason to pay that on a scroller that will never soften.
 				 */
-				className={`ly-scroll-view min-h-0 flex-auto overflow-y-auto overscroll-contain ${
+				/*
+				 * Vertical only, and `overflow-x` stated rather than left to the browser.
+				 *
+				 * `overflow-y: auto` with `overflow-x: visible` is not a combination CSS has: the
+				 * spec makes the visible one `auto` too. So every scroller in the app was quietly
+				 * able to scroll sideways, and one over-wide child — a code block holding a commit
+				 * hash, a table — dragged the whole column with it. What you saw was the transcript
+				 * itself shifted left, headings and prose and all, to make room for something that
+				 * has its own way of handling being too wide.
+				 *
+				 * Which is the actual fix: `pre` already scrolls itself (see `.prose-dw pre`), and
+				 * clipping here is what lets it. A reading column has no meaning off to the right —
+				 * anything genuinely wider than the window is wide *inside* its own box.
+				 */
+				className={`ly-scroll-view min-h-0 flex-auto overflow-x-hidden overflow-y-auto overscroll-contain ${
 					fades ? "ly-fade-y" : ""
 				} ${contentClassName}`}
 				style={

@@ -13,6 +13,7 @@ import { coalesce, flushCoalesced } from "./coalesce.ts";
 import { applyToolEvent } from "./apply-tool.ts";
 import { howItStopped } from "./derive.ts";
 import { useSide } from "../sideStore.ts";
+import { useSubAgents } from "./subAgents.ts";
 import type { AppState } from "../store.ts";
 import { settleTail } from "../transcript.ts";
 
@@ -273,6 +274,28 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
     case "tasks":
       // Reached only for the session on screen, which is the one whose queue is shown.
       useSide.getState().setTasks(event.tasks);
+      break;
+
+    /*
+     * Delegated work, live.
+     *
+     * The whole roster on every change rather than a diff: it is a dozen rows, it is only sent
+     * when something moved, and a window that has been away is correct on the first one it gets
+     * instead of having to have seen every event since.
+     */
+    case "subagents":
+      useSubAgents.getState().sync(event.agents);
+      break;
+
+    /*
+     * One message from inside a sub-agent.
+     *
+     * Kept out of the main transcript deliberately: it belongs to a conversation of its own, and
+     * merging it here is exactly the context pollution delegation exists to avoid. Dropped unless
+     * that sub-agent's transcript has been opened — opening it later reads the whole thing.
+     */
+    case "subagent_message":
+      useSubAgents.getState().append(event.id, event.message);
       break;
 
     case "retry":

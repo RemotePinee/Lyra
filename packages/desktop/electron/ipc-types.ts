@@ -37,6 +37,8 @@ import type {
 	Settings,
 	Skill,
 	SlashCommand,
+	SubAgentDetail,
+	SubAgentSummary,
 	UserContent,
 } from "@lyra/core";
 
@@ -57,6 +59,8 @@ import type {
 } from "./ipc-shapes.ts";
 
 export * from "./ipc-shapes.ts";
+export type { CommandsList, SkillEntry } from "./ipc/commands.ts";
+import type { SkillEntry } from "./ipc/commands.ts";
 
 /*
  * The account types, re-exported so the renderer imports one module.
@@ -139,6 +143,37 @@ export interface LyraApi {
 		approve(sessionId: string, requestId: string, decision: ApprovalDecision): Promise<void>;
 		setModel(sessionId: string, modelId: string): Promise<void>;
 		onEvent(handler: (payload: { sessionId: string; event: AgentEvent }) => void): () => void;
+	};
+	/**
+	 * Work this session delegated: what each sub-agent is doing, and a way into a running one.
+	 *
+	 * The roster itself is not here — it rides `agent.onEvent` as a `subagents` event, so a window
+	 * already receiving events is already in step and one that has been away is correct on the
+	 * first event it gets. These are the things that must be asked for: a transcript, which is too
+	 * big to broadcast on every tool call, and the two actions.
+	 */
+	subAgents: {
+		list(sessionId: string): Promise<SubAgentSummary[]>;
+		/** Everything one sub-agent has said. Null if the session is closed or the id is unknown. */
+		detail(sessionId: string, id: string): Promise<SubAgentDetail | null>;
+		/**
+		 * Say something to a running sub-agent.
+		 *
+		 * Spliced between its turns, so it finishes the step it is on and carries on with its
+		 * context intact. False when it has already finished — there is no loop left to read it.
+		 */
+		steer(sessionId: string, id: string, text: string): Promise<boolean>;
+		/** Stop one. The parent and its siblings carry on. */
+		abort(sessionId: string, id: string): Promise<boolean>;
+		/**
+		 * Take one off the roster.
+		 *
+		 * `"stopping"` when it was still running: dismissing does not orphan a live sub-agent, it
+		 * stops it first and the row goes once the run has filed itself as aborted.
+		 */
+		dismiss(sessionId: string, id: string): Promise<"removed" | "stopping" | "unknown">;
+		/** Clear the finished ones and leave anything still running. Returns how many went. */
+		dismissFinished(sessionId: string): Promise<number>;
 	};
 	/**
 	 * The second conversation attached to a session: reads its transcript, writes nothing back.
@@ -284,6 +319,15 @@ export interface LyraApi {
 		list(cwd: string): Promise<{
 			commands: SlashCommand[];
 			diagnostics: { path: string; message: string }[];
+			/**
+			 * The skills the same project can use, for the same menu.
+			 *
+			 * A bundle advertises its skills as callable by name — waza's manifest says
+			 * 「/waza:think」 — and nothing could call one: the agent picked them up on its own
+			 * judgement and there was no way to ask. Read from the same place the session reads
+			 * them, so the menu cannot offer something the agent does not have.
+			 */
+			skills: SkillEntry[];
 		}>;
 		/** Write a starter file and answer with its path, or say why it could not be written. */
 		create(

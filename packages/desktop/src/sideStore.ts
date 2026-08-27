@@ -22,7 +22,17 @@ import { settleTail } from "./transcript.ts";
  * things are not, which is worth the sentence. `files` is the tree and `file` is whichever one of
  * them is open — two panes, because they are two things you arrange separately.
  */
-export type PanelKind = "files" | "file" | "chat" | "terminal" | "review" | "browser" | "tasks" | "trajectory";
+export type PanelKind =
+	| "files"
+	| "file"
+	| "chat"
+	/** Work the main agent delegated — see `components/subagents/`. */
+	| "subagents"
+	| "terminal"
+	| "review"
+	| "browser"
+	| "tasks"
+	| "trajectory";
 
 /** Just enough of a preview for the panel to load it; the card owns the full record. */
 interface BrowserPreview {

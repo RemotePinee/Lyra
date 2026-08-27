@@ -10,6 +10,7 @@ import type { SessionMeta } from "@lyra/core";
 import type { SessionActivity } from "@lyra/core/activity";
 import { howItStopped, prune, rebuildToolRuns, todosFrom, without } from "./derive.ts";
 import type { AppState } from "../store.ts";
+import { useSubAgents } from "./subAgents.ts";
 
 /**
  * The transcript read that is currently in flight, and the one queued behind it.
@@ -186,6 +187,15 @@ export function sessionSlice(set: Set, get: Get) {
       view: "chat",
       ...(projectLess ? { workspace: null, scratchCwd: meta.cwd } : { scratchCwd: null }),
     });
+
+    /*
+     * Delegated work belongs to the conversation that dispatched it.
+     *
+     * The roster arrives by event and only for the session that is running, so a stale one would
+     * simply sit there — showing sub-agents from the conversation you just left, under the name of
+     * the one you just opened.
+     */
+    useSubAgents.getState().clear();
 
     /*
      * `transcript`, not `open`: reading a conversation must not start an agent for it.

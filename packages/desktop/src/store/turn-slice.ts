@@ -55,6 +55,21 @@ export function turnSlice(set: Set, get: Get) {
       running: true,
       turnStartedAt: Date.now(),
       turnTokens: 0,
+      /*
+       * Touched now, so the sidebar moves it now.
+       *
+       * The list is re-read from disk when a turn *ends*, which is the only thing that used to
+       * update this — so writing to a conversation from yesterday left it sitting under 「昨天」 for
+       * however long the turn took, while its own transcript was on screen filling up. The band a
+       * conversation is in answers "when did I last touch this", and the answer changed the moment
+       * the message was sent.
+       *
+       * Optimistic, like the message above it: the read at `agent_end` replaces it with the stored
+       * timestamp, which is this one give or take the round trip.
+       */
+      sessions: get().sessions.map((each) =>
+        each.id === sessionId ? { ...each, updatedAt: Date.now() } : each,
+      ),
     });
 
     // This is where a blank conversation becomes a real one — the first message is the

@@ -6,7 +6,11 @@ import { openFromEvent } from "./image/viewer-store.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
 import { CommandMenu } from "./CommandMenu.tsx";
+import type { SkillEntry } from "../../electron/ipc-types.ts";
 import { ComposerSend, ComposerShell } from "./ComposerShell.tsx";
+import { SubAgentBar } from "./subagents/SubAgentBar.tsx";
+import { useDock } from "../dock/store.ts";
+import { companionOf } from "../panels/definitions.tsx";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { EffortMenu, effortLabel } from "./EffortMenu.tsx";
 import { ModelIcon } from "./ModelIcon.tsx";
@@ -91,6 +95,7 @@ export function Composer() {
 	 * shut until the field was emptied would be its own annoyance.
 	 */
 	const [commands, setCommands] = useState<SlashCommand[]>([]);
+	const [skills, setSkills] = useState<SkillEntry[]>([]);
 	const [active, setActive] = useState(0);
 	const [dismissed, setDismissed] = useState(false);
 
@@ -123,6 +128,15 @@ export function Composer() {
 	 * command, so this is limited to the things that could not be written as a prompt at all: they
 	 * act on the session itself.
 	 */
+	/*
+	 * What a skill is called in the menu.
+	 *
+	 * `<plugin>:<skill>` for a bundled one, which is what those manifests advertise and what this
+	 * menu already does for a command in a subdirectory — so `/waza:think` works because it is the
+	 * name, not because of a special case.
+	 */
+	const skillCommandName = (skill: SkillEntry) => (skill.pluginId ? `${skill.pluginId}:${skill.name}` : skill.name);
+
 	const builtins = useMemo(
 		() => [
 			{
@@ -185,9 +199,34 @@ export function Composer() {
 								: "个人",
 					run: undefined,
 				})),
+			/*
+			 * Skills, offered by name in the same menu.
+			 *
+			 * A bundle's whole promise is that its skills are callable — waza's manifest advertises
+			 * 「/waza:think」 and the rest — and nothing in the app could call one: the agent picked
+			 * them up on its own judgement, and asking for one by name was not possible. So a plugin
+			 * installed on purpose could sit for a week without running once.
+			 *
+			 * Named `<plugin>:<skill>` when it came from a bundle, which is both what those manifests
+			 * advertise and what this menu already does for a command in a subdirectory.
+			 *
+			 * Ranked alongside commands rather than in a section of their own: from where you are
+			 * standing — typing a slash and a few letters — the difference between "a prompt someone
+			 * wrote down" and "a skill a bundle provides" is not the thing you are choosing by. The
+			 * origin badge says which, for when it matters.
+			 */
+			...skills
+				.filter((skill) => !reserved.has(skillCommandName(skill)))
+				.map((skill) => ({
+					name: skillCommandName(skill),
+					description: skill.description,
+					argumentHint: undefined,
+					origin: skill.pluginId ? `插件 · ${skill.pluginId}` : skill.source === "workspace" ? "技能 · 项目" : "技能",
+					run: undefined,
+				})),
 		];
 		return rankCommands(entries, term).slice(0, 50);
-	}, [builtins, commands, term, dismissed]);
+	}, [builtins, commands, skills, term, dismissed]);
 
 	/*
 	 * Re-read the files whenever the list is about to be needed.
@@ -201,7 +240,9 @@ export function Composer() {
 		if (!commandMode) return;
 		let alive = true;
 		void window.lyra.commands.list(workspace?.path ?? "").then((result) => {
-			if (alive) setCommands(result.commands);
+			if (!alive) return;
+			setCommands(result.commands);
+			setSkills(result.skills ?? []);
 		});
 		return () => {
 			alive = false;
@@ -294,12 +335,37 @@ export function Composer() {
 		}
 
 		if (invocation) {
-			const known =
-				commands.length > 0
-					? commands
-					: (await window.lyra.commands.list(workspace?.path ?? "").catch(() => ({ commands: [] }))).commands;
-			const command = known.find((c) => c.name === invocation.name);
+			const fresh =
+				commands.length > 0 || skills.length > 0
+					? { commands, skills }
+					: await window.lyra.commands
+							.list(workspace?.path ?? "")
+							.catch(() => ({ commands: [] as typeof commands, skills: [] as SkillEntry[] }));
+			const command = fresh.commands.find((c) => c.name === invocation.name);
 			if (command) outgoing = expandCommand(command, invocation.rest);
+			else {
+				/*
+				 * A skill, asked for by name.
+				 *
+				 * Expanded into an instruction rather than into the skill's own body: the body can
+				 * run to several thousand words and belongs in a tool result, which is where the
+				 * `skill` tool puts it. What goes in the transcript is the ask — short, and exactly
+				 * what the model is being told.
+				 *
+				 * Works for skills the model cannot see on its own, and that is the point of them:
+				 * `disableModelInvocation` means "do not choose this yourself", not "never run
+				 * this" — the tool looks skills up by name and has never filtered on that flag.
+				 */
+				const skill = fresh.skills?.find((entry) => skillCommandName(entry) === invocation.name);
+				if (skill) {
+					outgoing = [
+						`使用 \`${skill.name}\` 技能${skill.pluginId ? `（来自插件 ${skill.pluginId}）` : ""}。`,
+						invocation.rest.trim(),
+					]
+						.filter(Boolean)
+						.join("\n\n");
+				}
+			}
 		}
 
 		const content: UserContent[] = [
@@ -330,6 +396,14 @@ export function Composer() {
 	return (
 		<div className={`shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
 			<div className="mx-auto w-full max-w-[var(--ly-content)]">
+				{/*
+				 * That work has been delegated, above everything else the composer says.
+				 *
+				 * A sub-agent's context is deliberately kept out of this transcript, which is what
+				 * makes it invisible — for two minutes nothing on screen told a run reading forty
+				 * files apart from one that was stuck. The bar is that line, and it opens the pane.
+				 */}
+				<SubAgentBar onOpen={() => useDock.getState().open("subagents", companionOf("subagents"))} />
 				{/*
 				 * Where the turn will run, and what it has already changed.
 				 *

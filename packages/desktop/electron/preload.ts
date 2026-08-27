@@ -95,6 +95,14 @@ const api: LyraApi = {
 			return () => ipcRenderer.removeListener("agent:event", listener);
 		},
 	},
+	subAgents: {
+		list: (sessionId) => ipcRenderer.invoke("subagents:list", sessionId),
+		detail: (sessionId, id) => ipcRenderer.invoke("subagents:detail", sessionId, id),
+		steer: (sessionId, id, text) => ipcRenderer.invoke("subagents:steer", sessionId, id, text),
+		abort: (sessionId, id) => ipcRenderer.invoke("subagents:abort", sessionId, id),
+		dismiss: (sessionId, id) => ipcRenderer.invoke("subagents:dismiss", sessionId, id),
+		dismissFinished: (sessionId) => ipcRenderer.invoke("subagents:dismissFinished", sessionId),
+	},
 	sideChat: {
 		state: (sessionId) => ipcRenderer.invoke("sidechat:state", sessionId),
 		ask: (sessionId, content) => ipcRenderer.invoke("sidechat:ask", sessionId, content),

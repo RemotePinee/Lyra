@@ -37,6 +37,7 @@ import type { SessionCapabilities } from "./session-capabilities.ts";
 import type { SessionLog } from "./session-log.ts";
 import { prepareTurn } from "./turn.ts";
 import { buildTurnConfig } from "./turn-config.ts";
+import type { SubAgentRegistry } from "./sub-agents.ts";
 
 export interface TurnInputs {
 	cwd: string;
@@ -52,6 +53,8 @@ export interface TurnInputs {
 	requestApproval: (request: ApprovalRequest) => Promise<ApprovalDecision>;
 	emit: (event: AgentEvent) => Promise<void>;
 	drainSteering: () => Message[];
+	/** Where sub-agents dispatched by this turn register — see `runtime/sub-agents.ts`. */
+	subAgents?: SubAgentRegistry;
 }
 
 /**
@@ -168,6 +171,8 @@ async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig
 			tools: can.tools,
 			skills: can.skills,
 			agents: can.agents,
+			// Where anything this turn delegates registers itself, so it can be watched and steered.
+			subAgents: input.subAgents,
 			signal: input.signal,
 			streamFn: input.streamFn,
 			requestApproval: input.requestApproval,

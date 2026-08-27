@@ -31,6 +31,38 @@ export interface LoadedCapabilities {
 	tools: Tool[];
 }
 
+/**
+ * Every skill this project can use, in precedence order, with the diagnostics from reading them.
+ *
+ * Its own function because two things need the same answer and must not compute it twice: the
+ * session, which hands the list to the model, and the composer's slash menu, which offers the same
+ * skills to the user. A menu built from a second, slightly different walk of the same directories
+ * is a menu that offers something the agent does not have.
+ *
+ * Precedence, most specific first: a loose skill in the project beats a bundled one of the same
+ * name — dropping a directory next to a plugin is how you override it — and both beat one provided
+ * by code, because what the user put on disk is the most specific statement of intent in the room.
+ */
+export async function collectSkills(
+	cwd: string,
+	plugins: { enabled: boolean; skills: Skill[] }[],
+): Promise<{ skills: Skill[]; diagnostics: Awaited<ReturnType<typeof loadSkills>>["diagnostics"] }> {
+	const loaded = await loadSkills([
+		{ dir: join(cwd, ".lyra", "skills"), source: "workspace" as const },
+		{ dir: join(lyraHome(), "skills"), source: "user" as const },
+	]);
+	const looseNames = new Set(loaded.skills.map((skill) => skill.name));
+	const pluginSkills = plugins
+		.filter((plugin) => plugin.enabled)
+		.flatMap((plugin) => plugin.skills)
+		.filter((skill) => !looseNames.has(skill.name));
+
+	const known = new Set([...looseNames, ...pluginSkills.map((skill) => skill.name)]);
+	const fromPlugins = registeredSkills().filter((skill) => !known.has(skill.name));
+
+	return { skills: [...loaded.skills, ...pluginSkills, ...fromPlugins], diagnostics: loaded.diagnostics };
+}
+
 /** Load skills, agents and MCP tools. Safe to call again after settings change. */
 export async function loadCapabilities(
 	cwd: string,
@@ -54,25 +86,7 @@ export async function loadCapabilities(
 	const plugins = loadedPlugins.plugins;
 	const pluginDiagnostics = loadedPlugins.diagnostics;
 
-	const loaded = await loadSkills([
-		{ dir: join(cwd, ".lyra", "skills"), source: "workspace" as const },
-		{ dir: join(lyraHome(), "skills"), source: "user" as const },
-	]);
-	// Loose skills win over bundled ones with the same name, so a project can override a
-	// plugin's skill by dropping a directory next to it.
-	const looseNames = new Set(loaded.skills.map((skill) => skill.name));
-	const pluginSkills = plugins
-		.filter((plugin) => plugin.enabled)
-		.flatMap((plugin) => plugin.skills)
-		.filter((skill) => !looseNames.has(skill.name));
-
-	// Code-provided skills sit behind both, for the same reason: what the user put on disk is
-	// the most specific statement of intent in the room.
-	const known = new Set([...looseNames, ...pluginSkills.map((skill) => skill.name)]);
-	const fromPlugins = registeredSkills().filter((skill) => !known.has(skill.name));
-
-	const skills = [...loaded.skills, ...pluginSkills, ...fromPlugins];
-	const skillDiagnostics = loaded.diagnostics;
+	const { skills, diagnostics: skillDiagnostics } = await collectSkills(cwd, plugins);
 
 	const agents = [...BUILTIN_AGENTS, ...(await loadAgentDefinitions(cwd))];
 

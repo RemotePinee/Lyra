@@ -5,11 +5,12 @@
  * which is exactly the property that lets a plugin replace one.
  */
 
-import { FileText, Folder, GitCompare, Globe, History, ListTodo, MessageCirclePlus, SquareTerminal } from "lucide-react";
+import { Bot, FileText, Folder, GitCompare, Globe, History, ListTodo, MessageCirclePlus, SquareTerminal } from "lucide-react";
 
 import { BrowserPanel } from "../components/BrowserPanel.tsx";
 import { FileBrowser } from "../components/FileBrowser.tsx";
 import { FilePanel } from "../components/FilePanel.tsx";
+import { SubAgentPanel } from "../components/subagents/SubAgentPanel.tsx";
 import { FileActions } from "../components/files/FileActions.tsx";
 import { FileTitle } from "../components/files/FileTitle.tsx";
 import { GitPanel } from "../components/git/GitPanel.tsx";
@@ -92,6 +93,21 @@ const BUILTIN_PANELS: PanelDefinition[] = [
 		 */
 		header: FileTitle,
 		actions: FileActions,
+	},
+	/*
+	 * Delegated work, in a pane of its own.
+	 *
+	 * Beside 「侧边聊天」 because it is the same shape — a conversation that is not the main one —
+	 * and deliberately not inside it: the side chat is yours to ask questions in, a sub-agent is
+	 * the main agent's own worker. Merging them would put two different relationships in one pane.
+	 */
+	{
+		kind: "subagents",
+		label: "子 Agent",
+		icon: Bot,
+		shortcut: "⌥⌘A",
+		unavailable: needsSession,
+		render: SubAgentPanel,
 	},
 	{
 		kind: "chat",

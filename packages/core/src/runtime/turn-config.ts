@@ -28,6 +28,7 @@ import { compactWith } from "./compaction.ts";
 import { textTokens, toolTokens } from "./context.ts";
 import { writePreview } from "./previews.ts";
 import { runSubAgent } from "./sub-agent.ts";
+import type { SubAgentRegistry } from "./sub-agents.ts";
 import type { TurnContext } from "./turn.ts";
 import { sandboxModeFor } from "../sandbox/mode-for.ts";
 
@@ -41,6 +42,13 @@ export interface TurnConfigDeps {
 	tools: Tool[];
 	skills: Skill[];
 	agents: AgentDefinition[];
+	/**
+	 * Where dispatched sub-agents register, so they can be watched and steered while they run.
+	 *
+	 * Optional throughout: a host that only wants the answer passes nothing and delegation behaves
+	 * exactly as before. See `runtime/sub-agents.ts`.
+	 */
+	subAgents?: SubAgentRegistry;
 	signal?: AbortSignal;
 	streamFn?: AgentRunConfig["streamFn"];
 	requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
@@ -103,6 +111,9 @@ export function buildTurnConfig(
 						streamFn: deps.streamFn,
 						requestApproval: (request) => deps.requestApproval(request),
 						emit: (event) => deps.emit(event),
+						// Where the run registers itself so it can be watched and steered. Absent for
+						// hosts that only want the answer — see `SubAgentOptions.registry`.
+						registry: deps.subAgents,
 					},
 					input,
 					deps.provider,

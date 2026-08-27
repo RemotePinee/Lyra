@@ -99,3 +99,47 @@ test("banding does not reorder the array it was given", () => {
 		"the caller's list is its own; sorting it in place would reorder what React is rendering",
 	);
 });
+
+/*
+ * Writing to an old conversation moves it.
+ *
+ * The band a conversation sits in answers "when did I last touch this", so the answer changes the
+ * moment a message is sent — not when the turn finishes. Getting that wrong left a conversation
+ * under 「昨天」 while its own transcript was on screen filling up, for however long the turn took;
+ * on a long turn that is minutes of the sidebar disagreeing with the window.
+ */
+
+test("touching yesterday's conversation moves it into today, at the top", () => {
+	const now = new Date("2026-08-27T10:00:00").getTime();
+	const yesterday = new Date("2026-08-26T22:00:00").getTime();
+	const earlierToday = new Date("2026-08-27T09:00:00").getTime();
+
+	const before = bandByRecency([session("old", yesterday), session("today", earlierToday)], now);
+	assert.deepEqual(
+		before.map((band) => [band.label, band.sessions.map((one) => one.id)]),
+		[
+			["今天", ["today"]],
+			["昨天", ["old"]],
+		],
+	);
+
+	// The same conversation, now written to.
+	const after = bandByRecency([session("old", now), session("today", earlierToday)], now);
+	assert.deepEqual(
+		after.map((band) => [band.label, band.sessions.map((one) => one.id)]),
+		[["今天", ["old", "today"]]],
+		"it joined today, ahead of a conversation touched an hour ago",
+	);
+});
+
+test("a band with nothing left in it disappears rather than sitting empty", () => {
+	// The move above empties 「昨天」. A heading with no rows under it reads as a list that failed to
+	// load, which is worse than the heading simply not being there.
+	const now = new Date("2026-08-27T10:00:00").getTime();
+	const bands = bandByRecency([session("only", now)], now);
+
+	assert.deepEqual(
+		bands.map((band) => band.label),
+		["今天"],
+	);
+});

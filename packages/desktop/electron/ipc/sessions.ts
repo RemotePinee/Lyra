@@ -262,6 +262,43 @@ export function registerSessionsIpc({
 		},
 	);
 
+	/*
+	 * Sub-agents: read one, or reach into a running one.
+	 *
+	 * The roster arrives over `agent:event` like everything else — it is an `AgentEvent`, so a
+	 * window already receiving events is already in step. Only these three need asking for: the
+	 * transcript is too big to broadcast on every tool call, and the other two are actions.
+	 */
+	ipcMain.handle("subagents:detail", async (_event, sessionId: string, id: string) => {
+		const session = sessions.get(sessionId);
+		return session?.subAgents.detail(id) ?? null;
+	});
+
+	ipcMain.handle("subagents:list", async (_event, sessionId: string) => {
+		const session = sessions.get(sessionId);
+		return session?.subAgents.list() ?? [];
+	});
+
+	ipcMain.handle("subagents:steer", async (_event, sessionId: string, id: string, text: string) => {
+		const session = sessions.get(sessionId);
+		return session?.steerSubAgent(id, text) ?? false;
+	});
+
+	ipcMain.handle("subagents:abort", async (_event, sessionId: string, id: string) => {
+		const session = sessions.get(sessionId);
+		return session?.abortSubAgent(id) ?? false;
+	});
+
+	ipcMain.handle("subagents:dismiss", async (_event, sessionId: string, id: string) => {
+		const session = sessions.get(sessionId);
+		return session?.dismissSubAgent(id) ?? "unknown";
+	});
+
+	ipcMain.handle("subagents:dismissFinished", async (_event, sessionId: string) => {
+		const session = sessions.get(sessionId);
+		return session?.dismissFinishedSubAgents() ?? 0;
+	});
+
 	ipcMain.handle(
 		"agent:editMessage",
 		async (

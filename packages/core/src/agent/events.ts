@@ -1,4 +1,5 @@
 import type { AssistantMessage, Message, StreamEvent, ToolResult, ToolResultMessage } from "../types.ts";
+import type { SubAgentSummary } from "../runtime/sub-agents.ts";
 
 /**
  * Everything the UI needs to render a live session. The desktop renderer, the mobile app
@@ -53,6 +54,24 @@ export type AgentEvent =
 	 * the parent context; copying them into the parent log would give that back with interest.
 	 */
 	| { type: "subagent"; id: string; agent: string; description: string; prompt: string; tools: string[] }
+	/**
+	 * One message from inside a sub-agent, as it is written.
+	 *
+	 * Delegated work used to be write-only — dispatched, then a paragraph of answer — which is the
+	 * shape of the problem: the context isolation that makes delegation worth doing is what makes
+	 * it opaque, and a run you cannot see is one you cannot correct. These carry the sub-agent's
+	 * own id and are never written to the session log; the parent's transcript is unchanged by
+	 * anyone watching one.
+	 */
+	| { type: "subagent_message"; id: string; message: Message }
+	/**
+	 * The whole roster changed — one started, finished, made a tool call, or was steered.
+	 *
+	 * A list rather than a diff: it is a dozen rows at most, it is sent only when something
+	 * actually moved, and a window that has been away is correct on the first one it receives
+	 * instead of having to have seen every event since it left.
+	 */
+	| { type: "subagents"; agents: SubAgentSummary[] }
 	| { type: "subagent_done"; id: string; steps: string[]; answer: string }
 	/**
 	 * History was summarised to fit the window.

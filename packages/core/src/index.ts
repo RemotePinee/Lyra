@@ -187,3 +187,6 @@ export {
 	type PreviewFile,
 	type PreviewRecord,
 } from "./runtime/previews.ts";
+
+export type { SubAgentDetail, SubAgentStatus, SubAgentSummary } from "./runtime/sub-agents.ts";
+export { collectSkills } from "./runtime/session-setup.ts";

@@ -119,6 +119,13 @@ export function SessionRow({
 		<div
 			{...card.bind}
 			/*
+			 * Marked so the list can animate it from wherever it was.
+			 *
+			 * Writing to a conversation moves it between bands — a change of parent, which no CSS
+			 * transition can carry. See `useReflow`.
+			 */
+			data-ly-row={session.id}
+			/*
 			 * How deep the title has to dissolve on hover: as wide as this row's own controls.
 			 *
 			 * The archive has three, everywhere else has one — a fixed depth would either leave the

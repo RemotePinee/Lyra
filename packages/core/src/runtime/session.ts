@@ -25,6 +25,7 @@ import { scratchDir, sessionFacts } from "./session-facts.ts";
 import { SessionLog } from "./session-log.ts";
 import { compactIfNeeded } from "./compaction.ts";
 import { driveTurn, modelHistory, summaryStream } from "./session-turn.ts";
+import { SubAgentRegistry } from "./sub-agents.ts";
 import { sessionTaskQueue, type TaskQueue } from "./task-queue.ts";
 
 export interface AgentSessionOptions {
@@ -57,6 +58,16 @@ export class AgentSession {
 	private streamFn?: AgentRunConfig["streamFn"];
 	private controller: AbortController | null = null;
 	private steering: Message[] = [];
+	/**
+	 * Every sub-agent this session has dispatched, live and finished.
+	 *
+	 * Owned by the session rather than by the turn that spawned one: a delegated run is worth
+	 * reading after the turn that asked for it has ended, and the pane showing it outlives both.
+	 * Emitting on change is what keeps a window in step without polling.
+	 */
+	readonly subAgents = new SubAgentRegistry(() => {
+		void this.emit({ type: "subagents", agents: this.subAgents.list() });
+	});
 	private readonly approvals: ApprovalGate;
 	private readonly tasks: TaskQueue = sessionTaskQueue({
 		run: (task) => this.prompt([{ type: "text", text: task.text }], { origin: task.origin }),
@@ -217,6 +228,52 @@ export class AgentSession {
 	 * Send a prompt. If the agent is already running, the message is queued as steering and
 	 * picked up between turns instead of starting a second concurrent run.
 	 */
+	/**
+	 * Say something to a sub-agent that is still running.
+	 *
+	 * Not a second conversation: the message is spliced between its turns, so it finishes the step
+	 * it is on, reads this with its context intact, and carries on. False when there is no such
+	 * sub-agent or it has already finished — the caller decides whether that is worth saying.
+	 *
+	 * The effect on the parent is indirect and that is the whole design. One executor per
+	 * workspace: steering changes what the sub-agent reports back, and the parent acts on the
+	 * report. Two agents writing to one working tree is a conflict waiting to happen.
+	 */
+	steerSubAgent(id: string, text: string): boolean {
+		const message = this.subAgents.steer(id, text);
+		if (!message) return false;
+		/*
+		 * Announced, or a window watching this sub-agent would not see what was said to it.
+		 *
+		 * The roster event that `steer` triggers carries summaries and no transcripts, so without
+		 * this the message sat in the sub-agent's history unseen until something re-read the whole
+		 * thing — and the reply, when it came, would arrive as an answer to a question that was
+		 * never on screen.
+		 */
+		void this.emit({ type: "subagent_message", id, message });
+		return true;
+	}
+
+	/** Stop one sub-agent. The parent and its siblings carry on. */
+	abortSubAgent(id: string): boolean {
+		return this.subAgents.abort(id);
+	}
+
+	/**
+	 * Take one off the roster — stopping it first if it is still going.
+	 *
+	 * A running sub-agent that was merely un-listed would go on running with nothing able to reach
+	 * it, so this never silently orphans one; see `SubAgentRegistry.dismiss`.
+	 */
+	dismissSubAgent(id: string): "removed" | "stopping" | "unknown" {
+		return this.subAgents.dismiss(id);
+	}
+
+	/** Clear the finished ones, leaving anything still running. */
+	dismissFinishedSubAgents(): number {
+		return this.subAgents.dismissFinished();
+	}
+
 	async prompt(
 		content: UserContent[],
 		options: {
@@ -286,6 +343,7 @@ export class AgentSession {
 				requestApproval: (request) => this.requestApproval(request),
 				emit: (event) => this.emit(event),
 				drainSteering: () => this.steering.splice(0, this.steering.length),
+				subAgents: this.subAgents,
 			});
 		} finally {
 			this.controller = null;
@@ -300,6 +358,15 @@ export class AgentSession {
 
 	abort(): void {
 		this.controller?.abort();
+		/*
+		 * Explicitly, as well as through the chain.
+		 *
+		 * Each sub-agent's controller is chained to this one, so aborting here already reaches them
+		 * — but "stop means stop" is worth stating rather than inferring from a listener two files
+		 * away, and a sub-agent left running past the session it belongs to has nothing that could
+		 * ever reach it again.
+		 */
+		this.subAgents.abortAll();
 		this.approvals.rejectAll();
 		// Stop means stop. Letting the queue carry on after the button was pressed would be
 		// the opposite of what pressing it asks for.
