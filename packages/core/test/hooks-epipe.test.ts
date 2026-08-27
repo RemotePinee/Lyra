@@ -13,8 +13,10 @@
  * "A JavaScript error occurred in the main process", with a stack ending in `node:internal`.
  *
  * The size matters: a small payload fits in the buffer and is written before anyone notices, which
- * is why this only ever happened on some tool calls and not others. The argument below is
- * deliberately past 64KB.
+ * is why this only ever happened on some tool calls and not others. It has to clear the 64KB pipe
+ * buffer, but it also cannot go past 128KB — the same arguments are written to the `DW_ARGS`
+ * environment variable, and Linux refuses an exec whose single argument exceeds `MAX_ARG_STRLEN`
+ * (128KB) with `E2BIG` before the child even starts, which would test the wrong thing.
  */
 
 import assert from "node:assert/strict";
@@ -24,8 +26,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { runHook } from "../src/runtime/hooks.ts";
 
-/** Comfortably past the 64KB pipe buffer, so the write cannot finish before the child exits. */
-const BIG = "x".repeat(200_000);
+/** Comfortably past the 64KB pipe buffer, inside Linux's 128KB per-argument exec limit. */
+const BIG = "x".repeat(80_000);
 
 test("a hook that ignores stdin does not take the process down with it", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "ly-hook-"));
