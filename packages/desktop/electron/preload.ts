@@ -122,6 +122,8 @@ const api: LyraApi = {
 	files: {
 		list: (dir) => ipcRenderer.invoke("files:list", dir),
 		read: (path) => ipcRenderer.invoke("files:read", path),
+		document: (path) => ipcRenderer.invoke("files:document", path),
+		bytes: (path) => ipcRenderer.invoke("files:bytes", path),
 		write: (path, text) => ipcRenderer.invoke("files:write", path, text),
 		/*
 		 * One encoded segment under a fixed host.
@@ -296,6 +298,7 @@ const api: LyraApi = {
 	},
 	diff: {
 		workspaceDiff: (cwd) => ipcRenderer.invoke("diff:workspace", cwd),
+		blob: (cwd, path, side) => ipcRenderer.invoke("diff:blob", cwd, path, side),
 	},
 };
 

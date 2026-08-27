@@ -1,7 +1,11 @@
 import { FileWarning } from "lucide-react";
 import type { FileContents } from "../../electron/ipc-types.ts";
 import { CodeEditor } from "./CodeEditor.tsx";
+import { documentKind } from "../../electron/document-kind.ts";
 import { FileTabs } from "./files/FileTabs.tsx";
+import { PdfView, WordView } from "./files/DocumentView.tsx";
+import { ImagePane } from "./files/ImagePane.tsx";
+import { SheetView } from "./files/SheetView.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { directoryOf } from "./markdown-assets.ts";
 import { Scroller } from "./Scroller.tsx";
@@ -18,7 +22,18 @@ function extensionOf(name: string): string {
 	return dot > 0 ? lower.slice(dot + 1) : "";
 }
 
-export type FileKind = "image" | "video" | "audio" | "markdown" | "json" | "text" | "binary";
+export type FileKind =
+	| "image"
+	| "video"
+	| "audio"
+	| "markdown"
+	| "json"
+	| "text"
+	| "binary"
+	/** A spreadsheet or a SQLite database — both drawn as a grid; see `SheetView`. */
+	| "sheet"
+	| "pdf"
+	| "document";
 
 /**
  * What kind of thing this file is, for anything deciding how to treat it.
@@ -31,6 +46,18 @@ export function fileKind(name: string, contents: FileContents | null): FileKind 
 	if (IMAGE.has(ext)) return "image";
 	if (VIDEO.has(ext)) return "video";
 	if (AUDIO.has(ext)) return "audio";
+	/*
+	 * Documents, before the NUL-byte check that would otherwise call all of them binary.
+	 *
+	 * `documentKind` is shared with the main process — see `electron/document-kind.ts` — because
+	 * the two have to agree about what a `.xlsx` is. The window decides which pane to draw and the
+	 * main process decides which reader to run; disagreement there is a file that opens as
+	 * mojibake in a pane that was expecting rows.
+	 */
+	const document = documentKind(name);
+	if (document === "workbook" || document === "database") return "sheet";
+	if (document === "pdf") return "pdf";
+	if (document === "document") return "document";
 	// A media extension wins over the NUL-byte check: a PNG is "binary" and still viewable.
 	if (contents?.binary) return "binary";
 	if (ext === "md" || ext === "mdx") return "markdown";
@@ -83,12 +110,15 @@ export function FileViewer({
 			<FileTabs />
 
 			{kind === "image" ? (
-				<Scroller className="flex-1">
-					{/* Checkerboard, so transparent images do not read as white ones. */}
-					<div className="ly-checker flex min-h-full items-center justify-center p-3">
-						<img src={media} alt={name} className="max-w-full rounded-md object-contain" />
-					</div>
-				</Scroller>
+				// Zoom and pan, because an icon and a screenshot are both images and neither is
+				// legible at "whatever fits the pane" — see `ImagePane`.
+				<ImagePane src={media} name={name} />
+			) : kind === "sheet" ? (
+				<SheetView path={path} />
+			) : kind === "pdf" ? (
+				<PdfView path={path} name={name} />
+			) : kind === "document" ? (
+				<WordView path={path} />
 			) : kind === "video" ? (
 				<div className="flex min-h-0 flex-1 items-center justify-center bg-black/85 p-2">
 					{/* biome-ignore lint/a11y/useMediaCaption: a file preview has no caption track. */}

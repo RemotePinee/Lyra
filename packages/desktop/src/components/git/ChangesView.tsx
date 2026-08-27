@@ -125,6 +125,7 @@ export function ChangesView({
         )}
         {stagedPaths.length > 0 && (
           <FileDiffList
+            cwd={cwd}
             files={staged}
             actions={(file) => (
               <IconButton
@@ -153,6 +154,7 @@ export function ChangesView({
         )}
         {unstagedPaths.length > 0 && (
           <FileDiffList
+            cwd={cwd}
             files={unstaged}
             actions={(file) => (
               <>

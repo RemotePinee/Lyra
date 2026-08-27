@@ -21,6 +21,9 @@ import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
  */
 import type { DownloadPhase } from "./ipc/update-download.ts";
 import type { TrayCommand } from "./tray-menu.ts";
+export type { DocumentData, DocumentSheet } from "./documents.ts";
+import type { DocumentData } from "./documents.ts";
+export type { DocumentKind } from "./document-kind.ts";
 export type { OpenTarget } from "./open-targets.ts";
 import type { OpenTarget } from "./open-targets.ts";
 
@@ -219,6 +222,20 @@ export interface LyraApi {
 	files: {
 		list(dir: string): Promise<FileEntry[]>;
 		read(path: string): Promise<FileContents | null>;
+		/**
+		 * A spreadsheet or a SQLite database, as sheets of cells.
+		 *
+		 * Null when the path is outside every open project or is not a file. The reader's own
+		 * failures come back inside the value, as `error` — a corrupt workbook is something to show,
+		 * not something to throw. See `electron/documents.ts`.
+		 */
+		document(path: string): Promise<DocumentData | null>;
+		/**
+		 * The file's own bytes, for the formats the window parses itself — `.docx` is the one.
+		 *
+		 * Null outside every open project, for a directory, or past the size cap.
+		 */
+		bytes(path: string): Promise<Uint8Array | null>;
 		/** Overwrite a file. Refused outside the open project, same as reading. */
 		write(path: string, text: string): Promise<{ ok: boolean; error?: string }>;
 		/**
@@ -657,6 +674,13 @@ export interface LyraApi {
 	diff: {
 		/** Uncommitted changes for the review panel. */
 		workspaceDiff(cwd: string): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }>;
+		/**
+		 * One side of a binary file, as a data URL, for the review to draw rather than describe.
+		 *
+		 * Null when there is nothing worth drawing — a `.zip`, a file too large to move, or a side
+		 * that does not exist (the working copy of a deleted file). See `readDiffBlob`.
+		 */
+		blob(cwd: string, path: string, side: "head" | "work"): Promise<{ dataUrl: string; bytes: number } | null>;
 	};
 }
 

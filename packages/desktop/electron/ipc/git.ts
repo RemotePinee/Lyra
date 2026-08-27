@@ -12,6 +12,8 @@ import { findLocalCheckout } from "../git-remote.ts";
 import { generalScratchDir, type PrBrief, prScratchDir, scratchRoots, writePrBrief } from "../scratch.ts";
 import {
 	collectWorkspaceDiff,
+	readDiffBlob,
+	type DiffBlob,
 	commitAll,
 	commitDiff,
 	commitStaged,
@@ -176,6 +178,26 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	});
 
 	ipcMain.handle("diff:workspace", async (_event, cwd: string) => collectWorkspaceDiff(cwd));
+
+	/*
+	 * One side of a binary file, so the review can show the thing rather than describe it.
+	 *
+	 * A changed image is the common case by a distance, and "这个文件没有可以按行对比的内容" tells
+	 * you nothing you could not already see from the file name. The bytes come back as a data URL
+	 * because that is what an `<img>` takes and because it keeps this out of the media protocol,
+	 * which serves the working tree only — the deleted side of a diff exists nowhere but in git.
+	 *
+	 * Guarded twice: the directory has to be a project the user opened, and the path has to resolve
+	 * inside it. A diff panel that could be asked for `../../.ssh/id_rsa` as a data URL would be a
+	 * file-read primitive wearing a picture frame.
+	 */
+	ipcMain.handle(
+		"diff:blob",
+		async (_event, cwd: string, path: string, side: "head" | "work"): Promise<DiffBlob | null> => {
+			if (!insideAProject(cwd)) return null;
+			return readDiffBlob(cwd, path, side);
+		},
+	);
 
 	/*
 	 * The scratch directory a pull request's conversation lives in.

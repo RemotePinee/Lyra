@@ -10,8 +10,9 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { computeDiff, type DiffHunk } from "@lyra/core";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
-import { git, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
+import { git, gitBuffer, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
+import { resolveInside } from "./file-ops.ts";
 
 /**
  * Uncommitted changes, as the review panel shows them.
@@ -48,11 +49,36 @@ export async function collectWorkspaceDiff(
 		if (!path) continue;
 
 		const kind = classify(code);
-		const before = kind === "added" || kind === "untracked" ? "" : await showHead(cwd, path);
-		const after = kind === "deleted" ? "" : await readWorking(cwd, path);
-		if (before === null || after === null) continue;
+		const before = kind === "added" || kind === "untracked" ? blank : await showHead(cwd, path);
+		const after = kind === "deleted" ? blank : await readWorking(cwd, path);
 
-		const diff = computeDiff(before, after);
+		/*
+		 * A file that is not text is still a file that changed.
+		 *
+		 * Both halves of this used to be wrong in opposite directions. The working-tree read
+		 * returned null for anything with a NUL byte in it and the loop skipped the whole entry —
+		 * so adding or editing an image removed it from the review, which is the one place you
+		 * would go to find out that it had changed. Meanwhile nothing checked the *other* side at
+		 * all, so deleting an image diffed its bytes as text: five lines of PNG header, counted as
+		 * five deletions and added to the totals at the bottom of the composer.
+		 *
+		 * Listed and marked instead. There are no hunks and the counts stay at zero, because
+		 * neither means anything here: a picture has changed or it has not.
+		 */
+		if (before.binary || after.binary) {
+			files.push({
+				path,
+				status: kind,
+				added: 0,
+				removed: 0,
+				hunks: [],
+				binary: true,
+				bytes: after.bytes || before.bytes,
+			});
+			continue;
+		}
+
+		const diff = computeDiff(before.text, after.text);
 		totalAdded += diff.added;
 		totalRemoved += diff.removed;
 		files.push({ path, status: kind, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) });
@@ -70,19 +96,115 @@ export function classify(code: string): WorkspaceDiffFile["status"] {
 	return "modified";
 }
 
-async function showHead(cwd: string, path: string): Promise<string | null> {
-	return git(cwd, ["show", `HEAD:${path}`]).catch(() => "");
+/**
+ * One side of a comparison: its text, or the fact that it has none.
+ *
+ * `binary` is not an error and not an absence — it is an answer, and the reason this is a record
+ * rather than `string | null`. Null meant both "there is nothing here" and "there is something
+ * here that is not text", and the caller could not tell a deleted file from an image.
+ */
+interface Side {
+	text: string;
+	binary: boolean;
+	bytes: number;
 }
 
-async function readWorking(cwd: string, path: string): Promise<string | null> {
+const blank: Side = { text: "", binary: false, bytes: 0 };
+
+/**
+ * What git has committed for this path, read as bytes.
+ *
+ * Bytes, not a string, because `git show HEAD:logo.png` answers with the PNG. Decoded as UTF-8 it
+ * becomes mojibake that `computeDiff` will happily count lines in — which is what put five
+ * deletions on the composer's change bar for every image anybody removed.
+ */
+async function showHead(cwd: string, path: string): Promise<Side> {
+	const buffer = await gitBuffer(cwd, ["show", `HEAD:${path}`]).catch(() => null);
+	if (!buffer) return blank;
+	return sideOf(buffer);
+}
+
+async function readWorking(cwd: string, path: string): Promise<Side> {
 	const buffer = await readFile(join(cwd, path)).catch(() => null);
-	if (!buffer) return "";
-	// Binary blobs and huge generated files are listed but not diffed line by line.
-	if (buffer.length > MAX_BLOB_BYTES || buffer.includes(0)) return null;
-	return buffer.toString("utf8");
+	if (!buffer) return blank;
+	return sideOf(buffer);
+}
+
+/**
+ * Text, or not.
+ *
+ * A NUL byte is the same test git itself uses, and it is right for the same reason: no text
+ * encoding this app will meet puts one in the middle of a document. Oversized files are treated as
+ * binary too — not because they are, but because the answer downstream is identical: list it, do
+ * not diff it, do not hold a megabyte of it in memory for a panel nobody reads line by line.
+ */
+function sideOf(buffer: Buffer): Side {
+	const binary = buffer.length > MAX_BLOB_BYTES || buffer.includes(0);
+	return { text: binary ? "" : buffer.toString("utf8"), binary, bytes: buffer.length };
 }
 
 /** Keep the payload sane for files with hundreds of hunks. */
 export function capHunks(hunks: DiffHunk[]): DiffHunk[] {
 	return hunks.slice(0, 40);
+}
+
+/**
+ * How large a binary file may be before the panel stops offering to show it.
+ *
+ * A data URL is base64, so it costs a third more than the file and lands in the renderer's memory
+ * whole. Eight megabytes covers every screenshot, icon and diagram anybody commits; a video does
+ * not need previewing in a diff panel, and a machine-learning checkpoint certainly does not.
+ */
+const MAX_PREVIEW_BYTES = 8 * 1024 * 1024;
+
+/** What an image or other blob needs in order to be drawn. */
+export interface DiffBlob {
+	dataUrl: string;
+	bytes: number;
+}
+
+/**
+ * Extensions the panel will draw, and what to call them on the wire.
+ *
+ * A closed list rather than a sniff: this produces a `data:` URL, and the mime type is what decides
+ * how the renderer treats it. Guessing `image/svg+xml` for something that is not one would be
+ * handing arbitrary markup to an `<img>`.
+ */
+const PREVIEW_TYPES: Record<string, string> = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	webp: "image/webp",
+	avif: "image/avif",
+	bmp: "image/bmp",
+	ico: "image/x-icon",
+	icns: "image/x-icns",
+	svg: "image/svg+xml",
+};
+
+export function previewType(path: string): string | null {
+	const dot = path.lastIndexOf(".");
+	return dot > 0 ? (PREVIEW_TYPES[path.slice(dot + 1).toLowerCase()] ?? null) : null;
+}
+
+/**
+ * One side of a binary file, as a data URL, or null.
+ *
+ * Null for anything this panel would not draw — the wrong kind of file, one too large to be worth
+ * moving, a side that does not exist. The caller shows a mark and the file's size instead, which
+ * is the honest answer for a `.zip`.
+ */
+export async function readDiffBlob(cwd: string, path: string, side: "head" | "work"): Promise<DiffBlob | null> {
+	const type = previewType(path);
+	if (!type) return null;
+	const inside = resolveInside(join(cwd, path), [cwd]);
+	if (!inside) return null;
+
+	const buffer =
+		side === "head"
+			? await gitBuffer(cwd, ["show", `HEAD:${path}`]).catch(() => null)
+			: await readFile(inside).catch(() => null);
+	if (!buffer || buffer.length === 0 || buffer.length > MAX_PREVIEW_BYTES) return null;
+	return { dataUrl: `data:${type};base64,${buffer.toString("base64")}`, bytes: buffer.length };
 }

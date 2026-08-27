@@ -19,7 +19,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 
-import { GRAMMARS, highlightStyle } from "./highlight.ts";
+import { GRAMMARS, grammarKeyFor, highlightStyle } from "./highlight.ts";
 import { editorTheme } from "./editor/theme.ts";
 import { CHEVRON_DOWN, CHEVRON_RIGHT, OPTION_ICONS, SEARCH_ICONS, SEARCH_PHRASES, SEARCH_TIPS } from "./editor/chrome.ts";
 import { EditorMenu } from "./editor/EditorMenu.tsx";
@@ -319,13 +319,16 @@ export function CodeEditor({
 }
 
 
-/** The grammar for a path, or null when nothing here can parse it. */
+/**
+ * The grammar for a path, or null when nothing here can parse it.
+ *
+ * Name first, extension second — `grammarKeyFor` is where that rule lives, because the editor is
+ * not the only thing that asks. `Dockerfile` and `Makefile` used to be checked here only to be
+ * turned down; they have grammars now.
+ */
 function languageFor(path: string): Promise<Extension | null> | null {
-	const name = path.toLowerCase().split("/").pop() ?? "";
-	// Files that are configuration by name rather than by extension.
-	if (name === "dockerfile" || name === "makefile") return null;
-	const dot = name.lastIndexOf(".");
-	if (dot <= 0) return null;
-	const load = GRAMMARS[name.slice(dot + 1)];
+	const key = grammarKeyFor(path);
+	if (!key) return null;
+	const load = GRAMMARS[key];
 	return load ? load().catch(() => null) : null;
 }

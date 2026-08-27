@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import type { WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
+import { BinaryDiff } from "./BinaryDiff.tsx";
 import { DiffView } from "../DiffView.tsx";
 import { iconColour, lookFor } from "../fileIcon.tsx";
 import { Text } from "../Text.tsx";
@@ -40,8 +41,16 @@ export function FileDiffList({
   actions,
   emptyLabel = "没有匹配的文件",
   initiallyOpen,
+  cwd = null,
 }: {
   files: WorkspaceDiffFile[];
+  /**
+   * The repository these files are in, when they are on this machine.
+   *
+   * Null for a pull request: those files are on a branch nobody has checked out, so a binary one
+   * can be named and sized but not drawn. See `BinaryDiff`.
+   */
+  cwd?: string | null;
   /** Rendered at the end of a row — staging controls in the changes view, nothing elsewhere. */
   actions?: (file: WorkspaceDiffFile) => React.ReactNode;
   emptyLabel?: string;
@@ -153,6 +162,9 @@ export function FileDiffList({
                   >
                     整个目录都还没有被 Git 跟踪，暂时没有可对比的内容。
                   </Text>
+                ) : file.binary ? (
+                  // An image is shown, not described — see `BinaryDiff`.
+                  <BinaryDiff cwd={cwd} file={file} />
                 ) : file.hunks.length === 0 ? (
                   <Text
                     as="p"
@@ -160,7 +172,7 @@ export function FileDiffList({
                     tone="faint"
                     className="px-3 py-4 text-center"
                   >
-                    这个文件没有可以按行对比的内容（二进制或过大）。
+                    这个文件没有可以按行对比的内容。
                   </Text>
                 ) : (
                   <DiffView hunks={file.hunks} path={file.path} />

@@ -222,6 +222,18 @@ export interface WorkspaceDiffFile {
 	added: number;
 	removed: number;
 	hunks: import("@lyra/core").DiffHunk[];
+	/**
+	 * Not text, so there are no hunks and the counts are zero.
+	 *
+	 * A PNG has changed or it has not; there is no third answer and no line to point at. Saying so
+	 * is what lets the panel show the picture instead of the bytes — and, just as importantly, what
+	 * keeps the file *listed*. Before this, a changed image was silently dropped from the review
+	 * entirely, because the only way the reader knew a file was binary was that it had failed to
+	 * produce text.
+	 */
+	binary?: boolean;
+	/** Size in bytes of whichever side exists, so a binary row can say something concrete. */
+	bytes?: number;
 }
 
 /** One CI check, reduced to the three outcomes a reviewer acts on. */

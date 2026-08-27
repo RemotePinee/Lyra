@@ -20,6 +20,23 @@ export async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
+ * The same, without deciding that the answer is text.
+ *
+ * `git show HEAD:logo.png` answers with a PNG. Decoded as UTF-8 it becomes mojibake that looks
+ * enough like text to be diffed, counted and displayed — which is exactly what the review panel
+ * used to do with every deleted image. Whether bytes are text is the caller's question, and it
+ * cannot ask it once the bytes have already been mangled into a string.
+ */
+export async function gitBuffer(cwd: string, args: string[]): Promise<Buffer> {
+	const { stdout } = await execFileAsync("git", args, {
+		cwd,
+		maxBuffer: 32 * 1024 * 1024,
+		encoding: "buffer",
+	});
+	return stdout;
+}
+
+/**
  * Run git for its effect, reporting whether it worked.
  *
  * The message matters here in a way it does not for reads: "not a git repository", "would be

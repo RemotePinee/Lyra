@@ -11,6 +11,8 @@
 
 import { ipcMain } from "electron";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { documentKind } from "../document-kind.ts";
+import { readDatabase, readWorkbook, type DocumentData } from "../documents.ts";
 import { join } from "node:path";
 import type { FileContents, FileEntry } from "../ipc-types.ts";
 
@@ -39,6 +41,45 @@ export function registerFilesIpc({ projectPath }: FilesIpcDeps): void {
 
 	/** Enough for any source file; past this it is generated output nobody reads in a panel. */
 	const FILE_READ_CAP = 512 * 1024;
+	/**
+	 * And a much larger one for documents, which are compressed archives rather than source.
+	 *
+	 * A Word document with a few screenshots in it is several megabytes and perfectly ordinary; the
+	 * cap is here so that a hundred-megabyte file cannot be pulled into the renderer whole.
+	 */
+	const DOCUMENT_READ_CAP = 32 * 1024 * 1024;
+
+	/*
+	 * A spreadsheet or a database, read into rows the window can draw.
+	 *
+	 * Its own channel rather than a mode of `files:read`, because what comes back is a different
+	 * shape entirely — sheets of cells, not text and a flag. Same boundary as everything else here:
+	 * the path has to resolve inside a project the user opened.
+	 */
+	/*
+	 * The raw bytes of one file, for the formats the *window* parses.
+	 *
+	 * A `.docx` is a zip of XML and the renderer's own library walks it — so unlike a spreadsheet
+	 * there is nothing for this side to turn it into. Bytes over IPC rather than a `fetch` of the
+	 * media protocol: that protocol is a standard scheme, so a fetch from the page is cross-origin
+	 * and needs CORS headers on every response to work at all. One channel that already has the
+	 * project boundary on it is less machinery and one fewer thing to get subtly wrong.
+	 */
+	ipcMain.handle("files:bytes", async (_event, raw: string): Promise<Uint8Array | null> => {
+		const path = projectPath(raw);
+		if (!path) return null;
+		const info = await stat(path).catch(() => null);
+		if (!info?.isFile() || info.size > DOCUMENT_READ_CAP) return null;
+		return readFile(path).catch(() => null);
+	});
+
+	ipcMain.handle("files:document", async (_event, raw: string): Promise<DocumentData | null> => {
+		const path = projectPath(raw);
+		if (!path) return null;
+		const info = await stat(path).catch(() => null);
+		if (!info?.isFile()) return null;
+		return documentKind(path) === "database" ? readDatabase(path) : readWorkbook(path);
+	});
 
 	ipcMain.handle("files:read", async (_event, raw: string): Promise<FileContents | null> => {
 		const path = projectPath(raw);

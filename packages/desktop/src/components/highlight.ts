@@ -6,7 +6,7 @@
  * CodeMirror extensions; the transcript renders the same tags to spans without an editor.
  */
 
-import { HighlightStyle, type Language, syntaxTree } from "@codemirror/language";
+import { HighlightStyle, type Language, StreamLanguage, syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
@@ -153,7 +153,107 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	sql: async () => (await import("@codemirror/lang-sql")).sql(),
 	yaml: async () => [(await import("@codemirror/lang-yaml")).yaml(), yamlScalars],
 	yml: async () => [(await import("@codemirror/lang-yaml")).yaml(), yamlScalars],
+
+	/*
+	 * Everything below is a `StreamLanguage` from `@codemirror/legacy-modes`.
+	 *
+	 * These are line-oriented formats with no tree grammar, and they are most of what a project's
+	 * configuration is actually written in: the shell scripts, the Dockerfile, the `.toml`, the
+	 * `.env`. Before this they rendered as one flat colour — which for a file whose whole content
+	 * is keys, values and comments means the comments do not read as comments.
+	 *
+	 * Loaded on demand like the rest, so opening a `.ts` file never pays for any of them.
+	 */
+	sh: async () => stream((await import("@codemirror/legacy-modes/mode/shell")).shell),
+	bash: async () => stream((await import("@codemirror/legacy-modes/mode/shell")).shell),
+	zsh: async () => stream((await import("@codemirror/legacy-modes/mode/shell")).shell),
+	fish: async () => stream((await import("@codemirror/legacy-modes/mode/shell")).shell),
+	toml: async () => stream((await import("@codemirror/legacy-modes/mode/toml")).toml),
+	ini: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	cfg: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	conf: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	properties: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	env: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	diff: async () => stream((await import("@codemirror/legacy-modes/mode/diff")).diff),
+	patch: async () => stream((await import("@codemirror/legacy-modes/mode/diff")).diff),
+	lua: async () => stream((await import("@codemirror/legacy-modes/mode/lua")).lua),
+	rb: async () => stream((await import("@codemirror/legacy-modes/mode/ruby")).ruby),
+	swift: async () => stream((await import("@codemirror/legacy-modes/mode/swift")).swift),
+	ps1: async () => stream((await import("@codemirror/legacy-modes/mode/powershell")).powerShell),
+	psm1: async () => stream((await import("@codemirror/legacy-modes/mode/powershell")).powerShell),
+	pl: async () => stream((await import("@codemirror/legacy-modes/mode/perl")).perl),
+	r: async () => stream((await import("@codemirror/legacy-modes/mode/r")).r),
+	jl: async () => stream((await import("@codemirror/legacy-modes/mode/julia")).julia),
+	hs: async () => stream((await import("@codemirror/legacy-modes/mode/haskell")).haskell),
+	clj: async () => stream((await import("@codemirror/legacy-modes/mode/clojure")).clojure),
+	ex: async () => stream((await import("@codemirror/legacy-modes/mode/erlang")).erlang),
+	erl: async () => stream((await import("@codemirror/legacy-modes/mode/erlang")).erlang),
+	scala: async () => stream((await import("@codemirror/legacy-modes/mode/clike")).scala),
+	cs: async () => stream((await import("@codemirror/legacy-modes/mode/clike")).csharp),
+	m: async () => stream((await import("@codemirror/legacy-modes/mode/clike")).objectiveC),
+	dart: async () => stream((await import("@codemirror/legacy-modes/mode/clike")).dart),
+	groovy: async () => stream((await import("@codemirror/legacy-modes/mode/groovy")).groovy),
+	proto: async () => stream((await import("@codemirror/legacy-modes/mode/protobuf")).protobuf),
+	nginx: async () => stream((await import("@codemirror/legacy-modes/mode/nginx")).nginx),
+	cmake: async () => stream((await import("@codemirror/legacy-modes/mode/cmake")).cmake),
+	tex: async () => stream((await import("@codemirror/legacy-modes/mode/stex")).stex),
+	gitignore: async () => (await import("./ignore-mode.ts")).ignoreLanguage,
 };
+
+/** A legacy stream mode, wrapped as the extension CodeMirror 6 wants. */
+function stream(mode: Parameters<typeof StreamLanguage.define>[0]): Extension {
+	return StreamLanguage.define(mode);
+}
+
+/**
+ * Files whose name *is* their type.
+ *
+ * `Dockerfile` has no extension, `.gitignore` is all extension, and `CMakeLists.txt` claims `.txt`
+ * while being nothing of the sort. Checked before the extension for exactly that last reason.
+ *
+ * The ignore files share one grammar because they share one syntax — see `ignore-mode.ts`.
+ */
+export const BY_FILENAME: Record<string, string> = {
+	dockerfile: "sh",
+	containerfile: "sh",
+	makefile: "sh",
+	gnumakefile: "sh",
+	"cmakelists.txt": "cmake",
+	".gitignore": "gitignore",
+	".dockerignore": "gitignore",
+	".npmignore": "gitignore",
+	".eslintignore": "gitignore",
+	".prettierignore": "gitignore",
+	".vercelignore": "gitignore",
+	".gitattributes": "gitignore",
+	".env": "env",
+	".editorconfig": "ini",
+	".babelrc": "json",
+	".prettierrc": "json",
+	".eslintrc": "json",
+	".npmrc": "ini",
+	".nvmrc": "properties",
+	"nginx.conf": "nginx",
+};
+
+/**
+ * Which grammar a file's name asks for, or null.
+ *
+ * One place, because three callers used to answer it differently: the editor looked at the
+ * extension only, the fence renderer at the info string, and the diff at neither. A `Dockerfile`
+ * was plain text in all three.
+ */
+export function grammarKeyFor(path: string): string | null {
+	const name = path.toLowerCase().split(/[/\\]/).pop() ?? "";
+	const byName = BY_FILENAME[name];
+	if (byName) return GRAMMARS[byName] ? byName : null;
+
+	// A leading dot is the whole name (`.env`), which the table above has already had its say on.
+	const dot = name.lastIndexOf(".");
+	if (dot <= 0) return null;
+	const extension = name.slice(dot + 1);
+	return GRAMMARS[extension] ? extension : null;
+}
 
 /**
  * What a fenced block's info string means, in the names people actually write.

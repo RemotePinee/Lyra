@@ -10,7 +10,7 @@ import { basename, join } from "node:path";
 import { git } from "./git-exec.ts";
 
 export { git, run } from "./git-exec.ts";
-export { collectWorkspaceDiff } from "./git-diff.ts";
+export { collectWorkspaceDiff, readDiffBlob, type DiffBlob } from "./git-diff.ts";
 export {
 	commentOnPullRequest,
 	listPullRequests,
