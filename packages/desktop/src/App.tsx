@@ -179,7 +179,7 @@ function useMainPane() {
 function ChatShell() {
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const workspace = useApp((s) => s.workspace);
-	const { compact, navOpen, nativeFullScreen, toggleNav, dismissNav } = useLayout();
+	const { compact, navOpen, toggleNav, dismissNav } = useLayout();
 	const attach = useSide((s) => s.attach);
 	const { drawn: sidebarDrawn, max: sidebarMax } = useSidebarFit();
 	const main = useMainPane();
@@ -234,12 +234,7 @@ function ChatShell() {
 				/>
 			</main>
 
-			<WindowButtons
-				nativeFullScreen={nativeFullScreen}
-				navOpen={navOpen}
-				compact={compact}
-				onToggleNav={toggleNav}
-			/>
+			<WindowButtons navOpen={navOpen} compact={compact} onToggleNav={toggleNav} />
 		</div>
 	);
 }

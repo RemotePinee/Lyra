@@ -232,3 +232,114 @@ test("a nested details does not end the outer one early", () => {
 		"the inner fold survives as a fold",
 	);
 });
+
+/* ---------------------------------------------------------------------------
+ * Block-level HTML — the shape of a README's opening.
+ *
+ * A `<p align="center">` holding a logo was transparent until now: the tag went, the contents
+ * stayed, and the alignment went with it. The newlines inside it were read as Markdown line breaks
+ * too, so a badge row typed one link per line came out as a stack. Both are container semantics
+ * being applied to prose, which is what these cover.
+ * ------------------------------------------------------------------------- */
+
+test("a centred container keeps its alignment and its contents", () => {
+	const blocks = parseMarkdown('<p align="center">\n  <img src="assets/lyra.png" alt="Lyra" width="200">\n</p>');
+
+	const html = only(blocks, "html");
+	assert.equal(html.kind, "html");
+	assert.equal(html.align, "center");
+	assert.equal(html.children.length, 1);
+	assert.equal(html.children[0].kind, "paragraph");
+});
+
+test("newlines inside a container are whitespace, not line breaks", () => {
+	const html = only(
+		parseMarkdown(
+			'<p align="center">\n  <a href="a"><img src="1.svg" alt="CI"></a>\n  <a href="b"><img src="2.svg" alt="MIT"></a>\n</p>',
+		),
+		"html",
+	);
+
+	assert.equal(html.kind, "html");
+	// One paragraph, folded onto one line: three badges on three lines is the bug this prevents.
+	assert.equal(html.children.length, 1);
+	const first = html.children[0];
+	assert.equal(first.kind, "paragraph");
+	assert.ok(first.kind === "paragraph" && !first.text.includes("\n"), first.kind === "paragraph" ? first.text : "");
+});
+
+test("an aligned heading is a heading, not a box with text in it", () => {
+	const heading = only(parseMarkdown('<h1 align="center">标题</h1>'), "heading");
+
+	assert.equal(heading.kind, "heading");
+	assert.equal(heading.kind === "heading" && heading.level, 1);
+	assert.equal(heading.kind === "heading" && heading.text, "标题");
+	assert.equal(heading.kind === "heading" && heading.align, "center");
+});
+
+test("text-align in a style attribute says the same thing as align", () => {
+	const html = only(parseMarkdown('<div style="text-align: center">中间</div>'), "html");
+	assert.equal(html.kind === "html" && html.align, "center");
+});
+
+test("a container with no alignment is still a container", () => {
+	const html = only(parseMarkdown("<div>\n\n里面的一段\n\n</div>"), "html");
+	assert.equal(html.kind === "html" && html.align, null);
+	assert.equal(html.kind === "html" && html.children.length, 1);
+});
+
+test("blocks inside a container are still blocks", () => {
+	const html = only(parseMarkdown('<div align="center">\n\n## 小标题\n\n- 一\n- 二\n\n</div>'), "html");
+
+	assert.deepEqual(
+		html.kind === "html" ? html.children.map((child) => child.kind) : [],
+		["heading", "list"],
+		"a heading and a list inside a div are a heading and a list",
+	);
+});
+
+test("a nested container does not end the outer one early", () => {
+	const blocks = parseMarkdown('<div align="center">\n<div>内层</div>\n</div>\n\n之后');
+
+	assert.deepEqual(
+		blocks.map((block) => block.kind),
+		["html", "paragraph"],
+		"the trailing paragraph must be outside the box",
+	);
+	const outer = only(blocks, "html");
+	assert.ok(
+		outer.kind === "html" && outer.children.some((child) => child.kind === "html"),
+		"the inner box survives as a box",
+	);
+});
+
+test("an unclosed container takes the rest, the way GitHub reads it", () => {
+	const blocks = parseMarkdown('<div align="center">\n\n一段\n\n两段');
+
+	assert.deepEqual(
+		blocks.map((block) => block.kind),
+		["html"],
+	);
+	assert.equal(blocks[0].kind === "html" && blocks[0].children.length, 2);
+});
+
+test("a container ends the paragraph above it", () => {
+	const blocks = parseMarkdown('一句话\n<p align="center">中间</p>\n另一句');
+
+	assert.deepEqual(
+		blocks.map((block) => block.kind),
+		["paragraph", "html", "paragraph"],
+	);
+});
+
+test("inline tags are not containers", () => {
+	// `<span>` and `<kbd>` belong to the inline pass. Pulling one up here would break a sentence
+	// in half around it — and `<picture>` must not be read as a `<p>` with attributes.
+	for (const line of ["<span>一句</span>话", "<kbd>Esc</kbd> 退出", "<picture><img src='a.png'></picture>"]) {
+		assert.deepEqual(
+			parseMarkdown(line).map((block) => block.kind),
+			["paragraph"],
+			line,
+		);
+	}
+});

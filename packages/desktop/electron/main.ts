@@ -86,9 +86,41 @@ import { registerSideChatIpc } from "./ipc/side-chat.ts";
 import { registerUpdateIpc } from "./ipc/updates.ts";
 import { registerTerminalIpc, type LiveTerminal } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
-import { createTray, destroyTray, hasTray, type TrayCommand } from "./tray.ts";
+import { createTray, destroyTray, hasTray, refreshMenu, type TrayCommand } from "./tray.ts";
 
+/*
+ * A profile is a whole app, Chromium's half included.
+ *
+ * `LYRA_HOME` moves everything this app stores — sessions, settings, scratch directories — and
+ * until now Chromium's own directory stayed where it was, shared by every profile on the machine.
+ * That was survivable while it only meant a shared `localStorage`; the lock below made it load
+ * bearing, because a single-instance lock is keyed on exactly that directory. Two profiles would
+ * have been one app, and the second one would refuse to start.
+ *
+ * Only when a home was asked for. Without it nothing moves, so no existing install has its window
+ * size, its saved layout or its browser panel's cookies relocated out from under it.
+ */
+if (process.env.LYRA_HOME) app.setPath("userData", join(process.env.LYRA_HOME, "chromium"));
 
+/**
+ * One Lyra per machine, and every later launch reaches the one that is already running.
+ *
+ * Closing the window does not quit — that is the point of the status bar item, and it is what made
+ * the second launch so easy to reach: the window is gone, so the app looks closed, and opening it
+ * again started a *second copy*. On Windows that shows up as a row of identical tray icons, several
+ * of which belong to processes nobody can see and which therefore answer no clicks at all.
+ *
+ * The icons are the visible half. Underneath, two copies share one `~/.lyra`: two schedulers firing
+ * the same task twice, two sync servers fighting over one port, and two processes appending to the
+ * same session log — which is how a transcript ends up interleaved with itself.
+ *
+ * `exit` rather than `quit` for the loser: it has initialised nothing yet, there is nothing to shut
+ * down, and `quit` would let the rest of this file run first. The winner hears `second-instance`
+ * instead and shows its window, so a double-click still does what a double-click looks like.
+ */
+if (!app.requestSingleInstanceLock()) app.exit(0);
+
+app.on("second-instance", () => reveal());
 
 /** Private scheme the renderer uses to preview images and video from the open project. */
 
@@ -156,6 +188,47 @@ const terminals = new Map<string, LiveTerminal>();
 let settings: Settings;
 
 let scheduler: Scheduler | null = null;
+
+/**
+ * The conversations the status bar menu offers, newest first.
+ *
+ * Held rather than read when the menu opens, because on Windows and Linux the menu is handed to
+ * the system in advance and there is no moment to read anything at. Refreshed whenever the window
+ * appears or goes away, which is exactly when the menu becomes the thing being used.
+ */
+let recentSessions: { id: string; title: string }[] = [];
+
+async function refreshRecentSessions(): Promise<void> {
+	try {
+		const sessions = await store.listSessions();
+		recentSessions = sessions
+			.filter((session) => !session.archived && session.messageCount > 0)
+			.sort((a, b) => b.updatedAt - a.updatedAt)
+			.slice(0, 8)
+			.map((session) => ({ id: session.id, title: session.title }));
+	} catch {
+		// A menu is not worth failing a launch over; it simply lists nothing.
+		recentSessions = [];
+	}
+	refreshMenu();
+}
+
+/*
+ * The menu tracks the window, on every window this app ever makes.
+ *
+ * `browser-window-created` rather than hooking `createWindow`: the window is destroyed and rebuilt
+ * — closing it on Windows leaves the app running behind the tray — and a listener attached to one
+ * instance would stop working the first time that happened. Both facts the first item depends on
+ * are here: whether a window is on screen, and what has been talked about recently.
+ */
+app.on("browser-window-created", (_event, window) => {
+	const track = () => void refreshRecentSessions();
+	window.on("show", track);
+	window.on("hide", track);
+	window.on("minimize", track);
+	window.on("restore", track);
+	window.on("closed", track);
+});
 
 // ---------------------------------------------------------------------------
 // Window
@@ -369,7 +442,22 @@ app.whenReady().then(async () => {
 	 * up in the renderer, and an item that is clickable before anything can answer it is a menu
 	 * that silently does nothing.
 	 */
-	createTray({ window: getWindow, reveal, send: sendToRenderer });
+	createTray({
+		window: getWindow,
+		reveal,
+		send: sendToRenderer,
+		openSession: (id) => sendToRenderer(`open-session:${id}` as TrayCommand),
+		/*
+		 * Kept warm rather than read on demand.
+		 *
+		 * On Windows the menu is handed to the system in advance, so building it cannot wait for a
+		 * disk read; `recentSessions` is refreshed whenever the list changes and read synchronously
+		 * here. macOS builds the menu as it opens and would not need this, but one code path for
+		 * both is worth more than a read it can afford.
+		 */
+		recent: () => recentSessions,
+	});
+	await refreshRecentSessions();
 
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();

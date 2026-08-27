@@ -48,6 +48,7 @@ export function PaneHeader({
 	onMove,
 	actions,
 	inset,
+	insetEnd,
 	lift,
 	onToggleMaximized,
 	onClose,
@@ -89,6 +90,13 @@ export function PaneHeader({
 	 */
 	inset?: number;
 	/**
+	 * The same at the trailing end, for the window controls Windows and Linux draw over the page.
+	 *
+	 * Nothing to do with the sidebar: this corner is never covered, so it is always the pane at the
+	 * right edge of the top row that has to move its own buttons out from under the system's.
+	 */
+	insetEnd?: number;
+	/**
 	 * How far to raise the content inside the bar.
 	 *
 	 * A floating pane's card is inset from its box, so its title bar starts a few pixels lower than
@@ -115,13 +123,19 @@ export function PaneHeader({
 	return (
 		<div
 			data-dock-header={kind}
-			style={{ height: HEADER_HEIGHT, paddingLeft: (inset ?? 0) + HEADER_PAD, paddingBottom: (lift ?? 0) * 2 }}
+			style={{
+				height: HEADER_HEIGHT,
+				paddingLeft: (inset ?? 0) + HEADER_PAD,
+				// 6px is `pr-1.5`, which is what this row used before there was anything to clear.
+				paddingRight: (insetEnd ?? 0) + 6,
+				paddingBottom: (lift ?? 0) * 2,
+			}}
 			/*
 			 * `touch-none` so a trackpad drag moves the pane instead of scrolling whatever is
 			 * underneath. Without it the browser claims the gesture before the first pointermove
 			 * arrives, and the pane simply never picks up.
 			 */
-			className="drag-region group/header relative flex shrink-0 items-center gap-1.5 pr-1.5"
+			className="drag-region group/header relative flex shrink-0 items-center gap-1.5"
 		>
 			{!hideTitle && !title && icon && (
 				<span className="flex shrink-0 items-center text-ink-faint">{icon}</span>

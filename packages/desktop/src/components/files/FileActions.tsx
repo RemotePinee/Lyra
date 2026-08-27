@@ -15,6 +15,7 @@
 import { Braces, Check, ExternalLink, Eye, Pencil, Save, WrapText } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { openLabel, useOpenTarget } from "../../openTargets.ts";
 import { useApp } from "../../store.ts";
 import { useOpenFile } from "../../store/openFile.ts";
 import { fileKind } from "../FileViewer.tsx";
@@ -29,7 +30,7 @@ export function FileActions() {
 	const draft = useOpenFile((s) => (s.path ? s.drafts[s.path] : undefined));
 	const wrap = useOpenFile((s) => s.wrap);
 	const showSource = useOpenFile((s) => s.showSource);
-	const openTarget = useApp((s) => s.settings?.editor.defaultOpenTarget) ?? "Finder";
+	const openTarget = useOpenTarget();
 
 	const [saving, setSaving] = useState(false);
 	const [justSaved, setJustSaved] = useState(false);
@@ -115,7 +116,7 @@ export function FileActions() {
 			 * path in a named app was already there with no caller. This is the one place a file is
 			 * on screen with a path in hand, so it is where it belongs.
 			 */}
-			<Mark tip={`在 ${openTarget} 中打开`} onClick={() => void window.lyra.system.openIn(openTarget, path)}>
+			<Mark tip={openLabel(openTarget)} onClick={() => void window.lyra.system.openIn(openTarget.id, path)}>
 				<ExternalLink size={12} strokeWidth={1.9} />
 			</Mark>
 		</>

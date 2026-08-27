@@ -25,7 +25,8 @@ export type Inline =
 	| { kind: "em"; children: Inline[] }
 	| { kind: "del"; children: Inline[] }
 	| { kind: "link"; href: string; children: Inline[] }
-	| { kind: "image"; src: string; alt: string }
+	/** `width`/`height` only ever come from an HTML `<img>`; `![](…)` has nowhere to write them. */
+	| { kind: "image"; src: string; alt: string; width?: number; height?: number }
 	| { kind: "tag"; name: InlineTag; children: Inline[] };
 
 export function parseInline(source: string): Inline[] {

@@ -6,12 +6,53 @@
  * a message is not being sent correctly, the other when a reply is not being read correctly.
  */
 
-import type { Message, ToolSpec } from "../types.ts";
+import type { Message, ToolResultMessage, ToolSpec } from "../types.ts";
 
+/**
+ * One tool result, in the shape Responses wants.
+ *
+ * Responses only accepts a string output, so images are described rather than attached.
+ */
+function functionCallOutput(message: ToolResultMessage): unknown {
+	const text = message.content
+		.map((c) => (c.type === "text" ? c.text : `[image ${c.mimeType}, ${c.data.length} base64 chars]`))
+		.join("\n");
+	return { type: "function_call_output", call_id: message.toolCallId, output: text };
+}
+
+/**
+ * Every call answered where it was made: `function_call`, then its own `function_call_output`.
+ *
+ * The obvious arrangement is the one the model produced — all of a turn's calls, then all of their
+ * results — and against OpenAI's own endpoint it is fine, since a result finds its call by
+ * `call_id` rather than by position. It is not fine against the relays that translate Responses
+ * into Chat Completions, which is what most non-OpenAI models are reached through: several of them
+ * turn each `function_call` item into an assistant message of its own, and Chat Completions
+ * requires the message after one carrying `tool_calls` to be the tool message answering it. Two
+ * calls in a row therefore produce two assistant messages back to back, and the upstream rejects
+ * the whole request:
+ *
+ *     an assistant message with 'tool_calls' must be followed by tool messages responding to
+ *     each 'tool_call_id'. The following tool_call_ids did not have response messages: bash:0
+ *
+ * Which makes every turn that asks for two tools at once — the normal case for any capable model —
+ * fail with a 400 that no retry can clear, because the history it is retrying is the problem.
+ * Interleaving costs nothing on the endpoints that do not care, and is the only shape that works on
+ * the ones that do.
+ *
+ * It also settles an ordering question that would otherwise be left to chance. Results are recorded
+ * as each tool finishes, so a history rebuilt from the log has them in completion order rather than
+ * in call order; pairing them up here means what is sent does not depend on which tool was quicker.
+ *
+ * A result whose call is not in the assistant message before it — the log truncated, an edit that
+ * removed the call — keeps its place in the list rather than being dropped: it is history, and
+ * inventing a call to hang it on would be worse than passing it through.
+ */
 export function toResponsesInput(messages: Message[]): unknown[] {
 	const input: unknown[] = [];
 
-	for (const message of messages) {
+	for (let index = 0; index < messages.length; index++) {
+		const message = messages[index];
 		if (message.role === "user") {
 			input.push({
 				type: "message",
@@ -29,6 +70,25 @@ export function toResponsesInput(messages: Message[]): unknown[] {
 		}
 
 		if (message.role === "assistant") {
+			/*
+			 * The results answering this turn: the run of tool messages directly after it.
+			 *
+			 * Bounded by the run rather than searched for across the whole history, because a call id
+			 * is only unique within the provider that issued it — relays that name calls after the
+			 * tool (`bash:0`) repeat themselves every turn, and a lookup by id alone would answer this
+			 * turn's call with a result from three turns ago.
+			 */
+			const answers = new Map<string, ToolResultMessage>();
+			let after = index + 1;
+			for (; after < messages.length; after++) {
+				const next = messages[after];
+				if (next.role !== "toolResult") break;
+				// First one wins, so a repeated id leaves the later copy where it was rather than
+				// silently replacing the answer this call already had.
+				if (!answers.has(next.toolCallId)) answers.set(next.toolCallId, next);
+			}
+			const paired = new Set<ToolResultMessage>();
+
 			for (const c of message.content) {
 				if (c.type === "thinking") {
 					// Replay requires the original item id; a summary alone is not accepted.
@@ -54,20 +114,25 @@ export function toResponsesInput(messages: Message[]): unknown[] {
 						name: c.name,
 						arguments: c.argumentsText ?? JSON.stringify(c.arguments),
 					});
+					const answer = answers.get(c.id);
+					if (answer) {
+						input.push(functionCallOutput(answer));
+						paired.add(answer);
+					}
 				}
 			}
+
+			// Anything in that run which answered no call here, in the order it was recorded.
+			for (let at = index + 1; at < after; at++) {
+				const result = messages[at] as ToolResultMessage;
+				if (!paired.has(result)) input.push(functionCallOutput(result));
+			}
+			index = after - 1;
 			continue;
 		}
 
-		// Responses only accepts a string output, so images are described rather than attached.
-		const text = message.content
-			.map((c) => (c.type === "text" ? c.text : `[image ${c.mimeType}, ${c.data.length} base64 chars]`))
-			.join("\n");
-		input.push({
-			type: "function_call_output",
-			call_id: message.toolCallId,
-			output: text,
-		});
+		// A result with no assistant message before it — the head of a truncated history.
+		input.push(functionCallOutput(message));
 	}
 
 	return input;

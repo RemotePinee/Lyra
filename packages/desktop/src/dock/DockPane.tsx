@@ -28,6 +28,7 @@ export function DockPane({
 	actions,
 	title,
 	inset,
+	insetEnd,
 	onToggleMaximized,
 	onClose,
 	onFocus,
@@ -68,6 +69,8 @@ export function DockPane({
 	title?: React.ReactNode;
 	/** Room for the traffic lights, when this pane covers the window's top-left corner. */
 	inset?: number;
+	/** And for the system's own buttons at the other end, on Windows and Linux. */
+	insetEnd?: number;
 	/** Absent where full screen is not on offer — the dock decides; see `DockView`. */
 	onToggleMaximized?: () => void;
 	onClose?: () => void;
@@ -186,6 +189,7 @@ export function DockPane({
 				onMove={onMove}
 				actions={actions}
 				inset={inset}
+				insetEnd={insetEnd}
 				lift={floats ? PANE_INSET + 1 : 0}
 				onToggleMaximized={onToggleMaximized}
 				onClose={onClose}

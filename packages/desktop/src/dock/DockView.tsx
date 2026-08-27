@@ -17,7 +17,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { useLayout } from "../layout.tsx";
-import { TOOLBAR_RESERVED } from "../components/WindowControls.tsx";
+import { toolbarReserved } from "../components/WindowControls.tsx";
 import { useApp } from "../store.ts";
 import { renderPanel, renderPanelActions, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
 import { pct } from "./css.ts";
@@ -34,10 +34,10 @@ import { useDockDrag } from "./useDockDrag.ts";
 const WHOLE: Box = { left: 0, top: 0, width: 1, height: 1 };
 
 /**
- * How far a pane's title must start in when it is the one holding the window's corner.
+ * How far a pane's title must start in when it is the one holding the window's top-left corner.
  *
- * What it has to leave clear is the traffic lights *and* the sidebar toggle beside them.
- * `TOOLBAR_RESERVED` is measured from the window's edge; a pane at the left edge is flush with it,
+ * What it has to leave clear is whatever the system drew there *and* the sidebar toggle beside it.
+ * `toolbarReserved` is measured from the window's edge; a pane at the left edge is flush with it,
  * so what stands between the two is the card's border and the header's own padding — subtract
  * those and what is left is the extra the header has to add.
  *
@@ -45,7 +45,9 @@ const WHOLE: Box = { left: 0, top: 0, width: 1, height: 1 };
  * pane in that corner drew its title over the one control that would have undone the thing that
  * put it there.
  */
-const CORNER_RESERVED = TOOLBAR_RESERVED - HEADER_PAD - 1;
+function cornerReserved(start: number): number {
+	return toolbarReserved(start) - HEADER_PAD - 1;
+}
 
 export function DockView({
 	title,
@@ -76,7 +78,7 @@ export function DockView({
 	const tree = useDock((s) => s.tree);
 	const focusedPane = useDock((s) => s.focused);
 	const maximized = useDock((s) => s.maximized);
-	const { compact, navOpen, nativeFullScreen } = useLayout();
+	const { compact, navOpen, nativeFullScreen, titlebar } = useLayout();
 	const definitions = usePanelDefinitions();
 
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -279,6 +281,25 @@ export function DockView({
 					focusedPane
 				: (boxes.find((box) => box.left === 0 && box.top === 0)?.kind ?? null);
 
+	/*
+	 * And which pane has to make room for the buttons at the *other* end.
+	 *
+	 * Windows and Linux draw minimise/maximise/close over the top-right of the page, which is
+	 * where this app puts a pane's own controls — the panel menu on the conversation, full screen
+	 * and close on a panel. They were underneath the system's buttons: drawn, and impossible to
+	 * press, because the press went to the window rather than to the page.
+	 *
+	 * Unlike the left corner the sidebar can never cover this one, so it belongs to whichever pane
+	 * reaches the right edge on the top row — always. Zero on macOS, where the system puts nothing
+	 * there, which leaves every one of these lines a no-op.
+	 */
+	const endCorner =
+		titlebar.end === 0
+			? null
+			: compact
+				? focusedPane
+				: (boxes.find((box) => box.top === 0 && Math.abs(box.left + box.width - 1) < 0.001)?.kind ?? null);
+
 
 
 	return (
@@ -386,7 +407,8 @@ export function DockView({
 							 */
 							actions={kind === "conversation" ? actions : renderPanelActions(kind)}
 							title={kind === "conversation" ? undefined : renderPanelHeader(kind)}
-							inset={corner === kind ? CORNER_RESERVED : 0}
+							inset={corner === kind ? cornerReserved(titlebar.start) : 0}
+							insetEnd={endCorner === kind ? titlebar.end : 0}
 							// Absent where full screen is not on offer, which is what hides the button —
 							// see `canToggleMaximized` for the rule and the bug it was written for.
 							onToggleMaximized={

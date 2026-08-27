@@ -31,6 +31,7 @@ import {
 	Undo2,
 } from "lucide-react";
 
+import { useRevealLabel } from "../../openTargets.ts";
 import { ContextMenu } from "../ContextMenu.tsx";
 import { MenuItem, MenuSeparator } from "../Menu.tsx";
 
@@ -52,6 +53,8 @@ export function EditorMenu({
 	readOnly: boolean;
 	onFind: (withReplace: boolean) => void;
 }) {
+	// Before the early return: a hook that only sometimes runs is a hook that runs out of order.
+	const reveal = useRevealLabel();
 	if (!view) return null;
 
 	const selection = view.state.selection.main;
@@ -142,7 +145,7 @@ export function EditorMenu({
 				复制路径
 			</MenuItem>
 			<MenuItem icon={<CornerUpRight {...ICON} />} onClick={() => void window.lyra.workspace.reveal(path)}>
-				在访达中显示
+				{reveal}
 			</MenuItem>
 		</ContextMenu>
 	);

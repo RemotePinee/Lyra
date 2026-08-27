@@ -3,6 +3,7 @@ import type { FileContents } from "../../electron/ipc-types.ts";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { FileTabs } from "./files/FileTabs.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { directoryOf } from "./markdown-assets.ts";
 import { Scroller } from "./Scroller.tsx";
 import { useApp } from "../store.ts";
 import { useOpenFile } from "../store/openFile.ts";
@@ -107,7 +108,15 @@ export function FileViewer({
 			) : kind === "markdown" && !showSource ? (
 				<Scroller className="flex-1" contentClassName="px-3">
 					<div className="py-3">
-						<Markdown text={text} />
+						{/*
+						 * The two things a rendered document needs beyond its own text.
+						 *
+						 * `baseDir` is what `<img src="assets/logo.png">` is relative to — this file's own
+						 * folder — and `remoteImages` says its https references may be fetched. Given here
+						 * and nowhere else: this is a file the user opened off their own disk, which is a
+						 * different thing from a comment that arrived over the network. See `Markdown`.
+						 */}
+						<Markdown text={text} baseDir={directoryOf(path)} remoteImages />
 					</div>
 				</Scroller>
 			) : (

@@ -17,6 +17,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout-widths.ts";
+import { overlayReserved, titlebarInsets, type TitlebarInsets } from "./titlebar.ts";
 
 /** Below this the sidebar and a readable content column no longer fit side by side. */
 const COMPACT_MAX = 760;
@@ -62,6 +63,15 @@ export interface LayoutValue {
 	 * have occupied stays open around nothing.
 	 */
 	nativeFullScreen: boolean;
+	/**
+	 * How much of the window's top row the system has taken, at each end.
+	 *
+	 * macOS puts its traffic lights on the left and nothing on the right; Windows and Linux paint
+	 * minimise/maximise/close on the right and nothing on the left. Both are drawn *over* the page
+	 * — they are not in the document and cannot be measured from it — so anything in that row has
+	 * to be told to stay out of the way. See `useTitlebar`.
+	 */
+	titlebar: { start: number; end: number };
 	toggleNav: () => void;
 	/**
 	 * Close the drawer after an action that navigates somewhere. A no-op outside compact,
@@ -154,6 +164,8 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 	const [nativeFullScreen, setNativeFullScreen] = useState(false);
 	useEffect(() => window.lyra?.onFullScreenChange?.(setNativeFullScreen), []);
 
+	const titlebar = useTitlebar(nativeFullScreen);
+
 	// Crossing the breakpoint in either direction dismisses the drawer; it is a transient
 	// overlay, and carrying it across a reflow leaves it stranded over the wrong layout.
 	useEffect(() => {
@@ -182,6 +194,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 			width,
 			navOpen: compact ? drawerOpen : pushOpen,
 			nativeFullScreen,
+			titlebar,
 			sidebarWidth,
 			setSidebarWidth,
 			resetSidebarWidth,
@@ -197,6 +210,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 			drawerOpen,
 			pushOpen,
 			nativeFullScreen,
+			titlebar,
 			sidebarWidth,
 			setSidebarWidth,
 			resetSidebarWidth,
@@ -213,6 +227,31 @@ export function useLayout(): LayoutValue {
 	const value = useContext(LayoutContext);
 	if (!value) throw new Error("useLayout must be used inside <LayoutProvider>");
 	return value;
+}
+
+/**
+ * What the system has drawn into the window's top row, and where — see `titlebar.ts` for the rule.
+ *
+ * This half is the subscription. `geometrychange` fires when the overlay is resized or hidden,
+ * which happens on maximise and on any change to the system's own title bar metrics; reading it
+ * once at mount was enough to be wrong after the first double-click on the title bar.
+ */
+function useTitlebar(nativeFullScreen: boolean): TitlebarInsets {
+	const overlay = typeof navigator === "undefined" ? undefined : navigator.windowControlsOverlay;
+	const [reserved, setReserved] = useState(() => overlayReserved(overlay, window.innerWidth));
+
+	useEffect(() => {
+		if (!overlay) return;
+		const update = () => setReserved(overlayReserved(overlay, window.innerWidth));
+		update();
+		overlay.addEventListener("geometrychange", update);
+		return () => overlay.removeEventListener("geometrychange", update);
+	}, [overlay]);
+
+	return useMemo(
+		() => titlebarInsets(window.lyra?.platform ?? "darwin", nativeFullScreen, reserved),
+		[nativeFullScreen, reserved],
+	);
 }
 
 /** What the dock keeps for itself before the sidebar is allowed any more of the window. */

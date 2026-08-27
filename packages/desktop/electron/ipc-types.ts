@@ -20,6 +20,9 @@ import type { BranchList, GitCommit, GitStatus, RepoRef } from "./git.ts";
  * drift.
  */
 import type { DownloadPhase } from "./ipc/update-download.ts";
+import type { TrayCommand } from "./tray-menu.ts";
+export type { OpenTarget } from "./open-targets.ts";
+import type { OpenTarget } from "./open-targets.ts";
 
 export type UpdatePhase = DownloadPhase;
 
@@ -89,6 +92,15 @@ export interface AttachedTerminal {
 }
 
 export interface LyraApi {
+	/**
+	 * Which operating system this is, available before the first paint.
+	 *
+	 * `system.platform()` answers the same question over IPC, which is a round trip later — and the
+	 * window's top row is drawn from this: macOS keeps its traffic lights at the top left, Windows
+	 * and Linux paint their own controls at the top right, and a layout that starts out wrong and
+	 * corrects itself is a visible jump on every launch.
+	 */
+	platform: NodeJS.Platform;
 	settings: {
 		get(): Promise<Settings>;
 		save(settings: Settings): Promise<Settings>;
@@ -412,7 +424,11 @@ export interface LyraApi {
 	 * Sent only once the window can receive it, so a command given while the app was closed still
 	 * lands — the renderer never has to care whether it was already running.
 	 */
-	onTrayCommand(handler: (command: string) => void): () => void;
+	/**
+	 * What the status bar menu asked for. Typed, so a menu item cannot be added without the window
+	 * being made to answer it — see `tray-menu.ts` and `src/tray-commands.ts`.
+	 */
+	onTrayCommand(handler: (command: TrayCommand) => void): () => void;
 	/**
 	 * Something failed in the main process with nowhere to report it.
 	 *
@@ -473,11 +489,22 @@ export interface LyraApi {
 	system: {
 		openPath(path: string): Promise<void>;
 		openExternal(url: string): Promise<void>;
-		openIn(app: string, path: string): Promise<void>;
+		/** `target` is an id from `openTargets`; see `electron/open-targets.ts`. */
+		openIn(target: string, path: string): Promise<void>;
+		/**
+		 * What 「用什么打开」 can mean on this machine: showing the file where it lives, plus the
+		 * editors and terminals actually installed. Never empty — revealing always works.
+		 */
+		openTargets(): Promise<OpenTarget[]>;
 		revealSkillsDir(scope: "workspace" | "user", cwd: string): Promise<string>;
 		platform(): Promise<string>;
-		/** The installed app's own icon as a data URL, or null if it is not installed. */
-		appIcon(appName: string): Promise<string | null>;
+		/**
+		 * An https image as a data URL, or null.
+		 *
+		 * For pictures a rendered document names. Fetched in the main process because the page's
+		 * `img-src` is `self data: blob:` and stays that way — see `system:remoteImage`.
+		 */
+		remoteImage(url: string): Promise<string | null>;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
@@ -633,8 +660,23 @@ export interface LyraApi {
 	};
 }
 
+/**
+ * The Window Controls Overlay API, which TypeScript's DOM library does not describe.
+ *
+ * Chromium exposes it whenever a window is created with `titleBarOverlay` — Windows and Linux
+ * here — and it is the only way to find out how much of the top row the system's own buttons have
+ * taken. See `useTitlebar`.
+ */
+interface WindowControlsOverlay extends EventTarget {
+	readonly visible: boolean;
+	getTitlebarAreaRect(): DOMRect;
+}
+
 declare global {
 	interface Window {
 		lyra: LyraApi;
+	}
+	interface Navigator {
+		readonly windowControlsOverlay?: WindowControlsOverlay;
 	}
 }

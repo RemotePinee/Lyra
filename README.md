@@ -24,6 +24,21 @@ pnpm dev
 想参与开发看 [CONTRIBUTING.md](CONTRIBUTING.md)；如果你是被叫来改这份代码的 agent，
 看 [AGENTS.md](AGENTS.md)。
 
+### macOS 首次打开
+
+发布包是 ad-hoc 签名的，没有 Apple 开发者证书，也没有公证。双击会被 Gatekeeper 拦下来，说
+「无法打开，因为无法验证开发者」。两种放行方式，选一种：
+
+- 在「访达」里右键点 Lyra.app → 打开 → 再点一次「打开」；或到「系统设置 → 隐私与安全性」点「仍要打开」。
+- 或者去掉隔离标记：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Lyra.app
+```
+
+提示里如果写的是「已损坏」而不是「无法验证开发者」，那是 0.6.0 及更早的包 —— 那些包根本没签名，
+Gatekeeper 认定 bundle 被破坏，除了废纸篓没有别的选项。升级到之后的版本即可。
+
 ## 能力
 
 - **自定义模型**：任意数量的供应商，每个供应商挂任意数量的模型。只对接 **Responses**（`/v1/responses`）和 **Anthropic Messages**（`/v1/messages`）两种格式，不支持 Chat Completions。

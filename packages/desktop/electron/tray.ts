@@ -3,10 +3,17 @@
  *
  * What it is for is starting something. An agent runs for minutes at a time, so the window spends
  * most of its life closed or behind something else, and "I want to ask it one thing" should not
- * begin with finding a window. The menu is therefore the four things worth doing from cold —
- * a new conversation, the two lists that accumulate work while you are away, and settings.
+ * begin with finding a window. What the menu offers is in `tray-menu.ts`, which is the same list
+ * on every platform; this file is how it is raised, which is not.
  *
- * Icon handling differs by platform in a way that is not cosmetic:
+ * **How the menu opens.** macOS attaches it to the right button only: `setContextMenu` there takes
+ * the click event entirely, so the item would stop toggling the window and only ever open a menu.
+ * Windows and Linux hand the menu to the system with `setContextMenu` and keep raising `click` for
+ * the left button — which is both the platform convention and the only thing that reliably works,
+ * since a `right-click` handler competes with the system's own handling of that button. That was
+ * the bug: the menu existed and could not be opened.
+ *
+ * Icon handling differs by platform in a way that is not cosmetic either:
  *
  *   - macOS gets a template image, which the system fills with the menu bar's own foreground
  *     colour. That is the only correct answer there, because the menu bar inverts under a dark
@@ -21,9 +28,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app, Menu, nativeImage, nativeTheme, Tray } from "electron";
+import { trayMenu, type TrayAction, type TrayCommand, type TrayItem } from "./tray-menu.ts";
 
-/** What a menu item asks the renderer to do. Kept as strings, matched in `src/tray.ts`. */
-export type TrayCommand = "new-session" | "pull-requests" | "scheduled" | "settings";
+export type { TrayCommand } from "./tray-menu.ts";
 
 export interface TrayActions {
 	/** Bring the window up, creating it if it is gone, and run `then` once it can receive events. */
@@ -31,6 +38,15 @@ export interface TrayActions {
 	/** The live window, or null when there is none. */
 	window: () => Electron.BrowserWindow | null;
 	send: (command: TrayCommand) => void;
+	/** Open one conversation, by id — the only menu item with a subject. */
+	openSession: (id: string) => void;
+	/**
+	 * The most recent conversations, newest first.
+	 *
+	 * Read when the menu is built rather than held, because it changes while the app runs and a
+	 * status bar menu is looked at precisely when nothing else is on screen to be trusted.
+	 */
+	recent: () => { id: string; title: string }[];
 }
 
 let tray: Tray | null = null;
@@ -70,41 +86,87 @@ function currentIcon(): Electron.NativeImage {
 	return path ? nativeImage.createFromPath(path) : nativeImage.createEmpty();
 }
 
-function buildMenu(): Electron.Menu {
-	const visible = actions?.window()?.isVisible() ?? false;
+/** Whether the app is set to start with the system, as the system itself reports it. */
+function launchAtLogin(): boolean {
+	try {
+		return app.getLoginItemSettings().openAtLogin;
+	} catch {
+		// Linux desktops without an autostart implementation; the item simply reads as off.
+		return false;
+	}
+}
 
-	return Menu.buildFromTemplate([
-		{
-			label: visible ? "隐藏 Lyra" : "打开 Lyra",
-			click: () => {
-				const window = actions?.window();
-				if (visible && window) window.hide();
-				else actions?.reveal();
-			},
-		},
-		{ type: "separator" },
-		{ label: "新对话", click: () => actions?.send("new-session") },
-		{ label: "拉取请求", click: () => actions?.send("pull-requests") },
-		{ label: "已安排", click: () => actions?.send("scheduled") },
-		{ type: "separator" },
-		{ label: "设置…", click: () => actions?.send("settings") },
-		{ type: "separator" },
-		{
-			label: "退出 Lyra",
+function perform(action: TrayAction): void {
+	switch (action.kind) {
+		case "toggle-window": {
+			const window = actions?.window();
+			if (window?.isVisible() && !window.isMinimized()) window.hide();
+			else actions?.reveal();
+			break;
+		}
+		case "command":
+			actions?.send(action.command);
+			break;
+		case "open-session":
+			actions?.openSession(action.id);
+			break;
+		case "toggle-login":
+			try {
+				app.setLoginItemSettings({ openAtLogin: !launchAtLogin() });
+			} catch {
+				// Nothing to report to: this is a menu item, and the tick simply stays where it was.
+			}
+			refreshMenu();
+			break;
+		case "quit":
 			/*
 			 * The one way out on Windows and Linux, where closing the window only hides it.
 			 * `app.quit()` rather than `exit`, so `before-quit` still gets to shut down the
 			 * sessions, the shells and the sync server.
 			 */
-			click: () => app.quit(),
-		},
-	]);
+			app.quit();
+			break;
+	}
 }
 
-/** Rebuilt on open, because the first item names what will happen rather than what exists. */
-function refreshMenu(): void {
-	if (!tray) return;
-	if (process.platform === "darwin") tray.setContextMenu(buildMenu());
+function toTemplate(items: TrayItem[]): Electron.MenuItemConstructorOptions[] {
+	return items.map((item) => {
+		if (item.type === "separator") return { type: "separator" };
+		if (item.type === "submenu") return { label: item.label, submenu: toTemplate(item.items) };
+		return {
+			label: item.label,
+			...(item.checked === undefined ? {} : { type: "checkbox" as const, checked: item.checked }),
+			...(item.enabled === false ? { enabled: false } : {}),
+			click: () => perform(item.action),
+		};
+	});
+}
+
+function buildMenu(): Electron.Menu {
+	return Menu.buildFromTemplate(
+		toTemplate(
+			trayMenu({
+				windowVisible: actions?.window()?.isVisible() ?? false,
+				recent: actions?.recent() ?? [],
+				launchAtLogin: launchAtLogin(),
+			}),
+		),
+	);
+}
+
+/**
+ * Put the current menu in place.
+ *
+ * Rebuilt rather than kept, because three things in it change while the app runs: whether there is
+ * a window, which conversations are recent, and whether the app starts with the system.
+ *
+ * On macOS this is the menu the *next* right-click will pop up — it is passed to `popUpContextMenu`
+ * at that moment, so it is always current. On Windows and Linux the system owns the raising, so
+ * the menu has to be handed over in advance and refreshed whenever one of those three changes.
+ */
+export function refreshMenu(): void {
+	if (!tray || process.platform === "darwin") return;
+	tray.setContextMenu(buildMenu());
 }
 
 export function createTray(next: TrayActions): void {
@@ -126,27 +188,16 @@ export function createTray(next: TrayActions): void {
 	tray = new Tray(image);
 	tray.setToolTip("Lyra");
 
-	/*
-	 * Left click toggles, right click opens the menu.
-	 *
-	 * On macOS setting a context menu takes the click event entirely — the item stops toggling and
-	 * only ever opens a menu — so the menu is attached to the right button alone and the toggle
-	 * keeps the left. Windows raises `click` and `right-click` separately and needs no such care.
-	 */
 	tray.on("click", () => {
-		const window = actions?.window();
-		if (window?.isVisible() && !window.isMinimized()) window.hide();
-		else actions?.reveal();
+		perform({ kind: "toggle-window" });
 		refreshMenu();
 	});
 
-	tray.on("right-click", () => {
+	if (process.platform === "darwin") {
+		// The menu is built at the moment it is raised, so it never needs refreshing.
+		tray.on("right-click", () => tray?.popUpContextMenu(buildMenu()));
+	} else {
 		refreshMenu();
-		tray?.popUpContextMenu(buildMenu());
-	});
-
-	// Windows and Linux only: the macOS icon is a template and inverts by itself.
-	if (process.platform !== "darwin") {
 		const onThemeChange = () => tray?.setImage(currentIcon());
 		nativeTheme.on("updated", onThemeChange);
 		unwatchTheme = () => nativeTheme.removeListener("updated", onThemeChange);

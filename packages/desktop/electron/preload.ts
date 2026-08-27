@@ -53,6 +53,7 @@ paintBootTheme();
  * Every method maps to one named channel so a compromised renderer cannot invoke arbitrary IPC.
  */
 const api: LyraApi = {
+	platform: process.platform,
 	settings: {
 		get: () => ipcRenderer.invoke("settings:get"),
 		save: (settings) => ipcRenderer.invoke("settings:save", settings),
@@ -214,7 +215,7 @@ const api: LyraApi = {
 	},
 	/** What the status bar menu was asked for. One channel, because the commands are one kind. */
 	onTrayCommand: (handler) => {
-		const listener = (_e: Electron.IpcRendererEvent, command: string) => handler(command);
+		const listener = (_e: Electron.IpcRendererEvent, command: Parameters<typeof handler>[0]) => handler(command);
 		ipcRenderer.on("tray:command", listener);
 		return () => ipcRenderer.removeListener("tray:command", listener);
 	},
@@ -236,10 +237,11 @@ const api: LyraApi = {
 	system: {
 		openPath: (path) => ipcRenderer.invoke("system:openPath", path),
 		openExternal: (url) => ipcRenderer.invoke("system:openExternal", url),
-		openIn: (appName, path) => ipcRenderer.invoke("system:openIn", appName, path),
+		openIn: (target, path) => ipcRenderer.invoke("system:openIn", target, path),
+		openTargets: () => ipcRenderer.invoke("system:openTargets"),
 		revealSkillsDir: (scope, cwd) => ipcRenderer.invoke("system:revealSkillsDir", scope, cwd),
 		platform: () => ipcRenderer.invoke("system:platform"),
-		appIcon: (appName) => ipcRenderer.invoke("system:appIcon", appName),
+		remoteImage: (url) => ipcRenderer.invoke("system:remoteImage", url),
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),

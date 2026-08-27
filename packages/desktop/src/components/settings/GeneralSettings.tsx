@@ -1,5 +1,7 @@
 import type { PermissionMode } from "@lyra/core";
+import { FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { matchTarget, useOpenTargets } from "../../openTargets.ts";
 import { useApp } from "../../store.ts";
 import {
   Card,
@@ -11,62 +13,35 @@ import {
 } from "./controls.tsx";
 import { UpdateSection } from "./UpdateSection.tsx";
 
-const EDITORS = [
-  "Zed",
-  "Cursor",
-  "Visual Studio Code",
-  "Finder",
-  "Terminal",
-  "Ghostty",
-  "Xcode",
-];
-
-/**
- * Each application's own icon, read from the copy installed on this machine.
- *
- * Rather than shipping our own drawings of other people's logos: this is the icon already in
- * the user's Dock, at whatever version they have, and it costs nothing to keep current. An app
- * that is not installed simply has none, and its row stays a plain label.
- */
-function useAppIcons(names: string[]): Record<string, string> {
-  const [icons, setIcons] = useState<Record<string, string>>({});
-  const key = names.join("|");
-
-  useEffect(() => {
-    let live = true;
-    void Promise.all(
-      names.map(
-        async (name) =>
-          [name, await window.lyra.system.appIcon(name)] as const,
-      ),
-    ).then((pairs) => {
-      if (!live) return;
-      setIcons(
-        Object.fromEntries(
-          pairs.filter((pair): pair is [string, string] => Boolean(pair[1])),
-        ),
-      );
-    });
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-
-  return icons;
-}
-
 export function GeneralSettings() {
   const settings = useApp((s) => s.settings);
   const saveSettings = useApp((s) => s.saveSettings);
   const [platform, setPlatform] = useState("darwin");
-  const editorIcons = useAppIcons(EDITORS);
+  /*
+   * What this machine can actually open a file with — see `electron/open-targets.ts`.
+   *
+   * This used to be a fixed list of macOS application names, so on Windows it offered Finder,
+   * Ghostty and Xcode and none of them did anything; on a Mac without VS Code installed it
+   * offered a row with no icon beside six that had one. A list of what is here has neither
+   * problem, and the icons are the ones already in the user's own Dock or taskbar.
+   */
+  const targets = useOpenTargets();
 
   useEffect(() => {
     void window.lyra.system.platform().then(setPlatform);
   }, []);
 
   if (!settings) return null;
+
+  /*
+   * What is chosen, and the list it is chosen from — which does not always contain it.
+   *
+   * Settings sync between machines, so a Mac's 「Zed」 arrives on a PC that has no Zed. Showing the
+   * choice anyway is the honest answer: it says what was picked, and nothing was silently
+   * rewritten behind the user's back. Opening a file falls back to the system default.
+   */
+  const current = matchTarget(targets, settings.editor.defaultOpenTarget);
+  const options = targets.some((target) => target.id === current.id) ? targets : [...targets, current];
 
   const mode = settings.permissionMode;
   const patch = (next: Partial<typeof settings>) =>
@@ -125,18 +100,29 @@ export function GeneralSettings() {
           detail="点击文件路径时用哪个应用打开"
           control={
             <InlineSelect
-              value={settings.editor.defaultOpenTarget}
+              // The stored value may predate the ids, or name an application this machine does
+              // not have; either way the control shows what was chosen rather than jumping.
+              value={current.id}
               onChange={(defaultOpenTarget) =>
                 patch({ editor: { ...settings.editor, defaultOpenTarget } })
               }
-              options={EDITORS.map((name) => ({
-                value: name,
-                label: name,
-                icon: editorIcons[name] ? (
+              options={options.map((target) => ({
+                value: target.id,
+                label: target.label,
+                icon: target.icon ? (
                   <img
-                    src={editorIcons[name]}
+                    src={target.icon}
                     alt=""
                     className="h-[18px] w-[18px] shrink-0 rounded-[4px]"
+                  />
+                ) : target.id === "reveal" ? (
+                  // Not an application, so there is no icon to borrow — and a single row without
+                  // one in a list of applications reads as a missing icon rather than as a
+                  // different kind of thing. A drawn mark says which it is.
+                  <FolderOpen
+                    size={16}
+                    strokeWidth={1.8}
+                    className="mx-[1px] shrink-0 text-ink-muted"
                   />
                 ) : undefined,
               }))}

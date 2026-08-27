@@ -2,6 +2,7 @@ import { Archive, ArrowRight, FolderOpen, GitBranch, PinOff, Pin, Settings2, X }
 import { useState } from "react";
 import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, type Anchor } from "../Popover.tsx";
+import { useRevealLabel } from "../../openTargets.ts";
 import { useApp } from "../../store.ts";
 
 /**
@@ -30,6 +31,7 @@ export function ProjectMenu({
 	const renameProject = useApp((s) => s.renameProject);
 	const refreshWorkspace = useApp((s) => s.refreshWorkspace);
 	const notify = useApp((s) => s.notify);
+	const reveal = useRevealLabel();
 
 	const [mode, setMode] = useState<"menu" | "rename" | "worktree" | "remove">("menu");
 	const [draft, setDraft] = useState(name);
@@ -187,7 +189,7 @@ export function ProjectMenu({
 						onClose();
 					}}
 				>
-					在 Finder 中显示
+					{reveal}
 				</MenuItem>
 				<MenuItem
 					icon={<GitBranch size={13} strokeWidth={1.8} />}

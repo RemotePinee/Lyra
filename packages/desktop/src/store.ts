@@ -112,6 +112,15 @@ export interface AppState {
    */
   scratchCwd: string | null;
   /**
+   * The project 「聊天」 took the window away from, so 「项目」 can put it back.
+   *
+   * Switching to the chat half of the sidebar on a blank conversation switches the conversation
+   * itself out of the project — see `adoptSidebarTab`. Without somewhere to remember what it was,
+   * switching back would leave the window in no project at all, having quietly closed one nobody
+   * asked to close.
+   */
+  parkedProject: string | null;
+  /**
    * Text to put in the composer, for callers that are not the composer.
    *
    * Opening a review's conversation fills in what to ask rather than asking it: the user should
@@ -263,6 +272,20 @@ export interface AppState {
   setSwitchingBranch(branch: string | null): void;
   /** Work without a project. Sessions still run; they just have no repo behind them. */
   clearWorkspace(): Promise<void>;
+  /**
+   * Follow the sidebar into the half it just switched to — but only on a blank conversation.
+   *
+   * 「项目」 and 「聊天」 are two ways of listing the same conversations, and switching between them
+   * is normally just that: a way of looking. But on a window with nothing open yet, the half you
+   * are in is also the only statement you have made about what you want to do next, and the
+   * composer was ignoring it — 「聊天」 with an empty list still said 「选择项目」, and 新对话 from
+   * there opened a directory picker.
+   *
+   * Never over a conversation that exists. Leaving a project clears what is on screen, and doing
+   * that because someone glanced at their recent chats would be closing their work to answer a
+   * question they did not ask.
+   */
+  adoptSidebarTab(tab: "projects" | "chats"): Promise<void>;
   /** Rename a project, or drop it from the list without touching anything on disk. */
   renameProject(path: string, name: string): Promise<void>;
   setProjectPinned(path: string, pinned: boolean): Promise<void>;
@@ -313,6 +336,7 @@ export const useApp = create<AppState>((set, get) => ({
   switchingBranch: null,
   scratchRoots: [],
   scratchCwd: null,
+  parkedProject: null,
   composerDraft: { text: "", replace: false },
   activeSessionId: null,
   meta: null,

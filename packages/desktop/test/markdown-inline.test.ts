@@ -140,3 +140,16 @@ test("an escape means the character is not syntax", () => {
 test("details and summary tags disappear, their words do not", () => {
 	assert.equal(shape(parseInline("<summary>展开日志</summary>")), '"展开日志"');
 });
+
+test("a declared width comes through, and only when it is a pixel count", () => {
+	// `width="200"` is how a README says a logo is a logo. `50%` is a different instruction, and
+	// the number it would yield — 50 — is wrong rather than merely ignored.
+	const sized = parseInline('<img src="a.png" alt="A" width="200" height="80">')[0];
+	assert.equal(sized.kind === "image" && sized.width, 200);
+	assert.equal(sized.kind === "image" && sized.height, 80);
+
+	for (const attrs of ['width="50%"', 'width="auto"', 'width="0"', 'width="99999"', 'data-width="200"']) {
+		const token = parseInline(`<img src="a.png" ${attrs}>`)[0];
+		assert.equal(token.kind === "image" && token.width, undefined, attrs);
+	}
+});

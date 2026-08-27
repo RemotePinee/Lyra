@@ -67,9 +67,29 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Unsigned builds are the norm for a self-hosted tool; signing turns on when a certificate
-  # is present in the environment.
-  identity: null
+  # Ad-hoc signed, which is not the same as unsigned and is the difference between an app that
+  # opens and one that cannot.
+  #
+  # This was `null` — "skip signing" — and the result was worse than it sounds. Electron's own
+  # binary arrives carrying a linker-signed ad-hoc signature that declares sealed resources;
+  # electron-builder then renames it, rewrites Info.plist and packs our own resources beside it,
+  # and with signing skipped nothing re-seals any of that. `codesign --verify` says it plainly:
+  #
+  #     code has no resources but signature indicates they must be present
+  #
+  # Downloaded through a browser the bundle is quarantined, Gatekeeper checks it, finds a broken
+  # signature, and reports the one thing users saw: 「Lyra.app 已损坏，无法打开。你应该将它移到废纸篓。」
+  # A dead end — that dialog has no 「仍要打开」.
+  #
+  # `-` signs the whole bundle for real, with no certificate. `spctl` then rejects it as
+  # unidentified rather than damaged, which is the dialog offering 「打开」 from the context menu and
+  # 「仍要打开」 in 系统设置 → 隐私与安全性. The entitlements already include
+  # `disable-library-validation`, which ad-hoc signing needs to launch at all.
+  #
+  # With a Developer ID certificate, override this at the command line rather than editing it here
+  # — `electron-builder -c.mac.identity="Developer ID Application: …"` alongside `CSC_LINK` and
+  # `CSC_KEY_PASSWORD` — and add notarization to get rid of the prompt entirely.
+  identity: "-"
 
 win:
   icon: icon.png

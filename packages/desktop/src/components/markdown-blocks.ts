@@ -8,7 +8,7 @@
  */
 
 export type Block =
-	| { kind: "heading"; level: number; text: string }
+	| { kind: "heading"; level: number; text: string; align?: Align }
 	| { kind: "paragraph"; text: string }
 	| { kind: "code"; lang: string; code: string }
 	| { kind: "list"; ordered: boolean; items: ListItem[] }
@@ -16,7 +16,9 @@ export type Block =
 	| { kind: "rule" }
 	| { kind: "table"; header: string[]; rows: string[][]; align: Align[] }
 	| { kind: "math"; tex: string }
-	| { kind: "details"; summary: string; children: Block[] };
+	| { kind: "details"; summary: string; children: Block[] }
+	/** A block-level HTML element — a `<div align="center">` and the blocks inside it. */
+	| { kind: "html"; align: Align | null; children: Block[] };
 
 /** A column's alignment, from the colons in the separator row. */
 export type Align = "left" | "center" | "right";
@@ -97,6 +99,24 @@ export function parseBlocks(lines: string[]): Block[] {
 			continue;
 		}
 
+		/*
+		 * A block-level HTML element, which is how a README says everything Markdown cannot.
+		 *
+		 * Left to the inline pass these were transparent: the tag went, the contents stayed, and
+		 * `<p align="center">` around a logo drew a left-aligned logo. Worse, the newlines *inside*
+		 * the element were still read as Markdown line breaks, so three badges written one per line
+		 * — the ordinary way a badge row is typed — came out as three stacked links.
+		 *
+		 * Both follow from treating a container as prose. Recognised here it is a container: the
+		 * alignment survives, and the contents are parsed as blocks with HTML's own whitespace rule.
+		 */
+		if (htmlBlockAt(line)) {
+			const { block, next } = parseHtmlBlock(lines, i);
+			blocks.push(block);
+			i = next;
+			continue;
+		}
+
 		const heading = /^(#{1,6})\s+(.*)$/.exec(line);
 		if (heading) {
 			blocks.push({ kind: "heading", level: heading[1].length, text: heading[2].trim() });
@@ -159,8 +179,108 @@ function isBlockStart(line: string): boolean {
 		/^\s*(---|\*\*\*|___)\s*$/.test(line) ||
 		/^\s*\$\$/.test(line) ||
 		/^\s*<details[\s>]/i.test(line) ||
+		htmlBlockAt(line) !== null ||
 		isListLine(line)
 	);
+}
+
+/**
+ * The HTML elements that are containers rather than phrasing.
+ *
+ * Kept short on purpose. `<span>` and `<kbd>` belong to the inline pass — pulling them up here
+ * would break a sentence in half around one — and anything not on this list keeps the behaviour it
+ * had. `h1`–`h6` are containers too, but they become headings rather than boxes; see below.
+ */
+const BLOCK_TAGS = new Set(["div", "p", "center", "section", "article", "figure", "figcaption", "main", "aside", "header", "footer"]);
+const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+
+/** The element opening this line, if the line opens one. */
+function htmlBlockAt(line: string): { name: string; attrs: string; from: number } | null {
+	const open = /^\s*<([a-zA-Z][a-zA-Z0-9]*)((?:\s[^<>]*)?)>/.exec(line);
+	if (!open) return null;
+	const name = open[1].toLowerCase();
+	if (!BLOCK_TAGS.has(name) && !HEADING_TAGS.has(name)) return null;
+	return { name, attrs: open[2] ?? "", from: open[0].length };
+}
+
+/**
+ * One block-level element, its contents parsed as blocks.
+ *
+ * The close is found by depth, the same way `<details>` finds its own, so a `<div>` inside a `<div>`
+ * does not end the outer one early. An element left unclosed takes the rest of the document rather
+ * than being dropped — a README that opens `<div align="center">` and never closes it still means
+ * "centre everything below here", and that is what GitHub shows.
+ */
+function parseHtmlBlock(lines: string[], start: number): { block: Block; next: number } {
+	const open = htmlBlockAt(lines[start]);
+	if (!open) return { block: { kind: "paragraph", text: lines[start] }, next: start + 1 };
+
+	const { name, attrs } = open;
+	const opener = new RegExp(`<${name}(?:\\s[^<>]*)?>`, "gi");
+	const closer = new RegExp(`</${name}\\s*>`, "gi");
+
+	let depth = 0;
+	let end = lines.length - 1;
+	let closed = false;
+	for (let i = start; i < lines.length; i++) {
+		depth += lines[i].match(opener)?.length ?? 0;
+		depth -= lines[i].match(closer)?.length ?? 0;
+		if (depth <= 0) {
+			end = i;
+			closed = true;
+			break;
+		}
+	}
+
+	const body = lines.slice(start, end + 1).join("\n").slice(open.from);
+	const inner = closed ? body.replace(new RegExp(`</${name}\\s*>\\s*$`, "i"), "") : body;
+	const align = alignAttr(attrs);
+
+	/*
+	 * A heading is a heading, not a box with a heading in it.
+	 *
+	 * `<h1 align="center">` is how a README titles itself, and rendering it as a container holding a
+	 * paragraph would put body text where the document's title goes — wrong size, wrong weight, and
+	 * invisible to anything reading the outline.
+	 */
+	if (HEADING_TAGS.has(name)) {
+		const level = Number(name[1]);
+		return { block: { kind: "heading", level, text: collapse(inner), ...(align ? { align } : {}) }, next: end + 1 };
+	}
+
+	return { block: { kind: "html", align, children: htmlChildren(inner) }, next: end + 1 };
+}
+
+/**
+ * What is inside a container, read as blocks — but with HTML's whitespace rule, not Markdown's.
+ *
+ * This is the whole reason a badge row worked on GitHub and not here. Three `<a><img></a>` written
+ * one per line are three inline elements separated by whitespace: HTML collapses that to a space
+ * and lays them out in a row. Markdown reads the same newlines as line breaks and stacks them. The
+ * contents of an HTML element follow HTML, so each paragraph inside one is folded onto a line —
+ * an author who wants a break inside a container has `<br>`, which still works.
+ */
+function htmlChildren(inner: string): Block[] {
+	return parseBlocks(inner.split("\n")).map((block) =>
+		block.kind === "paragraph" ? { ...block, text: collapse(block.text) } : block,
+	);
+}
+
+function collapse(text: string): string {
+	return text.replace(/\s*\n\s*/g, " ").trim();
+}
+
+/** `align="center"`, or the same thing said in a `style` attribute. */
+function alignAttr(attrs: string): Align | null {
+	const raw = /(?:^|\s)align\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+	const value = (raw?.[2] ?? raw?.[3] ?? raw?.[4] ?? "").trim().toLowerCase();
+	if (value === "center" || value === "middle") return "center";
+	if (value === "right") return "right";
+	if (value === "left") return "left";
+
+	const style = /(?:^|\s)style\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attrs);
+	const styled = /text-align\s*:\s*(left|center|right)/i.exec(style?.[2] ?? style?.[3] ?? "");
+	return (styled?.[1]?.toLowerCase() as Align | undefined) ?? null;
 }
 
 /**

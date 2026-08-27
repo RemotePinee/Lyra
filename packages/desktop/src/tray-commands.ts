@@ -19,6 +19,20 @@ export function useTrayCommands(): void {
 			// renders, and a captured action would go on writing to a store state long replaced.
 			const app = useApp.getState();
 
+			/*
+			 * The one command with a subject: which conversation to open.
+			 *
+			 * Matched before the switch because it is a prefix rather than a name. The menu holds
+			 * ids read from the same store this list comes from, so a miss means the conversation
+			 * was deleted between the menu opening and the click — nothing to do but ignore it.
+			 */
+			if (command.startsWith("open-session:")) {
+				const id = command.slice("open-session:".length);
+				const meta = app.sessions.find((session) => session.id === id);
+				if (meta) void app.openSession(meta);
+				return;
+			}
+
 			switch (command) {
 				case "new-session":
 					// Switch first, then create. The other order shows the conversation appearing on
@@ -33,6 +47,12 @@ export function useTrayCommands(): void {
 					app.setView("scheduled");
 					break;
 				case "settings":
+					app.setView("settings");
+					break;
+				case "updates":
+					// The version, and the way back to an update that was waved off, are both at the
+					// bottom of 常规 — see `UpdateSection`.
+					app.setSettingsSection("general");
 					app.setView("settings");
 					break;
 			}

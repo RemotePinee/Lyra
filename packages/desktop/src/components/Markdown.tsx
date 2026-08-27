@@ -10,15 +10,62 @@
  */
 
 import { ChevronRight, ExternalLink } from "lucide-react";
-import { Fragment, type ReactNode, useState } from "react";
+import { createContext, Fragment, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { CodeBlock } from "./CodeBlock.tsx";
 import type { Block, ListItem } from "./markdown-blocks.ts";
 import { parseMarkdown } from "./markdown-blocks.ts";
+import { resolveAsset } from "./markdown-assets.ts";
 import { type Inline, parseInline } from "./markdown-inline.ts";
 import { renderMath } from "./markdown-math.ts";
 import { stripEmoji } from "./strip-emoji.ts";
 
-export function Markdown({ text, className = "" }: { text: string; className?: string }) {
+/**
+ * What this text is, beyond the characters in it.
+ *
+ * Only pictures need it, and only two facts about them: where a relative `src` points, and whether
+ * this document is one whose remote references may be fetched. A context rather than a prop chain
+ * because everything between the component and an `<img>` is a plain function — `renderBlock`,
+ * `renderToken` — and threading two values through nine of them to reach one leaf is nine places
+ * for them to be dropped.
+ *
+ * The default is the strict one. A caller that says nothing gets what every caller got before this
+ * existed: relative paths unresolved and remote pictures shown as named links.
+ */
+interface DocumentContext {
+	/** The directory the text was read from, if it was read from one. */
+	baseDir?: string;
+	/** Whether an https `src` may be fetched (through the main process) and drawn. */
+	remoteImages: boolean;
+}
+
+const Doc = createContext<DocumentContext>({ remoteImages: false });
+
+export function Markdown({
+	text,
+	className = "",
+	baseDir,
+	remoteImages = false,
+}: {
+	text: string;
+	className?: string;
+	/**
+	 * Where this file lives, so `<img src="assets/logo.png">` can find `assets/logo.png`.
+	 *
+	 * Passed by the panes that opened a real file. A pull request body and a model's reply have no
+	 * directory — a relative path in either refers to a checkout that may not be on this machine —
+	 * so they pass nothing and those images stay links.
+	 */
+	baseDir?: string;
+	/**
+	 * Draw pictures this document points at over https.
+	 *
+	 * Off unless asked for, and asked for only by the file viewer. A README's badges are part of
+	 * reading it; the same behaviour applied to a comment anybody can write would make opening a
+	 * pull request a request to whatever host that comment named. The fetch happens in the main
+	 * process either way — see `system:remoteImage`.
+	 */
+	remoteImages?: boolean;
+}) {
 	/*
 	 * System emoji come out first.
 	 *
@@ -41,7 +88,15 @@ export function Markdown({ text, className = "" }: { text: string; className?: s
 	 * this the item grows to fit it, `pre`'s own `overflow-x` never comes into play because there
 	 * is nothing left to overflow, and the width is pushed up through every ancestor instead.
 	 */
-	return <div className={`prose-dw min-w-0 ${className}`}>{renderBlocks(clean)}</div>;
+	// Memoised because a new object here re-renders every picture in the document on every keystroke
+	// of a streaming reply — which for a remote one means dropping and re-requesting it.
+	const doc = useMemo(() => ({ baseDir, remoteImages }), [baseDir, remoteImages]);
+
+	return (
+		<Doc.Provider value={doc}>
+			<div className={`prose-dw min-w-0 ${className}`}>{renderBlocks(clean)}</div>
+		</Doc.Provider>
+	);
 }
 
 function renderBlocks(source: string): ReactNode {
@@ -52,8 +107,23 @@ function renderBlock(block: Block): ReactNode {
 	switch (block.kind) {
 		case "heading": {
 			const Tag = `h${Math.min(block.level, 4)}` as "h1" | "h2" | "h3" | "h4";
-			return <Tag>{inline(block.text)}</Tag>;
+			return <Tag style={block.align ? { textAlign: block.align } : undefined}>{inline(block.text)}</Tag>;
 		}
+		/*
+		 * A `<div align="center">` and what it holds.
+		 *
+		 * `text-align` inherits, which is why nothing has to be pushed down into the children: one
+		 * declaration on the box sets the picture, the badges and the tagline underneath it, exactly
+		 * as the same three lines behave in a browser.
+		 */
+		case "html":
+			return (
+				<div className="ly-md-html" style={block.align ? { textAlign: block.align } : undefined}>
+					{block.children.map((child, index) => (
+						<Fragment key={index}>{renderBlock(child)}</Fragment>
+					))}
+				</div>
+			);
 		case "paragraph":
 			return <p>{inline(block.text)}</p>;
 		case "code":
@@ -200,7 +270,7 @@ function renderToken(token: Inline): ReactNode {
 		case "link":
 			return <Link href={token.href}>{renderTokens(token.children)}</Link>;
 		case "image":
-			return <Image src={token.src} alt={token.alt} />;
+			return <Image src={token.src} alt={token.alt} width={token.width} height={token.height} />;
 		default:
 			return null;
 	}
@@ -224,15 +294,49 @@ function Link({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /**
- * A picture from somewhere else.
+ * A picture, drawn if there is a way to draw it and named if there is not.
  *
- * The page's `img-src` is `self data: blob:`, so a remote screenshot cannot be drawn here, and
- * widening it for pull request bodies would widen it for every comment anybody can write. A named
- * link that opens in the browser keeps the reference — and its filename — rather than dropping it.
+ * Three sources, three answers, and the page's `img-src` — `self data: blob:` — never moves:
+ *
+ * - `data:` and `blob:` go straight into `src`, as they always did.
+ * - A path beside the file goes through `ly-media:`, the scheme the file panel already uses for
+ *   images and video. Its handler re-checks that the path is inside an open project, so a README
+ *   pointing at `../../../.ssh/id_rsa` gets a 403 rather than a picture.
+ * - An https URL is fetched by the main process and comes back as a data URL, the same route
+ *   avatars and registry logos take — and only for documents whose caller asked for it.
+ *
+ * Anything left over stays what it was: a named link that opens in the browser, which keeps the
+ * reference and its filename instead of leaving a broken image behind.
  */
-function Image({ src, alt }: { src: string; alt: string }) {
-	const local = src.startsWith("data:") || src.startsWith("blob:");
-	if (local) return <img src={src} alt={alt} className="ly-md-image" />;
+function Image({ src, alt, width, height }: { src: string; alt: string; width?: number; height?: number }) {
+	const { baseDir, remoteImages } = useContext(Doc);
+	const remote = remoteImages && src.startsWith("https://") ? src : null;
+	const fetched = useRemoteImage(remote);
+
+	const direct = src.startsWith("data:") || src.startsWith("blob:") ? src : null;
+	const onDisk = direct || remote ? null : resolveAsset(baseDir, src);
+	const resolved = direct ?? fetched ?? (onDisk ? window.lyra.files.mediaUrl(onDisk) : null);
+
+	if (resolved) {
+		return (
+			<img
+				src={resolved}
+				alt={alt}
+				/*
+				 * The author's `width` as a maximum, not as a width.
+				 *
+				 * `<img width="200">` in a README means "at most this big"; setting the attribute
+				 * itself would also make it a minimum, and a 200px logo would then overflow a pane
+				 * narrower than that rather than shrinking with everything else.
+				 */
+				style={{ maxWidth: width ? `min(100%, ${width}px)` : undefined, maxHeight: height ? `${height}px` : undefined }}
+				className="ly-md-image"
+			/>
+		);
+	}
+
+	// In flight: a gap, not a link that is about to be replaced by the picture underneath it.
+	if (remote && fetched === undefined) return null;
 
 	const name = alt || decodeURIComponent(src.split("/").pop()?.split("?")[0] || "图片");
 	return (
@@ -243,4 +347,31 @@ function Image({ src, alt }: { src: string; alt: string }) {
 			</span>
 		</Link>
 	);
+}
+
+/**
+ * One remote picture as a data URL.
+ *
+ * Three states, not two: `undefined` while the request is in flight, `null` once it has failed,
+ * and the data URL when it arrived. The caller needs the distinction — a picture that has not
+ * answered yet should leave a gap, and one that will never answer should fall back to its link, so
+ * the reference is not silently lost.
+ */
+function useRemoteImage(url: string | null): string | null | undefined {
+	const [data, setData] = useState<string | null | undefined>(undefined);
+
+	useEffect(() => {
+		if (!url) return;
+		let alive = true;
+		setData(undefined);
+		void window.lyra.system
+			.remoteImage(url)
+			.then((result) => alive && setData(result))
+			.catch(() => alive && setData(null));
+		return () => {
+			alive = false;
+		};
+	}, [url]);
+
+	return url ? data : null;
 }

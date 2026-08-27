@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
 
 import { clampZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, zoomAt, type Point } from "./annotate.ts";
 import { AnnotateCanvas, AnnotateToolbar, STAGE_FIT, useAnnotator } from "./Annotator.tsx";
+import { useLayout } from "../../layout.tsx";
 import { useApp } from "../../store.ts";
 import { closeViewer, stepViewer, useViewer, type ViewerImage } from "./viewer-store.ts";
 
@@ -59,6 +60,8 @@ const SLIDE_GAP = 56;
 
 export function ImageViewer() {
 	const state = useViewer();
+	// What the system took at the top right, which this overlay has to clear on its own.
+	const { titlebar } = useLayout();
 	const [leaving, setLeaving] = useState(false);
 	const [editing, setEditing] = useState(false);
 	const figure = useRef<HTMLDivElement>(null);
@@ -589,7 +592,17 @@ export function ImageViewer() {
 				style={{ opacity: open ? 1 : 0, transition: `opacity ${DURATION}ms ${EASE}` }}
 			>
 				{!editing && (
-					<div className="pointer-events-auto absolute top-4 right-4 flex items-center gap-1">
+					<div
+						className="pointer-events-auto absolute top-4 flex items-center gap-1"
+						/*
+						 * Clear of the window's own buttons, which on Windows and Linux are drawn over
+						 * this corner of the page. The viewer covers the whole window, so unlike a pane
+						 * it cannot rely on a title bar having moved out of the way — annotate, save and
+						 * close sat underneath minimise/maximise/close and could not be pressed. Zero on
+						 * macOS, where that corner is the page's.
+						 */
+						style={{ right: 16 + titlebar.end }}
+					>
 						{/* Offered for every image: one that cannot be replaced can still be annotated and
 						    kept, which is the more common reason to mark up something already sent. */}
 						<ViewerButton label="标注" onClick={() => setEditing(true)}>

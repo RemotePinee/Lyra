@@ -51,7 +51,18 @@ export function ProviderEditor({
 	const [apiKey, setApiKey] = useState(provider.apiKey);
 
 	return (
-		<div className="flex h-full flex-col">
+		/*
+		 * Not `h-full`, which quietly took the bottom padding away from the panel it sits in.
+		 *
+		 * A scroll container's `padding-bottom` is part of what can be scrolled to — but only for
+		 * content that is laid out inside it. `h-full` pinned this column to the *visible* height,
+		 * so once there were more models than fitted, the rows ran past the bottom of a box that
+		 * had already ended, and out through the padding with it. Scrolled to the end, 添加模型 sat
+		 * flush against the card's edge with the 24px that every other side has nowhere to be seen.
+		 *
+		 * Nothing needed the height: this column is a stack of fields whose height is its contents.
+		 */
+		<div className="flex flex-col">
 			<ProviderHeading provider={provider} onChange={onChange} onRemove={onRemove} />
 
 			<div className="space-y-4">

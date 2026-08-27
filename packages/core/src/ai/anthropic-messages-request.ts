@@ -6,7 +6,7 @@
  * thinking block has to be replayed with its signature intact or the model rejects the turn.
  */
 
-import type { Message, ToolSpec } from "../types.ts";
+import type { Message, ToolResultMessage, ToolSpec } from "../types.ts";
 
 /**
  * One block of content, in the wire shape.
@@ -29,11 +29,18 @@ export interface AnthropicMessage {
  * Anthropic requires tool results to arrive as `tool_result` blocks inside a *user* message,
  * and consecutive results must be merged into one message. Our flat message list has one
  * entry per result, so this collapses runs of them.
+ *
+ * The merged blocks are put back into the order the calls were made, which is not the order the
+ * results were recorded in: tools run in parallel and each result is written down as it finishes,
+ * so a history rebuilt from the log has the quickest tool first. Anthropic matches by
+ * `tool_use_id` and accepts either, but the request should not differ depending on which tool won
+ * the race — an identical conversation that serialises two ways defeats prompt caching for
+ * everything after it.
  */
 export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 	const out: AnthropicMessage[] = [];
 
-	for (const message of messages) {
+	for (const message of orderResultsByCall(messages)) {
 		if (message.role === "user") {
 			const blocks: AnthropicBlock[] = message.content.map((c) =>
 				c.type === "text"
@@ -93,6 +100,51 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 	}
 
 	return out;
+}
+
+/**
+ * The same history, with each run of tool results in the order its calls were made.
+ *
+ * Only runs of two or more are touched, which is the only case where an order exists to get wrong,
+ * and the original array is returned untouched when nothing moved — this is called on every request
+ * with the whole conversation in it.
+ *
+ * A result whose call is not in the assistant message above it keeps its place at the end of the
+ * run rather than being dropped. It is still history the model should see.
+ */
+function orderResultsByCall(messages: Message[]): Message[] {
+	const out: Message[] = [];
+	let moved = false;
+
+	for (let index = 0; index < messages.length; index++) {
+		const message = messages[index];
+		out.push(message);
+		if (message.role !== "assistant") continue;
+
+		const run: ToolResultMessage[] = [];
+		let after = index + 1;
+		for (; after < messages.length; after++) {
+			const next = messages[after];
+			if (next.role !== "toolResult") break;
+			run.push(next);
+		}
+		if (run.length < 2) continue;
+
+		const spare = [...run];
+		const ordered: ToolResultMessage[] = [];
+		for (const content of message.content) {
+			if (content.type !== "toolCall") continue;
+			const at = spare.findIndex((result) => result.toolCallId === content.id);
+			if (at >= 0) ordered.push(...spare.splice(at, 1));
+		}
+		ordered.push(...spare);
+
+		moved ||= ordered.some((result, at) => result !== run[at]);
+		out.push(...ordered);
+		index = after - 1;
+	}
+
+	return moved ? out : messages;
 }
 
 export function toAnthropicTools(tools: ToolSpec[]): unknown[] {

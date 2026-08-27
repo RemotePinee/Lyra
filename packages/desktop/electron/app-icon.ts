@@ -59,14 +59,31 @@ const APP_DIRS = [
 	"/System/Library/CoreServices",
 ];
 
-async function findApp(name: string): Promise<string | null> {
+/**
+ * Whether a path is actually an application, rather than something merely named like one.
+ *
+ * Spotlight matches on file name, and a name ending in `.app` is not a promise: `iTerm.app` is
+ * also a terminfo database at `/usr/share/terminfo/69/iTerm.app`, which is a *file*. Finding that
+ * one made the app appear installed — offered in 「默认文件打开目标」, with no icon, because there
+ * was no bundle to read one from. An executable directory is what makes it a bundle.
+ */
+async function isBundle(path: string): Promise<boolean> {
+	const info = await stat(path).catch(() => null);
+	if (!info?.isDirectory()) return false;
+	return stat(`${path}/Contents/MacOS`).then((entry) => entry.isDirectory()).catch(() => false);
+}
+
+export async function findApp(name: string): Promise<string | null> {
 	for (const dir of APP_DIRS) {
 		const candidate = `${dir}/${name}.app`;
-		if (await stat(candidate).then(() => true).catch(() => false)) return candidate;
+		if (await isBundle(candidate)) return candidate;
 	}
 	const { stdout } = await execFileAsync("mdfind", ["-name", `${name}.app`]).catch(() => ({ stdout: "" }));
-	const hit = stdout.split("\n").find((line) => line.trim().endsWith(`${name}.app`));
-	return hit ? hit.trim() : null;
+	for (const line of stdout.split("\n")) {
+		const path = line.trim();
+		if (path.endsWith(`${name}.app`) && (await isBundle(path))) return path;
+	}
+	return null;
 }
 
 /**

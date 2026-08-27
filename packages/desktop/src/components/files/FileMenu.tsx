@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import type { FileEntry } from "../../../electron/ipc-types.ts";
+import { openLabel, useOpenTarget, useRevealLabel } from "../../openTargets.ts";
 import { ContextMenu } from "../ContextMenu.tsx";
 import { MenuItem, MenuSeparator } from "../Menu.tsx";
 
@@ -63,8 +64,6 @@ export function FileMenu({
 	/** How many rows the destructive items would act on. */
 	count,
 	canPaste,
-	/** The application named by 默认文件打开目标, so the item can say which one it is. */
-	openTarget,
 	actions,
 }: {
 	anchor: { x: number; y: number } | null;
@@ -73,9 +72,12 @@ export function FileMenu({
 	dir: string;
 	count: number;
 	canPaste: boolean;
-	openTarget: string;
 	actions: FileMenuActions;
 }) {
+	// What 默认文件打开目标 currently names, and what this platform calls its file manager. Read
+	// here rather than passed in: both are properties of the machine, not of this tree.
+	const openTarget = useOpenTarget();
+	const reveal = useRevealLabel();
 	const many = count > 1;
 	/** Names the target once so every destructive label counts the same way. */
 	const what = many ? `这 ${count} 项` : "";
@@ -92,14 +94,14 @@ export function FileMenu({
 						</MenuItem>
 					)}
 					<MenuItem icon={<ExternalLink {...ICON} />} onClick={() => actions.openWith(entry.path)}>
-						{`在 ${openTarget} 中打开`}
+						{openLabel(openTarget)}
 					</MenuItem>
 				</>
 			)}
 
 			{/* On the empty space this reveals the folder the tree is showing, which is still an answer. */}
 			<MenuItem icon={<CornerUpRight {...ICON} />} onClick={() => actions.reveal(entry?.path ?? dir)}>
-				在访达中显示
+				{reveal}
 			</MenuItem>
 			<MenuItem icon={<SquareTerminal {...ICON} />} onClick={() => actions.openInTerminal(dir)}>
 				在终端中打开

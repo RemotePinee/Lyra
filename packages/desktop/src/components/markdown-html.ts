@@ -104,7 +104,11 @@ export function matchHtml(
 		if (name === "br") return { tokens: [{ kind: "break" }], next: after };
 		if (name === "img") {
 			const src = attr(attrs, "src");
-			return src ? { tokens: [{ kind: "image", src, alt: attr(attrs, "alt") ?? "" }], next: after } : { tokens: [], next: after };
+			if (!src) return { tokens: [], next: after };
+			return {
+				tokens: [{ kind: "image", src, alt: attr(attrs, "alt") ?? "", width: size(attrs, "width"), height: size(attrs, "height") }],
+				next: after,
+			};
 		}
 		return { tokens: [], next: after };
 	}
@@ -144,6 +148,20 @@ function findClose(source: string, name: string, from: number): number {
 }
 
 function attr(attrs: string, name: string): string | null {
-	const match = new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(attrs);
+	const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(attrs);
 	return match ? (match[2] ?? match[3] ?? match[4] ?? null) : null;
+}
+
+/**
+ * A dimension an author wrote on an `<img>`.
+ *
+ * `width="200"` is how a README says "this logo is a logo, not a screenshot", and without it a
+ * 1024px source fills the pane. Only bare pixel counts are honoured: `width="50%"` is a different
+ * kind of instruction, and the number it would produce — 50 — is wrong rather than merely ignored.
+ */
+function size(attrs: string, name: "width" | "height"): number | undefined {
+	const raw = attr(attrs, name);
+	if (!raw || !/^\d+$/.test(raw.trim())) return undefined;
+	const value = Number(raw.trim());
+	return value > 0 && value <= 4096 ? value : undefined;
 }

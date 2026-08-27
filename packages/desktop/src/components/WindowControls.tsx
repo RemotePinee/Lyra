@@ -1,16 +1,11 @@
 /**
- * Where the first window control sits, measured from the window's left edge.
+ * The buttons in the window's top row, and how much room they need.
  *
- * The three traffic lights are 12pt wide on a 20pt pitch starting at x=16, so they end at 68.5;
- * 78 leaves the ~10pt gap the reference screenshots have, and 70 put the button flush against the
- * green one.
- *
- * It used to be shared with the side panel's tab strip, which took this row over whenever the
- * panel reached the window's left edge — and the two answered the same question with 78 and 88,
- * ten pixels being small enough to look like a rendering wobble and large enough to see. The dock
- * ended that handover: the sidebar or the toolbar owns this corner, always.
+ * Where that row *starts* — past the traffic lights on macOS, past nothing on Windows and Linux,
+ * where the system's own buttons are at the other end — is `src/titlebar.ts`. That is a property
+ * of the platform and the window rather than of any button, and the dock needs it without needing
+ * anything else in this file.
  */
-export const WINDOW_CONTROLS_LEFT = 78;
 
 /** A toolbar button, and the gap after it. Shared so what sits beside one can clear it. */
 export const TOOLBAR_BUTTON = 28;
@@ -19,16 +14,18 @@ export const TOOLBAR_GAP = 10;
 /**
  * How much of the window's top-left corner belongs to the window rather than to the content.
  *
- * The traffic lights *and* the sidebar toggle: with the sidebar closed, that toggle is the only
- * way back to it, and it floats over whatever the dock has put in that corner. A pane that only
- * cleared the lights drew its own title straight underneath the button — the terminal's first tab
- * ended up on top of it, so the tab was hard to read and the button, still there and still
- * working, looked like it had gone.
+ * Whatever the system draws there *and* the sidebar toggle: with the sidebar closed, that toggle
+ * is the only way back to it, and it floats over whatever the dock has put in that corner. A pane
+ * that only cleared the lights drew its own title straight underneath the button — the terminal's
+ * first tab ended up on top of it, so the tab was hard to read and the button, still there and
+ * still working, looked like it had gone.
  *
- * Here rather than in `WindowToolbar`, which the dock would otherwise have to import — and that
- * file reaches into the dock's own store, so the two would depend on each other.
+ * A function of where the toggle starts, which is a question about the platform and the window —
+ * see `useTitlebar`. It was a constant back when only macOS was drawn correctly.
  */
-export const TOOLBAR_RESERVED = WINDOW_CONTROLS_LEFT + TOOLBAR_BUTTON + TOOLBAR_GAP;
+export function toolbarReserved(start: number): number {
+	return start + TOOLBAR_BUTTON + TOOLBAR_GAP;
+}
 
 /**
  * The button beside the traffic lights: show or hide the sidebar.

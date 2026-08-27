@@ -12,22 +12,9 @@ import { useDock } from "../dock/store.ts";
 import { has } from "../dock/tree.ts";
 import { usePanelDefinitions } from "../panels/definitions.tsx";
 import type { PanelKind } from "../sideStore.ts";
+import { useLayout } from "../layout.tsx";
 import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
-import { ToolbarButton, WINDOW_CONTROLS_LEFT, WindowControls } from "./WindowControls.tsx";
-
-/** Left offset of the first toolbar button, when there are traffic lights to clear. */
-const TOOLBAR_LEFT = WINDOW_CONTROLS_LEFT;
-
-
-
-/**
- * And where it goes when there are none.
- *
- * macOS takes the lights away in native full screen. Holding their inset open then leaves a gap at
- * the top-left reserved for three buttons that are not there — which is exactly what it looks
- * like. 12 is the same margin the rest of the window's edges use.
- */
-const TOOLBAR_LEFT_FULLSCREEN = 12;
+import { TOOLBAR_BUTTON, ToolbarButton, WindowControls } from "./WindowControls.tsx";
 
 /*
  * The update chip used to have a slot of its own here, just past the sidebar toggle.
@@ -48,10 +35,18 @@ const TOOLBAR_LEFT_FULLSCREEN = 12;
  * part of that row that is still the window's rather than a pane's.
  */
 export function DragBand({ navOpen, sidebarWidth }: { navOpen: boolean; sidebarWidth: number }) {
+	const { titlebar } = useLayout();
 	return (
 		<div
 			className="drag-region absolute top-0 left-0 z-40 h-[44px]"
-			style={{ width: navOpen ? sidebarWidth : WINDOW_CONTROLS_LEFT }}
+			/*
+			 * Closed, this is only the corner the system's own controls need — which is the traffic
+			 * lights on macOS and nothing at all elsewhere, where they are at the other end. The
+			 * toggle beside them is `no-drag`, so a band the width of the button alone would leave
+			 * no draggable pixels; a little more than the toggle's own start is what makes the
+			 * corner grabbable without claiming the pane title next to it.
+			 */
+			style={{ width: navOpen ? sidebarWidth : titlebar.start + TOOLBAR_BUTTON }}
 		/>
 	);
 }
@@ -166,20 +161,24 @@ export function PanelMenu() {
  * the sidebar's or the toolbar's and never changes hands.
  */
 export function WindowButtons({
-	nativeFullScreen,
 	navOpen,
 	compact,
 	onToggleNav,
 }: {
-	nativeFullScreen: boolean;
 	navOpen: boolean;
 	compact: boolean;
 	onToggleNav: () => void;
 }) {
+	const { titlebar } = useLayout();
 	return (
 		<div
 			className="no-drag absolute top-0 z-[60] flex h-[44px] items-center gap-0.5"
-			style={{ left: nativeFullScreen ? TOOLBAR_LEFT_FULLSCREEN : TOOLBAR_LEFT }}
+			/*
+			 * Past whatever the system drew in this corner: the traffic lights on macOS, nothing on
+			 * Windows and Linux — where this used to sit 78px in anyway, out of line with the marks
+			 * directly below it and adrift from the edge. `useTitlebar` is the whole rule.
+			 */
+			style={{ left: titlebar.start }}
 		>
 			<WindowControls navOpen={navOpen} onToggleNav={onToggleNav} active={compact && navOpen} />
 		</div>

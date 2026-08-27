@@ -782,7 +782,42 @@
 
   .prose-dw .ly-md-image {
     max-width: 100%;
+    /*
+     * Inline, because that is what an `<img>` between two links is.
+     *
+     * A badge row is three anchors separated by spaces. Making the pictures blocks would break the
+     * row into three lines — which is the layout this change exists to stop — and the baseline
+     * alignment is what lets a badge sit next to a word without riding above it.
+     */
+    display: inline-block;
+    vertical-align: middle;
     border-radius: 8px;
+  }
+
+  /*
+   * A block-level HTML element from the document — a `<p align="center">` around a logo.
+   *
+   * The spacing rule at the top of this layer only reaches direct children of `.prose-dw`, so
+   * without this the paragraphs inside a `<div>` would sit flush against each other while the ones
+   * outside it breathe. Same 0.75em, so a document does not change rhythm when it enters a box.
+   */
+  .prose-dw .ly-md-html > * + * {
+    margin-top: 0.75em;
+  }
+
+  /*
+   * A centred box does not centre a bullet list.
+   *
+   * `text-align` inherits into everything, and a `<div align="center">` holding a feature list —
+   * common at the top of a README — would centre every bullet against a marker still hanging off
+   * the left. Lists inside one keep their own alignment; the box still centres the prose, the
+   * pictures and the badge rows it was written for.
+   */
+  .prose-dw .ly-md-html ul,
+  .prose-dw .ly-md-html ol,
+  .prose-dw .ly-md-html pre,
+  .prose-dw .ly-md-html .ly-table {
+    text-align: left;
   }
 }
 

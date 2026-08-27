@@ -14,7 +14,7 @@ import { ChevronsDownUp, FilePlus2, FolderPlus, X } from "lucide-react";
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 
 import type { FileEntry } from "../../../electron/ipc-types.ts";
-import { useApp } from "../../store.ts";
+import { useOpenTarget } from "../../openTargets.ts";
 import { useSide } from "../../sideStore.ts";
 import { IconButton } from "../IconButton.tsx";
 import { Scroller } from "../Scroller.tsx";
@@ -45,7 +45,7 @@ export function FileTree({
 }) {
 	const tree = useFileTree(root);
 	const actions = useFileActions({ root, refresh: tree.refresh, onMoved, onRemoved });
-	const openWith = useApp((s) => s.settings?.editor.defaultOpenTarget) ?? "Finder";
+	const openWith = useOpenTarget();
 	const runInTerminal = useSide((s) => s.runInTerminal);
 
 	/** Ordered, so ⇧-click has an anchor and the last one decides where 新建 lands. */
@@ -382,10 +382,9 @@ export function FileTree({
 					dir={menuDir}
 					count={menuCount}
 					canPaste={actions.clipboard !== null}
-					openTarget={openWith}
 					actions={{
 						open: activate,
-						openWith: (path) => void window.lyra.system.openIn(openWith, path),
+						openWith: (path) => void window.lyra.system.openIn(openWith.id, path),
 						reveal: (path) => void window.lyra.workspace.reveal(path),
 						// Single-quoted so a space or a bracket in the path cannot become shell syntax.
 						openInTerminal: (dir) => runInTerminal(`cd '${dir.replaceAll("'", "'\\''")}'`),

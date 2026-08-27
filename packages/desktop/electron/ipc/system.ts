@@ -5,15 +5,12 @@
  * a renderer-supplied string to the OS, so the guard matters more than the call.
  */
 
-import { execFile } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { lyraHome } from "@lyra/core";
 import { clipboard, ipcMain, shell } from "electron";
-import { appIcon } from "../app-icon.ts";
-
-const execFileAsync = promisify(execFile);
+import { remoteImage } from "../avatars.ts";
+import { openTargets, openWith, type OpenTarget } from "../open-targets.ts";
 
 export function registerSystemIpc(): void {
 	ipcMain.handle("system:openPath", async (_event, path: string) => void shell.openPath(path));
@@ -24,13 +21,15 @@ export function registerSystemIpc(): void {
 		if (parsed.protocol === "http:" || parsed.protocol === "https:") await shell.openExternal(url);
 	});
 
-	ipcMain.handle("system:openIn", async (_event, appName: string, path: string) => {
-		if (process.platform === "darwin") {
-			await execFileAsync("open", ["-a", appName, path]).catch(() => shell.openPath(path));
-		} else {
-			await shell.openPath(path);
-		}
-	});
+	/*
+	 * 「用什么打开」, which is a different question on every platform — see `open-targets.ts`.
+	 *
+	 * `target` is an id the renderer got from `system:openTargets`, or whatever an older version of
+	 * the settings happens to hold; both are resolved there rather than here.
+	 */
+	ipcMain.handle("system:openIn", async (_event, target: string, path: string) => openWith(target, path));
+
+	ipcMain.handle("system:openTargets", async (): Promise<OpenTarget[]> => openTargets());
 
 	ipcMain.handle("system:revealSkillsDir", async (_event, scope: "workspace" | "user", cwd: string) => {
 		const dir = scope === "workspace" ? join(cwd, ".lyra", "skills") : join(lyraHome(), "skills");
@@ -41,7 +40,18 @@ export function registerSystemIpc(): void {
 
 	ipcMain.handle("system:platform", async () => process.platform);
 
-	ipcMain.handle("system:appIcon", async (_event, appName: string): Promise<string | null> => appIcon(appName));
+	/*
+	 * A picture named by a Markdown file, fetched here so the page's CSP does not have to open up.
+	 *
+	 * The same trade as `registry:icon` and `git:avatar`, for the same reason: `img-src` is
+	 * `self data: blob:` and widening it to the whole web — so that a README's build badge draws —
+	 * would widen it for every screen in the app, permanently. `remoteImage` bounds what comes back
+	 * (https only, an image content-type, half a megabyte, nine seconds) and caches it, so a
+	 * document with twenty badges is twenty requests once and none after.
+	 *
+	 * Only reached for documents the user opened off their own disk — see `Markdown`'s `remoteImages`.
+	 */
+	ipcMain.handle("system:remoteImage", async (_event, url: string): Promise<string | null> => remoteImage(url));
 
 	/*
 	 * The clipboard, from here rather than from `navigator.clipboard`.

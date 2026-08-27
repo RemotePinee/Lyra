@@ -44,6 +44,7 @@ export function Sidebar() {
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const scratchRoots = useApp((s) => s.scratchRoots);
 	const newSession = useApp((s) => s.newSession);
+	const adoptSidebarTab = useApp((s) => s.adoptSidebarTab);
 	/**
 	 * As a drawer this pane covers the thing it navigates to, so anything that changes what is
 	 * behind it also has to get out of the way. Pushed, `dismissNav` does nothing and the
@@ -183,6 +184,15 @@ export function Sidebar() {
 	const changeTab = (next: SidebarTab) => {
 		before.current = null;
 		setTab(next);
+		/*
+		 * And follow it, on a window with nothing open yet.
+		 *
+		 * Which half you are in is the only thing you have said about what you want to do next, and
+		 * until now the composer ignored it: 「聊天」 over an empty list still said 「选择项目」 and
+		 * 新对话 from there opened a directory picker. Guarded inside — a conversation that exists
+		 * is never disturbed by this. See `adoptSidebarTab`.
+		 */
+		void adoptSidebarTab(next);
 	};
 
 	const pad = compact ? "px-3" : "px-2.5";
