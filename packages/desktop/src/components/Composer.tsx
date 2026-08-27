@@ -493,7 +493,23 @@ export function Composer() {
 							setActive((index) => (index - 1 + matches.length) % matches.length);
 						} else if (event.key === "Enter" || event.key === "Tab") {
 							event.preventDefault();
-							pick(matches[Math.min(active, matches.length - 1)]);
+							const chosen = matches[Math.min(active, matches.length - 1)];
+							/*
+							 * A name that is already complete has nothing left to complete, so Enter runs it.
+							 *
+							 * Picking deliberately does not run anything — see `pick` — and that is right
+							 * while a name is half typed: the list is a way of finishing a word, and firing
+							 * `/clear` because somebody pressed Enter over a highlighted row would be a
+							 * conversation lost to a keystroke. But once `/compact` is typed in full, the
+							 * completion is a no-op: it appends a space and nothing else. Pressing Enter
+							 * then looked like the command had simply been ignored — it had to be pressed
+							 * twice, and nothing on screen said so. That was the whole of 「一点反应都没有」.
+							 *
+							 * Tab still only completes, whatever is typed. Tab is the completion key; it
+							 * has never meant "do it".
+							 */
+							if (event.key === "Enter" && term === chosen.name) void submit();
+							else pick(chosen);
 						} else if (event.key === "Escape") {
 							event.preventDefault();
 							setDismissed(true);

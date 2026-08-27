@@ -103,3 +103,43 @@ export function pruneToolResults(messages: Message[], threshold = PRUNE_THRESHOL
 	});
 	return changed ? next : messages;
 }
+
+/**
+ * The same cut, taken all the way: an oversized result becomes one line saying it was there.
+ *
+ * The last resort, and only reached after a provider has already refused the request — see
+ * `recoverFromRejection` in the loop. Cutting to a head and a tail is the right trade almost
+ * always, because the head is where the answer is. It is the wrong trade in one case: when the
+ * *content* is what the far end cannot handle, a head of it is still that content.
+ *
+ * That case is real. A 60,000-character JSON body from `gh api` made one relay's Gemini
+ * translation emit a malformed request — `Unknown name "safetySettings" at 'request.contents[42]'`
+ * — on every attempt, so the conversation could not be continued, retried, or escaped from. The
+ * same history with that one result replaced went through immediately; the same history with an
+ * equally long *plain text* result also went through, which is how we know it was never the size.
+ *
+ * We cannot know what any given gateway chokes on, and guessing would be a list that goes stale.
+ * What we can do is stop sending the thing it choked on, and say so where the model can read it.
+ */
+export function stripOversizedToolResults(messages: Message[], threshold = PRUNE_THRESHOLD_CHARS): Message[] {
+	let changed = false;
+	const next = messages.map((message) => {
+		if (message.role !== "toolResult") return message;
+		const size = message.content.reduce((sum, block) => sum + (block.type === "text" ? [...block.text].length : 0), 0);
+		if (size <= threshold) return message;
+		changed = true;
+		return {
+			...message,
+			content: [
+				{
+					type: "text" as const,
+					text:
+						`[${size.toLocaleString("en-US")} characters of output withheld: the provider rejected the request ` +
+						`while it was included. The full result is in the session and visible in the transcript — ` +
+						`run the tool again more narrowly if you need it.]`,
+				},
+			],
+		} as ToolResultMessage;
+	});
+	return changed ? next : messages;
+}

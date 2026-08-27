@@ -195,52 +195,25 @@ function resize(image, height) {
 }
 
 /**
- * Fill the drawing in, so what scales down is a shape rather than a texture.
+ * Clear the haze off the alpha before anything is scaled.
  *
- * The source is a line drawing: its alpha is strokes and the gaps between them, and at 16px those
- * gaps land smaller than a pixel. Averaging them produces a field of half-transparent grey — the
- * icon reads as a smudge, which is exactly how it looked next to neighbours that are all solid
- * single-colour glyphs.
+ * The drawing carries a wide skirt of nearly-transparent pixels — a soft edge, a faint glow, the
+ * ends of individual hair strands. At full size none of it is visible. Downscaled by forty, every
+ * one of those pixels is averaged into its neighbours and the result is a grey fog a pixel or two
+ * deep all the way round the subject, which in a menu bar of hard-edged glyphs is the one icon
+ * that looks slightly out of focus.
  *
- * So the interior is filled before any scaling happens. Everything reachable from the border is
- * outside; everything else is the subject, holes in the linework included. What remains is one
- * clean silhouette whose edge is the only thing the downscale has to resolve, and an edge is
- * something 16px can carry.
- *
- * Detail is genuinely lost — the eyes, the hair strands, the bow. That is not a compromise being
- * made here, it is the size: a menu bar icon is 16pt tall and the neighbours it sits among are
- * eight strokes or a silhouette for the same reason.
+ * So the faintest are dropped outright and what remains is lifted. Gentle on purpose: the
+ * antialiasing along the real edge is what keeps the shape smooth at 18 points, and pushing this
+ * far enough to threshold it would trade fog for stairsteps.
  */
-function solidify(image, threshold = 40) {
-	const { width, height, pixels } = image;
-	const opaque = new Uint8Array(width * height);
-	for (let i = 0; i < width * height; i++) opaque[i] = pixels[i * 4 + 3] >= threshold ? 1 : 0;
-
-	// Flood fill inward from every border pixel. Anything the fill cannot reach is enclosed.
-	const outside = new Uint8Array(width * height);
-	const stack = [];
-	for (let x = 0; x < width; x++) {
-		stack.push(x, (height - 1) * width + x);
+function harden(image, floor = 16, gamma = 0.85) {
+	const pixels = Buffer.from(image.pixels);
+	for (let i = 3; i < pixels.length; i += 4) {
+		const alpha = pixels[i];
+		pixels[i] = alpha < floor ? 0 : Math.round(255 * (alpha / 255) ** gamma);
 	}
-	for (let y = 0; y < height; y++) {
-		stack.push(y * width, y * width + width - 1);
-	}
-
-	while (stack.length) {
-		const i = stack.pop();
-		if (outside[i] || opaque[i]) continue;
-		outside[i] = 1;
-		const x = i % width;
-		const y = (i / width) | 0;
-		if (x > 0) stack.push(i - 1);
-		if (x < width - 1) stack.push(i + 1);
-		if (y > 0) stack.push(i - width);
-		if (y < height - 1) stack.push(i + width);
-	}
-
-	const out = Buffer.alloc(width * height * 4);
-	for (let i = 0; i < width * height; i++) out[i * 4 + 3] = outside[i] ? 0 : 255;
-	return { width, height, pixels: out };
+	return { ...image, pixels };
 }
 
 /** Keep the alpha, replace every colour. The silhouette is the icon; the colour is per-platform. */
@@ -293,35 +266,57 @@ function trim(image) {
 }
 
 const BLACK = [0, 0, 0];
-const WHITE = [255, 255, 255];
 
-// Fill first, then trim: the fill is what defines the outline that trimming measures.
-const source = trim(solidify(decode(readFileSync(join(trayDir, "source-solid.png")))));
-
-/*
- * `Template` in the name is load-bearing on macOS: Electron reads it and turns on template
- * rendering, which is what makes the icon invert with the menu bar instead of staying one colour.
- * The @2x file is picked up automatically on a Retina display.
+/**
+ * Two drawings, because the two platforms want opposite things from a status bar icon.
+ *
+ * macOS wants a *shape*. Its menu bar icons are one colour filled by the system, so anything with
+ * its own palette is wrong there by construction — it would not invert with the bar, and beside
+ * Apple's own glyphs a full-colour sticker reads as a foreign object. So the mac source is the
+ * silhouette, and the colour is whatever the system says.
+ *
+ * Windows has no template equivalent and its notification area is full of colour — the network
+ * icon, the volume icon, every third-party app. A flat monochrome shape there is the odd one out,
+ * and on top of that the taskbar can be light or dark while a coloured icon with its own outline
+ * is legible on both. So Windows gets the artwork as drawn.
  */
 /*
- * 18pt on macOS, 16 on Windows.
+ * The mac drawing's own alpha, not a filled-in silhouette.
+ *
+ * Filling it was the previous approach, and it was right for the drawing it was written for: that
+ * one was line art, whose strokes and gaps both land under a pixel at 18pt and average out into a
+ * grey smudge. This drawing is not line art — it is already a solid figure whose *interior* holds
+ * the reading: the eyes are gaps, the hair falls in bands, and the hem is a row of scallops.
+ * Flooding the enclosed areas shut turned all of that into one opaque blob roughly the shape of a
+ * mushroom, which at 18 points is not a character, an app, or anything else.
+ */
+const macSource = trim(harden(decode(readFileSync(join(trayDir, "source-mac.png")))));
+const winSource = trim(decode(readFileSync(join(trayDir, "source-win.png"))));
+
+/*
+ * 18pt on macOS, 16px on Windows.
  *
  * Apple's menu bar is 24pt and its own items are drawn at 18 — matching that is what makes this
- * sit at the same size as everything beside it. Windows' notification area is a 16px grid and
- * oversizing there just gets resampled, badly.
+ * sit at the same size as everything beside it. Windows' notification area is a 16px grid.
+ *
+ * The extra Windows sizes are not padding: 125% and 150% are the two commonest display scalings on
+ * Windows laptops, and without a bitmap made *at* 20 and 24 the system resamples the 16 or the 32
+ * to get there. That resample is the difference between an icon with clean edges and one that
+ * looks slightly out of focus — which on a 20-pixel drawing is most of what anybody sees of it.
+ * Electron picks these up from the `@1.25x`/`@1.5x` suffix automatically.
  */
 const outputs = [
-	["trayTemplate.png", 18, BLACK],
-	["trayTemplate@2x.png", 36, BLACK],
-	// Windows and Linux: pre-filled, chosen by system theme at runtime.
-	["tray-dark.png", 16, BLACK],
-	["tray-dark@2x.png", 32, BLACK],
-	["tray-light.png", 16, WHITE],
-	["tray-light@2x.png", 32, WHITE],
+	["trayTemplate.png", 18, macSource, BLACK],
+	["trayTemplate@2x.png", 36, macSource, BLACK],
+	["tray.png", 16, winSource, null],
+	["tray@1.25x.png", 20, winSource, null],
+	["tray@1.5x.png", 24, winSource, null],
+	["tray@2x.png", 32, winSource, null],
 ];
 
-for (const [name, height, colour] of outputs) {
-	const image = paint(resize(source, height), colour);
+for (const [name, height, source, colour] of outputs) {
+	const scaled = resize(source, height);
+	const image = colour ? paint(scaled, colour) : scaled;
 	writeFileSync(join(trayDir, name), encode(image));
 	console.log(`[tray] ${name} — ${image.width}×${image.height}`);
 }

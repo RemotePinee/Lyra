@@ -19,6 +19,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { installedAppBundle, scheduleSwap } from "./install-update.ts";
 import { downloadDir, sweepDownloads, UpdateDownload, type DownloadPhase } from "./update-download.ts";
+import { pickAsset, type ReleaseAsset } from "../update-asset.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -63,46 +64,6 @@ export interface UpdateInfo {
 	asset: { name: string; url: string; size: number } | null;
 }
 
-interface Asset {
-	name?: string;
-	browser_download_url?: string;
-	size?: number;
-}
-
-/**
- * The one file this machine can install.
- *
- * macOS gets the disk image for its own architecture — an Intel build runs on Apple silicon through
- * Rosetta but is the wrong answer when a native one is sitting beside it. Windows takes the setup
- * executable, Linux the AppImage. A release without a matching asset simply has none, and the window
- * falls back to showing what changed without offering to fetch it.
- */
-function pickAsset(assets: Asset[]): UpdateInfo["asset"] {
-	const arm = process.arch === "arm64";
-	const named = assets.filter((a): a is Required<Asset> =>
-		Boolean(a.name && a.browser_download_url && typeof a.size === "number"),
-	);
-	const find = (test: (name: string) => boolean) => named.find((a) => test(a.name.toLowerCase()));
-
-	/*
-	 * macOS takes the zip, not the disk image.
-	 *
-	 * A .dmg can only be *opened* — the user mounts it and drags the app across, which is a manual
-	 * install wearing the clothes of an automatic one. The zip contains `Lyra.app` directly, so it
-	 * can be unpacked and swapped in place, and the update becomes what it should be: download,
-	 * relaunch, done. The dmg stays in the release for people installing by hand the first time.
-	 */
-	const match =
-		process.platform === "darwin"
-			? (find((n) => n.endsWith(".zip") && (arm ? n.includes("arm64") : !n.includes("arm64"))) ??
-				find((n) => n.endsWith(".zip")))
-			: process.platform === "win32"
-				? (find((n) => n.endsWith(".exe")) ?? find((n) => n.endsWith(".msi")))
-				: (find((n) => n.endsWith(".appimage")) ?? find((n) => n.endsWith(".deb")));
-
-	return match ? { name: match.name, url: match.browser_download_url, size: match.size } : null;
-}
-
 let cached: { at: number; info: UpdateInfo } | null = null;
 
 /** An unpacked update waiting for the user to say when. Cleared once it has been used. */
@@ -135,7 +96,7 @@ async function fetchLatest(current: string): Promise<UpdateInfo> {
 			published_at?: string;
 			draft?: boolean;
 			prerelease?: boolean;
-			assets?: Asset[];
+			assets?: ReleaseAsset[];
 		};
 
 		const latest = (release.tag_name ?? release.name ?? "").replace(/^v/i, "");

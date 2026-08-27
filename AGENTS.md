@@ -57,7 +57,7 @@ pnpm test        # 190 个单元测试
 
 ## 发版
 
-打 tag 就是发版：推 `v*` 触发 `release.yml`，三平台各自构建，汇总成一个**草稿** release。
+打 tag 就是发版：推 `v*` 触发 `release.yml`，三平台各自构建，汇总成一个 release 并**直接发布**。
 
 **打 tag 之前，先在 GitHub Actions 上手动跑一次 `Release dry run`。** 它跑的东西和 release
 一模一样（三平台 lint/typecheck/test + `pnpm package`），只是不创建 release。绿了再打 tag。
@@ -66,8 +66,11 @@ pnpm test        # 190 个单元测试
 方。0.2.0 第一次发版就栽在这里——`executableName` 在 Linux 上不合法，这个配置错误在仓库里
 待了很久，因为在此之前没有任何一条流程构建过 Linux 包。
 
-版本号在 6 个 package.json 里，要一起改（内部依赖走 `workspace:*`，不受影响）。应用的更新
-检查跳过草稿和预发布，所以构建完还要在 GitHub 上手动 Publish，客户端才看得到。
+版本号在 6 个 package.json 里，要一起改（内部依赖走 `workspace:*`，不受影响）。
+
+以前汇总成草稿，要再手动 Publish 一次——结果 0.4.0、0.4.1、0.5.0、0.6.1 全都躺在草稿里：产
+物齐全，客户端一个都收不到（更新检查跳过草稿和预发布）。手动的最后一步就是会被忘的一步。现
+在 tag 一推、三平台绿了就直接发布，release notes 事后还能改，收不到的版本事后改不了。
 
 ## 硬约束
 

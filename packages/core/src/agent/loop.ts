@@ -9,6 +9,7 @@
 import { RepetitionWatch } from "./repetition.ts";
 import { failTruncatedCalls, runTools } from "./tool-run.ts";
 import { streamAssistant } from "../ai/index.ts";
+import { stripOversizedToolResults } from "../runtime/prune.ts";
 import { readTodos } from "../tools/todo.ts";
 import type { Compaction } from "../runtime/compaction.ts";
 import type {
@@ -93,6 +94,20 @@ export interface AgentRunResult {
 	retryable?: boolean;
 }
 
+/**
+ * Whether a reply failed because the far end would not accept the request as posted.
+ *
+ * Narrow on purpose. A 401 is a key, a 404 is a URL, a 429 is a queue — none of them get better
+ * because the history got smaller, and retrying them would spend a request to learn what the
+ * status code already said. What is worth one more attempt is the range that means "this payload
+ * is not something I can process": a plain 400, a body that is too large, an entity that failed
+ * validation.
+ */
+function rejectedContent(assistant: AssistantMessage): boolean {
+	if (assistant.stopReason !== "error" || assistant.errorRetryable) return false;
+	return /^HTTP (400|413|422)\b/.test(assistant.errorMessage ?? "");
+}
+
 const DEFAULT_MAX_TURNS = 200;
 /**
  * How many times in a row the agent may be told to get on with it.
@@ -167,7 +182,36 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 			tools: config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
 		};
 
-		const assistant = await streamTurn(config, context, emit);
+		let assistant = await streamTurn(config, context, emit);
+
+		/*
+		 * The far end refused the request itself. Try once more without the biggest thing in it.
+		 *
+		 * A 4xx is not a transport failure, so nothing retries it — correctly, because asking the
+		 * same question again gets the same answer. The trouble is that the question is the
+		 * *history*, and history does not change on its own: every later request carries the same
+		 * rejected payload, so the conversation is not merely failing, it is sealed. Retry fails.
+		 * Continue fails. Opening it tomorrow fails.
+		 *
+		 * One tool result is very often the whole of it — a `gh api` dump, a 2,000-line file, a
+		 * grep across a build directory — and gateways translating between formats have limits and
+		 * bugs that no client can enumerate. So rather than guessing which, this drops the oversized
+		 * results to a line each and asks once more. It costs one request in the case that was
+		 * already lost, and nothing at all in every case that was not.
+		 */
+		if (rejectedContent(assistant)) {
+			const stripped = stripOversizedToolResults(messages);
+			if (stripped !== messages) {
+				await emit({
+					type: "notice",
+					level: "warn",
+					message: "模型服务拒收了这次请求。已把其中过大的工具输出压成一行，正在重试。",
+				});
+				messages.length = 0;
+				messages.push(...stripped);
+				assistant = await streamTurn(config, { ...context, messages }, emit);
+			}
+		}
 		messages.push(assistant);
 		produced.push(assistant);
 

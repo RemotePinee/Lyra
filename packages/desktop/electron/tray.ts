@@ -19,15 +19,16 @@
  *     colour. That is the only correct answer there, because the menu bar inverts under a dark
  *     wallpaper, under a pulled-down menu and under an active-app highlight — a fixed bitmap is
  *     wrong in at least one of those, whichever one it is drawn for.
- *   - Windows and Linux have no equivalent, so the same silhouette is shipped pre-filled in both
- *     directions and swapped when the system theme changes.
+ *   - Windows and Linux have no equivalent, and their notification areas are full of colour
+ *     already, so they get the artwork as drawn — one bitmap per display scaling, no theme
+ *     switching, since a drawing with its own outline reads on a light taskbar and a dark one.
  *
- * Both are generated from one drawing by `scripts/make-tray-icons.mjs`.
+ * Both come out of `scripts/make-tray-icons.mjs`, from two source drawings.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { app, Menu, nativeImage, nativeTheme, Tray } from "electron";
+import { app, Menu, nativeImage, Tray } from "electron";
 import { trayMenu, type TrayAction, type TrayCommand, type TrayItem } from "./tray-menu.ts";
 
 export type { TrayCommand } from "./tray-menu.ts";
@@ -51,7 +52,6 @@ export interface TrayActions {
 
 let tray: Tray | null = null;
 let actions: TrayActions | null = null;
-let unwatchTheme: (() => void) | null = null;
 
 /**
  * Where the icons are, packaged or not — the same two-place search the app icon does.
@@ -80,9 +80,20 @@ function currentIcon(): Electron.NativeImage {
 		return image;
 	}
 
-	// Dark tray, light icon. `shouldUseDarkColors` follows the system rather than our own theme
-	// setting on purpose: the icon sits in the system's furniture, not in ours.
-	const path = iconPath(nativeTheme.shouldUseDarkColors ? "tray-light.png" : "tray-dark.png");
+	/*
+	 * Windows and Linux get the artwork in colour, which is also why there is only one of it now.
+	 *
+	 * There used to be two — a light fill and a dark one, swapped on `nativeTheme` — because the
+	 * icon was a flat silhouette and a flat silhouette is invisible against a taskbar of its own
+	 * shade. A drawing with its own palette and its own outline has no such problem: it reads the
+	 * same on a white taskbar, a black one, and the accent-coloured one Windows uses when a window
+	 * is maximised. The theme listener went with it.
+	 *
+	 * `@1.25x`, `@1.5x` and `@2x` sit beside this file and Electron picks whichever matches the
+	 * display — see the sizes in `scripts/make-tray-icons.mjs` for why they are made rather than
+	 * resampled.
+	 */
+	const path = iconPath("tray.png");
 	return path ? nativeImage.createFromPath(path) : nativeImage.createEmpty();
 }
 
@@ -198,15 +209,10 @@ export function createTray(next: TrayActions): void {
 		tray.on("right-click", () => tray?.popUpContextMenu(buildMenu()));
 	} else {
 		refreshMenu();
-		const onThemeChange = () => tray?.setImage(currentIcon());
-		nativeTheme.on("updated", onThemeChange);
-		unwatchTheme = () => nativeTheme.removeListener("updated", onThemeChange);
 	}
 }
 
 export function destroyTray(): void {
-	unwatchTheme?.();
-	unwatchTheme = null;
 	tray?.destroy();
 	tray = null;
 	actions = null;

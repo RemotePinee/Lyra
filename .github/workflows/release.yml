@@ -1,7 +1,14 @@
-# Cut a release: build on each platform's own runner, then publish one draft.
+# Cut a release: build on each platform's own runner, then publish it.
 #
-# Drafted rather than published, so the notes can be read before anyone downloads anything. The
-# tag is what triggers it, because a tag is the one thing that is already a decision.
+# Published rather than drafted, which is a change and worth the sentence. Drafting was meant to
+# leave room to read the notes before anyone downloaded anything — in practice it left four
+# releases sitting as drafts (0.4.0, 0.4.1, 0.5.0, 0.6.1), each with every artifact built and
+# uploaded and none of them reachable. An app that checks for updates skips drafts, so those were
+# releases that had shipped nothing: the last step is a manual one, and manual last steps get
+# forgotten.
+#
+# The tag is what triggers this, and pushing a tag is already the decision to release. Notes can
+# still be edited afterwards; a release that nobody can download cannot be fixed by editing.
 name: Release
 
 on:
@@ -82,8 +89,8 @@ jobs:
       - name: Notes from the log
         id: notes
         shell: bash
-        # Every commit since the previous tag. A generated list is worth more than an empty
-        # body, and the draft is there precisely so it can be edited before anyone sees it.
+        # Every commit since the previous tag. Generated rather than written, and editable on the
+        # release page afterwards — the notes are the part that can be improved later.
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
           previous=$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || echo "")
@@ -104,5 +111,5 @@ jobs:
           tag_name: ${{ inputs.tag || github.ref_name }}
           body: ${{ steps.notes.outputs.notes }}
           files: dist/*
-          draft: true
+          draft: false
           fail_on_unmatched_files: true

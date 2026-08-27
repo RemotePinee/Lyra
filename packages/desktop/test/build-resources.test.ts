@@ -45,10 +45,13 @@ test("the tray icons are, and all of them: the app loads these by path at runtim
 	const wanted = [
 		"build/tray/trayTemplate.png",
 		"build/tray/trayTemplate@2x.png",
-		"build/tray/tray-dark.png",
-		"build/tray/tray-dark@2x.png",
-		"build/tray/tray-light.png",
-		"build/tray/tray-light@2x.png",
+		// Windows and Linux, in colour. The scaled copies are not decoration: 125% and 150% are the
+		// commonest display scalings on Windows, and without a bitmap made at that size the system
+		// resamples one of the others to get there.
+		"build/tray/tray.png",
+		"build/tray/tray@1.25x.png",
+		"build/tray/tray@1.5x.png",
+		"build/tray/tray@2x.png",
 	];
 	for (const file of wanted) assert.ok(files.includes(file), `${file} 不在仓库里`);
 });
