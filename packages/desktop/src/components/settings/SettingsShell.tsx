@@ -238,12 +238,6 @@ export function SettingsShell() {
 							/>
 						</svg>
 					</ToolbarButton>
-					<ToolbarButton
-						label="返回工作区"
-						onClick={() => setView("chat")}
-					>
-						<ArrowLeft size={15} strokeWidth={1.9} />
-					</ToolbarButton>
 				</div>
 
 			</div>

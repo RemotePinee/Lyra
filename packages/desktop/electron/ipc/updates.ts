@@ -12,7 +12,7 @@
  */
 
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
@@ -266,9 +266,17 @@ export function registerUpdateIpc(): void {
 				return download?.finish(true);
 			}
 
+			if (process.platform === "linux" && file.toLowerCase().endsWith(".appimage")) {
+				// Ensure AppImage has executable permission so the OS can launch it directly
+				await chmod(file, 0o755).catch(() => {});
+			}
+
 			// Windows and Linux still hand the file to the OS: those are installers, and on Linux
 			// a .deb needs a privilege this process does not have.
-			await shell.openPath(file);
+			const err = await shell.openPath(file);
+			if (err) {
+				return download?.fail(`无法打开安装包: ${err}`);
+			}
 			// Remembered so 重新打开安装包 has something to open. The installer window is easy to
 			// dismiss by accident, and without this the only way back to it is the file system.
 			opened = file;

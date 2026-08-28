@@ -13,13 +13,14 @@
  * what belongs on screen is the one or two things that make sense to do right now.
  */
 
-import { Pause, Play, X } from "lucide-react";
+import { Pause, Play, Sparkles, X } from "lucide-react";
 
 import { useApp } from "../../store.ts";
 import type { Info } from "../../update/store.ts";
 import { confirmLabel, controlsFor, fractionOf, mb, readyNote, type Phase } from "../../update/view.ts";
 import { Overlay } from "./Overlay.tsx";
 import { Scroller } from "../Scroller.tsx";
+import { Markdown } from "../Markdown.tsx";
 
 export function UpdateDialog({
 	info,
@@ -68,29 +69,32 @@ export function UpdateDialog({
 		 * so leaving does not interrupt it — the badge keeps its ring going, and coming back finds it
 		 * where it was.
 		 */
-		<Overlay onClose={onClose} width={480}>
+		<Overlay onClose={onClose} width={500}>
 			<div className="px-5 pt-5 pb-3">
-				<h2 className="text-label font-semibold text-ink">有新版本可以更新</h2>
-				<p className="mt-1 text-detail text-ink-muted">
-					{info.current} → <span className="font-medium text-ink">{info.latest}</span>
+				<div className="flex items-center gap-2">
+					<div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink/5 text-ink">
+						<Sparkles size={16} strokeWidth={2} />
+					</div>
+					<h2 className="text-label font-semibold text-ink">有新版本可以更新</h2>
+				</div>
+				<p className="mt-2 text-detail text-ink-muted">
+					<span className="font-medium text-ink-muted">v{info.current}</span> → <span className="font-semibold text-ink">v{info.latest}</span>
 					{/* Only when the release said so — no date is better than a wrong one. */}
 					{info.publishedAt && (
 						<span className="pl-2 text-ink-faint">{new Date(info.publishedAt).toLocaleDateString("zh-CN")}</span>
 					)}
-					{info.asset && <span className="pl-2 text-ink-faint tabular-nums">{mb(info.asset.size)}</span>}
+					{info.asset && <span className="pl-2 text-ink-faint tabular-nums">（{mb(info.asset.size)}）</span>}
 				</p>
 			</div>
 
 			{/*
-			 * The release notes as written, scrolled rather than truncated.
-			 *
-			 * Shown as text and not rendered as Markdown: this is someone else's prose arriving over
-			 * the network, and the dialog's job is to let it be read, not to give it a licence to lay
-			 * itself out inside the app.
+			 * The release notes rendered with Markdown.
 			 */}
 			{info.notes && (
-				<Scroller className="max-h-[240px] border-t border-line-soft" contentClassName="px-5 py-4">
-					<p className="whitespace-pre-wrap text-label leading-relaxed text-ink-muted">{info.notes}</p>
+				<Scroller className="max-h-[260px] border-t border-line-soft bg-surface-alt/40" contentClassName="px-5 py-3.5">
+					<div className="text-label leading-relaxed text-ink/90">
+						<Markdown text={info.notes} />
+					</div>
 				</Scroller>
 			)}
 

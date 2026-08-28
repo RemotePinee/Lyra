@@ -89,19 +89,21 @@ jobs:
       - name: Notes from the log
         id: notes
         shell: bash
-        # Every commit since the previous tag. Generated rather than written, and editable on the
-        # release page afterwards — the notes are the part that can be improved later.
+        # Extract full release notes from commit bodies or tag message.
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
           previous=$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || echo "")
           {
             echo "notes<<EOF"
-            if [ -n "$previous" ]; then
-              echo "自 ${previous} 以来的改动："
+            tag_msg=$(git tag -l --format='%(contents)' "$tag" | sed '/^$/d')
+            if [ -n "$tag_msg" ]; then
+              echo "$tag_msg"
+            elif [ -n "$previous" ]; then
+              echo "### 自 ${previous} 以来的更新"
               echo
-              git log --no-merges --pretty='- %s' "${previous}..${tag}"
+              git log --no-merges --pretty=format:"#### %s%n%n%b" "${previous}..${tag}" | sed '/^[[:space:]]*$/N;/^[[:space:]]*\n[[:space:]]*$/D'
             else
-              echo "首个发布。"
+              git log -1 --pretty=format:"#### %s%n%n%b" "$tag"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
