@@ -32,7 +32,7 @@ export function prune(cache: Cache, keep: string): Cache {
   return next;
 }
 
-export function without(cache: Cache, id: string): Cache {
+export function without<T>(cache: Record<string, T>, id: string): Record<string, T> {
   if (!(id in cache)) return cache;
   const next = { ...cache };
   delete next[id];

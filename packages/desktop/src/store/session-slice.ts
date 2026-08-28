@@ -304,7 +304,10 @@ export function sessionSlice(set: Set, get: Get) {
   },
 
   async deleteSession(meta: SessionMeta) {
-    set({ sessionCache: without(get().sessionCache, meta.id) });
+    set({
+      sessionCache: without(get().sessionCache, meta.id),
+      drafts: without(get().drafts, meta.id),
+    });
     await window.lyra.sessions.remove(meta.projectId, meta.id);
     const sessions = await window.lyra.sessions.list();
     set({ sessions });
@@ -322,7 +325,12 @@ export function sessionSlice(set: Set, get: Get) {
   },
 
   async setSessionArchived(meta: SessionMeta, archived: boolean) {
-    if (archived) set({ sessionCache: without(get().sessionCache, meta.id) });
+    if (archived) {
+      set({
+        sessionCache: without(get().sessionCache, meta.id),
+        drafts: without(get().drafts, meta.id),
+      });
+    }
     // Optimistic: the row should leave the sidebar on the click, not on the round trip.
     set({
       sessions: get().sessions.map((s) =>

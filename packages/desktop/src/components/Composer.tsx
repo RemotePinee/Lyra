@@ -53,7 +53,48 @@ export function Composer() {
 	const abort = useApp((s) => s.abort);
 	const { compact } = useLayout();
 
-	const [text, setText] = useState("");
+	const draftKey = activeSessionId
+		? activeSessionId
+		: workspace
+			? `new:project:${workspace.path}`
+			: `new:scratch:${scratchCwd ?? "general"}`;
+
+	const savedDraft = useApp((s) => s.drafts[draftKey]);
+	const setDraft = useApp((s) => s.setDraft);
+
+	const [text, setText] = useState(() => savedDraft?.text ?? "");
+	const [attachments, setAttachments] = useState<Attachment[]>(() => savedDraft?.attachments ?? []);
+
+	// Keep a ref of current text and attachments so we can sync them to store on unmount or key change.
+	const textRef = useRef(text);
+	textRef.current = text;
+	const attachmentsRef = useRef(attachments);
+	attachmentsRef.current = attachments;
+	const draftKeyRef = useRef(draftKey);
+
+	/*
+	 * Sync local input state whenever the target session/blank draft key switches.
+	 */
+	useEffect(() => {
+		const prevKey = draftKeyRef.current;
+		if (prevKey !== draftKey) {
+			// Save draft for the key we are leaving.
+			setDraft(prevKey, { text: textRef.current, attachments: attachmentsRef.current });
+			draftKeyRef.current = draftKey;
+
+			// Restore draft for the key we just moved to.
+			const nextDraft = useApp.getState().drafts[draftKey];
+			setText(nextDraft?.text ?? "");
+			setAttachments(nextDraft?.attachments ?? []);
+		}
+	}, [draftKey, setDraft]);
+
+	/*
+	 * Persist changes to current draft in the store so switching away (or remounting) preserves it.
+	 */
+	useEffect(() => {
+		setDraft(draftKey, { text, attachments });
+	}, [text, attachments, draftKey, setDraft]);
 
 	/*
 	 * Text left here by something outside the composer — opening a review, so far.
@@ -84,7 +125,7 @@ export function Composer() {
 			el.setSelectionRange(el.value.length, el.value.length);
 		}
 	}, [draft]);
-	const [attachments, setAttachments] = useState<Attachment[]>([]);
+
 
 	/*
 	 * Slash commands.
@@ -330,6 +371,7 @@ export function Composer() {
 		if (builtin) {
 			setText("");
 			setAttachments([]);
+			setDraft(draftKey, null);
 			await builtin.run();
 			return;
 		}
@@ -374,6 +416,7 @@ export function Composer() {
 		];
 		setText("");
 		setAttachments([]);
+		setDraft(draftKey, null);
 		await send(content);
 	}
 

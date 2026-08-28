@@ -132,8 +132,29 @@ export interface AppState {
    * alternatives, so pressing a second one means "that one instead": appending there stacks three
    * unrelated requests into one message nobody wrote.
    */
+  /**
+   * Text to put in the composer, for callers that are not the composer.
+   *
+   * Opening a review's conversation fills in what to ask rather than asking it: the user should
+   * see the question, be able to change it, and press send themselves. Consumed on read.
+   *
+   * `replace` decides what happens to whatever is already in the field, and the two callers want
+   * opposite things. A review or an error arrives while you may be part-way through typing, and
+   * discarding that would lose work — those append. A suggestion card is a choice between four
+   * alternatives, so pressing a second one means "that one instead": appending there stacks three
+   * unrelated requests into one message nobody wrote.
+   */
   composerDraft: { text: string; replace: boolean };
   setComposerDraft(text: string, replace?: boolean): void;
+
+  /**
+   * Unsent drafts in the composer, keyed by session id or blank conversation key:
+   * - `new:project:<path>` for blank session in a specific project
+   * - `new:scratch` for blank session without a project (Chat / 不在项目中工作)
+   * - `<sessionId>` for drafts typed in an existing session
+   */
+  drafts: Record<string, { text: string; attachments: { id: string; name: string; mimeType: string; data: string }[] }>;
+  setDraft(key: string, draft: { text: string; attachments?: { id: string; name: string; mimeType: string; data: string }[] } | null): void;
 
   activeSessionId: string | null;
   meta: SessionMeta | null;
@@ -338,6 +359,7 @@ export const useApp = create<AppState>((set, get) => ({
   scratchCwd: null,
   parkedProject: null,
   composerDraft: { text: "", replace: false },
+  drafts: {},
   activeSessionId: null,
   meta: null,
   messages: [],
@@ -419,6 +441,24 @@ export const useApp = create<AppState>((set, get) => ({
 
   setView: (view) => set({ view }),
   setComposerDraft: (text, replace = false) => set({ composerDraft: { text, replace } }),
+  setDraft: (key, draft) =>
+    set((state) => {
+      if (!draft || (!draft.text.trim() && (!draft.attachments || draft.attachments.length === 0))) {
+        if (!state.drafts[key]) return state;
+        const copy = { ...state.drafts };
+        delete copy[key];
+        return { drafts: copy };
+      }
+      return {
+        drafts: {
+          ...state.drafts,
+          [key]: {
+            text: draft.text,
+            attachments: draft.attachments ?? [],
+          },
+        },
+      };
+    }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
   setPluginFocus: (pluginFocus) => set({ pluginFocus }),
   bumpExtensions: () => set((state) => ({ extensionsNonce: state.extensionsNonce + 1 })),

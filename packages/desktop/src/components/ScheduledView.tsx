@@ -58,7 +58,7 @@ export function ScheduledView() {
 					<div>
 						<h1 className="text-heading leading-tight font-semibold tracking-tight text-ink">已安排</h1>
 						<p className="mt-1.5 max-w-[560px] text-label leading-relaxed text-ink-muted">
-							到点自动开一个新会话并发送提示。每次都是全新会话 —— 反复累积的历史会让任务逐渐跑偏，最后撑爆上下文。
+							定时自动发起新会话执行提示词。
 						</p>
 					</div>
 					<button
