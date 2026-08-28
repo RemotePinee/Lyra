@@ -22,24 +22,16 @@ export function workspaceSlice(set: Set, get: Get) {
   async openWorkspace(path: string) {
     const workspace = await window.lyra.workspace.info(path);
     if (!workspace) return;
-    const settings = get().settings;
-    if (settings) {
-      const projects = settings.projects.filter((p) => p.path !== path);
-      await get().saveSettings({
-        ...settings,
-        projects: [
-          {
-            id: path,
-            name: workspace.name,
-            path,
-            pinned:
-              settings.projects.find((p) => p.path === path)?.pinned ?? false,
-            lastOpenedAt: Date.now(),
-          },
-          ...projects,
-        ],
-      });
-    }
+
+    /*
+     * On screen first, remembered second.
+     *
+     * The project list is written to disk and broadcast to every window, and none of that is
+     * anything the person who just picked a folder is waiting to see. Awaiting it before touching
+     * state meant the sidebar, the composer's chip and the panels all stayed on the *previous*
+     * project until the write came back — a visible pause on the one click whose entire content is
+     * "show me this one now".
+     */
     set({
       // Leaving the project-less mode: a session opened from here belongs to the project.
       scratchCwd: null,
@@ -51,6 +43,23 @@ export function workspaceSlice(set: Set, get: Get) {
       approvals: [],
       loadingSession: false,
       pendingUserMessage: null,
+    });
+
+    const settings = get().settings;
+    if (!settings) return;
+    const projects = settings.projects.filter((p) => p.path !== path);
+    await get().saveSettings({
+      ...settings,
+      projects: [
+        {
+          id: path,
+          name: workspace.name,
+          path,
+          pinned: settings.projects.find((p) => p.path === path)?.pinned ?? false,
+          lastOpenedAt: Date.now(),
+        },
+        ...projects,
+      ],
     });
   },
 

@@ -4,7 +4,7 @@
 import { Check, Minus, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { GitStatus, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
+import type { GitStatus, GitStatusFile, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 
 import { useConfirmer } from "../Confirm.tsx";
 import { IconButton } from "../IconButton.tsx";
@@ -43,8 +43,11 @@ export function ChangesView({
 }) {
   const [message, setMessage] = useState("");
   const confirm = useConfirmer();
-  const [staged, setStaged] = useState<WorkspaceDiffFile[]>([]);
-  const [unstaged, setUnstaged] = useState<WorkspaceDiffFile[]>([]);
+  /** The hunks, once they arrive. The rows themselves do not wait for them — see `rowsFor`. */
+  const [hunks, setHunks] = useState<{ staged: WorkspaceDiffFile[]; unstaged: WorkspaceDiffFile[] }>({
+    staged: [],
+    unstaged: [],
+  });
 
   /*
    * Two diffs, matching the two groups.
@@ -52,6 +55,10 @@ export function ChangesView({
    * The staged side is the index against HEAD and the unstaged side the working tree against
    * the index — the same split git itself makes. Fetched here rather than in the parent so a
    * staging click re-reads only what it changed.
+   *
+   * `status` has to be a stable object across polls that found nothing new, or this runs every
+   * 1.5s and the panel spends every turn queued behind a read slower than the interval it is
+   * started on. That is `sameStatus`, in the parent.
    */
   useEffect(() => {
     let live = true;
@@ -60,16 +67,7 @@ export function ChangesView({
       window.lyra.diff.workspaceDiff(cwd),
     ]).then(([indexDiff, treeDiff]) => {
       if (!live) return;
-      const stagedPaths = new Set(
-        status?.staged.map((file) => file.path) ?? [],
-      );
-      const unstagedPaths = new Set(
-        status?.unstaged.map((file) => file.path) ?? [],
-      );
-      setStaged(indexDiff.files.filter((file) => stagedPaths.has(file.path)));
-      setUnstaged(
-        treeDiff.files.filter((file) => unstagedPaths.has(file.path)),
-      );
+      setHunks({ staged: indexDiff.files, unstaged: treeDiff.files });
     });
     return () => {
       live = false;
@@ -79,6 +77,21 @@ export function ChangesView({
   const stagedPaths = status?.staged.map((file) => file.path) ?? [];
   const unstagedPaths = status?.unstaged.map((file) => file.path) ?? [];
   const nothing = stagedPaths.length === 0 && unstagedPaths.length === 0;
+
+  /*
+   * The rows come from `status`; only their contents wait for the diff.
+   *
+   * These used to be the diff's own file list, which meant the group heading — "未暂存 240",
+   * drawn from `status` — arrived a couple of hundred milliseconds before anything under it, and
+   * then two hundred rows landed at once. A count with nothing beneath it reads as a panel that
+   * failed rather than one that is loading, and the rows arriving in one frame reads as a jolt.
+   *
+   * Everything a row shows is already in `status`: the path, what happened to it, how many lines.
+   * The only thing the diff adds is the hunks, and those are not on screen until the row is
+   * expanded. So the list is drawn immediately and each row picks up its hunks when they land.
+   */
+  const stagedRows = rowsFor(status?.staged ?? [], hunks.staged);
+  const unstagedRows = rowsFor(status?.unstaged ?? [], hunks.unstaged);
 
   async function commit() {
     const ok = await act(() => window.lyra.git.commitStaged(cwd, message));
@@ -126,7 +139,7 @@ export function ChangesView({
         {stagedPaths.length > 0 && (
           <FileDiffList
             cwd={cwd}
-            files={staged}
+            files={stagedRows}
             actions={(file) => (
               <IconButton
                 icon={<Minus size={12} strokeWidth={1.9} />}
@@ -155,7 +168,7 @@ export function ChangesView({
         {unstagedPaths.length > 0 && (
           <FileDiffList
             cwd={cwd}
-            files={unstaged}
+            files={unstagedRows}
             actions={(file) => (
               <>
                 <IconButton
@@ -232,5 +245,30 @@ export function ChangesView({
 
       {confirm.element}
     </>
+  );
+}
+
+/**
+ * One row per file git reported, carrying its hunks if they have arrived.
+ *
+ * `status` is the authority on which files are in the group and what happened to them — it is what
+ * the heading counts, and drawing the rows from anything else lets the two disagree. The diff only
+ * supplies what a row shows once it is expanded, so a file it has not answered for yet is a
+ * perfectly good row with nothing folded inside it.
+ *
+ * Line counts prefer the diff's, which are computed from the comparison the panel actually shows;
+ * `status` takes its own from `--numstat`, and the two have drifted apart before.
+ */
+function rowsFor(files: GitStatusFile[], diffed: WorkspaceDiffFile[]): WorkspaceDiffFile[] {
+  const known = new Map(diffed.map((file) => [file.path, file]));
+  return files.map(
+    (file) =>
+      known.get(file.path) ?? {
+        path: file.path,
+        status: file.status,
+        added: file.added,
+        removed: file.removed,
+        hunks: [],
+      },
   );
 }

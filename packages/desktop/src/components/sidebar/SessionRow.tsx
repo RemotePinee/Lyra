@@ -87,9 +87,16 @@ export function SessionRow({
 	onRestore?: () => void;
 	onDelete?: () => void;
 }) {
-	// Subscribed here rather than threaded through: it changes for reasons this row's other props
-	// know nothing about — a turn ending in a conversation nobody has open.
-	const activity = useApp((s) => s.activity);
+	/*
+	 * Subscribed here rather than threaded through: it changes for reasons this row's other props
+	 * know nothing about — a turn ending in a conversation nobody has open.
+	 *
+	 * This row's own mark, not the whole map. Selecting the map means every row in the list is
+	 * subscribed to every other row's state, so one conversation starting a turn re-rendered a
+	 * sidebar of forty. Selecting the entry narrows that to the row it is about; the rest see a
+	 * value that did not change and stay put.
+	 */
+	const activity = useApp((s) => s.activity[session.id] ?? null);
 	const { compact } = useLayout();
 
 	/*
@@ -165,7 +172,7 @@ export function SessionRow({
 				}`}
 			>
 				{/* In the indent the titles already had, so nothing moved to make room for it. */}
-				<SessionStatus activity={visibleActivity(activity[session.id] ?? null, active)} />
+				<SessionStatus activity={visibleActivity(activity, active)} />
 				<ScrollText text={title} className="ly-fade-tail min-w-0 flex-1" />
 			</button>
 

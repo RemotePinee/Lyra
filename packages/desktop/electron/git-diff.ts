@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { computeDiff, type DiffHunk } from "@lyra/core";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
+import { readBlobs, type BlobRead } from "./git-blobs.ts";
 import { git, gitBuffer, mapLimit, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
 import { resolveInside } from "./file-ops.ts";
@@ -39,67 +40,69 @@ export async function collectWorkspaceDiff(
 	const status = await git(cwd, ["status", "--porcelain=v1", "-uall", "-z"]).catch(() => "");
 	const entries = status.split("\0").filter(Boolean);
 
+	const changed = entries
+		.slice(0, MAX_FILES)
+		.map((entry) => ({ path: entry.slice(3), kind: classify(entry.slice(0, 2)) }))
+		.filter((entry) => entry.path);
+
 	/*
-	 * Every file at once, up to a limit — not one after another.
+	 * Both sides of every file, in two batches rather than two reads per file.
 	 *
-	 * Each entry costs a `git show` (a process spawn) plus a working-tree read, and serially that
-	 * is one full round trip per changed file with nothing else in flight. On a repository with a
-	 * couple of hundred uncommitted files it was 1.8 seconds, and the git panel asks for this every
-	 * time its status changes. The work itself is unchanged; what goes away is the waiting, because
-	 * almost all of it was waiting.
+	 * The committed side used to be a `git show` per file, which on a repository with a couple of
+	 * hundred uncommitted files is a couple of hundred process spawns — 1.8 seconds, of which the
+	 * reading was a rounding error. One `cat-file --batch` answers for all of them; see
+	 * `readBlobs`. The working-tree side is `readFile`, which has no such cost but is still latency
+	 * worth overlapping.
 	 */
-	const files = (
-		await mapLimit(
-			entries.slice(0, MAX_FILES).filter((entry) => entry.slice(3)),
-			async (entry): Promise<WorkspaceDiffFile> => {
-				const code = entry.slice(0, 2);
-				const path = entry.slice(3);
+	const heads = await readBlobs(
+		cwd,
+		changed.map((entry) => (entry.kind === "added" || entry.kind === "untracked" ? "" : `HEAD:${entry.path}`)),
+	);
+	const working = await mapLimit(changed, (entry) =>
+		entry.kind === "deleted" ? Promise.resolve(blank) : readWorking(cwd, entry.path),
+	);
 
-				const kind = classify(code);
-				const [before, after] = await Promise.all([
-					kind === "added" || kind === "untracked" ? Promise.resolve(blank) : showHead(cwd, path),
-					kind === "deleted" ? Promise.resolve(blank) : readWorking(cwd, path),
-				]);
-
-				/*
-				 * A file that is not text is still a file that changed.
-				 *
-				 * Both halves of this used to be wrong in opposite directions. The working-tree read
-				 * returned null for anything with a NUL byte in it and the loop skipped the whole
-				 * entry — so adding or editing an image removed it from the review, which is the one
-				 * place you would go to find out that it had changed. Meanwhile nothing checked the
-				 * *other* side at all, so deleting an image diffed its bytes as text: five lines of
-				 * PNG header, counted as five deletions and added to the totals at the bottom of the
-				 * composer.
-				 *
-				 * Listed and marked instead. There are no hunks and the counts stay at zero, because
-				 * neither means anything here: a picture has changed or it has not.
-				 */
-				if (before.binary || after.binary) {
-					return {
-						path,
-						status: kind,
-						added: 0,
-						removed: 0,
-						hunks: [],
-						binary: true,
-						bytes: after.bytes || before.bytes,
-					};
-				}
-
-				const diff = computeDiff(before.text, after.text);
-				return { path, status: kind, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) };
-			},
-		)
-	).sort((a, b) => a.path.localeCompare(b.path));
-
+	const files: WorkspaceDiffFile[] = [];
 	let totalAdded = 0;
 	let totalRemoved = 0;
-	for (const file of files) {
-		totalAdded += file.added;
-		totalRemoved += file.removed;
-	}
 
+	changed.forEach(({ path, kind }, i) => {
+		const before = kind === "added" || kind === "untracked" ? blank : sideOfBlob(heads[i]);
+		const after = working[i];
+
+		/*
+		 * A file that is not text is still a file that changed.
+		 *
+		 * Both halves of this used to be wrong in opposite directions. The working-tree read
+		 * returned null for anything with a NUL byte in it and the loop skipped the whole entry —
+		 * so adding or editing an image removed it from the review, which is the one place you
+		 * would go to find out that it had changed. Meanwhile nothing checked the *other* side at
+		 * all, so deleting an image diffed its bytes as text: five lines of PNG header, counted as
+		 * five deletions and added to the totals at the bottom of the composer.
+		 *
+		 * Listed and marked instead. There are no hunks and the counts stay at zero, because
+		 * neither means anything here: a picture has changed or it has not.
+		 */
+		if (before.binary || after.binary) {
+			files.push({
+				path,
+				status: kind,
+				added: 0,
+				removed: 0,
+				hunks: [],
+				binary: true,
+				bytes: after.bytes || before.bytes,
+			});
+			return;
+		}
+
+		const diff = computeDiff(before.text, after.text);
+		totalAdded += diff.added;
+		totalRemoved += diff.removed;
+		files.push({ path, status: kind, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) });
+	});
+
+	files.sort((a, b) => a.path.localeCompare(b.path));
 	return { files, added: totalAdded, removed: totalRemoved, branch };
 }
 
@@ -127,16 +130,19 @@ interface Side {
 const blank: Side = { text: "", binary: false, bytes: 0 };
 
 /**
- * What git has committed for this path, read as bytes.
+ * What git has committed for this path, from a batch read.
  *
- * Bytes, not a string, because `git show HEAD:logo.png` answers with the PNG. Decoded as UTF-8 it
- * becomes mojibake that `computeDiff` will happily count lines in — which is what put five
- * deletions on the composer's change bar for every image anybody removed.
+ * Bytes, not a string, because `HEAD:logo.png` is a PNG. Decoded as UTF-8 it becomes mojibake that
+ * `computeDiff` will happily count lines in — which is what put five deletions on the composer's
+ * change bar for every image anybody removed.
+ *
+ * A blob the batch declined to read is one over the cap, which is the same answer as binary: list
+ * it, say how big it is, do not diff it.
  */
-async function showHead(cwd: string, path: string): Promise<Side> {
-	const buffer = await gitBuffer(cwd, ["show", `HEAD:${path}`]).catch(() => null);
-	if (!buffer) return blank;
-	return sideOf(buffer);
+function sideOfBlob(read: BlobRead | null): Side {
+	if (!read) return blank;
+	if (!read.content) return { text: "", binary: true, bytes: read.bytes };
+	return sideOf(read.content);
 }
 
 async function readWorking(cwd: string, path: string): Promise<Side> {

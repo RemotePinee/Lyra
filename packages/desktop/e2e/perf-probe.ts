@@ -68,6 +68,13 @@ async function main() {
 		await time("git.diffRefs (staged)", `window.lyra.git.diffRefs(${JSON.stringify(repo)}, "HEAD", null)`);
 		await time("git.worktrees", `window.lyra.git.worktrees(${JSON.stringify(repo)})`);
 
+		// The two calls 新对话 and 新建项目 wait on before anything on screen changes.
+		await time("git.generalScratch", `window.lyra.git.generalScratch()`);
+		await time(
+			"settings.save",
+			`window.lyra.settings.get().then((s) => window.lyra.settings.save(s))`,
+		);
+
 		/*
 		 * What the user feels: is the main process still answering while a project is being read?
 		 *

@@ -11,7 +11,7 @@ import type { AgentEvent, Message } from "@lyra/core";
 import { nextActivity } from "@lyra/core/activity";
 import { coalesce, flushCoalesced } from "./coalesce.ts";
 import { applyToolEvent } from "./apply-tool.ts";
-import { howItStopped } from "./derive.ts";
+import { howItStopped, without } from "./derive.ts";
 import { useSide } from "../sideStore.ts";
 import { useSubAgents } from "./subAgents.ts";
 import type { AppState } from "../store.ts";
@@ -28,6 +28,21 @@ const RECONNECTED = new Set<AgentEvent["type"]>([
   "tool_start",
   "tool_update",
   "tool_end",
+]);
+
+/**
+ * Events after which a parked transcript no longer describes its conversation.
+ *
+ * `message_update` is deliberately absent: it only ever arrives between a `message_start` and a
+ * `message_end`, both of which are here, so the cache is already gone by the time one lands.
+ */
+const TOUCHES_TRANSCRIPT = new Set<AgentEvent["type"]>([
+  "message_start",
+  "message_end",
+  "tool_start",
+  "tool_end",
+  "rewound",
+  "compacted",
 ]);
 
 export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, get: Get): void {
@@ -74,33 +89,66 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
    * should be.
    */
   {
-    const turns = { ...get().turns };
-    const meter = turns[sessionId];
+    /*
+     * Only the four events that move a meter touch the map.
+     *
+     * Every event used to copy it and write it back, whether or not anything in it had changed —
+     * and most events are `message_update`, which arrives many times a second per running
+     * conversation and has nothing to say about a clock. A new object is a new identity, so each
+     * one made every selector in the window run again to discover that nothing had happened. With
+     * several conversations working at once that is the bulk of the store's traffic.
+     */
+    const meter = get().turns[sessionId];
+    let next: { startedAt: number; tokens: number } | undefined = meter;
     if (event.type === "agent_start") {
       // Kept if it is already running: a continuation is the same turn, not a new one.
-      turns[sessionId] = { startedAt: meter?.startedAt ?? Date.now(), tokens: meter?.tokens ?? 0 };
+      next = { startedAt: meter?.startedAt ?? Date.now(), tokens: meter?.tokens ?? 0 };
     } else if (event.type === "message_start" && event.message.role === "assistant") {
       // Usage lands per assistant reply, so a turn with several tool rounds accumulates.
-      if (meter) turns[sessionId] = { ...meter, tokens: meter.tokens + event.message.usage.total };
+      if (meter) next = { ...meter, tokens: meter.tokens + event.message.usage.total };
     } else if (event.type === "retry" && event.resume) {
       /*
        * A turn being picked back up after the connection died, which arrives *after* `agent_end`
        * has already stood the clock down. Start it again rather than leaving the line blank for
        * the whole wait — the same reading the running row takes of `resume`.
        */
-      turns[sessionId] = { startedAt: meter?.startedAt ?? Date.now(), tokens: meter?.tokens ?? 0 };
+      next = { startedAt: meter?.startedAt ?? Date.now(), tokens: meter?.tokens ?? 0 };
     } else if (event.type === "agent_end") {
-      delete turns[sessionId];
+      next = undefined;
     }
-    set({ turns });
-    // And mirror it onto the pair the running line reads, while this is the session on screen.
-    if (sessionId === get().activeSessionId) {
-      const now = turns[sessionId];
-      set({ turnStartedAt: now?.startedAt ?? null, turnTokens: now?.tokens ?? 0 });
+
+    if (next !== meter) {
+      const turns = { ...get().turns };
+      if (next) turns[sessionId] = next;
+      else delete turns[sessionId];
+      set({ turns });
+      // And mirror it onto the pair the running line reads, while this is the one on screen.
+      if (sessionId === get().activeSessionId) {
+        set({ turnStartedAt: next?.startedAt ?? null, turnTokens: next?.tokens ?? 0 });
+      }
     }
   }
 
   if (sessionId !== get().activeSessionId) {
+    /*
+     * A conversation that has moved on cannot be served from what was parked for it.
+     *
+     * The cache exists so that going back somewhere you have already been does not flash a
+     * skeleton — which is right, and was being applied to conversations that had since said
+     * something new. A turn finishing in the background put a green dot on the row and left the
+     * stale transcript in here, so clicking it showed the state from before the turn ran, with
+     * nothing to say so, until the re-read landed. Being shown old content presented as current
+     * is worse than being shown a placeholder for a moment.
+     *
+     * Dropped rather than updated: the events do not carry enough to rebuild a transcript that
+     * this window never watched, and the re-read that follows every open is authoritative anyway.
+     * Only the events that actually change what a transcript says — a title arrives constantly and
+     * changes nothing about the messages.
+     */
+    if (TOUCHES_TRANSCRIPT.has(event.type) && get().sessionCache[sessionId]) {
+      set({ sessionCache: without(get().sessionCache, sessionId) });
+    }
+
     if (event.type === "title") {
       set({
         sessions: get().sessions.map((s) =>

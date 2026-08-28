@@ -13,6 +13,9 @@ import { test } from "node:test";
 /** The easing the hook uses, and the reason these numbers are not evenly spaced. */
 const eased = (progress: number): number => 1 - (1 - progress) ** 3;
 
+/** How the hook turns elapsed time into progress, clamps and all. */
+const progressAt = (elapsed: number, ms: number): number => Math.min(1, Math.max(0, elapsed / ms));
+
 /** What the hook renders at a given moment of a journey from `begin` to `target`. */
 const at = (begin: number, target: number, progress: number): number =>
 	Math.round(begin + (target - begin) * eased(progress));
@@ -48,6 +51,22 @@ test("the count never travels downwards through numbers it never had", () => {
 	assert.equal(dropped(0, 57_100), true, "a reset to zero is not a journey");
 	assert.equal(dropped(12_000, 57_100), true, "nor is switching to a smaller conversation");
 	assert.equal(dropped(57_200, 57_100), false, "but a hundred more tokens is");
+});
+
+test("a frame stamped before the journey began does not send the number backwards", () => {
+	/*
+	 * Not a theoretical input. A frame callback carries the time the *frame* started, not the time
+	 * it ran, so when the main thread is busy — laying out two hundred diff rows — the first
+	 * callback arrives with a timestamp earlier than the moment the journey was started from.
+	 *
+	 * Cubed, a negative progress overshoots backwards rather than merely lagging: the Git panel's
+	 * change count was measured going 0 → −31 → −11 → 27 on its way to 200. A count that shows a
+	 * negative number of changed files does not read as an animation, it reads as a broken panel.
+	 */
+	assert.equal(progressAt(-26, 520), 0, "time before the start is the start");
+	assert.equal(at(0, 200, progressAt(-26, 520)), 0, "so the first frame draws where it was");
+	assert.ok(at(0, 200, progressAt(60, 520)) > 0, "and an ordinary frame still moves");
+	assert.equal(progressAt(9999, 520), 1, "and it still stops at the far end");
 });
 
 test("what is displayed is always the true number once it arrives", () => {

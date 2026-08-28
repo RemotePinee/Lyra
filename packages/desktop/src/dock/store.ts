@@ -530,6 +530,8 @@ export const useDock = create<DockState>((set, get) => {
 			// changes — otherwise its layout is saved as the incoming one's.
 			flushTree();
 
+			const stored = readTree(storageKey(scope), allowed);
+
 			/*
 			 * A draft that has just been given an id keeps the layout it was arranged with.
 			 *
@@ -537,14 +539,23 @@ export const useDock = create<DockState>((set, get) => {
 			 * to work — and it gets its id the moment the first message is stored. Reading the new
 			 * key there would find nothing and reset the dock, throwing away an arrangement made
 			 * seconds earlier.
+			 *
+			 * Two conditions on it, because "the scope went from null to an id" is *also* what
+			 * happens the first time you click an existing conversation after launch — and this
+			 * branch used to fire unconditionally, so that conversation's own saved layout was
+			 * overwritten by whatever the untouched draft happened to be holding. Which is the exact
+			 * thing per-conversation layouts exist to prevent, on the first click of every session.
+			 *
+			 * So: only when the incoming id has no layout of its own to be overwritten, and only
+			 * when the draft was actually arranged into something. A default dock is not an
+			 * arrangement worth carrying anywhere.
 			 */
-			if (adopted && scope && leaving === null) {
+			if (adopted && scope && leaving === null && !stored && kinds(tree).length > 1) {
 				set({ scope, drag: null });
 				save(scope, tree);
 				return;
 			}
 
-			const stored = readTree(storageKey(scope), allowed);
 			set({
 				scope,
 				adopted: true,

@@ -7,7 +7,8 @@
 
 import { computeDiff } from "@lyra/core";
 import type { GitCommit, WorkspaceDiffFile } from "./ipc-types.ts";
-import { git, run, mapLimit, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
+import { readBlobs, type BlobRead } from "./git-blobs.ts";
+import { git, run, MAX_FILES } from "./git-exec.ts";
 import { capHunks, classify } from "./git-diff.ts";
 import { EMPTY_TREE, LOG_FORMAT } from "./git-status.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
@@ -82,30 +83,54 @@ export async function diffRefs(
 		wanted.push({ path, status: classify(code[0]) });
 	}
 
-	const read = await mapLimit(wanted, async ({ path, status }) => {
-		const [before, after] = await Promise.all([
-			status === "added" ? Promise.resolve("") : blobAt(cwd, head ? base : "HEAD", path),
-			status === "deleted" ? Promise.resolve("") : head ? blobAt(cwd, head, path) : stagedBlob(cwd, path),
-		]);
-		// Null means a blob too large to diff; the file is dropped rather than half-reported.
-		if (before === null || after === null) return null;
-		// Counted from the diff itself rather than from `--numstat`, so the totals and the hunks
-		// on screen can never disagree.
-		const diff = computeDiff(before, after);
-		return { path, status, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) };
-	});
+	/*
+	 * Both sides in two batches, rather than two `git show` processes per file.
+	 *
+	 * The "before" side is whichever ref the comparison starts from; the "after" side is the other
+	 * ref, or the index when there is no second ref — `:path` is how git names a staged blob, and
+	 * it goes through `cat-file` like any other revision. An empty revision string is a side that
+	 * does not exist (an addition has no before, a deletion has no after) and reads back as null.
+	 */
+	const befores = await readBlobs(
+		cwd,
+		wanted.map(({ path, status }) => (status === "added" ? "" : `${head ? base : "HEAD"}:${path}`)),
+	);
+	const afters = await readBlobs(
+		cwd,
+		wanted.map(({ path, status }) => (status === "deleted" ? "" : head ? `${head}:${path}` : `:${path}`)),
+	);
 
 	const files: WorkspaceDiffFile[] = [];
 	let added = 0;
 	let removed = 0;
-	for (const file of read) {
-		if (!file) continue;
-		added += file.added;
-		removed += file.removed;
-		files.push(file);
-	}
+
+	wanted.forEach(({ path, status }, i) => {
+		const before = textOf(befores[i], status === "added");
+		const after = textOf(afters[i], status === "deleted");
+		// Null means a blob too large to diff; the file is dropped rather than half-reported.
+		if (before === null || after === null) return;
+		// Counted from the diff itself rather than from `--numstat`, so the totals and the hunks
+		// on screen can never disagree.
+		const diff = computeDiff(before, after);
+		added += diff.added;
+		removed += diff.removed;
+		files.push({ path, status, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) });
+	});
 
 	return { files, added, removed };
+}
+
+/**
+ * One side of a comparison as text: empty when it does not exist, null when it is too large.
+ *
+ * The two used to be told apart by `blobAt` returning `""` for a missing object and `null` for an
+ * oversized one, and the distinction is load-bearing: empty is a side of the diff, null drops the
+ * file from the list entirely. `absent` says the caller already knows there is no such side, which
+ * is not the same as git having failed to find one.
+ */
+function textOf(read: BlobRead | null, absent: boolean): string | null {
+	if (absent || !read) return "";
+	return read.content ? read.content.toString("utf8") : null;
 }
 
 /** A commit's own diff — against its parent, or against nothing if it is the first. */
@@ -114,18 +139,6 @@ export async function commitDiff(cwd: string, sha: string) {
 		.then((out) => out.trim())
 		.catch(() => EMPTY_TREE);
 	return diffRefs(cwd, parent, sha);
-}
-
-async function blobAt(cwd: string, ref: string, path: string): Promise<string | null> {
-	const out = await git(cwd, ["show", `${ref}:${path}`]).catch(() => null);
-	if (out === null) return "";
-	return out.length > MAX_BLOB_BYTES ? null : out;
-}
-
-async function stagedBlob(cwd: string, path: string): Promise<string | null> {
-	const out = await git(cwd, ["show", `:${path}`]).catch(() => null);
-	if (out === null) return "";
-	return out.length > MAX_BLOB_BYTES ? null : out;
 }
 
 export async function createBranch(cwd: string, name: string, from?: string) {

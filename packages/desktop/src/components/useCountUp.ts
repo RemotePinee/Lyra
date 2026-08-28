@@ -52,7 +52,17 @@ export function useCountUp(target: number, ms = TRAVEL_MS): number {
 		const begin = from.current;
 		const started = performance.now();
 		const step = (now: number) => {
-			const progress = Math.min(1, (now - started) / ms);
+			/*
+			 * Clamped at both ends, and the lower one is not theoretical.
+			 *
+			 * A frame callback is stamped with the time the *frame* began, not the time it ran. When
+			 * the main thread is busy — laying out two hundred diff rows, say — the effect that
+			 * starts this journey runs well after that instant, so the first callback arrives with a
+			 * timestamp earlier than `started` and `progress` is negative. Cubed, that overshoots
+			 * backwards: the Git panel's change count was measured going 0 → −31 → −11 → 27 on its
+			 * way to 200, which reads as the number being broken rather than as it counting.
+			 */
+			const progress = Math.min(1, Math.max(0, (now - started) / ms));
 			// The same curve as everything else that decelerates here — see `--ly-e-out`.
 			const eased = 1 - (1 - progress) ** 3;
 			const value = begin + (target - begin) * eased;

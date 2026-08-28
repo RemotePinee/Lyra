@@ -1,6 +1,6 @@
 import { GitCommitVertical } from "lucide-react";
 import { useCallback, useState } from "react";
-import { useCountUp } from "./useCountUp.ts";
+import { CountUp } from "./CountUp.tsx";
 import { useLiveRefresh } from "./useLiveRefresh.ts";
 import { useDock } from "../dock/store.ts";
 import { useApp } from "../store.ts";
@@ -43,15 +43,6 @@ export function ChangeBar() {
 
   useLiveRefresh(refresh, running);
 
-  /*
-   * Travelled to, not jumped to.
-   *
-   * The same treatment the token counter gets: a number that lands in steps of thirty reads as a
-   * glitch, and the movement is what makes it legible as counting rather than as replacing.
-   */
-  const added = useCountUp(stat?.added ?? 0);
-  const removed = useCountUp(stat?.removed ?? 0);
-
   if (!stat || stat.files === 0) return null;
 
   return (
@@ -62,12 +53,28 @@ export function ChangeBar() {
         onClick={() => openPane("review")}
         className="ly-scroll flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-detail transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover"
       >
-        <span className="font-mono text-detail text-ok">
-          +{Math.round(added).toLocaleString()}
-        </span>
-        <span className="font-mono text-detail text-danger">
-          −{Math.round(removed).toLocaleString()}
-        </span>
+        {/*
+         * Travelled to, not jumped to.
+         *
+         * The same treatment the token counter gets: a number that lands in steps of thirty reads
+         * as a glitch, and the movement is what makes it legible as counting rather than as
+         * replacing.
+         *
+         * Below the early return rather than above it, which is why these are components. As
+         * hooks they had to run before `stat` existed, so the bar's first real reading was
+         * animated up from a zero that only meant "not read yet" — the numbers rolled up from
+         * nothing every time a project opened. See `CountUp`.
+         */}
+        <CountUp
+          value={stat.added}
+          className="font-mono text-detail text-ok"
+          format={(shown) => `+${Math.round(shown).toLocaleString()}`}
+        />
+        <CountUp
+          value={stat.removed}
+          className="font-mono text-detail text-danger"
+          format={(shown) => `−${Math.round(shown).toLocaleString()}`}
+        />
       </button>
 
       <button

@@ -16,7 +16,7 @@ import { HistoryView } from "./HistoryView.tsx";
 import { RepoPicker } from "./RepoPicker.tsx";
 import { sameStatus } from "./sameStatus.ts";
 import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
-import { useCountUp } from "../useCountUp.ts";
+import { CountUp } from "../CountUp.tsx";
 
 type View = "changes" | "history" | "branches";
 
@@ -121,35 +121,42 @@ export function GitPanel() {
   const cwd = selected;
 
   /*
-   * One read at a time, and the same object back when nothing moved.
+   * Go and read it, and keep the object we already had when nothing moved.
    *
-   * Both halves matter and both were missing. Two effects want a status the moment this mounts —
-   * the branch watcher below and `useLiveRefresh` — so opening the panel spawned two identical
-   * `git status` processes and raced their answers; `inflight` folds them into one.
+   * A poll that returns an equal-but-new object is a change as far as React is concerned, so every
+   * 1.5s tick re-ran `ChangesView`'s effect — which fetches the whole working-tree diff. That read
+   * is slower than the interval it is started on, so the panel spent every turn queued behind
+   * itself, which is what "the git panel stutters and takes ages" was. See `sameStatus`.
+   */
+  const read = useCallback(async () => {
+    if (!cwd) {
+      setStatus(null);
+      return;
+    }
+    const next = await window.lyra.git.status(cwd);
+    setStatus((current) => (sameStatus(current, next) ? current : next));
+  }, [cwd]);
+
+  /*
+   * The same read, shared by whoever asks for it at the same moment.
    *
-   * And a poll that returns an equal-but-new object is a change as far as React is concerned, so
-   * every 1.5s tick re-ran `ChangesView`'s effect, which fetches the whole working-tree diff. That
-   * read is slower than the interval, so the panel spent every turn queued behind itself. See
-   * `sameStatus`.
+   * Two effects want a status the instant this mounts — the branch watcher below and
+   * `useLiveRefresh` — so opening the panel spawned two identical `git status` processes and raced
+   * their answers.
+   *
+   * Deliberately *not* what `act` uses. Sharing is only correct for callers that want "a status",
+   * and an operation that has just staged a file wants "the status *after* that" — handing it a
+   * read already in flight when the click landed would show the list from before its own change.
    */
   const inflight = useRef<Promise<void> | null>(null);
   const refresh = useCallback(() => {
-    if (!cwd) {
-      setStatus(null);
-      return Promise.resolve();
-    }
     if (inflight.current) return inflight.current;
-    const read = window.lyra.git
-      .status(cwd)
-      .then((next) => {
-        setStatus((current) => (sameStatus(current, next) ? current : next));
-      })
-      .finally(() => {
-        inflight.current = null;
-      });
-    inflight.current = read;
-    return read;
-  }, [cwd]);
+    const flight = read().finally(() => {
+      inflight.current = null;
+    });
+    inflight.current = flight;
+    return flight;
+  }, [read]);
 
   /*
    * Re-read from scratch when the checkout moves under us, and say so while it happens.
@@ -193,11 +200,12 @@ export function GitPanel() {
       setError(null);
       const result = await operation();
       if (!result.ok) setError(result.error ?? "操作失败");
-      await refresh();
+      // `read`, not `refresh`: this one has to see what the operation just did — see above.
+      await read();
       setBusy(false);
       return result.ok;
     },
-    [refresh],
+    [read],
   );
 
   /*
@@ -213,16 +221,27 @@ export function GitPanel() {
    */
   const changeCount =
     (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0);
-  const shownCount = useCountUp(changeCount);
+  /*
+   * Nothing is known yet: the repositories are still being found, or the one that was found has
+   * not answered about its state.
+   *
+   * Both are the same situation and the panel has to treat them alike, which it did not. Once the
+   * scan finished it drew the whole panel from a null status, so a repository with two hundred
+   * uncommitted files announced 「工作区干净 · 没有未提交的改动」 and took it back 76ms later —
+   * measured, frame by frame. A wrong answer stated confidently is worse than no answer, and the
+   * count above the tabs then travelled up from zero as though two hundred files had just been
+   * changed while you watched.
+   */
+  const unread = scanning || (cwd !== null && status === null);
   /*
    * A placeholder only for a wait long enough to be one.
    *
-   * Both of these reads are now fast enough to finish inside a couple of frames on an ordinary
-   * repository, and a skeleton that appears and goes in 70ms is a flicker — which reads as a
-   * glitch, not as progress. `useSlowLoad` holds it back until the wait is real; under the
-   * threshold the panel simply arrives.
+   * These reads are now fast enough to finish inside a couple of frames on an ordinary repository,
+   * and a skeleton that appears and goes in 70ms is a flicker — which reads as a glitch, not as
+   * progress. `useSlowLoad` holds it back until the wait is real; under the threshold the panel
+   * simply arrives.
    */
-  const slowScan = useSlowLoad(scanning);
+  const slowUnread = useSlowLoad(unread);
   const slowSwitch = useSlowLoad(switching);
 
   if (!workspace) {
@@ -234,18 +253,20 @@ export function GitPanel() {
   }
 
   /*
-   * Nothing is known yet; an empty state now would be a claim the scan has not made.
+   * Say nothing until there is something to say — but draw the shape of it.
    *
-   * A blank pane is not much better, and it was what this returned. Opening the panel gave an
-   * empty rectangle for as long as the directory scan took, and then a fully populated list
-   * appeared in one frame — the whole load with nothing to say it was happening. The same
-   * skeleton the changes view uses while a branch switches: this is the same situation, which is
-   * that the shape of the answer is known and the answer is not.
+   * This used to be a bare `<div className="flex-1" />` while the scan ran: an empty rectangle for
+   * however long it took, then a fully populated panel in one frame, with nothing in between to
+   * say a load was happening. The skeleton stands in the same boxes the rows will occupy, so the
+   * arrival is the content landing rather than the layout appearing.
+   *
+   * Under `useSlowLoad`'s threshold there is still nothing, deliberately: a wait nobody noticed
+   * should not be announced.
    */
-  if (scanning) {
-    return slowScan ? (
+  if (unread) {
+    return slowUnread ? (
       <div className="ly-enter flex-1 px-1.5 pt-2">
-        <SkeletonList count={5} label="正在查找仓库" />
+        <SkeletonList count={5} label="正在读取仓库" />
       </div>
     ) : (
       <div className="flex-1" />
@@ -331,7 +352,8 @@ export function GitPanel() {
           label="刷新"
           size="sm"
           disabled={busy}
-          onClick={() => void refresh()}
+          // Pressing 刷新 means "go and look now", so it never rides on a read already in flight.
+          onClick={() => void read()}
         />
       </div>
 
@@ -356,10 +378,11 @@ export function GitPanel() {
                * change bar above the composer gives its counts. Switching branch can move this
                * from 3 to 40, and a number that lands without moving reads as a different number
                * appearing rather than as this one having changed.
+               *
+               * Mounted only once there is a count, so opening the panel shows the figure rather
+               * than counting up to it from a zero that was never true. See `CountUp`.
                */
-              <span className="text-ink-faint tabular-nums">
-                {Math.round(shownCount)}
-              </span>
+              <CountUp value={changeCount} className="text-ink-faint tabular-nums" />
             )}
           </button>
         ))}

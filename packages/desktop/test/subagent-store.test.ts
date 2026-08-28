@@ -181,9 +181,21 @@ test("messages that streamed in during the read are not lost by it", async () =>
 
 const { applyAgentEvent } = await import("../src/store/apply-event.ts");
 
-/** The dispatcher wants the app store's `set`/`get`; nothing here touches the parts it reads. */
+/**
+ * The dispatcher wants the app store's `set`/`get`, so it gets the fields it reads on the way to
+ * the sub-agent branches — the per-conversation activity, the turn meters, and the parked
+ * transcripts. Their values are irrelevant here; their presence is not, because the dispatcher
+ * indexes into them before it ever looks at the event's type.
+ */
 function dispatch(event: Parameters<typeof applyAgentEvent>[1]) {
-	const state = { activity: {}, activeSessionId: "sess", messages: [], toolRuns: {} } as never;
+	const state = {
+		activity: {},
+		turns: {},
+		sessionCache: {},
+		activeSessionId: "sess",
+		messages: [],
+		toolRuns: {},
+	} as never;
 	applyAgentEvent("sess", event, () => {}, () => state);
 }
 
@@ -211,7 +223,14 @@ test("sub-agent messages never leak into the main transcript", () => {
 	 * visible — the transcript you are reading.
 	 */
 	const writes: Record<string, unknown>[] = [];
-	const state = { activity: {}, activeSessionId: "sess", messages: [], toolRuns: {} } as never;
+	const state = {
+		activity: {},
+		turns: {},
+		sessionCache: {},
+		activeSessionId: "sess",
+		messages: [],
+		toolRuns: {},
+	} as never;
 	applyAgentEvent(
 		"sess",
 		{ type: "subagent_message", id: "s1", message: said("内部消息") },
