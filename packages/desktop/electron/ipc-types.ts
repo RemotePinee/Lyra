@@ -10,8 +10,28 @@
 
 import type { TrajectoryEntry } from "@lyra/core";
 import type { ForgeAccount, ForgeKind, ForgeKindInfo } from "./forge/types.ts";
-import type { BranchList, GitCommit, GitStatus, ReleaseInfo, RepoRef, WorkflowRunStatus } from "./git.ts";
-export type { ReleaseInfo, WorkflowRunStatus } from "./git.ts";
+import type {
+	BranchList,
+	GitCommit,
+	GitStatus,
+	ReleaseInfo,
+	RepoRef,
+	WorkflowJob,
+	WorkflowJobStep,
+	WorkflowRunStatus,
+	WorkflowRunSummary,
+} from "./git.ts";
+export type {
+	BranchList,
+	GitCommit,
+	GitStatus,
+	ReleaseInfo,
+	RepoRef,
+	WorkflowJob,
+	WorkflowJobStep,
+	WorkflowRunStatus,
+	WorkflowRunSummary,
+};
 /*
  * Re-exported under a name that means something on this side of the boundary.
  *
@@ -676,6 +696,7 @@ export interface LyraApi {
 		releaseInfo(cwd: string): Promise<ReleaseInfo | null>;
 		bumpVersion(cwd: string, newVersion: string): Promise<{ ok: boolean; error?: string }>;
 		triggerDryRun(cwd: string): Promise<{ ok: boolean; runId?: number; error?: string }>;
+		listWorkflowRuns(cwd: string, limit?: number): Promise<WorkflowRunSummary[]>;
 		workflowRunStatus(cwd: string, runId: number): Promise<WorkflowRunStatus | null>;
 		publishReleaseTag(cwd: string, version: string): Promise<{ ok: boolean; tag?: string; error?: string }>;
 	};

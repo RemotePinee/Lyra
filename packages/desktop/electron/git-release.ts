@@ -26,16 +26,52 @@ export interface ReleaseInfo {
 	};
 }
 
+export interface WorkflowJobStep {
+	name: string;
+	status: string;
+	conclusion: string | null;
+	number: number;
+	startedAt?: string;
+	completedAt?: string;
+}
+
+export interface WorkflowJob {
+	id: number;
+	name: string;
+	status: string;
+	conclusion: string | null;
+	url?: string;
+	startedAt?: string;
+	completedAt?: string;
+	steps?: WorkflowJobStep[];
+}
+
+export interface WorkflowRunSummary {
+	id: number;
+	name: string;
+	displayTitle: string;
+	event: string;
+	status: "queued" | "in_progress" | "completed" | "waiting" | "unknown";
+	conclusion: "success" | "failure" | "cancelled" | "timed_out" | "skipped" | null;
+	headBranch: string;
+	headSha: string;
+	createdAt: string;
+	url: string;
+	jobs?: WorkflowJob[];
+}
+
 export interface WorkflowRunStatus {
 	id: number;
-	status: "queued" | "in_progress" | "completed" | "unknown";
-	conclusion: "success" | "failure" | "cancelled" | "timed_out" | null;
+	name?: string;
+	displayTitle?: string;
+	event?: string;
+	status: "queued" | "in_progress" | "completed" | "waiting" | "unknown";
+	conclusion: "success" | "failure" | "cancelled" | "timed_out" | "skipped" | null;
 	url: string;
-	jobs: {
-		name: string;
-		status: string;
-		conclusion: string | null;
-	}[];
+	createdAt?: string;
+	headBranch?: string;
+	headSha?: string;
+	jobs: WorkflowJob[];
 }
 
 /**
@@ -199,7 +235,48 @@ export async function triggerReleaseDryRun(cwd: string): Promise<{ ok: boolean; 
 }
 
 /**
- * Get GitHub Actions Run status
+ * List recent GitHub Actions workflow runs for the repository.
+ */
+export async function listWorkflowRuns(cwd: string, limit = 20): Promise<WorkflowRunSummary[]> {
+	try {
+		const out = await execGh(cwd, [
+			"run",
+			"list",
+			`--limit=${limit}`,
+			"--json=databaseId,name,displayTitle,event,status,conclusion,headBranch,headSha,createdAt,url",
+		]);
+		const runs = JSON.parse(out);
+		if (!Array.isArray(runs)) return [];
+		return runs.map((r: {
+			databaseId: number;
+			name: string;
+			displayTitle: string;
+			event: string;
+			status: WorkflowRunSummary["status"];
+			conclusion: WorkflowRunSummary["conclusion"];
+			headBranch: string;
+			headSha: string;
+			createdAt: string;
+			url: string;
+		}) => ({
+			id: r.databaseId,
+			name: r.name,
+			displayTitle: r.displayTitle,
+			event: r.event,
+			status: r.status,
+			conclusion: r.conclusion,
+			headBranch: r.headBranch,
+			headSha: r.headSha,
+			createdAt: r.createdAt,
+			url: r.url,
+		}));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Get GitHub Actions Run status with detailed jobs and steps
  */
 export async function getWorkflowRunStatus(cwd: string, runId: number): Promise<WorkflowRunStatus | null> {
 	try {
@@ -207,19 +284,49 @@ export async function getWorkflowRunStatus(cwd: string, runId: number): Promise<
 			"run",
 			"view",
 			String(runId),
-			"--json=databaseId,status,conclusion,url,jobs",
+			"--json=databaseId,name,displayTitle,event,status,conclusion,url,jobs,createdAt,headBranch,headSha",
 		]);
 		const data = JSON.parse(out);
 		return {
 			id: data.databaseId,
+			name: data.name,
+			displayTitle: data.displayTitle,
+			event: data.event,
 			status: data.status,
 			conclusion: data.conclusion,
 			url: data.url,
+			createdAt: data.createdAt,
+			headBranch: data.headBranch,
+			headSha: data.headSha,
 			jobs: Array.isArray(data.jobs)
-				? data.jobs.map((j: { name: string; status: string; conclusion: string | null }) => ({
+				? data.jobs.map((j: {
+						databaseId?: number;
+						id?: number;
+						name: string;
+						status: string;
+						conclusion: string | null;
+						url?: string;
+						startedAt?: string;
+						completedAt?: string;
+						steps?: WorkflowJobStep[];
+					}) => ({
+						id: j.databaseId ?? j.id ?? 0,
 						name: j.name,
 						status: j.status,
 						conclusion: j.conclusion,
+						url: j.url,
+						startedAt: j.startedAt,
+						completedAt: j.completedAt,
+						steps: Array.isArray(j.steps)
+							? j.steps.map((s) => ({
+									name: s.name,
+									status: s.status,
+									conclusion: s.conclusion,
+									number: s.number,
+									startedAt: s.startedAt,
+									completedAt: s.completedAt,
+								}))
+							: [],
 					}))
 				: [],
 		};

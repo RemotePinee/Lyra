@@ -298,6 +298,7 @@ const api: LyraApi = {
 		releaseInfo: (cwd) => ipcRenderer.invoke("git:releaseInfo", cwd),
 		bumpVersion: (cwd, newVersion) => ipcRenderer.invoke("git:bumpVersion", cwd, newVersion),
 		triggerDryRun: (cwd) => ipcRenderer.invoke("git:triggerDryRun", cwd),
+		listWorkflowRuns: (cwd, limit) => ipcRenderer.invoke("git:listWorkflowRuns", cwd, limit),
 		workflowRunStatus: (cwd, runId) => ipcRenderer.invoke("git:workflowRunStatus", cwd, runId),
 		publishReleaseTag: (cwd, version) => ipcRenderer.invoke("git:publishReleaseTag", cwd, version),
 	},

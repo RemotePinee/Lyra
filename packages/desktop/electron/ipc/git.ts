@@ -38,6 +38,7 @@ import {
 	bumpVersionFiles,
 	triggerReleaseDryRun,
 	getWorkflowRunStatus,
+	listWorkflowRuns,
 	publishReleaseTag,
 } from "../git.ts";
 import {
@@ -279,6 +280,11 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	ipcMain.handle("git:triggerDryRun", async (_event, cwd: string) => {
 		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
 		return triggerReleaseDryRun(cwd);
+	});
+
+	ipcMain.handle("git:listWorkflowRuns", async (_event, cwd: string, limit?: number) => {
+		if (!insideAProject(cwd)) return [];
+		return listWorkflowRuns(cwd, limit);
 	});
 
 	ipcMain.handle("git:workflowRunStatus", async (_event, cwd: string, runId: number) => {

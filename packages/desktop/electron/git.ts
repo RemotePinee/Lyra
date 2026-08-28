@@ -46,10 +46,14 @@ export {
 	bumpVersionFiles,
 	getReleaseInfo,
 	getWorkflowRunStatus,
+	listWorkflowRuns,
 	publishReleaseTag,
 	triggerReleaseDryRun,
 	type ReleaseInfo,
+	type WorkflowJob,
+	type WorkflowJobStep,
 	type WorkflowRunStatus,
+	type WorkflowRunSummary,
 } from "./git-release.ts";
 
 export async function isGitRepo(cwd: string): Promise<boolean> {

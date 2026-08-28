@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Tag } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Tag } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveRefresh } from "../useLiveRefresh.ts";
 
@@ -13,18 +13,20 @@ import { useApp } from "../../store.ts";
 import { BranchesView } from "./BranchesView.tsx";
 import { ChangesView } from "./ChangesView.tsx";
 import { HistoryView } from "./HistoryView.tsx";
+import { PipelinesView } from "./PipelinesView.tsx";
 import { ReleaseModal } from "./ReleaseModal.tsx";
 import { RepoPicker } from "./RepoPicker.tsx";
 import { sameStatus } from "./sameStatus.ts";
 import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
 import { CountUp } from "../CountUp.tsx";
 
-type View = "changes" | "history" | "branches";
+type View = "changes" | "history" | "branches" | "pipelines";
 
 const VIEWS: { id: View; label: string; icon: typeof GitCompare }[] = [
   { id: "changes", label: "改动", icon: GitCompare },
   { id: "history", label: "历史", icon: GitCommitHorizontal },
   { id: "branches", label: "分支", icon: GitBranch },
+  { id: "pipelines", label: "流水线", icon: Activity },
 ];
 
 /**
@@ -437,6 +439,12 @@ export function GitPanel() {
           repos={repos}
           trees={trees}
           onSelectRepo={setSelected}
+        />
+      )}
+      {view === "pipelines" && (
+        <PipelinesView
+          cwd={cwd}
+          onOpenRelease={() => setReleaseOpen(true)}
         />
       )}
 
