@@ -221,7 +221,11 @@ function AssistantRow({
        * four times. The row belongs to the message that finished the turn.
        */}
       {settled(message.stopReason) && !continued && text.trim() && (
-        <MessageActions timestamp={message.timestamp} text={text} />
+        <MessageActions
+          timestamp={message.timestamp}
+          text={text}
+          tokens={message.usage?.output}
+        />
       )}
     </div>
   );

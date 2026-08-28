@@ -103,7 +103,7 @@ export function NavPane({
 		 */
 		<div
 			className={`relative shrink-0 ${
-				snap ? "transition-none" : "transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out"
+				snap ? "transition-none" : "transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out [[data-resizing]_&]:transition-none"
 			}`}
 			style={{ width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }}
 		>

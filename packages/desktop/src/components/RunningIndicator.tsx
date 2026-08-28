@@ -143,7 +143,7 @@ export function RunningIndicator() {
 			 * also the fastest way to see what the window thinks it is doing while using it.
 			 */
 			data-ly-mood={mood}
-			className="ly-enter mb-2.5 flex items-center gap-2 text-detail text-ink-muted"
+			className="ly-enter mb-2.5 flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-detail text-ink-muted whitespace-nowrap"
 		>
 			{/*
 			 * Decorative, so `aria-hidden`: the phrase beside it already says what this is, and a
@@ -197,7 +197,7 @@ export function RunningIndicator() {
 			{!retrying && compactedAt !== null && now - compactedAt < COMPACTED_NOTICE_MS && (
 				<>
 					<span className="text-ink-faint">·</span>
-					<span className="ly-fade-in text-ink-faint">已压缩较早的对话</span>
+					<span className="ly-fade-in truncate text-ink-faint">已压缩较早的对话</span>
 				</>
 			)}
 			{retrying && (

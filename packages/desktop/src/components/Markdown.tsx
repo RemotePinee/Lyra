@@ -248,7 +248,7 @@ function renderToken(token: Inline): ReactNode {
 		case "text":
 			return token.text;
 		case "code":
-			return <code>{token.text}</code>;
+			return <code className="[box-decoration-break:clone] [-webkit-box-decoration-break:clone]">{token.text}</code>;
 		case "break":
 			return <br />;
 		case "strong":

@@ -54,51 +54,51 @@ export function SubAgentBar({ onOpen }: { onOpen: () => void }) {
 		.join("\n");
 
 	return (
-		<div className="ly-enter group/bar mb-1.5 flex w-full items-center gap-1">
-		<button
-			type="button"
-			onClick={onOpen}
-			data-ly-tip={tip}
-			data-ly-subagent-bar
-			aria-label={`子 Agent ${agents.length} 个，${running} 个运行中`}
-			className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
-		>
-			<Bot size={12.5} strokeWidth={1.8} className={`shrink-0 ${running > 0 ? "text-accent" : "text-ink-faint"}`} />
-			{/*
-			 * What is happening, not how many rows there are.
-			 *
-			 * With one running, its own description is more use than a count of one; with several,
-			 * the count is the only thing that fits and the tip has the rest.
-			 */}
-			<span className="min-w-0 flex-1 truncate text-left">{headline(ordered, running)}</span>
-			{running > 0 && (
-				<span className="shrink-0 text-caption text-ink-faint tabular-nums">
-					{elapsedSince(Math.min(...ordered.filter((one) => one.status === "running").map((one) => one.startedAt)))}
-				</span>
-			)}
-		</button>
-		{/*
-		 * Put the record away, once you are done reading it.
-		 *
-		 * Only the finished ones: clearing a list is not a way to stop work, and a running sub-agent
-		 * that vanished from here would still be running with nothing able to reach it. With
-		 * something still going the button simply is not offered — the line has not finished being
-		 * useful yet.
-		 */}
-		{running === 0 && (
+		<div className="ly-enter group/bar mb-1.5 flex w-full items-center justify-between rounded-lg bg-card/60 px-2 py-0.5 border border-line-soft transition-colors hover:bg-card">
 			<button
 				type="button"
-				data-ly-tip="清掉这些记录"
-				aria-label="清掉已结束的子 Agent 记录"
-				onClick={() => {
-					const id = useApp.getState().activeSessionId;
-					if (id) void window.lyra.subAgents.dismissFinished(id);
-				}}
-				className="shrink-0 rounded-md p-1 text-ink-faint opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/bar:opacity-100 hover:bg-card-hover hover:text-ink"
+				onClick={onOpen}
+				data-ly-tip={tip}
+				data-ly-subagent-bar
+				aria-label={`子 Agent ${agents.length} 个，${running} 个运行中`}
+				className="flex min-w-0 flex-1 items-center gap-2 py-1 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 			>
-				<X size={11.5} strokeWidth={2} />
+				<Bot size={13} strokeWidth={1.8} className={`shrink-0 ${running > 0 ? "text-accent" : "text-ink-faint"}`} />
+				{/*
+				 * What is happening, not how many rows there are.
+				 *
+				 * With one running, its own description is more use than a count of one; with several,
+				 * the count is the only thing that fits and the tip has the rest.
+				 */}
+				<span className="min-w-0 flex-1 truncate text-left">{headline(ordered, running)}</span>
+				{running > 0 && (
+					<span className="shrink-0 text-caption text-ink-faint tabular-nums">
+						{elapsedSince(Math.min(...ordered.filter((one) => one.status === "running").map((one) => one.startedAt)))}
+					</span>
+				)}
 			</button>
-		)}
+			{/*
+			 * Put the record away, once you are done reading it.
+			 *
+			 * Only the finished ones: clearing a list is not a way to stop work, and a running sub-agent
+			 * that vanished from here would still be running with nothing able to reach it. With
+			 * something still going the button simply is not offered — the line has not finished being
+			 * useful yet.
+			 */}
+			{running === 0 && (
+				<button
+					type="button"
+					data-ly-tip="清掉这些记录"
+					aria-label="清掉已结束的子 Agent 记录"
+					onClick={() => {
+						const id = useApp.getState().activeSessionId;
+						if (id) void window.lyra.subAgents.dismissFinished(id);
+					}}
+					className="shrink-0 rounded-md p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
+				>
+					<X size={12} strokeWidth={2} />
+				</button>
+			)}
 		</div>
 	);
 }

@@ -68,9 +68,9 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 					type="button"
 					data-ly-tip="在终端运行"
 					onClick={() => useSide.getState().runInTerminal(commandFrom(code))}
-					className="absolute top-2 right-10 hidden rounded-md border border-line bg-float p-1.5 text-ink-muted transition-colors group-hover:block hover:text-ink"
+					className="absolute top-2 right-8 hidden p-1 text-ink-muted transition-colors group-hover:block hover:text-ink"
 				>
-					<Play size={12} strokeWidth={1.9} />
+					<Play size={13} strokeWidth={1.9} />
 				</button>
 			)}
 			<button
@@ -81,9 +81,9 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
 					setCopied(true);
 					setTimeout(() => setCopied(false), 1400);
 				}}
-				className="absolute top-2 right-2 hidden rounded-md border border-line bg-float p-1.5 text-ink-muted transition-colors group-hover:block hover:text-ink"
+				className="absolute top-2 right-2 hidden p-1 text-ink-muted transition-colors group-hover:block hover:text-ink"
 			>
-				{copied ? <Check size={12} strokeWidth={2} className="text-ok" /> : <Copy size={12} strokeWidth={1.9} />}
+				{copied ? <Check size={13} strokeWidth={2} className="text-ok" /> : <Copy size={13} strokeWidth={1.9} />}
 			</button>
 			<pre className={lang ? "pt-7" : undefined}>
 				<code>

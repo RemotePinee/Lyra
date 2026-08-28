@@ -116,12 +116,6 @@ export function Splitter({
 			const container = containerRef.current?.getBoundingClientRect();
 			if (!container) return;
 			report.current(shareFromPointer(current.current, row ? event.clientX : event.clientY, container));
-			// The grip travels along the seam with the pointer, so it stays under the hand.
-			const box = track.current?.getBoundingClientRect();
-			if (box) {
-				const along = row ? event.clientY - box.top : event.clientX - box.left;
-				setGrip(Math.min(row ? box.height : box.width, Math.max(0, along)));
-			}
 		};
 
 		const onMove = (event: PointerEvent) => {

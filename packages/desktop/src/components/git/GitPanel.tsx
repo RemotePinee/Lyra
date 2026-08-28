@@ -19,6 +19,7 @@ import { RepoPicker } from "./RepoPicker.tsx";
 import { sameStatus } from "./sameStatus.ts";
 import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
 import { CountUp } from "../CountUp.tsx";
+import { useNarrow } from "../useNarrow.ts";
 
 type View = "changes" | "history" | "branches" | "pipelines";
 
@@ -65,6 +66,7 @@ export function GitPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
+  const [narrowNav, navRef] = useNarrow(270);
 
   /*
    * Rescan when the workspace changes; the selection follows unless it is still valid.
@@ -369,20 +371,23 @@ export function GitPanel() {
       </div>
 
       {/* One row of views, counted where a count means something. */}
-      <div className="flex shrink-0 items-center gap-0.5 px-1.5 pb-1.5">
+      <div ref={navRef} className="flex shrink-0 items-center gap-0.5 px-1.5 pb-1.5 overflow-x-auto ly-scroll">
         {VIEWS.map((entry) => (
           <button
             key={entry.id}
             type="button"
+            data-ly-tip={narrowNav ? `${entry.label}${entry.id === "changes" && changeCount > 0 ? ` (${changeCount})` : ""}` : undefined}
             onClick={() => setView(entry.id)}
-            className={`flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-detail transition-colors duration-[var(--ly-t-quick)] ${
+            className={`flex h-[26px] items-center gap-1.5 rounded-md text-detail transition-colors duration-[var(--ly-t-quick)] shrink-0 ${
+              narrowNav ? "px-2" : "px-2.5"
+            } ${
               view === entry.id
                 ? "bg-card-hover text-ink"
                 : "text-ink-muted hover:bg-card-hover/60"
             }`}
           >
             <entry.icon size={12} strokeWidth={1.8} className="shrink-0" />
-            {entry.label}
+            {!narrowNav && entry.label}
             {entry.id === "changes" && changeCount > 0 && (
               /*
                * Travels to the new figure rather than jumping to it — the same treatment the

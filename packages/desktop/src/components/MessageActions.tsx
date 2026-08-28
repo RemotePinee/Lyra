@@ -27,12 +27,18 @@ export function MessageActions({
 	timestamp,
 	text,
 	className = "",
+	durationMs,
+	tokens,
 	children,
 }: {
 	timestamp: number;
 	/** What the copy button puts on the clipboard. */
 	text: string;
 	className?: string;
+	/** Elapsed execution time in milliseconds (for assistant responses). */
+	durationMs?: number;
+	/** Total output or consumed tokens to calculate tokens/sec throughput. */
+	tokens?: number;
 	/** Anything this side of the transcript offers beyond copying — editing, on a sent message. */
 	children?: React.ReactNode;
 }) {
@@ -44,13 +50,17 @@ export function MessageActions({
 		return () => clearTimeout(timer);
 	}, [copied]);
 
+	const timeTip = formatTimestampTip(timestamp, durationMs, tokens);
+
 	return (
 		<div
 			className={`mt-1 flex h-6 items-center gap-1 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
 		>
-			<Text size="caption" tone="faint" numeric>
-				{formatSentAt(timestamp)}
-			</Text>
+			<span data-ly-tip={timeTip || undefined} className="inline-flex items-center">
+				<Text size="caption" tone="faint" numeric>
+					{formatSentAt(timestamp)}
+				</Text>
+			</span>
 			<button
 				type="button"
 				data-ly-tip="复制"
@@ -65,6 +75,32 @@ export function MessageActions({
 			{children}
 		</div>
 	);
+}
+
+function formatTimestampTip(timestamp: number, durationMs?: number, tokens?: number): string | null {
+	const parts: string[] = [];
+	const dateStr = new Date(timestamp).toLocaleString("zh-CN", {
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+	});
+	parts.push(dateStr);
+
+	if (durationMs && durationMs > 0) {
+		const secs = durationMs / 1000;
+		const durationText = secs < 60 ? `${secs.toFixed(1)}s` : `${Math.floor(secs / 60)}m ${(secs % 60).toFixed(0)}s`;
+		let speedText = "";
+		if (tokens && tokens > 0 && secs > 0) {
+			const tps = (tokens / secs).toFixed(1);
+			speedText = ` (${tps} tokens/s)`;
+		}
+		parts.push(`耗时：${durationText}${speedText}`);
+	}
+
+	return parts.join("\n");
 }
 
 /** Same shape as the reference: month, day, time — the year only once it stops being obvious. */

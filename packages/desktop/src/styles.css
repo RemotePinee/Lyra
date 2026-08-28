@@ -317,6 +317,13 @@
     cursor: pointer;
   }
 
+  /* Freezes all transitions and disables pointer-events/selection during pane/sidebar dragging */
+  :root[data-resizing],
+  :root[data-resizing] * {
+    transition: none !important;
+    user-select: none !important;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--color-info) 35%, transparent);
   }
@@ -520,8 +527,10 @@
     font-size: var(--text-code);
     background: var(--color-card-hover);
     color: var(--color-ink);
-    border-radius: 4px;
+    border-radius: 5px;
     padding: 1.5px 5px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
   }
 
   .prose-dw pre {

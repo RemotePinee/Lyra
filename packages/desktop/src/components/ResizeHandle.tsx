@@ -105,9 +105,6 @@ export function ResizeHandle({
 			const travel = event.clientX - start.current.x;
 			const next = edge === "end" ? start.current.width + travel : start.current.width - travel;
 			onResize(Math.min(max, Math.max(min, next)));
-			// The grip tracks vertically while dragging, so it stays under the pointer.
-			const box = track.current?.getBoundingClientRect();
-			if (box) setGrip(Math.min(box.height, Math.max(0, event.clientY - box.top)));
 		};
 
 		const onMove = (event: MouseEvent) => {

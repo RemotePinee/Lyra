@@ -17,16 +17,16 @@
  */
 
 import { Bot, CircleStop, RotateCcw, Send, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { SubAgentSummary } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { rosterOrder, useSubAgents } from "../../store/subAgents.ts";
 import { Markdown } from "../Markdown.tsx";
-import { MessageRow } from "../sidechat/MessageRow.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { ranFor, statusTone, statusWord } from "./format.ts";
+import { SubAgentMessageRow, subAgentRuns } from "./SubAgentMessageRow.tsx";
 
 /** How close to the bottom still counts as "following along" — the side chat's own slack. */
 const PIN_SLACK = 60;
@@ -158,6 +158,8 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const pinned = useRef(true);
 
+	const toolRuns = useMemo(() => subAgentRuns(messages ?? []), [messages]);
+
 	// Follow along while it is working, unless you have scrolled up to read something.
 	useLayoutEffect(() => {
 		if (!pinned.current) return;
@@ -181,7 +183,14 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 						{loading || agent.status === "running" ? "刚开始，还没有输出。" : "这个子 Agent 没有留下内容。"}
 					</p>
 				) : (
-					messages.map((message, at) => <MessageRow key={`${agent.id}:${at}`} message={message} />)
+					messages.map((message, at) => (
+						<SubAgentMessageRow
+							key={`${agent.id}:${at}`}
+							message={message}
+							toolRuns={toolRuns}
+							isLive={agent.status === "running" && at === messages.length - 1}
+						/>
+					))
 				)}
 				{/*
 				 * The answer, marked as the one thing the parent actually saw.
@@ -279,7 +288,7 @@ function Header({ agent, sessionId }: { agent: SubAgentSummary; sessionId: strin
 			)}
 			{/* The newest thing it did, which is what answers "is this stuck?". */}
 			{agent.status === "running" && agent.lastActivity && (
-				<span className="ly-fade-tail min-w-0 flex-1 truncate">{agent.lastActivity}</span>
+				<span className="ly-fade-tail min-w-0 flex-1 truncate text-ink-faint">{agent.lastActivity}</span>
 			)}
 			<span className="min-w-2 flex-1" />
 			{agent.status === "running" && sessionId && (
