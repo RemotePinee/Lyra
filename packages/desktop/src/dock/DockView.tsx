@@ -16,7 +16,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 
-import { useLayout } from "../layout.tsx";
+import { useLayout, useSidebarFit } from "../layout.tsx";
 import { toolbarReserved } from "../components/WindowControls.tsx";
 import { useApp } from "../store.ts";
 import { renderPanel, renderPanelActions, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
@@ -78,12 +78,14 @@ export function DockView({
 	const tree = useDock((s) => s.tree);
 	const focusedPane = useDock((s) => s.focused);
 	const maximized = useDock((s) => s.maximized);
-	const { compact, navOpen, nativeFullScreen, titlebar } = useLayout();
+	const { compact, navOpen, nativeFullScreen, titlebar, width: windowWidth } = useLayout();
+	const { drawn: sidebarDrawn } = useSidebarFit();
 	const definitions = usePanelDefinitions();
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { carried, start, landed } = useDockDrag(containerRef);
-	const size = useBoxSize(containerRef);
+	const expectedDockWidth = compact ? windowWidth : navOpen ? Math.max(0, windowWidth - sidebarDrawn) : windowWidth;
+	const size = useBoxSize(containerRef, expectedDockWidth);
 
 	/*
 	 * Point the dock at the project, which loads that project's saved layout.

@@ -17,8 +17,11 @@ export interface BoxSize {
 	height: number;
 }
 
-export function useBoxSize(ref: React.RefObject<HTMLElement | null>): BoxSize | null {
-	const [size, setSize] = useState<BoxSize | null>(null);
+export function useBoxSize(
+	ref: React.RefObject<HTMLElement | null>,
+	expectedWidth?: number,
+): BoxSize | null {
+	const [measured, setMeasured] = useState<BoxSize | null>(null);
 
 	useLayoutEffect(() => {
 		const element = ref.current;
@@ -28,7 +31,7 @@ export function useBoxSize(ref: React.RefObject<HTMLElement | null>): BoxSize | 
 			// Zero means hidden rather than tiny; applying floors against it would make every pane
 			// the whole dock for the frame before the real size arrives.
 			if (width > 0 && height > 0) {
-				setSize((current) => (current?.width === width && current?.height === height ? current : { width, height }));
+				setMeasured((current) => (current?.width === width && current?.height === height ? current : { width, height }));
 			}
 		};
 		measure();
@@ -37,5 +40,9 @@ export function useBoxSize(ref: React.RefObject<HTMLElement | null>): BoxSize | 
 		return () => observer.disconnect();
 	}, [ref]);
 
-	return size;
+	if (expectedWidth !== undefined && measured && measured.width !== expectedWidth && expectedWidth > 0) {
+		return { width: expectedWidth, height: measured.height };
+	}
+
+	return measured;
 }
