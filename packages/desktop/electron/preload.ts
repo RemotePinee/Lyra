@@ -177,7 +177,7 @@ const api: LyraApi = {
 		},
 	},
 	providers: {
-		test: (providerId) => ipcRenderer.invoke("providers:test", providerId),
+		test: (providerId, modelId) => ipcRenderer.invoke("providers:test", providerId, modelId),
 	},
 	sync: {
 		status: () => ipcRenderer.invoke("sync:status"),

@@ -10,7 +10,7 @@
  * about to compare it against.
  */
 
-import { Link2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, CircleAlert, Link2, Pencil, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { ModelConfig } from "@lyra/core";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
 import { useConfirmer } from "../Confirm.tsx";
@@ -25,7 +25,10 @@ export function ProviderModels({
 	defaultModelId,
 	testResult,
 	testing,
+	testingModelId,
+	modelTestResults,
 	onTest,
+	onTestModel,
 	onEdit,
 	onRemove,
 	onSetDefault,
@@ -34,7 +37,10 @@ export function ProviderModels({
 	defaultModelId: string | null;
 	testResult: ProviderTestResult | null;
 	testing: boolean;
+	testingModelId?: string | null;
+	modelTestResults?: Record<string, ProviderTestResult>;
 	onTest: () => void;
+	onTestModel?: (modelId: string) => void;
 	/** `null` adds a new one. */
 	onEdit: (model: ModelConfig | null) => void;
 	onRemove: (modelId: string) => void;
@@ -44,8 +50,8 @@ export function ProviderModels({
 		<div className="pt-6">
 			<div className="mb-2 flex items-center justify-between">
 				<span className="text-label text-ink-muted">模型列表</span>
-				<GhostButton onClick={onTest} disabled={testing}>
-					<RollingText>{testing ? "测试中…" : "测试连接"}</RollingText>
+				<GhostButton onClick={onTest} disabled={testing || !!testingModelId}>
+					<RollingText>{testing ? "测试中…" : "测试全部"}</RollingText>
 				</GhostButton>
 			</div>
 
@@ -55,6 +61,9 @@ export function ProviderModels({
 						key={model.id}
 						model={model}
 						isDefault={defaultModelId === model.id}
+						testing={testingModelId === model.id}
+						testResult={modelTestResults?.[model.id]}
+						onTest={() => onTestModel?.(model.id)}
 						onEdit={() => onEdit(model)}
 						onRemove={() => onRemove(model.id)}
 						onSetDefault={() => onSetDefault(model.id)}
@@ -79,12 +88,18 @@ export function ProviderModels({
 function ModelRow({
 	model,
 	isDefault,
+	testing,
+	testResult,
+	onTest,
 	onEdit,
 	onRemove,
 	onSetDefault,
 }: {
 	model: ModelConfig;
 	isDefault: boolean;
+	testing: boolean;
+	testResult?: ProviderTestResult;
+	onTest: () => void;
 	onEdit: () => void;
 	onRemove: () => void;
 	onSetDefault: () => void;
@@ -92,51 +107,97 @@ function ModelRow({
 	const confirm = useConfirmer();
 
 	return (
-		<div className="flex h-[46px] items-center gap-3 rounded-[10px] border border-line bg-input px-3.5">
-			{/* Tighter than the row's own spacing: the mark belongs to the id beside it, and at the
-			    row's 12px it read as a separate column. */}
-			<span className="flex min-w-0 flex-1 items-center gap-2">
-				<ModelIcon model={model.modelId} name={model.name} size={15} />
-				<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-label text-ink" />
-			</span>
-			{isDefault && <Badge tone="accent">默认</Badge>}
-			<span className="rounded bg-card px-1.5 py-0.5 font-mono text-caption text-ink-faint">
-				{formatWindow(model.contextWindow)}
-			</span>
-			<button
-				type="button"
-				data-ly-tip="设为默认模型"
-				aria-label="设为默认模型"
-				onClick={onSetDefault}
-				className="text-ink-faint transition-colors hover:text-ink"
-			>
-				<Link2 size={14} strokeWidth={1.8} />
-			</button>
-			<button
-				type="button"
-				data-ly-tip="编辑"
-				aria-label="编辑模型"
-				onClick={onEdit}
-				className="text-ink-faint transition-colors hover:text-ink"
-			>
-				<Pencil size={14} strokeWidth={1.8} />
-			</button>
-			<button
-				type="button"
-				data-ly-tip="删除"
-				aria-label="删除模型"
-				onClick={() =>
-					confirm.ask({
-						title: `删除 ${model.modelId}？`,
-						detail: isDefault ? "它是当前的默认模型，删掉之后要另选一个。" : undefined,
-						confirmLabel: "删除",
-						onConfirm: onRemove,
-					})
-				}
-				className="text-ink-faint transition-colors hover:text-danger"
-			>
-				<Trash2 size={14} strokeWidth={1.8} />
-			</button>
+		<div className="group/row flex flex-col rounded-[10px] border border-line bg-input transition-colors duration-150">
+			<div className="flex h-[46px] items-center gap-2.5 px-3.5">
+				{/* Tighter than the row's own spacing: the mark belongs to the id beside it, and at the
+				    row's 12px it read as a separate column. */}
+				<span className="flex min-w-0 flex-1 items-center gap-2">
+					<ModelIcon model={model.modelId} name={model.name} size={15} />
+					<ScrollText text={model.modelId} className="min-w-0 flex-1 font-mono text-label text-ink" />
+				</span>
+
+				{/* Single model test quick status badge if tested */}
+				{testResult && (
+					<span
+						data-ly-tip={`${testResult.ok ? "测试通过" : "测试失败"} · ${testResult.message}`}
+						className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-caption tabular-nums transition-colors ${
+							testResult.ok ? "bg-ok/10 text-ok" : "bg-danger/10 text-danger"
+						}`}
+					>
+						{testResult.ok ? (
+							<Check size={11} strokeWidth={2.4} className="shrink-0" />
+						) : (
+							<CircleAlert size={11} strokeWidth={2.4} className="shrink-0" />
+						)}
+						{testResult.latencyMs > 0 && `${testResult.latencyMs}ms`}
+					</span>
+				)}
+
+				{isDefault && <Badge tone="accent">默认</Badge>}
+				<span className="rounded bg-card px-1.5 py-0.5 font-mono text-caption text-ink-faint">
+					{formatWindow(model.contextWindow)}
+				</span>
+
+				<button
+					type="button"
+					data-ly-tip={testing ? "正在测试连接…" : "测试此模型"}
+					aria-label="测试此模型"
+					disabled={testing}
+					onClick={onTest}
+					className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all hover:bg-card hover:text-ink active:scale-95 ${
+						testing ? "text-accent" : ""
+					}`}
+				>
+					{testing ? (
+						<RefreshCw size={13} strokeWidth={2} className="animate-spin text-accent" />
+					) : (
+						<Play size={13} strokeWidth={1.9} className="ml-0.5" />
+					)}
+				</button>
+
+				<button
+					type="button"
+					data-ly-tip="设为默认模型"
+					aria-label="设为默认模型"
+					onClick={onSetDefault}
+					className="flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card hover:text-ink"
+				>
+					<Link2 size={14} strokeWidth={1.8} />
+				</button>
+				<button
+					type="button"
+					data-ly-tip="编辑"
+					aria-label="编辑模型"
+					onClick={onEdit}
+					className="flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card hover:text-ink"
+				>
+					<Pencil size={14} strokeWidth={1.8} />
+				</button>
+				<button
+					type="button"
+					data-ly-tip="删除"
+					aria-label="删除模型"
+					onClick={() =>
+						confirm.ask({
+							title: `删除 ${model.modelId}？`,
+							detail: isDefault ? "它是当前的默认模型，删掉之后要另选一个。" : undefined,
+							confirmLabel: "删除",
+							onConfirm: onRemove,
+						})
+					}
+					className="flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card hover:text-danger"
+				>
+					<Trash2 size={14} strokeWidth={1.8} />
+				</button>
+			</div>
+
+			{/* If the individual test had an error, show a quiet informative line below the row */}
+			{testResult && !testResult.ok && (
+				<div className="border-t border-danger/20 bg-danger/5 px-3.5 py-1.5 text-detail text-danger">
+					<span className="font-medium">连接失败: </span>
+					{testResult.message}
+				</div>
+			)}
 
 			{confirm.element}
 		</div>

@@ -29,7 +29,10 @@ export function ProviderEditor({
 	defaultModelId,
 	testResult,
 	testing,
+	testingModelId,
+	modelTestResults,
 	onTest,
+	onTestModel,
 	onChange,
 	onRemove,
 	onEditModel,
@@ -40,7 +43,10 @@ export function ProviderEditor({
 	defaultModelId: string | null;
 	testResult: ProviderTestResult | null;
 	testing: boolean;
+	testingModelId?: string | null;
+	modelTestResults?: Record<string, ProviderTestResult>;
 	onTest: () => void;
+	onTestModel?: (modelId: string) => void;
 	onChange: (patch: Partial<ProviderConfig>) => void;
 	onRemove: () => void;
 	onEditModel: (model: ModelConfig | null) => void;
@@ -102,7 +108,10 @@ export function ProviderEditor({
 				defaultModelId={defaultModelId}
 				testResult={testResult}
 				testing={testing}
+				testingModelId={testingModelId}
+				modelTestResults={modelTestResults}
 				onTest={onTest}
+				onTestModel={onTestModel}
 				onEdit={onEditModel}
 				onRemove={onRemoveModel}
 				onSetDefault={onSetDefault}

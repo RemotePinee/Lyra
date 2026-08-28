@@ -16,7 +16,10 @@ import { registerSystemIpc } from "./system.ts";
 import { sessions } from "../session-hub.ts";
 
 export interface ServicesIpcDeps {
-	testProvider(provider: ReturnType<typeof settings>["providers"][number]): Promise<ProviderTestResult>;
+	testProvider(
+		provider: ReturnType<typeof settings>["providers"][number],
+		targetModelId?: string,
+	): Promise<ProviderTestResult>;
 	sync(): { status(): SyncStatus; stop(): Promise<void>; running: boolean } | null;
 	startSync(): Promise<SyncStatus>;
 	idleSyncStatus(): SyncStatus;
@@ -28,11 +31,14 @@ export function registerServicesIpc(deps: ServicesIpcDeps): void {
 	const syncServer = () => deps.sync();
 	const scheduler = () => deps.scheduler();
 
-	ipcMain.handle("providers:test", async (_event, providerId: string): Promise<ProviderTestResult> => {
-		const provider = settings().providers.find((p) => p.id === providerId);
-		if (!provider) return { ok: false, latencyMs: 0, message: "未找到该供应商配置" };
-		return testProvider(provider);
-	});
+	ipcMain.handle(
+		"providers:test",
+		async (_event, providerId: string, modelId?: string): Promise<ProviderTestResult> => {
+			const provider = settings().providers.find((p) => p.id === providerId);
+			if (!provider) return { ok: false, latencyMs: 0, message: "未找到该供应商配置" };
+			return testProvider(provider, modelId);
+		},
+	);
 
 	ipcMain.handle("sync:status", async () => syncServer()?.status() ?? idleSyncStatus());
 	ipcMain.handle("sync:start", async () => {

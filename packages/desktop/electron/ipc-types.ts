@@ -330,7 +330,7 @@ export interface LyraApi {
 		onExit(handler: (payload: { id: string; code: number }) => void): () => void;
 	};
 	providers: {
-		test(providerId: string): Promise<ProviderTestResult>;
+		test(providerId: string, modelId?: string): Promise<ProviderTestResult>;
 	};
 	sync: {
 		status(): Promise<SyncStatus>;

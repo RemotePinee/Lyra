@@ -23,6 +23,8 @@ export function useProviders() {
 	const [selectedId, setSelectedId] = useState<string | null>(providers[0]?.id ?? null);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<ProviderTestResult | null>(null);
+	const [testingModelId, setTestingModelId] = useState<string | null>(null);
+	const [modelTestResults, setModelTestResults] = useState<Record<string, ProviderTestResult>>({});
 
 	const selected = useMemo(
 		() => providers.find((p) => p.id === selectedId) ?? providers[0] ?? null,
@@ -37,6 +39,7 @@ export function useProviders() {
 		setSelectedId(id);
 		// The old result was about a different endpoint; leaving it up says the wrong thing.
 		setTestResult(null);
+		setModelTestResults({});
 	}
 
 	async function update(id: string, patch: Partial<ProviderConfig>) {
@@ -109,14 +112,24 @@ export function useProviders() {
 		await saveSettings({ ...settings, defaultModelId: modelId });
 	}
 
-	async function test() {
+	async function test(modelId?: string) {
 		if (!selected) return;
-		setTesting(true);
-		setTestResult(null);
-		try {
-			setTestResult(await window.lyra.providers.test(selected.id));
-		} finally {
-			setTesting(false);
+		if (modelId) {
+			setTestingModelId(modelId);
+			try {
+				const res = await window.lyra.providers.test(selected.id, modelId);
+				setModelTestResults((prev) => ({ ...prev, [modelId]: res }));
+			} finally {
+				setTestingModelId(null);
+			}
+		} else {
+			setTesting(true);
+			setTestResult(null);
+			try {
+				setTestResult(await window.lyra.providers.test(selected.id));
+			} finally {
+				setTesting(false);
+			}
 		}
 	}
 
@@ -126,6 +139,8 @@ export function useProviders() {
 		defaultModelId: settings?.defaultModelId ?? null,
 		testing,
 		testResult,
+		testingModelId,
+		modelTestResults,
 		select,
 		add,
 		update,

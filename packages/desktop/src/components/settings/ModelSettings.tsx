@@ -124,7 +124,10 @@ export function ModelSettings() {
                 defaultModelId={p.defaultModelId}
                 testResult={p.testResult}
                 testing={p.testing}
+                testingModelId={p.testingModelId}
+                modelTestResults={p.modelTestResults}
                 onTest={() => void p.test()}
+                onTestModel={(modelId) => void p.test(modelId)}
                 onChange={(patch) => void p.update(p.selected!.id, patch)}
                 onRemove={() => void p.remove(p.selected!.id)}
                 onEditModel={(model) =>
