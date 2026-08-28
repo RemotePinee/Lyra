@@ -295,6 +295,13 @@ export function sessionSlice(set: Set, get: Get) {
       },
     });
 
+    // Restore sub-agents for this session if available
+    void window.lyra.subAgents.list(snapshot.meta.id).then((subAgentsList) => {
+      if (get().activeSessionId === snapshot.meta.id && Array.isArray(subAgentsList)) {
+        useSubAgents.getState().sync(subAgentsList);
+      }
+    });
+
     // Capabilities describe a running agent; a transcript read from disk has none until the
     // session is activated, which the first message does.
     const capabilities = await window.lyra.sessions.capabilities(

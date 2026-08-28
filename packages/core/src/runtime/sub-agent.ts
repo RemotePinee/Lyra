@@ -11,15 +11,28 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { access } from "node:fs/promises";
+import { platform } from "node:os";
+import { join } from "node:path";
 import type { AgentEvent } from "../agent/events.ts";
 import type { AgentRunConfig } from "../agent/loop.ts";
 import { runTurn } from "../agent/runner.ts";
 import type { Settings } from "../config/settings.ts";
+import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
 import type { Skill } from "../skills/loader.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
 import type { ApprovalDecision, ApprovalRequest, ModelConfig, ProviderConfig, Tool } from "../types.ts";
 import type { SubAgentRegistry } from "./sub-agents.ts";
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await access(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 export interface SubAgentOptions {
 	sessionId: string;
@@ -46,7 +59,7 @@ export async function runSubAgent(
 	input: { description: string; prompt: string; agentType?: string },
 	provider: ProviderConfig,
 	model: ModelConfig,
-	parentSystemPrompt: string,
+	_parentSystemPrompt: string,
 ): Promise<string> {
 	const definition = options.agents.find((a) => a.name === (input.agentType ?? "general")) ?? BUILTIN_AGENTS[0];
 	const allowed =
@@ -88,6 +101,20 @@ export async function runSubAgent(
 		tools: allowed.map((tool) => tool.name),
 	});
 
+	// Build a complete, standalone system prompt for sub-agents
+	const subAgentPrompt = await buildSystemPrompt({
+		cwd: options.cwd,
+		tools: allowed,
+		skills: options.skills,
+		agents: options.agents,
+		projectInstructions: await loadProjectInstructions(options.cwd),
+		platform: platform(),
+		modelName: model.name,
+		isGitRepo: await pathExists(join(options.cwd, ".git")),
+		today: new Date().toISOString().slice(0, 10),
+		appendSystemPrompt: definition.systemPrompt,
+	});
+
 	let result: Awaited<ReturnType<typeof runTurn>>;
 	try {
 		result = await runTurn(
@@ -96,7 +123,7 @@ export async function runSubAgent(
 				cwd: options.cwd,
 				provider,
 				model,
-				systemPrompt: `${definition.systemPrompt}\n\n${parentSystemPrompt.split("# Environment")[1] ? `# Environment${parentSystemPrompt.split("# Environment")[1].split("\n\n#")[0]}` : ""}`,
+				systemPrompt: subAgentPrompt,
 				tools: allowed,
 				messages: [{ role: "user", content: [{ type: "text", text: input.prompt }], timestamp: Date.now() }],
 				thinking: options.settings.thinking,

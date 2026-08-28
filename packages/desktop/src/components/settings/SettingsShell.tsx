@@ -22,6 +22,7 @@ import { NavPane, useLayout } from "../../layout.tsx";
 import type { SettingsSection } from "../../store.ts";
 import { Scroller } from "../Scroller.tsx";
 import { useApp } from "../../store.ts";
+import { ToolbarButton } from "../WindowControls.tsx";
 import { AgentsSettings } from "./AgentsSettings.tsx";
 import { ArchivedSettings } from "./ArchivedSettings.tsx";
 import { AppearanceSettings } from "./AppearanceSettings.tsx";
@@ -84,13 +85,11 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 	},
 ];
 
-/** Matches the chat shell so the toggle button does not jump when you enter settings. */
-const TOOLBAR_LEFT = 78;
 export function SettingsShell() {
 	const section = useApp((s) => s.settingsSection);
 	const setSection = useApp((s) => s.setSettingsSection);
 	const setView = useApp((s) => s.setView);
-	const { compact, navOpen, toggleNav, dismissNav, sidebarWidth } = useLayout();
+	const { compact, navOpen, toggleNav, dismissNav, sidebarWidth, titlebar } = useLayout();
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -212,21 +211,16 @@ export function SettingsShell() {
 
 			{/* Last child, for the same DOM-order reason as the chat shell's toolbar. */}
 			<div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]">
-				<div className="no-drag absolute top-0 flex h-[44px] items-center gap-0.5" style={{ left: TOOLBAR_LEFT }}>
+				<div className="no-drag absolute top-0 flex h-[44px] items-center gap-0.5" style={{ left: titlebar.start }}>
 					{/*
 					 * Settings shares the shell's nav state, so a sidebar collapsed in the workspace
 					 * arrives collapsed here too. Without this button there would be no way back to
 					 * the section list — or, in a compact window, out of the drawer.
 					 */}
-					<button
-						type="button"
-						data-ly-tip={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
-						aria-label={navOpen ? "隐藏设置导航" : "显示设置导航"}
-						aria-pressed={compact && navOpen}
+					<ToolbarButton
+						label={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
 						onClick={toggleNav}
-						className={`no-drag flex h-7 w-7 items-center justify-center rounded-md transition-all duration-[var(--ly-t-quick)] ${
-							compact && navOpen ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
-						}`}
+						active={compact && navOpen}
 					>
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
 							<rect x="3" y="4" width="18" height="16" rx="2.5" />
@@ -243,16 +237,13 @@ export function SettingsShell() {
 								opacity={navOpen ? 0.5 : 0}
 							/>
 						</svg>
-					</button>
-					<button
-						type="button"
-						data-ly-tip="返回工作区"
-						aria-label="返回工作区"
+					</ToolbarButton>
+					<ToolbarButton
+						label="返回工作区"
 						onClick={() => setView("chat")}
-						className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-all duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
 					>
 						<ArrowLeft size={15} strokeWidth={1.9} />
-					</button>
+					</ToolbarButton>
 				</div>
 
 			</div>
