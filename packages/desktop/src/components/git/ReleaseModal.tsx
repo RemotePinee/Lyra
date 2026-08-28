@@ -2,7 +2,7 @@ import { Check, CheckCircle2, ChevronRight, ExternalLink, Loader2, Sparkles, Tag
 import { useCallback, useEffect, useState } from "react";
 import type { ReleaseInfo, WorkflowRunStatus } from "../../../electron/ipc-types.ts";
 import { Overlay } from "../modals/Overlay.tsx";
-import { Text } from "../Text.tsx";
+import { Scroller } from "../Scroller.tsx";
 
 interface ReleaseModalProps {
 	cwd: string;
@@ -157,46 +157,49 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 	};
 
 	return (
-		<Overlay onClose={onClose} width={580}>
+		<Overlay onClose={onClose} width={520}>
 			<div className="flex flex-col max-h-[85vh] bg-float text-ink">
-				{/* Header */}
-				<div className="flex items-center justify-between border-b border-line px-4 py-3 shrink-0">
-					<div className="flex items-center gap-2">
-						<Tag size={16} strokeWidth={1.8} className="text-accent" />
-						<Text size="body" weight="semibold">
-							发版中心 (Release)
-						</Text>
+				{/* Clean Header */}
+				<div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-line-soft">
+					<div className="flex items-center gap-2.5">
+						<div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink/5 text-ink">
+							<Tag size={15} strokeWidth={2} />
+						</div>
+						<div>
+							<h2 className="text-label font-semibold text-ink leading-none">发版中心</h2>
+							<p className="text-caption text-ink-faint mt-0.5">打包发布新版本并同步 GitHub Release</p>
+						</div>
 					</div>
 					<button
 						type="button"
 						onClick={onClose}
-						className="rounded-md p-1 text-ink-muted hover:bg-card-hover hover:text-ink"
+						className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer"
 					>
-						<X size={16} strokeWidth={1.8} />
+						<X size={15} />
 					</button>
 				</div>
 
 				{/* Body Content */}
-				<div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+				<Scroller className="flex-1 max-h-[60vh]" contentClassName="p-5 space-y-4">
 					{loading && (
 						<div className="flex items-center justify-center py-12">
-							<Loader2 size={24} className="animate-spin text-ink-faint" />
+							<Loader2 size={20} className="animate-spin text-ink-faint" />
 						</div>
 					)}
 
 					{publishSuccess && (
-						<div className="rounded-xl border border-success/30 bg-success/10 p-4 text-center space-y-2">
-							<div className="flex items-center justify-center gap-2 text-success font-medium">
+						<div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center space-y-2">
+							<div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium">
 								<CheckCircle2 size={18} />
 								<span>版本 {publishSuccess} 已成功打 Tag 并推送到远程！</span>
 							</div>
-							<Text size="detail" tone="muted">
+							<p className="text-detail text-ink-muted">
 								GitHub Actions Release 正在自动多平台打包并发布产物。
-							</Text>
+							</p>
 							<button
 								type="button"
 								onClick={onClose}
-								className="mt-2 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-shell hover:opacity-90"
+								className="mt-2 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-shell hover:opacity-90 cursor-pointer"
 							>
 								完成
 							</button>
@@ -206,57 +209,52 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 					{!loading && !publishSuccess && info && (
 						<>
 							{/* Current info & Target Version Picker */}
-							<div className="rounded-xl border border-line bg-card/40 p-3.5 space-y-3">
-								<div className="flex items-center justify-between text-detail">
-									<span className="text-ink-muted">
-										当前版本: <span className="font-mono text-ink">{info.currentVersion}</span>
+							<div className="rounded-xl bg-card p-3.5 space-y-3">
+								<div className="flex items-center justify-between text-detail text-ink-muted">
+									<span>
+										当前: <span className="font-mono text-ink font-medium">{info.currentVersion}</span>
 									</span>
-									<span className="text-ink-muted">
-										最新标签: <span className="font-mono text-ink">{info.latestTag ?? "无"}</span>
+									<span>
+										最新 Tag: <span className="font-mono text-ink font-medium">{info.latestTag ?? "无"}</span>
 									</span>
-									<span className="text-ink-muted">
-										未发布提交:{" "}
-										<span className="font-mono text-ink font-semibold">
-											{info.commitsSinceTag.length}
-										</span>
+									<span>
+										待发提交: <span className="font-mono text-ink font-semibold">{info.commitsSinceTag.length}</span>
 									</span>
 								</div>
 
 								<div>
-									<Text size="caption" tone="muted" className="mb-1.5 block">
-										目标版本号:
-									</Text>
-									<div className="grid grid-cols-4 gap-1.5">
+									<div className="text-caption font-medium text-ink-muted mb-2">选择目标版本号</div>
+									<div className="grid grid-cols-4 gap-2">
 										{(["patch", "minor", "major"] as const).map((type) => (
 											<button
 												key={type}
 												type="button"
 												onClick={() => setSelectedType(type)}
-												className={`flex flex-col items-center justify-center py-1.5 rounded-lg border text-detail transition-colors ${
+												className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-lg border text-detail transition-all cursor-pointer ${
 													selectedType === type
-														? "border-accent bg-accent/10 text-accent font-medium"
-														: "border-line bg-card hover:bg-card-hover text-ink"
+														? "border-primary bg-primary/10 text-primary font-medium shadow-xs"
+														: "border-line-soft bg-card-hover/40 hover:bg-card-hover text-ink"
 												}`}
 											>
-												<span className="uppercase text-[10px] tracking-wider text-ink-faint">
+												<span className="uppercase text-[9.5px] font-semibold tracking-wider opacity-60">
 													{type}
 												</span>
-												<span className="font-mono">{info.suggestedVersion[type]}</span>
+												<span className="font-mono mt-0.5 text-detail font-medium">{info.suggestedVersion[type]}</span>
 											</button>
 										))}
 										<button
 											type="button"
 											onClick={() => setSelectedType("custom")}
-											className={`flex flex-col items-center justify-center py-1.5 rounded-lg border text-detail transition-colors ${
+											className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-lg border text-detail transition-all cursor-pointer ${
 												selectedType === "custom"
-													? "border-accent bg-accent/10 text-accent font-medium"
-													: "border-line bg-card hover:bg-card-hover text-ink"
+													? "border-primary bg-primary/10 text-primary font-medium shadow-xs"
+													: "border-line-soft bg-card-hover/40 hover:bg-card-hover text-ink"
 											}`}
 										>
-											<span className="uppercase text-[10px] tracking-wider text-ink-faint">
+											<span className="uppercase text-[9.5px] font-semibold tracking-wider opacity-60">
 												自定义
 											</span>
-											<span className="font-mono">{customVersion || "x.y.z"}</span>
+											<span className="font-mono mt-0.5 text-detail font-medium">{customVersion || "x.y.z"}</span>
 										</button>
 									</div>
 
@@ -265,8 +263,8 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 											type="text"
 											value={customVersion}
 											onChange={(e) => setCustomVersion(e.target.value)}
-											placeholder="0.7.4"
-											className="mt-2 w-full rounded-lg border border-line bg-card px-2.5 py-1.5 text-detail font-mono text-ink focus:border-accent focus:outline-none"
+											placeholder="0.8.3"
+											className="mt-2.5 w-full rounded-lg border border-line-soft bg-card-hover/30 px-3 py-1.5 text-detail font-mono text-ink focus:border-primary focus:outline-none"
 										/>
 									)}
 								</div>
@@ -274,17 +272,17 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 
 							{/* Release Notes */}
 							<div className="space-y-1.5">
-								<div className="flex items-center justify-between">
-									<Text size="caption" tone="muted">
-										版本更新日志 (Release Notes):
-									</Text>
+								<div className="flex items-center justify-between px-0.5">
+									<span className="text-caption font-medium text-ink-muted">
+										版本更新日志 (Release Notes)
+									</span>
 									<button
 										type="button"
 										onClick={handleGenerateNotes}
 										disabled={generatingNotes}
-										className="flex items-center gap-1 text-[11px] text-accent hover:underline disabled:opacity-50"
+										className="flex items-center gap-1 text-micro font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
 									>
-										<Sparkles size={11} />
+										<Sparkles size={11} className="text-amber-500" />
 										<span>重新提取</span>
 									</button>
 								</div>
@@ -292,38 +290,36 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 									value={notes}
 									onChange={(e) => setNotes(e.target.value)}
 									rows={6}
-									className="w-full rounded-xl border border-line bg-card/60 p-2.5 text-detail font-mono text-ink focus:border-accent focus:outline-none resize-none"
+									className="w-full rounded-xl border border-line-soft bg-card p-3 text-detail font-mono text-ink focus:border-primary focus:outline-none resize-none leading-relaxed"
 									placeholder="在此编辑发版说明..."
 								/>
 							</div>
 
 							{/* Pre-flight Checks / GitHub Actions Dry Run */}
-							<div className="rounded-xl border border-line bg-card/30 p-3 space-y-2">
+							<div className="rounded-xl bg-card p-3.5 space-y-2.5">
 								<div className="flex items-center justify-between">
-									<div className="flex items-center gap-1.5">
-										<Text size="detail" weight="medium">
-											GitHub Actions 跨平台打包试运行 (Dry Run)
-										</Text>
-									</div>
+									<span className="text-detail font-medium text-ink">
+										跨平台打包试运行 (Dry Run)
+									</span>
 									<button
 										type="button"
 										onClick={handleTriggerDryRun}
 										disabled={triggeringDryRun || dryRunStatus?.status === "in_progress"}
-										className="flex items-center gap-1 rounded-md bg-card px-2.5 py-1 text-detail text-ink border border-line hover:bg-card-hover disabled:opacity-50"
+										className="flex items-center gap-1.5 rounded-lg bg-card-hover px-2.5 py-1 text-caption font-medium text-ink hover:bg-fill-muted transition-colors cursor-pointer disabled:opacity-50"
 									>
 										{triggeringDryRun ? (
-											<Loader2 size={12} className="animate-spin" />
+											<Loader2 size={12} className="animate-spin text-ink-muted" />
 										) : (
-											<Sparkles size={12} />
+											<Sparkles size={12} className="text-amber-500" />
 										)}
 										<span>
-											{dryRunStatus?.status === "in_progress" ? "运行中..." : "触发 Dry Run 校验"}
+											{dryRunStatus?.status === "in_progress" ? "正在构建..." : "触发 Dry Run"}
 										</span>
 									</button>
 								</div>
 
 								{dryRunStatus && (
-									<div className="rounded-lg border border-line/60 bg-float/60 p-2 text-detail space-y-1.5">
+									<div className="rounded-lg bg-card-hover/50 p-2.5 text-detail space-y-2">
 										<div className="flex items-center justify-between text-caption">
 											<span className="text-ink-muted">
 												状态:{" "}
@@ -340,31 +336,31 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 													href={dryRunStatus.url}
 													target="_blank"
 													rel="noreferrer"
-													className="flex items-center gap-0.5 text-accent hover:underline"
+													className="flex items-center gap-1 text-ink-muted hover:text-ink transition-colors"
 												>
 													<span>查看 Actions 日志</span>
-													<ExternalLink size={10} />
+													<ExternalLink size={10.5} />
 												</a>
 											)}
 										</div>
 
 										{dryRunStatus.jobs.length > 0 && (
-											<div className="grid grid-cols-3 gap-1 pt-1">
+											<div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-line-soft">
 												{dryRunStatus.jobs.map((job) => (
 													<div
 														key={job.name}
-														className="flex items-center gap-1 text-[11px] text-ink-muted"
+														className="flex items-center gap-1.5 text-micro text-ink-muted truncate"
 													>
 														{job.status === "completed" ? (
 															job.conclusion === "success" ? (
-																<Check size={12} className="text-success shrink-0" />
+																<Check size={12} className="text-emerald-500 shrink-0" />
 															) : (
-																<XCircle size={12} className="text-danger shrink-0" />
+																<XCircle size={12} className="text-rose-500 shrink-0" />
 															)
 														) : (
 															<Loader2
 																size={12}
-																className="animate-spin text-accent shrink-0"
+																className="animate-spin text-amber-500 shrink-0"
 															/>
 														)}
 														<span className="truncate">{job.name}</span>
@@ -377,25 +373,25 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 							</div>
 
 							{error && (
-								<div className="rounded-lg border border-danger/30 bg-danger/10 p-2.5 text-detail text-danger">
+								<div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-detail text-rose-500">
 									{error}
 								</div>
 							)}
 						</>
 					)}
-				</div>
+				</Scroller>
 
-				{/* Footer Actions */}
+				{/* Clean Footer Actions */}
 				{!publishSuccess && (
-					<div className="flex items-center justify-between border-t border-line px-4 py-3 shrink-0 bg-card/20">
-						<Text size="detail" tone="muted">
-							目标: <span className="font-mono font-semibold text-ink">v{currentTargetVersion}</span>
-						</Text>
+					<div className="flex items-center justify-between border-t border-line-soft px-5 py-3 shrink-0 bg-surface-alt/30">
+						<div className="text-detail text-ink-muted">
+							发布目标: <span className="font-mono font-semibold text-ink">v{currentTargetVersion}</span>
+						</div>
 						<div className="flex items-center gap-2">
 							<button
 								type="button"
 								onClick={onClose}
-								className="rounded-lg border border-line bg-card px-3 py-1.5 text-detail font-medium text-ink hover:bg-card-hover"
+								className="rounded-lg px-3 py-1.5 text-detail font-medium text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer"
 							>
 								取消
 							</button>
@@ -403,7 +399,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 								type="button"
 								onClick={handlePublish}
 								disabled={publishing || !currentTargetVersion || loading}
-								className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-1.5 text-detail font-medium text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+								className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-shell hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
 							>
 								{publishing && <Loader2 size={13} className="animate-spin" />}
 								<span>确认并发布 (打 Tag & Push)</span>

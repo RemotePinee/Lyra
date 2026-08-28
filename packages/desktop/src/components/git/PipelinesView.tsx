@@ -27,12 +27,45 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkflowRunStatus, WorkflowRunSummary } from "../../../electron/ipc-types.ts";
 import { IconButton } from "../IconButton.tsx";
 import { Scroller } from "../Scroller.tsx";
-import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
+import { SkeletonBar, SkeletonList, useSlowLoad } from "../Skeleton.tsx";
+import { readCachedDetail, readCachedRuns, writeCachedDetail, writeCachedRuns } from "./pipeline-cache.ts";
 import { relativeTime } from "./relative-time.ts";
 
 interface PipelinesViewProps {
 	cwd: string;
 	onOpenRelease?: () => void;
+}
+
+/** Specific pipeline skeleton matching run list row structure */
+function PipelineSkeletonList({ count = 6 }: { count?: number }) {
+	const titles = [80, 110, 65, 95, 75, 100];
+	const messages = [90, 70, 85, 60, 78, 88];
+	return (
+		<div className="space-y-1" role="status" aria-label="正在读取流水线">
+			{Array.from({ length: count }, (_, i) => {
+				const titleW = titles[i % titles.length] ?? 80;
+				const msgW = messages[i % messages.length] ?? 75;
+				return (
+					<div key={i} className="p-2.5 rounded-xl space-y-2" aria-hidden>
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								<span className="ly-skeleton block h-3.5 w-3.5 rounded-full shrink-0" />
+								<SkeletonBar width={`${titleW}px`} height={10} />
+							</div>
+							<SkeletonBar width="42px" height={9} />
+						</div>
+						<div className="pl-5 space-y-1.5">
+							<SkeletonBar width={`${msgW}%`} height={9} />
+							<div className="flex items-center gap-3 pt-0.5">
+								<SkeletonBar width="56px" height={8} />
+								<SkeletonBar width="48px" height={8} />
+							</div>
+						</div>
+					</div>
+				);
+			})}
+		</div>
+	);
 }
 
 /** Format duration in seconds or minutes */
@@ -76,38 +109,47 @@ function StatusIcon({
 }
 
 export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
-	const [runs, setRuns] = useState<WorkflowRunSummary[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [runs, setRuns] = useState<WorkflowRunSummary[]>(() => readCachedRuns(cwd));
+	const [loading, setLoading] = useState(() => runs.length === 0);
 	const [refreshing, setRefreshing] = useState(false);
 	const [inspectRun, setInspectRun] = useState<WorkflowRunSummary | null>(null);
 	const [runDetail, setRunDetail] = useState<WorkflowRunStatus | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [expandedJobs, setExpandedJobs] = useState<Record<number, boolean>>({});
 
-	const showSkeleton = useSlowLoad(loading);
+	const showSkeleton = useSlowLoad(loading && runs.length === 0);
 	const activePollRef = useRef<NodeJS.Timeout | null>(null);
 
 	const fetchRuns = useCallback(
 		async (silent = false) => {
-			if (!silent) setLoading(true);
+			if (!silent && runs.length === 0) setLoading(true);
 			else setRefreshing(true);
 			try {
 				const list = await window.lyra.git.listWorkflowRuns(cwd, 30);
 				setRuns(list);
+				writeCachedRuns(cwd, list);
 			} finally {
 				setLoading(false);
 				setRefreshing(false);
 			}
 		},
-		[cwd],
+		[cwd, runs.length],
 	);
 
 	const fetchDetail = useCallback(
 		async (runId: number, silent = false) => {
-			if (!silent) setDetailLoading(true);
+			if (!silent) {
+				const cached = readCachedDetail(cwd, runId);
+				if (cached) {
+					setRunDetail(cached);
+				} else {
+					setDetailLoading(true);
+				}
+			}
 			try {
 				const detail = await window.lyra.git.workflowRunStatus(cwd, runId);
 				setRunDetail(detail);
+				if (detail) writeCachedDetail(cwd, runId, detail);
 			} finally {
 				setDetailLoading(false);
 			}
@@ -157,8 +199,8 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 	// Skeletons during initial cold load
 	if (showSkeleton) {
 		return (
-			<div className="flex h-full flex-col p-4">
-				<SkeletonList count={7} />
+			<div className="flex h-full flex-col p-2.5 overflow-hidden">
+				<PipelineSkeletonList count={6} />
 			</div>
 		);
 	}
