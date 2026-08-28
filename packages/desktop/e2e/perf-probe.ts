@@ -63,6 +63,10 @@ async function main() {
 		await time("git.status (dirty repo)", `window.lyra.git.status(${JSON.stringify(repo)})`);
 		await time("git.repos (dirty repo)", `window.lyra.git.repos(${JSON.stringify(repo)})`);
 		await time("sessions.list", `window.lyra.sessions.list()`);
+		// What the git panel's changes view asks for on every status it receives.
+		await time("diff.workspaceDiff", `window.lyra.diff.workspaceDiff(${JSON.stringify(repo)})`);
+		await time("git.diffRefs (staged)", `window.lyra.git.diffRefs(${JSON.stringify(repo)}, "HEAD", null)`);
+		await time("git.worktrees", `window.lyra.git.worktrees(${JSON.stringify(repo)})`);
 
 		/*
 		 * What the user feels: is the main process still answering while a project is being read?
