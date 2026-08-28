@@ -73,12 +73,27 @@ export function Scroller({
 		const thumbHeight = overflow ? Math.max(28, (clientHeight / scrollHeight) * clientHeight) : 0;
 		const travel = clientHeight - thumbHeight;
 		const progress = scrollHeight - clientHeight <= 0 ? 0 : scrollTop / (scrollHeight - clientHeight);
-		setMetrics({
-			thumbTop: travel * progress,
-			thumbHeight,
-			overflow,
-			atTop: scrollTop <= 1,
-			atBottom: scrollTop >= scrollHeight - clientHeight - 1,
+		const newThumbTop = travel * progress;
+		const newAtTop = scrollTop <= 1;
+		const newAtBottom = scrollTop >= scrollHeight - clientHeight - 1;
+
+		setMetrics((prev) => {
+			if (
+				Math.abs(prev.thumbTop - newThumbTop) < 0.5 &&
+				Math.abs(prev.thumbHeight - thumbHeight) < 0.5 &&
+				prev.overflow === overflow &&
+				prev.atTop === newAtTop &&
+				prev.atBottom === newAtBottom
+			) {
+				return prev;
+			}
+			return {
+				thumbTop: newThumbTop,
+				thumbHeight,
+				overflow,
+				atTop: newAtTop,
+				atBottom: newAtBottom,
+			};
 		});
 	}, [viewport]);
 
@@ -87,16 +102,25 @@ export function Scroller({
 		if (!el) return;
 		measure();
 
+		let frame = 0;
+		const scheduleMeasure = () => {
+			if (frame) return;
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				measure();
+			});
+		};
+
 		// Both are needed: the box changes when the window resizes, and the content changes
 		// when messages stream in or a list is filtered.
-		const observer = new ResizeObserver(measure);
+		const observer = new ResizeObserver(scheduleMeasure);
 		observer.observe(el);
-		for (const child of el.children) observer.observe(child);
 
-		const mutations = new MutationObserver(measure);
+		const mutations = new MutationObserver(scheduleMeasure);
 		mutations.observe(el, { childList: true, subtree: true, characterData: true });
 
 		return () => {
+			if (frame) cancelAnimationFrame(frame);
 			observer.disconnect();
 			mutations.disconnect();
 		};

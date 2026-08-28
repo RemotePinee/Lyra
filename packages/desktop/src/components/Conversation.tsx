@@ -32,11 +32,27 @@ export function Conversation() {
   useEffect(() => {
     const element = column.current;
     if (!element) return;
-    const measure = () => setRoomToFloat(element.clientWidth >= 320 + 32 + 420);
+    let frame = 0;
+    const measure = () => {
+      if (document.documentElement.hasAttribute("data-resizing")) {
+        // Debounce / coalesce measurement during resizing drags so we don't trigger layout thrashing
+        if (!frame) {
+          frame = requestAnimationFrame(() => {
+            frame = 0;
+            setRoomToFloat(element.clientWidth >= 320 + 32 + 420);
+          });
+        }
+        return;
+      }
+      setRoomToFloat(element.clientWidth >= 320 + 32 + 420);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);

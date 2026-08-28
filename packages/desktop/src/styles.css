@@ -324,6 +324,12 @@
     user-select: none !important;
   }
 
+  /* Optimize layout reflow during window/sidebar resizing:
+     Contain rendering within message blocks & tool cards so resizing width doesn't thrash the whole DOM subtree */
+  .group\/msg {
+    contain: layout paint style;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--color-info) 35%, transparent);
   }
