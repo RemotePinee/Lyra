@@ -25,6 +25,8 @@ export function useProviders() {
 	const [testResult, setTestResult] = useState<ProviderTestResult | null>(null);
 	const [testingModelId, setTestingModelId] = useState<string | null>(null);
 	const [modelTestResults, setModelTestResults] = useState<Record<string, ProviderTestResult>>({});
+	const [fetchingModels, setFetchingModels] = useState(false);
+	const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
 
 	const selected = useMemo(
 		() => providers.find((p) => p.id === selectedId) ?? providers[0] ?? null,
@@ -40,6 +42,7 @@ export function useProviders() {
 		// The old result was about a different endpoint; leaving it up says the wrong thing.
 		setTestResult(null);
 		setModelTestResults({});
+		setFetchModelsError(null);
 	}
 
 	async function update(id: string, patch: Partial<ProviderConfig>) {
@@ -133,6 +136,53 @@ export function useProviders() {
 		}
 	}
 
+	async function fetchModelsFromEndpoint() {
+		if (!selected) return;
+		setFetchingModels(true);
+		setFetchModelsError(null);
+		try {
+			const res = await window.lyra.providers.fetchModels(selected.id);
+			if (!res.ok) {
+				setFetchModelsError(res.error || "获取模型列表失败");
+				return;
+			}
+			if (res.models.length === 0) {
+				setFetchModelsError("该端点未返回任何模型");
+				return;
+			}
+
+			// Add discovered models that aren't already present in provider.models
+			const existingIds = new Set(selected.models.map((m) => m.modelId));
+			const newModels: ModelConfig[] = res.models
+				.filter((mId) => !existingIds.has(mId))
+				.map((mId) => ({
+					id: `${selected.id}/${mId}`,
+					providerId: selected.id,
+					modelId: mId,
+					name: mId,
+					contextWindow: 200_000,
+					maxOutputTokens: 16_384,
+					supportsThinking: true,
+					supportsImages: true,
+					supportsTools: true,
+				}));
+
+			if (newModels.length > 0) {
+				await saveSettings({
+					...settings!,
+					providers: settings!.providers.map((p) =>
+						p.id === selected.id ? { ...p, models: [...p.models, ...newModels] } : p,
+					),
+					defaultModelId: settings!.defaultModelId ?? newModels[0]?.id ?? null,
+				});
+			}
+		} catch (err) {
+			setFetchModelsError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setFetchingModels(false);
+		}
+	}
+
 	return {
 		providers,
 		selected,
@@ -141,6 +191,9 @@ export function useProviders() {
 		testResult,
 		testingModelId,
 		modelTestResults,
+		fetchingModels,
+		fetchModelsError,
+		fetchModelsFromEndpoint,
 		select,
 		add,
 		update,

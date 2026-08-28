@@ -10,7 +10,7 @@
  * about to compare it against.
  */
 
-import { Check, CircleAlert, Link2, Pencil, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, CircleAlert, DownloadCloud, Link2, Pencil, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { ModelConfig } from "@lyra/core";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
 import { useConfirmer } from "../Confirm.tsx";
@@ -27,6 +27,9 @@ export function ProviderModels({
 	testing,
 	testingModelId,
 	modelTestResults,
+	fetchingModels,
+	fetchModelsError,
+	onFetchModels,
 	onTest,
 	onTestModel,
 	onEdit,
@@ -39,6 +42,9 @@ export function ProviderModels({
 	testing: boolean;
 	testingModelId?: string | null;
 	modelTestResults?: Record<string, ProviderTestResult>;
+	fetchingModels?: boolean;
+	fetchModelsError?: string | null;
+	onFetchModels?: () => void;
 	onTest: () => void;
 	onTestModel?: (modelId: string) => void;
 	/** `null` adds a new one. */
@@ -49,11 +55,39 @@ export function ProviderModels({
 	return (
 		<div className="pt-6">
 			<div className="mb-2 flex items-center justify-between">
-				<span className="text-label text-ink-muted">模型列表</span>
-				<GhostButton onClick={onTest} disabled={testing || !!testingModelId}>
-					<RollingText>{testing ? "测试中…" : "测试全部"}</RollingText>
-				</GhostButton>
+				<div className="flex items-center gap-2">
+					<span className="text-label text-ink-muted">模型列表</span>
+					{models.length > 0 && (
+						<span className="rounded-md bg-card-hover px-1.5 py-0.5 text-micro font-medium text-ink-faint">
+							{models.length}
+						</span>
+					)}
+				</div>
+				<div className="flex items-center gap-1.5">
+					{onFetchModels && (
+						<button
+							type="button"
+							onClick={onFetchModels}
+							disabled={fetchingModels || testing}
+							data-ly-tip="从当前 Base URL 端点自动获取可用模型列表"
+							className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-caption font-medium text-ink-muted transition-colors hover:bg-card-hover hover:text-ink disabled:opacity-50 cursor-pointer"
+						>
+							<DownloadCloud size={13} className={fetchingModels ? "animate-spin text-amber-500" : ""} />
+							<RollingText>{fetchingModels ? "获取中…" : "拉取模型"}</RollingText>
+						</button>
+					)}
+					<GhostButton onClick={onTest} disabled={testing || !!testingModelId || fetchingModels}>
+						<RollingText>{testing ? "测试中…" : "测试全部"}</RollingText>
+					</GhostButton>
+				</div>
 			</div>
+
+			{fetchModelsError && (
+				<div className="mb-2 flex items-center gap-1.5 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-caption text-rose-500">
+					<CircleAlert size={13} className="shrink-0" />
+					<span className="truncate">{fetchModelsError}</span>
+				</div>
+			)}
 
 			<div className="space-y-2">
 				{models.map((model) => (
@@ -73,7 +107,7 @@ export function ProviderModels({
 				<button
 					type="button"
 					onClick={() => onEdit(null)}
-					className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line px-3 text-label text-ink-muted transition-colors hover:border-ink-faint hover:text-ink"
+					className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line px-3 text-label text-ink-muted transition-colors hover:border-ink-faint hover:text-ink cursor-pointer"
 				>
 					<Plus size={14} strokeWidth={1.9} />
 					添加模型

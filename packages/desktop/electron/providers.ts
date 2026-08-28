@@ -99,3 +99,50 @@ export async function testProvider(
 		};
 	}
 }
+
+/**
+ * Fetch available model list directly from the provider's /models endpoint.
+ */
+export async function fetchEndpointModels(
+	provider: Settings["providers"][number],
+): Promise<{ ok: boolean; models: string[]; error?: string }> {
+	const base = provider.baseUrl.replace(/\/+$/, "");
+	const modelsUrl = base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
+
+	try {
+		const res = await fetch(modelsUrl, {
+			headers:
+				provider.api === "anthropic-messages"
+					? { "x-api-key": provider.apiKey, "anthropic-version": "2023-06-01" }
+					: { authorization: `Bearer ${provider.apiKey}` },
+			signal: AbortSignal.timeout(15_000),
+		});
+
+		if (!res.ok) {
+			const detail = (await res.text().catch(() => "")).slice(0, 200);
+			return { ok: false, models: [], error: `HTTP ${res.status}: ${detail || "获取模型列表失败"}` };
+		}
+
+		const body = (await res.json()) as { data?: { id?: string }[] } | { models?: { id?: string; name?: string }[] } | string[];
+		let modelList: string[] = [];
+
+		if (Array.isArray(body)) {
+			modelList = body.filter((m): m is string => typeof m === "string");
+		} else if (body && "data" in body && Array.isArray(body.data)) {
+			modelList = body.data.map((m) => m.id ?? "").filter(Boolean);
+		} else if (body && "models" in body && Array.isArray(body.models)) {
+			modelList = body.models.map((m) => m.id ?? m.name ?? "").filter(Boolean);
+		}
+
+		// Sort models naturally
+		modelList.sort((a, b) => a.localeCompare(b));
+
+		return { ok: true, models: modelList };
+	} catch (error) {
+		return {
+			ok: false,
+			models: [],
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}

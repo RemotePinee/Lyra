@@ -126,6 +126,9 @@ export function ModelSettings() {
                 testing={p.testing}
                 testingModelId={p.testingModelId}
                 modelTestResults={p.modelTestResults}
+                fetchingModels={p.fetchingModels}
+                fetchModelsError={p.fetchModelsError}
+                onFetchModels={() => void p.fetchModelsFromEndpoint()}
                 onTest={() => void p.test()}
                 onTestModel={(modelId) => void p.test(modelId)}
                 onChange={(patch) => void p.update(p.selected!.id, patch)}

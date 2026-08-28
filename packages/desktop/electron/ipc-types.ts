@@ -352,6 +352,7 @@ export interface LyraApi {
 	};
 	providers: {
 		test(providerId: string, modelId?: string): Promise<ProviderTestResult>;
+		fetchModels(providerId: string): Promise<{ ok: boolean; models: string[]; error?: string }>;
 	};
 	sync: {
 		status(): Promise<SyncStatus>;

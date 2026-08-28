@@ -68,10 +68,11 @@ function PipelineSkeletonList({ count = 6 }: { count?: number }) {
 	);
 }
 
-/** Format duration in seconds or minutes */
+/** Format duration in seconds or minutes with live precision */
 function formatDuration(startedAt?: string, completedAt?: string): string {
 	if (!startedAt) return "";
 	const start = new Date(startedAt).getTime();
+	if (Number.isNaN(start) || start <= 0) return "";
 	const end = completedAt ? new Date(completedAt).getTime() : Date.now();
 	const diff = Math.max(0, Math.floor((end - start) / 1000));
 	if (diff < 60) return `${diff}s`;
@@ -116,9 +117,31 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 	const [runDetail, setRunDetail] = useState<WorkflowRunStatus | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [expandedJobs, setExpandedJobs] = useState<Record<number, boolean>>({});
+	const [, setTick] = useState(0);
 
 	const showSkeleton = useSlowLoad(loading && runs.length === 0);
 	const activePollRef = useRef<NodeJS.Timeout | null>(null);
+	const liveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+	// 1-second live ticker for running tasks/steps so durations count up in real time
+	useEffect(() => {
+		const hasActive =
+			runs.some((r) => r.status === "in_progress" || r.status === "queued") ||
+			runDetail?.status === "in_progress" ||
+			runDetail?.status === "queued";
+
+		if (hasActive) {
+			liveTimerRef.current = setInterval(() => {
+				setTick((t) => (t + 1) % 100000);
+			}, 1000);
+		} else if (liveTimerRef.current) {
+			clearInterval(liveTimerRef.current);
+		}
+
+		return () => {
+			if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+		};
+	}, [runs, runDetail]);
 
 	const fetchRuns = useCallback(
 		async (silent = false) => {
@@ -433,7 +456,6 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 			{/* Clean Runs List */}
 			<Scroller className="flex-1 px-2.5 pb-4 space-y-1">
 				{runs.map((run) => {
-					const isRunning = run.status === "in_progress";
 					return (
 						<button
 							key={run.id}
@@ -467,11 +489,6 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 									<span className="flex items-center gap-1 shrink-0 font-mono text-micro">
 										<GitCommitHorizontal size={12} className="shrink-0" />
 										<span>{run.headSha.slice(0, 7)}</span>
-									</span>
-								)}
-								{isRunning && (
-									<span className="ml-auto text-amber-500 text-caption font-medium animate-pulse">
-										运行中…
 									</span>
 								)}
 								<ChevronRight size={13} className="ml-auto text-ink-faint opacity-0 group-hover/run:opacity-100 transition-opacity" />

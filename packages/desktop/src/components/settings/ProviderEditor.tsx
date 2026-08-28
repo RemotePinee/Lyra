@@ -31,6 +31,9 @@ export function ProviderEditor({
 	testing,
 	testingModelId,
 	modelTestResults,
+	fetchingModels,
+	fetchModelsError,
+	onFetchModels,
 	onTest,
 	onTestModel,
 	onChange,
@@ -45,6 +48,9 @@ export function ProviderEditor({
 	testing: boolean;
 	testingModelId?: string | null;
 	modelTestResults?: Record<string, ProviderTestResult>;
+	fetchingModels?: boolean;
+	fetchModelsError?: string | null;
+	onFetchModels?: () => void;
 	onTest: () => void;
 	onTestModel?: (modelId: string) => void;
 	onChange: (patch: Partial<ProviderConfig>) => void;
@@ -110,6 +116,9 @@ export function ProviderEditor({
 				testing={testing}
 				testingModelId={testingModelId}
 				modelTestResults={modelTestResults}
+				fetchingModels={fetchingModels}
+				fetchModelsError={fetchModelsError}
+				onFetchModels={onFetchModels}
 				onTest={onTest}
 				onTestModel={onTestModel}
 				onEdit={onEditModel}

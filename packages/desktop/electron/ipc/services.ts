@@ -20,6 +20,9 @@ export interface ServicesIpcDeps {
 		provider: ReturnType<typeof settings>["providers"][number],
 		targetModelId?: string,
 	): Promise<ProviderTestResult>;
+	fetchEndpointModels?(
+		provider: ReturnType<typeof settings>["providers"][number],
+	): Promise<{ ok: boolean; models: string[]; error?: string }>;
 	sync(): { status(): SyncStatus; stop(): Promise<void>; running: boolean } | null;
 	startSync(): Promise<SyncStatus>;
 	idleSyncStatus(): SyncStatus;
@@ -27,7 +30,7 @@ export interface ServicesIpcDeps {
 }
 
 export function registerServicesIpc(deps: ServicesIpcDeps): void {
-	const { testProvider, idleSyncStatus, startSync } = deps;
+	const { testProvider, fetchEndpointModels, idleSyncStatus, startSync } = deps;
 	const syncServer = () => deps.sync();
 	const scheduler = () => deps.scheduler();
 
@@ -37,6 +40,16 @@ export function registerServicesIpc(deps: ServicesIpcDeps): void {
 			const provider = settings().providers.find((p) => p.id === providerId);
 			if (!provider) return { ok: false, latencyMs: 0, message: "未找到该供应商配置" };
 			return testProvider(provider, modelId);
+		},
+	);
+
+	ipcMain.handle(
+		"providers:fetchModels",
+		async (_event, providerId: string): Promise<{ ok: boolean; models: string[]; error?: string }> => {
+			const provider = settings().providers.find((p) => p.id === providerId);
+			if (!provider) return { ok: false, models: [], error: "未找到该供应商配置" };
+			if (!fetchEndpointModels) return { ok: false, models: [], error: "未实现模型获取" };
+			return fetchEndpointModels(provider);
 		},
 	);
 

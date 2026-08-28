@@ -69,7 +69,7 @@ import { registerServicesIpc } from "./ipc/services.ts";
 import { registerWorkspaceIpc } from "./ipc/workspace.ts";
 import { workspaceInfo } from "./workspace-info.ts";
 import { configureSync, startSync, stopSync, syncStatusSource } from "./sync.ts";
-import { idleSyncStatus, testProvider } from "./providers.ts";
+import { fetchEndpointModels, idleSyncStatus, testProvider } from "./providers.ts";
 import { registerSessionsIpc } from "./ipc/sessions.ts";
 import { ensureLiveSession } from "./session-hub.ts";
 import {
@@ -549,6 +549,7 @@ function registerIpc(): void {
 
 	registerServicesIpc({
 		testProvider,
+		fetchEndpointModels,
 		sync: syncStatusSource,
 		startSync,
 		idleSyncStatus,
