@@ -41,6 +41,16 @@ export {
 	pushBranch,
 } from "./git-history.ts";
 export { addWorktree, initRepo, listRepos, listWorktrees, type RepoRef } from "./git-repos.ts";
+export {
+	bumpSemver,
+	bumpVersionFiles,
+	getReleaseInfo,
+	getWorkflowRunStatus,
+	publishReleaseTag,
+	triggerReleaseDryRun,
+	type ReleaseInfo,
+	type WorkflowRunStatus,
+} from "./git-release.ts";
 
 export async function isGitRepo(cwd: string): Promise<boolean> {
 	return git(cwd, ["rev-parse", "--is-inside-work-tree"])

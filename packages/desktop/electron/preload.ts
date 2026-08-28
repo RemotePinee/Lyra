@@ -295,6 +295,11 @@ const api: LyraApi = {
 		deleteBranch: (cwd, name, force) => ipcRenderer.invoke("git:deleteBranch", cwd, name, force),
 		push: (cwd) => ipcRenderer.invoke("git:push", cwd),
 		pull: (cwd) => ipcRenderer.invoke("git:pull", cwd),
+		releaseInfo: (cwd) => ipcRenderer.invoke("git:releaseInfo", cwd),
+		bumpVersion: (cwd, newVersion) => ipcRenderer.invoke("git:bumpVersion", cwd, newVersion),
+		triggerDryRun: (cwd) => ipcRenderer.invoke("git:triggerDryRun", cwd),
+		workflowRunStatus: (cwd, runId) => ipcRenderer.invoke("git:workflowRunStatus", cwd, runId),
+		publishReleaseTag: (cwd, version) => ipcRenderer.invoke("git:publishReleaseTag", cwd, version),
 	},
 	diff: {
 		workspaceDiff: (cwd) => ipcRenderer.invoke("diff:workspace", cwd),

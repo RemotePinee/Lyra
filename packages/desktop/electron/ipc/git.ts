@@ -34,6 +34,11 @@ import {
 	discardPaths,
 	unstagePaths,
 	workspaceStat,
+	getReleaseInfo,
+	bumpVersionFiles,
+	triggerReleaseDryRun,
+	getWorkflowRunStatus,
+	publishReleaseTag,
 } from "../git.ts";
 import {
 	accounts,
@@ -257,4 +262,32 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	ipcMain.handle("git:findLocalCheckout", async (_event, repo: string, candidates: string[]) =>
 		findLocalCheckout(repo, candidates),
 	);
+
+	/*
+	 * Release management handlers: inspect, bump, dry-run, and publish tag.
+	 */
+	ipcMain.handle("git:releaseInfo", async (_event, cwd: string) => {
+		if (!insideAProject(cwd)) return null;
+		return getReleaseInfo(cwd);
+	});
+
+	ipcMain.handle("git:bumpVersion", async (_event, cwd: string, newVersion: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return bumpVersionFiles(cwd, newVersion);
+	});
+
+	ipcMain.handle("git:triggerDryRun", async (_event, cwd: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return triggerReleaseDryRun(cwd);
+	});
+
+	ipcMain.handle("git:workflowRunStatus", async (_event, cwd: string, runId: number) => {
+		if (!insideAProject(cwd)) return null;
+		return getWorkflowRunStatus(cwd, runId);
+	});
+
+	ipcMain.handle("git:publishReleaseTag", async (_event, cwd: string, version: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return publishReleaseTag(cwd, version);
+	});
 }

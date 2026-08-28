@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Tag } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveRefresh } from "../useLiveRefresh.ts";
 
@@ -13,6 +13,7 @@ import { useApp } from "../../store.ts";
 import { BranchesView } from "./BranchesView.tsx";
 import { ChangesView } from "./ChangesView.tsx";
 import { HistoryView } from "./HistoryView.tsx";
+import { ReleaseModal } from "./ReleaseModal.tsx";
 import { RepoPicker } from "./RepoPicker.tsx";
 import { sameStatus } from "./sameStatus.ts";
 import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
@@ -61,6 +62,7 @@ export function GitPanel() {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [releaseOpen, setReleaseOpen] = useState(false);
 
   /*
    * Rescan when the workspace changes; the selection follows unless it is still valid.
@@ -355,6 +357,13 @@ export function GitPanel() {
           // Pressing 刷新 means "go and look now", so it never rides on a read already in flight.
           onClick={() => void read()}
         />
+        <IconButton
+          icon={<Tag size={12} strokeWidth={1.9} />}
+          label="发版 (Release)"
+          size="sm"
+          disabled={busy}
+          onClick={() => setReleaseOpen(true)}
+        />
       </div>
 
       {/* One row of views, counted where a count means something. */}
@@ -428,6 +437,16 @@ export function GitPanel() {
           repos={repos}
           trees={trees}
           onSelectRepo={setSelected}
+        />
+      )}
+
+      {releaseOpen && (
+        <ReleaseModal
+          cwd={workspace.path}
+          onClose={() => {
+            setReleaseOpen(false);
+            void read();
+          }}
         />
       )}
     </div>
