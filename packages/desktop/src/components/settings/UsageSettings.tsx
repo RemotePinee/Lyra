@@ -57,18 +57,23 @@ export function UsageSettings() {
        * window.
        */}
       <div className="@container mb-8">
-        <div className="grid grid-cols-2 gap-3 @xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 @lg:grid-cols-3 @2xl:grid-cols-5">
           <Stat label="会话" value={sessions.length.toLocaleString()} />
           <Stat label="消息" value={totals.messages.toLocaleString()} />
+          <Stat label="输入 token" value={totals.input.toLocaleString()} />
           <Stat
-            label="输入 token"
-            value={totals.input.toLocaleString()}
-            sub={`缓存命中 ${totals.cacheRead.toLocaleString()}`}
+            label="缓存命中"
+            value={totals.cacheRead.toLocaleString()}
+            sub={
+              totals.input + totals.cacheRead > 0
+                ? `${((totals.cacheRead / (totals.input + totals.cacheRead)) * 100).toFixed(1)}% 命中率`
+                : undefined
+            }
           />
           <Stat
             label="输出 token"
             value={totals.output.toLocaleString()}
-            sub={totals.cost > 0 ? `$${totals.cost.toFixed(4)}` : undefined}
+            sub={totals.cost > 0 ? `${totals.cost.toFixed(4)}` : undefined}
           />
         </div>
       </div>
@@ -124,11 +129,12 @@ function Heatmap({ grid, busiest }: { grid: DayUsage[][]; busiest: number }) {
   const labels = monthLabels(grid);
 
   return (
-    <div className="overflow-x-auto" dir="rtl">
-      {/* Centred: a calendar that fills two thirds of its card and leaves the rest blank looks
-          like something that failed to load, while the same calendar with equal margins looks
-          placed. */}
-      <div dir="ltr" className="mx-auto inline-block">
+    <div className="flex w-full justify-center overflow-x-auto" dir="rtl">
+      {/*
+       * dir="rtl" on container ensures initial scroll starts from the right (recent dates)
+       * when overflow occurs, while inner content is dir="ltr" and centered.
+       */}
+      <div dir="ltr" className="inline-block">
         <div className="relative mb-1 h-[14px]">
           {labels.map((label) => (
             <span
