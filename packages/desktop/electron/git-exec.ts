@@ -14,6 +14,35 @@ const execFileAsync = promisify(execFile);
 export const MAX_FILES = 200;
 export const MAX_BLOB_BYTES = 400_000;
 
+/**
+ * How many per-file reads may be outstanding at once.
+ *
+ * Every one of them is a `git show` — a process spawn — or a working-tree read, so this bounds
+ * processes as much as descriptors. Unbounded over `MAX_FILES` would put two hundred git processes
+ * on the machine at the same instant, trading a slow panel for a stalled laptop; one at a time is
+ * what the three callers below all used to do, and it is a full round trip per file with nothing
+ * else in flight. Eight keeps the spawn latency and the disk overlapped without being felt
+ * elsewhere.
+ */
+const FILE_CONCURRENCY = 8;
+
+/**
+ * `Promise.all` with a ceiling, results in the order they went in.
+ *
+ * Shared rather than written three times because all three callers — the working-tree diff, the
+ * ref-to-ref diff, and counting untracked files for status — have exactly the same shape: a list
+ * of paths, one independent read each, and a wait that was almost entirely latency.
+ */
+export async function mapLimit<T, R>(items: T[], run: (item: T) => Promise<R>): Promise<R[]> {
+	const out = Array.from<R>({ length: items.length });
+	let next = 0;
+	const workers = Array.from({ length: Math.min(FILE_CONCURRENCY, items.length) }, async () => {
+		for (let i = next++; i < items.length; i = next++) out[i] = await run(items[i]);
+	});
+	await Promise.all(workers);
+	return out;
+}
+
 export async function git(cwd: string, args: string[]): Promise<string> {
 	const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 32 * 1024 * 1024 });
 	return stdout;

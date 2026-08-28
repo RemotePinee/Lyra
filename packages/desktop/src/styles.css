@@ -2877,6 +2877,7 @@
 }
 
 .ly-dock-pane {
+  opacity: 1;
   transition:
     left var(--ly-t-base) var(--ly-e-out),
     top var(--ly-t-base) var(--ly-e-out),
@@ -2897,38 +2898,32 @@
  * box that holds a terminal or a webview re-rasterises its whole subtree for the length of the
  * animation.
  *
- * On mount, which is exactly when a pane opens — and, since a closed pane is unmounted, never
- * replayed for one that was already there. Panes restored at launch play it behind the boot
- * screen, where there is nothing to see.
+ * `@starting-style`, not an `animation`, and the difference is the whole point. An animation is
+ * bound to the element by *name*, so suppressing it with `animation: none` and then letting the
+ * name come back is a new animation — which meant `data-dock-settling`, the flag whose entire job
+ * is to stop panes animating while a conversation is adopted, replayed the entrance of every pane
+ * in the dock two frames after every switch. Measured, from `opacity`: 0 → 1 over eleven frames,
+ * on the conversation as well as the panels. The flag was causing the thing it exists to prevent.
+ *
+ * A starting style only ever applies to an element being inserted, so nothing that happens to it
+ * afterwards can replay it. Suppression is then just `transition-duration: 0s` below, which lands
+ * the fade instantly and — unlike a name — leaves nothing to re-trigger when it is lifted.
  */
-.ly-dock-pane {
-  animation: ly-pane-in var(--ly-t-base) var(--ly-e-out);
-}
-
-@keyframes ly-pane-in {
-  from {
+@starting-style {
+  .ly-dock-pane {
     opacity: 0;
   }
 }
 
 /*
- * Nothing arrives mid-drag.
+ * Nothing arrives mid-drag, and nothing eases.
  *
- * The carried pane is re-inserted into the tree on every preview, so without this it would replay
- * its entrance at every region the pointer crossed.
- */
-:root[data-dock-dragging] .ly-dock-pane,
-:root[data-dock-settling] .ly-dock-pane {
-  animation: none;
-}
-
-/*
- * While a pane is being carried, the rest of the layout stops easing.
- *
- * The rearrangement is committed as the pointer crosses into each new region, so an easing pane
- * would still be travelling when the next commit arrives — the layout would trail the pointer by
- * a fifth of a second and never quite settle. Landing immediately is what makes the preview read
- * as the answer rather than as an animation of it. The ghost is the one thing still moving.
+ * Two reasons for one rule. The carried pane is re-inserted into the tree on every preview, so its
+ * entrance would otherwise play at every region the pointer crossed. And the rearrangement is
+ * committed as the pointer crosses, so an easing pane would still be travelling when the next
+ * commit arrives — the layout would trail the pointer by a fifth of a second and never quite
+ * settle. Landing immediately is what makes the preview read as the answer rather than as an
+ * animation of it. The ghost is the one thing still moving.
  */
 :root[data-dock-dragging] .ly-dock-pane,
 :root[data-dock-settling] .ly-dock-pane {

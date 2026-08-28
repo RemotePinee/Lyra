@@ -214,6 +214,25 @@ export function sessionSlice(set: Set, get: Get) {
      * that is explicitly in no project ended up displaying one, named after a path nobody chose.
      */
     /*
+     * The project, on its own errand — the transcript must never wait for it.
+     *
+     * These two used to go out under one `Promise.all`, which meant the conversation appeared only
+     * once *both* had answered. Reading a transcript takes a few milliseconds and reading a project
+     * took over a second, so every switch sat on the outgoing conversation for the length of a git
+     * call it had nothing to do with. Whichever answers first now paints.
+     *
+     * Skipped outright when the conversation is in the project already open, which is what
+     * clicking down a project's own list is: the answer is the record already in the store, and
+     * asking for it again would replace it with an identical copy on every click.
+     */
+    if (!projectLess && get().workspace?.path !== meta.cwd) {
+      void window.lyra.workspace.info(meta.cwd).then((workspace) => {
+        // Null stays null: `?? get().workspace` would put back the project that was open before.
+        if (workspace && get().activeSessionId === meta.id) set({ workspace });
+      });
+    }
+
+    /*
      * One read at a time; the newest pending click wins.
      *
      * Returning here is not dropping the click — the selection and the meta are already on screen
@@ -227,12 +246,8 @@ export function sessionSlice(set: Set, get: Get) {
     reading = meta.id;
 
     let snapshot: Awaited<ReturnType<typeof window.lyra.sessions.transcript>>;
-    let workspace: Awaited<ReturnType<typeof window.lyra.workspace.info>>;
     try {
-      [snapshot, workspace] = await Promise.all([
-        window.lyra.sessions.transcript(meta.projectId, meta.id),
-        projectLess ? Promise.resolve(null) : window.lyra.workspace.info(meta.cwd),
-      ]);
+      snapshot = await window.lyra.sessions.transcript(meta.projectId, meta.id);
     } finally {
       reading = null;
       // Whatever was clicked last while this was running is the one that still wants reading.
@@ -263,9 +278,6 @@ export function sessionSlice(set: Set, get: Get) {
       running: snapshot.running,
       approvals: snapshot.pendingApprovals,
       toolRuns,
-      // Null stays null for a project-less conversation: `?? get().workspace` would put back the
-      // project that was open before this one was clicked.
-      workspace: projectLess ? null : (workspace ?? get().workspace),
       loadingSession: false,
       sessionCache: {
         ...get().sessionCache,

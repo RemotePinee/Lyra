@@ -32,14 +32,19 @@ import type {
 
 export type { ContextBreakdown, ContextSegmentKey, QueuedTask, Registry, RegistryEntry };
 
+/**
+ * Which project the window is pointed at.
+ *
+ * It used to carry uncommitted line counts as well, on the strength of a comment saying the review
+ * panel's header showed them. Nothing did — the counter above the composer polls `git.stat`, which
+ * is where a number that changes while you watch belongs. Two fields nobody read cost every reader
+ * of this record a full working-tree diff; see `workspace-info.ts`.
+ */
 export interface WorkspaceInfo {
 	path: string;
 	name: string;
 	isGitRepo: boolean;
 	branch: string | null;
-	/** Uncommitted line counts, shown in the review panel header. */
-	added: number;
-	removed: number;
 }
 
 export interface SessionSnapshot {

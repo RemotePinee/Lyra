@@ -1,5 +1,5 @@
 import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveRefresh } from "../useLiveRefresh.ts";
 
 import type { GitStatus } from "../../../electron/ipc-types.ts";
@@ -14,6 +14,8 @@ import { BranchesView } from "./BranchesView.tsx";
 import { ChangesView } from "./ChangesView.tsx";
 import { HistoryView } from "./HistoryView.tsx";
 import { RepoPicker } from "./RepoPicker.tsx";
+import { sameStatus } from "./sameStatus.ts";
+import { SkeletonList, useSlowLoad } from "../Skeleton.tsx";
 import { useCountUp } from "../useCountUp.ts";
 
 type View = "changes" | "history" | "branches";
@@ -118,9 +120,35 @@ export function GitPanel() {
    */
   const cwd = selected;
 
-  const refresh = useCallback(async () => {
-    if (!cwd) return setStatus(null);
-    setStatus(await window.lyra.git.status(cwd));
+  /*
+   * One read at a time, and the same object back when nothing moved.
+   *
+   * Both halves matter and both were missing. Two effects want a status the moment this mounts —
+   * the branch watcher below and `useLiveRefresh` — so opening the panel spawned two identical
+   * `git status` processes and raced their answers; `inflight` folds them into one.
+   *
+   * And a poll that returns an equal-but-new object is a change as far as React is concerned, so
+   * every 1.5s tick re-ran `ChangesView`'s effect, which fetches the whole working-tree diff. That
+   * read is slower than the interval, so the panel spent every turn queued behind itself. See
+   * `sameStatus`.
+   */
+  const inflight = useRef<Promise<void> | null>(null);
+  const refresh = useCallback(() => {
+    if (!cwd) {
+      setStatus(null);
+      return Promise.resolve();
+    }
+    if (inflight.current) return inflight.current;
+    const read = window.lyra.git
+      .status(cwd)
+      .then((next) => {
+        setStatus((current) => (sameStatus(current, next) ? current : next));
+      })
+      .finally(() => {
+        inflight.current = null;
+      });
+    inflight.current = read;
+    return read;
   }, [cwd]);
 
   /*
@@ -141,19 +169,13 @@ export function GitPanel() {
     if (!cwd) return;
     let alive = true;
     setSwitching(true);
-    void window.lyra.git
-      .status(cwd)
-      .then((next) => {
-        if (!alive) return;
-        setStatus(next);
-      })
-      .finally(() => {
-        if (alive) setSwitching(false);
-      });
+    void refresh().finally(() => {
+      if (alive) setSwitching(false);
+    });
     return () => {
       alive = false;
     };
-  }, [cwd, branch]);
+  }, [cwd, branch, refresh]);
 
   /*
    * Live while the agent works, not once it has finished.
@@ -192,6 +214,16 @@ export function GitPanel() {
   const changeCount =
     (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0);
   const shownCount = useCountUp(changeCount);
+  /*
+   * A placeholder only for a wait long enough to be one.
+   *
+   * Both of these reads are now fast enough to finish inside a couple of frames on an ordinary
+   * repository, and a skeleton that appears and goes in 70ms is a flicker — which reads as a
+   * glitch, not as progress. `useSlowLoad` holds it back until the wait is real; under the
+   * threshold the panel simply arrives.
+   */
+  const slowScan = useSlowLoad(scanning);
+  const slowSwitch = useSlowLoad(switching);
 
   if (!workspace) {
     return (
@@ -201,8 +233,24 @@ export function GitPanel() {
     );
   }
 
-  // Nothing is known yet; an empty state now would be a claim the scan has not made.
-  if (scanning) return <div className="flex-1" />;
+  /*
+   * Nothing is known yet; an empty state now would be a claim the scan has not made.
+   *
+   * A blank pane is not much better, and it was what this returned. Opening the panel gave an
+   * empty rectangle for as long as the directory scan took, and then a fully populated list
+   * appeared in one frame — the whole load with nothing to say it was happening. The same
+   * skeleton the changes view uses while a branch switches: this is the same situation, which is
+   * that the shape of the answer is known and the answer is not.
+   */
+  if (scanning) {
+    return slowScan ? (
+      <div className="ly-enter flex-1 px-1.5 pt-2">
+        <SkeletonList count={5} label="正在查找仓库" />
+      </div>
+    ) : (
+      <div className="flex-1" />
+    );
+  }
 
   if (!cwd) {
     return (
@@ -340,7 +388,7 @@ export function GitPanel() {
       {view === "changes" && (
         <ChangesView
           key={status?.branch ?? "detached"}
-          loading={switching}
+          loading={slowSwitch}
           status={status}
           cwd={workspace.path}
           busy={busy}

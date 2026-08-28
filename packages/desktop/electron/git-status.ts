@@ -8,7 +8,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
-import { git, run, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
+import { git, run, mapLimit, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { classify } from "./git-diff.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
 
@@ -33,20 +33,26 @@ export async function workspaceStat(
 ): Promise<{ branch: string | null; added: number; removed: number; files: number }> {
 	if (!(await isGitRepo(cwd))) return { branch: null, added: 0, removed: 0, files: 0 };
 
-	const branch = await gitBranch(cwd);
 	/*
 	 * The same list the panel walks, truncated at the same point.
 	 *
 	 * Counting from a different enumeration is how the bar came to say 34k while the panel it
 	 * opens said 10k. Both now start from `status -uall` and stop at `MAX_FILES`, so the number
 	 * on the bar is a promise about what you will find inside.
+	 *
+	 * The three reads are independent, so they go at once. Each one is a process spawn — cheap on
+	 * its own and not cheap three deep, on a call the window blocks on every time it opens a
+	 * project or moves between conversations.
 	 */
-	const status = await git(cwd, ["status", "--porcelain=v1", "-uall", "-z"]).catch(() => "");
+	const [branch, status, hasHead] = await Promise.all([
+		gitBranch(cwd),
+		git(cwd, ["status", "--porcelain=v1", "-uall", "-z"]).catch(() => ""),
+		git(cwd, ["rev-parse", "--verify", "HEAD"]).then(() => true).catch(() => false),
+	]);
 	const entries = status.split("\0").filter(Boolean).slice(0, MAX_FILES);
 
 	// One `--numstat` for every tracked change, rather than a git call per file.
 	const tracked = new Map<string, { added: number; removed: number }>();
-	const hasHead = await git(cwd, ["rev-parse", "--verify", "HEAD"]).then(() => true).catch(() => false);
 	if (hasHead) {
 		const numstat = await git(cwd, ["diff", "--numstat", "HEAD"]).catch(() => "");
 		for (const line of numstat.split("\n")) {
@@ -60,6 +66,7 @@ export async function workspaceStat(
 	let added = 0;
 	let removed = 0;
 
+	const fresh: string[] = [];
 	for (const entry of entries) {
 		const path = entry.slice(3);
 		if (!path) continue;
@@ -70,14 +77,12 @@ export async function workspaceStat(
 			removed += known.removed;
 			continue;
 		}
-
-		// Untracked: every line is an addition. Skipped on the same terms the panel skips it.
-		const buffer = await readFile(join(cwd, path)).catch(() => null);
-		if (!buffer || buffer.length > MAX_BLOB_BYTES || buffer.includes(0)) continue;
-		const text = buffer.toString("utf8");
-		// A trailing newline does not make a further line.
-		added += text.length === 0 ? 0 : text.replace(/\n$/, "").split("\n").length;
+		fresh.push(path);
 	}
+
+	// Untracked: every line is an addition. Read together rather than one after another — a
+	// directory of new files is the ordinary case, and serially it is one round trip per file.
+	for (const count of await mapLimit(fresh, (path) => countNewFile(cwd, path))) added += count.added;
 
 	return { branch, added, removed, files: entries.length };
 }
@@ -168,6 +173,14 @@ export async function gitStatus(cwd: string): Promise<GitStatus> {
 	const staged: GitStatusFile[] = [];
 	const unstaged: GitStatusFile[] = [];
 
+	/*
+	 * Two passes: build the lists, then fill in the counts the untracked ones need.
+	 *
+	 * Counting a new file means reading it, and reading it inside the loop meant one round trip
+	 * per file with nothing else in flight — on a branch with a directory of new files that is the
+	 * whole cost of the call. The second pass reads them together; see `mapLimit`.
+	 */
+	const fresh: GitStatusFile[] = [];
 	for (const entry of parts.slice(0, MAX_FILES)) {
 		const index = entry[0];
 		const tree = entry[1];
@@ -186,15 +199,23 @@ export async function gitStatus(cwd: string): Promise<GitStatus> {
 		}
 		if (tree && tree !== " ") {
 			const untracked = index === "?" || tree === "?";
-				unstaged.push({
+			const file: GitStatusFile = {
 				path,
 				status: untracked ? "untracked" : classify(tree),
 				staged: false,
 				unstaged: true,
-				...(untracked ? await countNewFile(cwd, path) : (unstagedStat.get(path) ?? { added: 0, removed: 0 })),
-			});
+				...(untracked ? { added: 0, removed: 0 } : (unstagedStat.get(path) ?? { added: 0, removed: 0 })),
+			};
+			unstaged.push(file);
+			if (untracked) fresh.push(file);
 		}
 	}
+
+	const counts = await mapLimit(fresh, (file) => countNewFile(cwd, file.path));
+	fresh.forEach((file, i) => {
+		file.added = counts[i].added;
+		file.removed = counts[i].removed;
+	});
 
 	return {
 		branch,

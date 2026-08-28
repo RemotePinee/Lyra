@@ -7,7 +7,7 @@
 
 import { computeDiff } from "@lyra/core";
 import type { GitCommit, WorkspaceDiffFile } from "./ipc-types.ts";
-import { git, run, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
+import { git, run, mapLimit, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { capHunks, classify } from "./git-diff.ts";
 import { EMPTY_TREE, LOG_FORMAT } from "./git-status.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
@@ -60,12 +60,17 @@ export async function diffRefs(
 	const range = head ? [base, head] : ["--cached", base];
 	const names = await git(cwd, ["diff", "--name-status", "-z", ...range]).catch(() => "");
 
-	const files: WorkspaceDiffFile[] = [];
-	let added = 0;
-	let removed = 0;
-
+	/*
+	 * The name list is parsed first, then the blobs are fetched together.
+	 *
+	 * Parsing has to be a walk — a rename spends three tokens where everything else spends two, so
+	 * the position of the next entry depends on the current one. Fetching does not: each file's two
+	 * blobs are independent, and reading them one file after another meant two process spawns of
+	 * pure waiting per file. See `mapLimit`.
+	 */
+	const wanted: { path: string; status: WorkspaceDiffFile["status"] }[] = [];
 	const tokens = names.split("\0").filter(Boolean);
-	for (let i = 0; i < tokens.length && files.length < MAX_FILES; i++) {
+	for (let i = 0; i < tokens.length && wanted.length < MAX_FILES; i++) {
 		const code = tokens[i];
 		if (!/^[A-Z]/.test(code)) continue;
 		// A rename spends three tokens: the code, the old path and the new one.
@@ -74,20 +79,30 @@ export async function diffRefs(
 		if (isRename) i += 2;
 		else i += 1;
 		if (!path) continue;
+		wanted.push({ path, status: classify(code[0]) });
+	}
 
-		const status = classify(code[0]);
+	const read = await mapLimit(wanted, async ({ path, status }) => {
 		const [before, after] = await Promise.all([
 			status === "added" ? Promise.resolve("") : blobAt(cwd, head ? base : "HEAD", path),
 			status === "deleted" ? Promise.resolve("") : head ? blobAt(cwd, head, path) : stagedBlob(cwd, path),
 		]);
-		if (before === null || after === null) continue;
-
+		// Null means a blob too large to diff; the file is dropped rather than half-reported.
+		if (before === null || after === null) return null;
 		// Counted from the diff itself rather than from `--numstat`, so the totals and the hunks
 		// on screen can never disagree.
 		const diff = computeDiff(before, after);
-		added += diff.added;
-		removed += diff.removed;
-		files.push({ path, status, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) });
+		return { path, status, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) };
+	});
+
+	const files: WorkspaceDiffFile[] = [];
+	let added = 0;
+	let removed = 0;
+	for (const file of read) {
+		if (!file) continue;
+		added += file.added;
+		removed += file.removed;
+		files.push(file);
 	}
 
 	return { files, added, removed };

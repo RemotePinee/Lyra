@@ -10,7 +10,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { computeDiff, type DiffHunk } from "@lyra/core";
 import type { WorkspaceDiffFile } from "./ipc-types.ts";
-import { git, gitBuffer, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
+import { git, gitBuffer, mapLimit, MAX_BLOB_BYTES, MAX_FILES } from "./git-exec.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
 import { resolveInside } from "./file-ops.ts";
 
@@ -39,52 +39,67 @@ export async function collectWorkspaceDiff(
 	const status = await git(cwd, ["status", "--porcelain=v1", "-uall", "-z"]).catch(() => "");
 	const entries = status.split("\0").filter(Boolean);
 
-	const files: WorkspaceDiffFile[] = [];
+	/*
+	 * Every file at once, up to a limit — not one after another.
+	 *
+	 * Each entry costs a `git show` (a process spawn) plus a working-tree read, and serially that
+	 * is one full round trip per changed file with nothing else in flight. On a repository with a
+	 * couple of hundred uncommitted files it was 1.8 seconds, and the git panel asks for this every
+	 * time its status changes. The work itself is unchanged; what goes away is the waiting, because
+	 * almost all of it was waiting.
+	 */
+	const files = (
+		await mapLimit(
+			entries.slice(0, MAX_FILES).filter((entry) => entry.slice(3)),
+			async (entry): Promise<WorkspaceDiffFile> => {
+				const code = entry.slice(0, 2);
+				const path = entry.slice(3);
+
+				const kind = classify(code);
+				const [before, after] = await Promise.all([
+					kind === "added" || kind === "untracked" ? Promise.resolve(blank) : showHead(cwd, path),
+					kind === "deleted" ? Promise.resolve(blank) : readWorking(cwd, path),
+				]);
+
+				/*
+				 * A file that is not text is still a file that changed.
+				 *
+				 * Both halves of this used to be wrong in opposite directions. The working-tree read
+				 * returned null for anything with a NUL byte in it and the loop skipped the whole
+				 * entry — so adding or editing an image removed it from the review, which is the one
+				 * place you would go to find out that it had changed. Meanwhile nothing checked the
+				 * *other* side at all, so deleting an image diffed its bytes as text: five lines of
+				 * PNG header, counted as five deletions and added to the totals at the bottom of the
+				 * composer.
+				 *
+				 * Listed and marked instead. There are no hunks and the counts stay at zero, because
+				 * neither means anything here: a picture has changed or it has not.
+				 */
+				if (before.binary || after.binary) {
+					return {
+						path,
+						status: kind,
+						added: 0,
+						removed: 0,
+						hunks: [],
+						binary: true,
+						bytes: after.bytes || before.bytes,
+					};
+				}
+
+				const diff = computeDiff(before.text, after.text);
+				return { path, status: kind, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) };
+			},
+		)
+	).sort((a, b) => a.path.localeCompare(b.path));
+
 	let totalAdded = 0;
 	let totalRemoved = 0;
-
-	for (const entry of entries.slice(0, MAX_FILES)) {
-		const code = entry.slice(0, 2);
-		const path = entry.slice(3);
-		if (!path) continue;
-
-		const kind = classify(code);
-		const before = kind === "added" || kind === "untracked" ? blank : await showHead(cwd, path);
-		const after = kind === "deleted" ? blank : await readWorking(cwd, path);
-
-		/*
-		 * A file that is not text is still a file that changed.
-		 *
-		 * Both halves of this used to be wrong in opposite directions. The working-tree read
-		 * returned null for anything with a NUL byte in it and the loop skipped the whole entry —
-		 * so adding or editing an image removed it from the review, which is the one place you
-		 * would go to find out that it had changed. Meanwhile nothing checked the *other* side at
-		 * all, so deleting an image diffed its bytes as text: five lines of PNG header, counted as
-		 * five deletions and added to the totals at the bottom of the composer.
-		 *
-		 * Listed and marked instead. There are no hunks and the counts stay at zero, because
-		 * neither means anything here: a picture has changed or it has not.
-		 */
-		if (before.binary || after.binary) {
-			files.push({
-				path,
-				status: kind,
-				added: 0,
-				removed: 0,
-				hunks: [],
-				binary: true,
-				bytes: after.bytes || before.bytes,
-			});
-			continue;
-		}
-
-		const diff = computeDiff(before.text, after.text);
-		totalAdded += diff.added;
-		totalRemoved += diff.removed;
-		files.push({ path, status: kind, added: diff.added, removed: diff.removed, hunks: capHunks(diff.hunks) });
+	for (const file of files) {
+		totalAdded += file.added;
+		totalRemoved += file.removed;
 	}
 
-	files.sort((a, b) => a.path.localeCompare(b.path));
 	return { files, added: totalAdded, removed: totalRemoved, branch };
 }
 
