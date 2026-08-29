@@ -27,7 +27,8 @@ export class SyncClient {
 	}
 
 	get baseUrl(): string {
-		return `http://${this.connection.host}:${this.connection.port}`;
+		const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+		return `http://${cleanHost}:${this.connection.port}`;
 	}
 
 	// -------------------------------------------------------------------------
@@ -52,7 +53,8 @@ export class SyncClient {
 
 	static async ping(host: string, port: number): Promise<boolean> {
 		try {
-			const response = await fetch(`http://${host}:${port}/api/ping`, {
+			const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+			const response = await fetch(`http://${cleanHost}:${port}/api/ping`, {
 				signal: AbortSignal.timeout(5000),
 			});
 			if (!response.ok) return false;

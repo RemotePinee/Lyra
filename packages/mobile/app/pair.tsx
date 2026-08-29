@@ -36,18 +36,19 @@ export default function PairScreen() {
 		setBusy(true);
 		setMessage(null);
 		try {
+			const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
 			const parsedPort = Number(port);
-			if (!host.trim() || !Number.isFinite(parsedPort) || !token.trim()) {
+			if (!cleanHost || !Number.isFinite(parsedPort) || !token.trim()) {
 				setMessage({ tone: "error", text: "请填写完整的地址、端口和令牌" });
 				return;
 			}
 
-			if (!(await SyncClient.ping(host.trim(), parsedPort))) {
-				setMessage({ tone: "error", text: `无法连接到 ${host}:${port}，请确认电脑和手机在同一网络，且同步服务已启用。` });
+			if (!(await SyncClient.ping(cleanHost, parsedPort))) {
+				setMessage({ tone: "error", text: `无法连接到 ${cleanHost}:${parsedPort}，请确认电脑和手机在同一网络，且同步服务已启用。` });
 				return;
 			}
 
-			const ok = await pair({ host: host.trim(), port: parsedPort, token: token.trim() });
+			const ok = await pair({ host: cleanHost, port: parsedPort, token: token.trim() });
 			if (ok) router.back();
 			else setMessage({ tone: "error", text: "令牌不正确，请在桌面端重新复制。" });
 		} finally {
