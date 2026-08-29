@@ -7,7 +7,7 @@
     "scheme": "lyra",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "backgroundColor": "#171717",
+    "backgroundColor": "#007aff",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
@@ -30,10 +30,21 @@
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#171717"
+        "backgroundColor": "#007aff"
       }
     },
-    "plugins": ["expo-router", "expo-secure-store"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
     }

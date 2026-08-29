@@ -35,7 +35,7 @@ const unzip = (archive: string, into: string) => execFileAsync("ditto", ["-x", "
 import { isNewer } from "../../src/update/version.ts";
 
 /** Where releases are published. */
-const REPO = "kittors/Lyra";
+const REPO = "RemotePinee/Lyra";
 /** GitHub answers in a second or so; anything longer means it is not going to. */
 const TIMEOUT_MS = 8000;
 /** Checked at most this often, however many times the window asks. */
