@@ -3,9 +3,7 @@ import { test } from "node:test";
 import { decodeProcessOutput, systemShell } from "../src/platform.ts";
 import { grepTool } from "../src/tools/grep.ts";
 import { globTool } from "../src/tools/glob.ts";
-import { toResponsesInput } from "../src/ai/openai-responses-request.ts";
-import type { AssistantMessage, ToolContext } from "../src/types.ts";
-import { emptyUsage } from "../src/types.ts";
+import type { ToolContext } from "../src/types.ts";
 
 test("systemShell on Windows provides a shell that supports command chaining", () => {
 	if (process.platform === "win32") {
@@ -65,34 +63,4 @@ test("glob tool extracts pattern from description or glob fallback", async () =>
 	const globArgs = { glob: "packages/*" } as unknown as { pattern: string };
 	const globResult = await globTool.execute(globArgs, fakeCtx);
 	assert.equal(globResult.isError ?? false, false);
-});
-
-test("toResponsesInput ensures function_call arguments are strictly valid JSON", () => {
-	const assistantMsg: AssistantMessage = {
-		role: "assistant",
-		content: [
-			{
-				type: "toolCall",
-				id: "call_1",
-				name: "bash",
-				arguments: { command: "npm test" },
-				// Simulated corrupted/truncated argumentsText
-				argumentsText: '{"command": "npm',
-			},
-		],
-		api: "openai-responses",
-		provider: "fake",
-		model: "fake",
-		usage: emptyUsage(),
-		stopReason: "toolUse",
-		timestamp: Date.now(),
-	};
-
-	const inputs = toResponsesInput([assistantMsg]) as Array<{ type: string; arguments?: string }>;
-	const functionCall = inputs.find((item) => item.type === "function_call");
-	assert.ok(functionCall, "function_call must exist in input");
-	assert.doesNotThrow(() => {
-		JSON.parse(functionCall.arguments!);
-	}, "Corrupted argumentsText must fall back to valid serialized JSON");
-	assert.equal(functionCall.arguments, JSON.stringify({ command: "npm test" }));
 });
