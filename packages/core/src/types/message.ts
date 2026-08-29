@@ -144,6 +144,8 @@ export interface AssistantMessage {
 	errorRetryable?: boolean;
 	/** Provider response id, used for Responses-API conversation chaining. */
 	responseId?: string;
+	/** Latency in milliseconds from request start to completion */
+	durationMs?: number;
 	timestamp: number;
 }
 

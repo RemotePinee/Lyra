@@ -224,6 +224,7 @@ function AssistantRow({
         <MessageActions
           timestamp={message.timestamp}
           text={text}
+          durationMs={message.durationMs}
           tokens={message.usage?.output}
         />
       )}

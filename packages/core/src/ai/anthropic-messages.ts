@@ -42,6 +42,7 @@ async function* streamAnthropic(
 	context: LlmContext,
 	options: RequestOptions,
 ): AsyncGenerator<StreamEvent, AssistantMessage> {
+	const startTime = Date.now();
 	const partial: AssistantMessage = {
 		role: "assistant",
 		content: [],
@@ -50,7 +51,7 @@ async function* streamAnthropic(
 		model: model.modelId,
 		usage: emptyUsage(),
 		stopReason: "pending",
-		timestamp: Date.now(),
+		timestamp: startTime,
 	};
 
 	const thinkingEnabled = model.supportsThinking && options.thinking && options.thinking !== "off";
@@ -303,6 +304,7 @@ async function* streamAnthropic(
 		// Recorded here because here is the last place it is knowable; see `errorRetryable`.
 		partial.errorRetryable = !aborted && isRetryableError(error);
 		partial.usage = computeCost(partial.usage, model);
+		partial.durationMs = Math.max(1, Date.now() - startTime);
 		yield {
 			type: "error",
 			error: partial.errorMessage,
@@ -311,6 +313,7 @@ async function* streamAnthropic(
 		return partial;
 	}
 
+	partial.durationMs = Math.max(1, Date.now() - startTime);
 	partial.stopReason = mapStopReason(stopReason, partial.content);
 	partial.usage.total = partial.usage.input + partial.usage.output + partial.usage.cacheRead + partial.usage.cacheWrite;
 	partial.usage = computeCost(partial.usage, model);
