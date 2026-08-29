@@ -272,6 +272,12 @@ importers:
         specifier: 5.0.14
         version: 5.0.14(@types/react@19.2.18)(react@19.2.3)
     devDependencies:
+      '@babel/core':
+        specifier: ^7.20.0
+        version: 7.29.7
+      '@babel/plugin-transform-react-jsx':
+        specifier: ^7.20.0
+        version: 7.29.7(@babel/core@7.29.7)
       '@types/react':
         specifier: 19.2.18
         version: 19.2.18
