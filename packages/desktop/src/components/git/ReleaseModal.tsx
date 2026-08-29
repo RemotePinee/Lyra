@@ -506,7 +506,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 								type="button"
 								onClick={handlePublish}
 								disabled={publishing || !currentTargetVersion}
-								className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-canvas hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+								className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-detail font-medium text-white hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
 							>
 								{publishing ? (
 									<>
@@ -515,7 +515,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 									</>
 								) : (
 									<>
-										<span>确认并发布 (打 Tag & Push)</span>
+										<span>确认并发布</span>
 										<ChevronRight size={13} />
 									</>
 								)}

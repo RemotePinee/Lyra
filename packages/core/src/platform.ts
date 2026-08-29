@@ -15,38 +15,17 @@
 import { homedir } from "node:os";
 import { isAbsolute, relative } from "node:path";
 import { TextDecoder } from "node:util";
-import { execFileSync } from "node:child_process";
-
-let cachedWinShell: { file: string; flag: string } | null = null;
-
-function probeWindowsShell(): { file: string; flag: string } {
-	if (cachedWinShell) return cachedWinShell;
-
-	// Respect explicit user SHELL preference (e.g. bash / zsh / custom pwsh)
-	if (process.env.SHELL) {
-		return (cachedWinShell = { file: process.env.SHELL, flag: "-c" });
-	}
-
-	// Prefer PowerShell 7+ (pwsh.exe) which natively supports '&&', '||', and POSIX features
-	try {
-		execFileSync("where.exe", ["pwsh.exe"], { stdio: "ignore" });
-		return (cachedWinShell = { file: "pwsh.exe", flag: "-Command" });
-	} catch {
-		// Fallback to cmd.exe which is guaranteed to exist and supports '&&' / '||' chaining
-		return (cachedWinShell = { file: process.env.ComSpec || "cmd.exe", flag: "/c" });
-	}
-}
 
 /**
  * The shell to run a command line through, and the flag that says "here is the command".
  *
- * On Windows, default `powershell.exe` (Windows PowerShell 5.1) does not support `&&` or `||`,
- * so commands chained with `&&` fail with ParserError. We probe for modern PowerShell 7 (`pwsh.exe`),
- * falling back to `cmd.exe` or respecting `process.env.SHELL`.
+ * On Windows, we use `cmd.exe /c` to run npm/pnpm commands safely without tripping over
+ * PowerShell script execution policies (PSSecurityException).
  */
 export function systemShell(): { file: string; flag: string } {
 	if (process.platform === "win32") {
-		return probeWindowsShell();
+		if (process.env.SHELL) return { file: process.env.SHELL, flag: "-c" };
+		return { file: process.env.ComSpec || "cmd.exe", flag: "/c" };
 	}
 	return { file: process.env.SHELL || "/bin/bash", flag: "-c" };
 }
