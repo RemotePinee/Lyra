@@ -42,13 +42,13 @@ export default function PairScreen() {
 				return;
 			}
 
-			const pingResult = await SyncClient.ping(cleanHost, parsedPort);
+			const pingResult = await SyncClient.ping(host, parsedPort);
 			if (!pingResult.ok) {
 				setMessage({ tone: "error", text: `无法连接到 ${cleanHost}:${parsedPort}，请确认电脑和手机在同一网络，且同步服务已启用。` });
 				return;
 			}
 
-			const ok = await pair({ host: cleanHost, port: parsedPort, token: token.trim() });
+			const ok = await pair({ host: cleanHost, port: parsedPort, token: token.trim(), secure: pingResult.secure });
 			if (ok) {
 				setMessage(null);
 				router.back();
