@@ -22,19 +22,25 @@ let cachedWinShell: { file: string; flag: string } | null = null;
 function probeWindowsShell(): { file: string; flag: string } {
 	if (cachedWinShell) return cachedWinShell;
 
-	// Respect explicit user SHELL preference (e.g. bash / zsh / custom pwsh)
+	// 1. Respect explicit user SHELL preference (e.g. bash / zsh / custom pwsh)
 	if (process.env.SHELL) {
 		return (cachedWinShell = { file: process.env.SHELL, flag: "-c" });
 	}
 
-	// Prefer PowerShell 7+ (pwsh.exe) which natively supports '&&', '||', and POSIX features
+	// 2. Prefer PowerShell 7+ (pwsh.exe) which natively supports '&&', '||', and POSIX features
 	try {
 		execFileSync("where.exe", ["pwsh.exe"], { stdio: "ignore" });
 		return (cachedWinShell = { file: "pwsh.exe", flag: "-Command" });
-	} catch {
-		// Fallback to cmd.exe which is guaranteed to exist and supports '&&' / '||' chaining
-		return (cachedWinShell = { file: process.env.ComSpec || "cmd.exe", flag: "/c" });
-	}
+	} catch {}
+
+	// 3. Prefer Git Bash (bash.exe) if installed, giving standard POSIX shell compatibility
+	try {
+		execFileSync("where.exe", ["bash.exe"], { stdio: "ignore" });
+		return (cachedWinShell = { file: "bash.exe", flag: "-c" });
+	} catch {}
+
+	// 4. Fallback to cmd.exe which is guaranteed to exist on all Windows installations
+	return (cachedWinShell = { file: process.env.ComSpec || "cmd.exe", flag: "/c" });
 }
 
 /**

@@ -10,10 +10,10 @@ test("systemShell on Windows provides a shell that supports command chaining", (
 		const shell = systemShell();
 		assert.ok(
 			shell.file.toLowerCase().includes("pwsh") ||
-				shell.file.toLowerCase().includes("cmd.exe") ||
 				shell.file.toLowerCase().includes("bash") ||
+				shell.file.toLowerCase().includes("cmd.exe") ||
 				shell.file.toLowerCase().includes("sh"),
-			"Windows systemShell should prefer pwsh.exe, fallback to cmd.exe, or use custom SHELL",
+			"Windows systemShell should prefer pwsh.exe, fallback to Git Bash, cmd.exe, or custom SHELL",
 		);
 		assert.ok(shell.flag === "/c" || shell.flag === "-c" || shell.flag === "-Command");
 	}
