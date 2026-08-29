@@ -11,10 +11,13 @@ test("systemShell on Windows provides a shell that supports command chaining", (
 	if (process.platform === "win32") {
 		const shell = systemShell();
 		assert.ok(
-			shell.file.toLowerCase().includes("cmd.exe") || shell.file.toLowerCase().includes("bash") || shell.file.toLowerCase().includes("sh"),
-			"Windows systemShell should default to cmd.exe or user-configured SHELL",
+			shell.file.toLowerCase().includes("pwsh") ||
+				shell.file.toLowerCase().includes("cmd.exe") ||
+				shell.file.toLowerCase().includes("bash") ||
+				shell.file.toLowerCase().includes("sh"),
+			"Windows systemShell should prefer pwsh.exe, fallback to cmd.exe, or use custom SHELL",
 		);
-		assert.ok(shell.flag === "/c" || shell.flag === "-c");
+		assert.ok(shell.flag === "/c" || shell.flag === "-c" || shell.flag === "-Command");
 	}
 });
 
