@@ -16,7 +16,7 @@ import type { ToolSpec } from "./tool.ts";
  * Wire formats Lyra speaks. Chat Completions is deliberately excluded: the product
  * targets Responses and Anthropic Messages only.
  */
-export type ApiFormat = "openai-responses" | "anthropic-messages";
+export type ApiFormat = "openai-responses" | "anthropic-messages" | "openai-chat-completions";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "max";
 

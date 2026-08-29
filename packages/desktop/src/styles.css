@@ -2295,7 +2295,13 @@
  */
 :root[data-resizing] *,
 :root[data-resizing] *::before,
-:root[data-resizing] *::after {
+:root[data-resizing] *::after,
+:root[data-dock-dragging] *,
+:root[data-dock-dragging] *::before,
+:root[data-dock-dragging] *::after,
+:root[data-dock-settling] *,
+:root[data-dock-settling] *::before,
+:root[data-dock-settling] *::after {
   transition-duration: 0s !important;
   animation-duration: 0s !important;
   animation-delay: 0s !important;

@@ -371,22 +371,22 @@ export function GitPanel() {
       </div>
 
       {/* One row of views, counted where a count means something. */}
-      <div ref={navRef} className="flex shrink-0 items-center gap-1 px-1.5 pb-1.5">
+      <div ref={navRef} className="flex shrink-0 items-center gap-0.5 px-1.5 pb-1.5">
         {VIEWS.map((entry) => (
           <button
             key={entry.id}
             type="button"
             data-ly-tip={narrowNav ? `${entry.label}${entry.id === "changes" && changeCount > 0 ? ` (${changeCount})` : ""}` : undefined}
             onClick={() => setView(entry.id)}
-            className={`flex h-[26px] flex-1 items-center justify-center gap-1.5 rounded-md text-detail transition-colors duration-[var(--ly-t-quick)] ${
-              narrowNav ? "px-1.5" : "px-2"
+            className={`flex h-[26px] shrink-0 items-center gap-1.5 rounded-md text-detail transition-colors duration-[var(--ly-t-quick)] ${
+              narrowNav ? "px-2" : "px-2.5"
             } ${
               view === entry.id
                 ? "bg-card-hover text-ink"
                 : "text-ink-muted hover:bg-card-hover/60"
             }`}
           >
-            <entry.icon size={13} strokeWidth={1.8} className="shrink-0" />
+            <entry.icon size={12.5} strokeWidth={1.8} className="shrink-0" />
             {!narrowNav && <span className="truncate">{entry.label}</span>}
             {entry.id === "changes" && changeCount > 0 && (
               <CountUp value={changeCount} className="text-ink-faint tabular-nums" />

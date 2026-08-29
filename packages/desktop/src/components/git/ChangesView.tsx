@@ -1,7 +1,7 @@
 /**
  * The index, as a column you read downwards.
  */
-import { Check, FolderTree, List, Minus, Plus, RotateCcw, Sparkles } from "lucide-react";
+import { Check, FolderTree, List, Minus, Plus, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { GitStatus, GitStatusFile, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
@@ -319,8 +319,8 @@ export function ChangesView({
       </Scroller>
 
       {/* The commit box, styled harmoniously with the main composer */}
-      <div className="shrink-0 p-2.5">
-        <div className="ly-composer @container rounded-[16px] border border-line bg-input p-2 transition-[border-color,box-shadow] focus-within:border-line-soft">
+      <div className="shrink-0 p-2">
+        <div className="ly-composer @container rounded-[14px] bg-input p-2 transition-[border-color,box-shadow]">
           <textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
@@ -330,20 +330,17 @@ export function ChangesView({
             }}
             rows={2}
             placeholder="输入提交信息…"
-            className="block max-h-32 min-h-[48px] w-full resize-none bg-transparent px-1.5 py-1 text-label leading-relaxed text-ink placeholder:text-ink-faint focus:outline-none"
+            className="block max-h-32 min-h-[44px] w-full resize-none bg-transparent px-1 py-0.5 text-label leading-relaxed text-ink placeholder:text-ink-faint focus:outline-none"
           />
-          <div className="flex items-center justify-between gap-2 border-t border-line/40 pt-2 pr-0.5 pl-1">
+          <div className="flex items-center justify-between gap-1.5 pt-1.5 pr-0.5 pl-0.5">
             <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                data-ly-tip="AI 自动生成 Commit 提交信息"
+              <IconButton
+                icon={generating ? <RefreshCw size={13} className="ly-spin text-accent" /> : <Sparkles size={13} className="text-accent" />}
+                label={generating ? "正在生成提交说明…" : "AI 自动生成 Commit 说明"}
+                size="sm"
                 disabled={generating || (stagedPaths.length === 0 && unstagedPaths.length === 0)}
                 onClick={() => void generateCommitMessage()}
-                className="flex h-[24px] items-center gap-1 rounded-md border border-line/60 bg-card/60 px-2 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink disabled:opacity-40"
-              >
-                <Sparkles size={12} className={generating ? "ly-spin text-accent" : "text-accent"} />
-                <span>{generating ? "生成中…" : "AI 生成"}</span>
-              </button>
+              />
               <Text size="caption" tone="faint" className="hidden @xs:inline">
                 {stagedPaths.length > 0 ? `${stagedPaths.length} 个文件已暂存` : "未暂存文件"}
               </Text>
@@ -352,7 +349,7 @@ export function ChangesView({
               type="button"
               disabled={busy || stagedPaths.length === 0 || !message.trim()}
               onClick={() => void commit()}
-              className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-detail font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-40"
+              className="flex h-[24px] shrink-0 items-center gap-1 rounded-md bg-ink px-2.5 text-detail font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-30"
             >
               <Check size={12} strokeWidth={2.2} />
               提交

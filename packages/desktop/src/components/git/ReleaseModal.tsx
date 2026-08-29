@@ -1,20 +1,25 @@
 import {
 	Check,
 	CheckCircle2,
+	ChevronDown,
 	ChevronRight,
 	Edit3,
 	Eye,
 	ExternalLink,
+	Globe,
 	Loader2,
 	Sparkles,
 	Tag,
 	X,
 	XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReleaseInfo, WorkflowRunStatus } from "../../../electron/ipc-types.ts";
+import { useApp } from "../../store.ts";
 import { Markdown } from "../Markdown.tsx";
+import { MenuBody, MenuItem } from "../Menu.tsx";
 import { Overlay } from "../modals/Overlay.tsx";
+import { Popover } from "../Popover.tsx";
 import { Scroller } from "../Scroller.tsx";
 
 interface ReleaseModalProps {
@@ -30,7 +35,10 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 	const [notes, setNotes] = useState("");
 	const [generatingNotes, setGeneratingNotes] = useState(false);
 	const [notesLang, setNotesLang] = useState<"zh" | "en">("zh");
+	const [langMenuOpen, setLangMenuOpen] = useState(false);
+	const langButtonRef = useRef<HTMLButtonElement | null>(null);
 	const [previewMode, setPreviewMode] = useState(false);
+	const notify = useApp((s) => s.notify);
 
 	// Dry Run state
 	const [dryRunId, setDryRunId] = useState<number | null>(null);
@@ -71,12 +79,21 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 			: (info?.suggestedVersion[selectedType] ?? customVersion);
 
 	// Generate Release notes with categorized sections in Chinese or English
-	const handleGenerateNotes = useCallback(async (lang: "zh" | "en" = notesLang) => {
+	const handleGenerateNotes = useCallback(async (lang: "zh" | "en" = notesLang, showToast = false) => {
 		if (!info) return;
 		setGeneratingNotes(true);
 		try {
 			const commits = info.commitsSinceTag;
 			const isZh = lang === "zh";
+
+			if (commits.length === 0) {
+				const fallback = isZh ? "无新增变更记录" : "No new changes recorded";
+				setNotes(fallback);
+				if (showToast) {
+					notify(isZh ? "未检测到新提交记录" : "No new commits detected", "warn");
+				}
+				return;
+			}
 
 			// Build categorized notes outline
 			const featCommits = commits.filter((c) => /^feat(\(.*\))?:/i.test(c.subject));
@@ -115,17 +132,22 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 			let generated = "";
 			if (sections.length > 0) {
 				generated = sections.join("\n\n");
-			} else if (commits.length > 0) {
-				generated = commits.map((c) => `- ${c.subject} (${c.shortSha})`).join("\n");
 			} else {
-				generated = isZh ? "无新增变更记录" : "No new changes recorded";
+				generated = commits.map((c) => `- ${c.subject} (${c.shortSha})`).join("\n");
 			}
 
 			setNotes(generated);
+			if (showToast) {
+				notify(isZh ? `已根据 ${commits.length} 条提交生成更新日志` : `Generated release notes from ${commits.length} commits`, "info");
+			}
+		} catch (err) {
+			if (showToast) {
+				notify(err instanceof Error ? err.message : "提取日志失败", "error");
+			}
 		} finally {
 			setGeneratingNotes(false);
 		}
-	}, [info, notesLang]);
+	}, [info, notesLang, notify]);
 
 	// Initialize default notes when info is loaded
 	useEffect(() => {
@@ -322,39 +344,57 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 										版本更新日志 (Release Notes)
 									</span>
 									<div className="flex items-center gap-1.5">
-										{/* Language Toggle */}
-										<div className="flex items-center rounded-md border border-line bg-card-hover/30 p-0.5 text-micro">
+										{/* Language Dropdown */}
+										<div className="relative">
 											<button
+												ref={langButtonRef}
 												type="button"
-												onClick={() => {
-													setNotesLang("zh");
-													void handleGenerateNotes("zh");
-												}}
-												className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-													notesLang === "zh" ? "bg-card font-medium text-ink shadow-xs" : "text-ink-muted hover:text-ink"
-												}`}
+												onClick={() => setLangMenuOpen((v) => !v)}
+												className="flex h-6 items-center gap-1 rounded-md border border-line bg-card px-2 text-micro font-medium text-ink transition-colors hover:bg-card-hover cursor-pointer"
 											>
-												中文
+												<Globe size={11} className="text-ink-muted" />
+												<span>{notesLang === "zh" ? "中文" : "English"}</span>
+												<ChevronDown size={10} className="text-ink-faint" />
 											</button>
-											<button
-												type="button"
-												onClick={() => {
-													setNotesLang("en");
-													void handleGenerateNotes("en");
-												}}
-												className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-													notesLang === "en" ? "bg-card font-medium text-ink shadow-xs" : "text-ink-muted hover:text-ink"
-												}`}
-											>
-												EN
-											</button>
+											{langMenuOpen && (
+												<Popover
+													anchor={langButtonRef.current}
+													onClose={() => setLangMenuOpen(false)}
+													placement="bottom"
+													align="end"
+													width={120}
+												>
+													<MenuBody>
+														<MenuItem
+															selected={notesLang === "zh"}
+															onClick={() => {
+																setNotesLang("zh");
+																setLangMenuOpen(false);
+																void handleGenerateNotes("zh", true);
+															}}
+														>
+															中文
+														</MenuItem>
+														<MenuItem
+															selected={notesLang === "en"}
+															onClick={() => {
+																setNotesLang("en");
+																setLangMenuOpen(false);
+																void handleGenerateNotes("en", true);
+															}}
+														>
+															English
+														</MenuItem>
+													</MenuBody>
+												</Popover>
+											)}
 										</div>
 
 										{/* Preview Toggle */}
 										<button
 											type="button"
 											onClick={() => setPreviewMode(!previewMode)}
-											className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-micro border transition-colors cursor-pointer ${
+											className={`flex h-6 items-center gap-1 rounded-md px-2 text-micro border transition-colors cursor-pointer ${
 												previewMode
 													? "border-primary bg-primary/10 text-primary font-medium"
 													: "border-line bg-card hover:bg-card-hover text-ink-muted"
@@ -367,9 +407,9 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 										{/* Re-extract Action */}
 										<button
 											type="button"
-											onClick={() => void handleGenerateNotes(notesLang)}
+											onClick={() => void handleGenerateNotes(notesLang, true)}
 											disabled={generatingNotes}
-											className="flex items-center gap-1 rounded-md px-2 py-0.5 text-micro font-medium text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
+											className="flex h-6 items-center gap-1 rounded-md border border-line bg-card px-2 text-micro font-medium text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
 										>
 											<Sparkles size={11} className={generatingNotes ? "animate-spin text-amber-500" : "text-amber-500"} />
 											<span>{generatingNotes ? "提取中…" : "重新提取"}</span>
@@ -404,12 +444,12 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 										type="button"
 										onClick={handleTriggerDryRun}
 										disabled={triggeringDryRun || dryRunStatus?.status === "in_progress"}
-										className="flex items-center gap-1.5 rounded-lg bg-card-hover px-2.5 py-1 text-caption font-medium text-ink hover:bg-fill-muted transition-colors cursor-pointer disabled:opacity-50"
+										className="flex h-6 items-center gap-1.5 rounded-md border border-line bg-card px-2.5 text-micro font-medium text-ink hover:bg-card-hover transition-colors cursor-pointer disabled:opacity-50"
 									>
 										{triggeringDryRun ? (
-											<Loader2 size={12} className="animate-spin text-ink-muted" />
+											<Loader2 size={11} className="animate-spin text-ink-muted" />
 										) : (
-											<Sparkles size={12} className="text-amber-500" />
+											<Sparkles size={11} className="text-accent" />
 										)}
 										<span>
 											{triggeringDryRun
