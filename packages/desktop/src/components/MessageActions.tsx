@@ -50,17 +50,23 @@ export function MessageActions({
 		return () => clearTimeout(timer);
 	}, [copied]);
 
-	const timeTip = formatTimestampTip(timestamp, durationMs, tokens);
+	const timeTip = formatTimestampTip(timestamp);
+	const durationBadge = formatDurationBadge(durationMs, tokens);
 
 	return (
 		<div
-			className={`mt-1 flex h-6 items-center gap-1 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
+			className={`mt-1 flex h-6 items-center gap-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
 		>
 			<span data-ly-tip={timeTip || undefined} className="inline-flex items-center">
 				<Text size="caption" tone="faint" numeric>
 					{formatSentAt(timestamp)}
 				</Text>
 			</span>
+			{durationBadge && (
+				<span className="inline-flex items-center rounded px-1 py-0.5 text-[11px] font-mono text-ink-faint/80 tabular-nums">
+					{durationBadge}
+				</span>
+			)}
 			<button
 				type="button"
 				data-ly-tip="复制"
@@ -77,9 +83,19 @@ export function MessageActions({
 	);
 }
 
-function formatTimestampTip(timestamp: number, durationMs?: number, tokens?: number): string | null {
-	const parts: string[] = [];
-	const dateStr = new Date(timestamp).toLocaleString("zh-CN", {
+function formatDurationBadge(durationMs?: number, tokens?: number): string | null {
+	if (!durationMs || durationMs <= 0) return null;
+	const secs = durationMs / 1000;
+	const durationText = secs < 60 ? `${secs.toFixed(1)}s` : `${Math.floor(secs / 60)}m ${(secs % 60).toFixed(0)}s`;
+	if (tokens && tokens > 0 && secs > 0) {
+		const tps = (tokens / secs).toFixed(1);
+		return `${durationText} · ${tps} tok/s`;
+	}
+	return durationText;
+}
+
+function formatTimestampTip(timestamp: number): string {
+	return new Date(timestamp).toLocaleString("zh-CN", {
 		year: "numeric",
 		month: "2-digit",
 		day: "2-digit",
@@ -87,20 +103,6 @@ function formatTimestampTip(timestamp: number, durationMs?: number, tokens?: num
 		minute: "2-digit",
 		second: "2-digit",
 	});
-	parts.push(dateStr);
-
-	if (durationMs && durationMs > 0) {
-		const secs = durationMs / 1000;
-		const durationText = secs < 60 ? `${secs.toFixed(1)}s` : `${Math.floor(secs / 60)}m ${(secs % 60).toFixed(0)}s`;
-		let speedText = "";
-		if (tokens && tokens > 0 && secs > 0) {
-			const tps = (tokens / secs).toFixed(1);
-			speedText = ` (${tps} tokens/s)`;
-		}
-		parts.push(`耗时：${durationText}${speedText}`);
-	}
-
-	return parts.join("\n");
 }
 
 /** Same shape as the reference: month, day, time — the year only once it stops being obvious. */

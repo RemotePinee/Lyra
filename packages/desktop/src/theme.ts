@@ -12,6 +12,8 @@
  */
 
 import type { AppearanceSettings } from "@lyra/core";
+import { sharedHighlightStyle } from "./components/highlight.ts";
+import { findCodeTheme } from "./components/code-themes.ts";
 
 interface Rgb {
 	r: number;
@@ -83,56 +85,37 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 	 */
 	const float_ = dark ? surface(0.1) : toHex(mix(background, { r: 255, g: 255, b: 255 }, 0.8));
 
+	const lightTheme = findCodeTheme(appearance.codeLightTheme, "light");
+	const darkTheme = findCodeTheme(appearance.codeDarkTheme, "dark");
+
 	const tokens: Record<string, string> = {
 		"--color-shell": toHex(background),
-		/*
-		 * Separated by area, not by a line.
-		 *
-		 * This used to sit 1.6% off the page while the divider beside it sat 11% off — so the
-		 * eye had nothing to read but the rule, and a 1px stripe at seven times the contrast of
-		 * the surfaces it divides is all anyone saw. Widening the tint and dropping the border
-		 * swaps a high-frequency edge for a low-frequency field, which is how a sidebar reads as
-		 * a different region rather than as the same page with a line drawn on it.
-		 */
 		"--color-sidebar": surface(0.042),
 		"--color-panel": surface(0.04),
 		"--color-card": surface(0.06),
-		/*
-		 * The two interaction states are a veil, not a colour.
-		 *
-		 * Every other surface is an opaque mix of background and foreground, which is right for
-		 * a card that sits on a known page. Hover is different: it lands on the translucent
-		 * sidebar as often as on a card, and there the background is whatever the desktop behind
-		 * the window happens to be. An opaque #f5f6f6 over a white desktop is invisible — which
-		 * is exactly what happened to the session list. A translucent wash of the foreground
-		 * darkens whatever it covers by the same amount, so the state reads on every surface.
-		 */
 		"--color-card-hover": veil(dark ? 0.062 : 0.05),
 		"--color-input": paper,
 		"--color-elevated": veil(dark ? 0.1 : 0.085),
 		"--color-float": float_,
-		/* The rules carry the separation on light, so they have to be visible against it. */
 		"--color-line": rule(0.075),
 		"--color-line-soft": rule(0.05),
 		"--color-ink": toHex(foreground),
 		"--color-ink-muted": text(0.62),
 		"--color-ink-faint": text(0.4),
-		/*
-		 * Both, because "强调色" in Settings means this one colour.
-		 *
-		 * Only `--color-info` was ever written here, so `--color-accent` kept the hard-coded
-		 * orange from the stylesheet — every `text-accent` in the app was a colour nobody chose,
-		 * and changing the setting did nothing to it.
-		 */
 		"--color-accent": accent,
 		"--color-info": accent,
 		"--ly-ui-font": appearance.uiFont,
 		"--ly-code-font": appearance.codeFont,
 		"--ly-ui-size": `${appearance.uiFontSize}px`,
 		"--ly-code-size": `${appearance.codeFontSize}px`,
+		"--ly-diff-added-bg": dark ? darkTheme.addedBg : lightTheme.addedBg,
+		"--ly-diff-removed-bg": dark ? darkTheme.removedBg : lightTheme.removedBg,
 	};
 
 	for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
+
+	// Update shared highlight style in DOM
+	sharedHighlightStyle(appearance.codeLightTheme, appearance.codeDarkTheme);
 
 	/*
 	 * The window itself has to know the theme, for two separate reasons.

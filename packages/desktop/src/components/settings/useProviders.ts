@@ -136,6 +136,8 @@ export function useProviders() {
 		}
 	}
 
+	const [discoveredModels, setDiscoveredModels] = useState<string[] | null>(null);
+
 	async function fetchModelsFromEndpoint() {
 		if (!selected) return;
 		setFetchingModels(true);
@@ -151,36 +153,41 @@ export function useProviders() {
 				return;
 			}
 
-			// Add discovered models that aren't already present in provider.models
-			const existingIds = new Set(selected.models.map((m) => m.modelId));
-			const newModels: ModelConfig[] = res.models
-				.filter((mId) => !existingIds.has(mId))
-				.map((mId) => ({
-					id: `${selected.id}/${mId}`,
-					providerId: selected.id,
-					modelId: mId,
-					name: mId,
-					contextWindow: 200_000,
-					maxOutputTokens: 16_384,
-					supportsThinking: true,
-					supportsImages: true,
-					supportsTools: true,
-				}));
-
-			if (newModels.length > 0) {
-				await saveSettings({
-					...settings!,
-					providers: settings!.providers.map((p) =>
-						p.id === selected.id ? { ...p, models: [...p.models, ...newModels] } : p,
-					),
-					defaultModelId: settings!.defaultModelId ?? newModels[0]?.id ?? null,
-				});
-			}
+			setDiscoveredModels(res.models);
 		} catch (err) {
 			setFetchModelsError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setFetchingModels(false);
 		}
+	}
+
+	async function importDiscoveredModels(modelIds: string[]) {
+		if (!selected || !settings) return;
+		const existingIds = new Set(selected.models.map((m) => m.modelId));
+		const newModels: ModelConfig[] = modelIds
+			.filter((mId) => !existingIds.has(mId))
+			.map((mId) => ({
+				id: `${selected.id}/${mId}`,
+				providerId: selected.id,
+				modelId: mId,
+				name: mId,
+				contextWindow: 200_000,
+				maxOutputTokens: 16_384,
+				supportsThinking: true,
+				supportsImages: true,
+				supportsTools: true,
+			}));
+
+		if (newModels.length > 0) {
+			await saveSettings({
+				...settings,
+				providers: settings.providers.map((p) =>
+					p.id === selected.id ? { ...p, models: [...p.models, ...newModels] } : p,
+				),
+				defaultModelId: settings.defaultModelId ?? newModels[0]?.id ?? null,
+			});
+		}
+		setDiscoveredModels(null);
 	}
 
 	return {
@@ -193,7 +200,10 @@ export function useProviders() {
 		modelTestResults,
 		fetchingModels,
 		fetchModelsError,
+		discoveredModels,
 		fetchModelsFromEndpoint,
+		importDiscoveredModels,
+		closeDiscoveredModal: () => setDiscoveredModels(null),
 		select,
 		add,
 		update,

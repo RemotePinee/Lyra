@@ -32,6 +32,10 @@ export interface AppearanceSettings {
 	darkForeground: string;
 	uiFont: string;
 	codeFont: string;
+	/** Syntax highlighting theme for light mode. */
+	codeLightTheme?: string;
+	/** Syntax highlighting theme for dark mode. */
+	codeDarkTheme?: string;
 	uiFontSize: number;
 	codeFontSize: number;
 	/** 0–100. Scales the distance between surface layers and text. */
@@ -52,6 +56,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 	darkForeground: "#EDEDED",
 	uiFont: '"Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
 	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
+	codeLightTheme: "solarized-light",
+	codeDarkTheme: "github-dark",
 	uiFontSize: 13,
 	codeFontSize: 12,
 	contrast: 60,

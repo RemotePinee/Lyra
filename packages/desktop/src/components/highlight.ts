@@ -11,23 +11,26 @@ import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { highlightTree, tags as t } from "@lezer/highlight";
+import { findCodeTheme } from "./code-themes.ts";
 
 /**
  * Token colours.
  *
  * `light-dark()` so one stylesheet serves both themes without a rebuild — the browser picks
- * per the `color-scheme` the root sets. The hues are the familiar editor conventions rather
- * than the app's accent: syntax colour is read as meaning, not as branding.
+ * per the `color-scheme` the root sets.
  */
-export function highlightStyle(): HighlightStyle {
-	const c = (light: string, dark: string) => `light-dark(${light}, ${dark})`;
+export function highlightStyle(lightThemeId?: string, darkThemeId?: string): HighlightStyle {
+	const light = findCodeTheme(lightThemeId, "light");
+	const dark = findCodeTheme(darkThemeId, "dark");
+	const c = (tag: keyof typeof light.tokens) => `light-dark(${light.tokens[tag]}, ${dark.tokens[tag]})`;
+
 	return HighlightStyle.define([
-		{ tag: [t.keyword, t.modifier, t.controlKeyword], color: c("#8a45a5", "#c39ac9") },
-		{ tag: [t.definitionKeyword, t.moduleKeyword], color: c("#8a45a5", "#c39ac9") },
-		{ tag: [t.string, t.special(t.string)], color: c("#2f7d4f", "#7fc98a") },
-		{ tag: [t.number, t.bool, t.null, t.atom], color: ATOM },
-		{ tag: [t.comment, t.blockComment, t.lineComment], color: c("#8a8d90", "#7e8184"), fontStyle: "italic" },
-		{ tag: [t.function(t.variableName), t.function(t.propertyName)], color: c("#2b62c6", "#79b8ff") },
+		{ tag: [t.keyword, t.modifier, t.controlKeyword], color: c("keyword") },
+		{ tag: [t.definitionKeyword, t.moduleKeyword], color: c("keyword") },
+		{ tag: [t.string, t.special(t.string)], color: c("string") },
+		{ tag: [t.number, t.bool, t.null, t.atom], color: c("number") },
+		{ tag: [t.comment, t.blockComment, t.lineComment], color: c("comment"), fontStyle: "italic" },
+		{ tag: [t.function(t.variableName), t.function(t.propertyName)], color: c("function") },
 		/*
 		 * A key is a key, however the grammar spells it.
 		 *
@@ -36,8 +39,8 @@ export function highlightStyle(): HighlightStyle {
 		 * the plain text colour, which is why a YAML file came out as an undifferentiated wall:
 		 * every key the same weight as its value, with only quoted strings picking up any colour.
 		 */
-		{ tag: [t.definition(t.propertyName)], color: c("#2b62c6", "#79b8ff") },
-		{ tag: [t.definition(t.variableName)], color: c("#1a1c1f", "#ededed") },
+		{ tag: [t.definition(t.propertyName)], color: c("function") },
+		{ tag: [t.definition(t.variableName)], color: c("variable") },
 		/*
 		 * Unquoted scalars, which is most of a YAML file's right-hand side.
 		 *
@@ -45,24 +48,24 @@ export function highlightStyle(): HighlightStyle {
 		 * — so this cannot be split into booleans and numbers the way a typed language can. Plain
 		 * text is the honest rendering: the key carries the colour, the value carries the weight.
 		 */
-		{ tag: [t.content], color: c("#1a1c1f", "#ededed") },
+		{ tag: [t.content], color: c("variable") },
 		// Anchors and aliases (&name, *name) — references, so they read like other labels.
-		{ tag: [t.labelName], color: c("#8a45a5", "#c39ac9") },
-		{ tag: [t.typeName, t.className, t.namespace], color: c("#0f7d78", "#6fd2c8") },
-		{ tag: [t.propertyName], color: c("#2b62c6", "#79b8ff") },
-		{ tag: [t.variableName], color: c("#1a1c1f", "#ededed") },
-		{ tag: [t.operator, t.punctuation, t.separator, t.bracket], color: c("#6a6d70", "#9a9d9f") },
-		{ tag: [t.tagName], color: c("#c8402f", "#f07171") },
-		{ tag: [t.attributeName], color: c("#b07d0d", "#e3c07b") },
-		{ tag: [t.attributeValue], color: c("#2f7d4f", "#7fc98a") },
-		{ tag: [t.heading], color: c("#2b62c6", "#79b8ff"), fontWeight: "600" },
-		{ tag: [t.link, t.url], color: c("#2b62c6", "#79b8ff"), textDecoration: "underline" },
+		{ tag: [t.labelName], color: c("keyword") },
+		{ tag: [t.typeName, t.className, t.namespace], color: c("type") },
+		{ tag: [t.propertyName], color: c("function") },
+		{ tag: [t.variableName], color: c("variable") },
+		{ tag: [t.operator, t.punctuation, t.separator, t.bracket], color: c("punctuation") },
+		{ tag: [t.tagName], color: c("tag") },
+		{ tag: [t.attributeName], color: c("attribute") },
+		{ tag: [t.attributeValue], color: c("string") },
+		{ tag: [t.heading], color: c("function"), fontWeight: "600" },
+		{ tag: [t.link, t.url], color: c("function"), textDecoration: "underline" },
 		{ tag: [t.emphasis], fontStyle: "italic" },
 		{ tag: [t.strong], fontWeight: "600" },
 		{ tag: [t.strikethrough], textDecoration: "line-through" },
-		{ tag: [t.meta, t.processingInstruction], color: c("#8a8d90", "#7e8184") },
-		{ tag: [t.invalid], color: c("#c8402f", "#f07171") },
-		{ tag: [t.escape, t.regexp], color: c("#b07d0d", "#e3c07b") },
+		{ tag: [t.meta, t.processingInstruction], color: c("comment") },
+		{ tag: [t.invalid], color: c("tag") },
+		{ tag: [t.escape, t.regexp], color: c("attribute") },
 	]);
 }
 
@@ -361,35 +364,35 @@ export function tokenizeLines(code: string, language: Language, style: Highlight
  * to pull in is how a working build breaks on an unrelated upgrade.
  */
 let shared: HighlightStyle | null = null;
+let currentLightId: string | undefined;
+let currentDarkId: string | undefined;
 
 /**
  * The one style for the whole app, mounted the first time anything asks.
  *
  * `HighlightStyle.define` generates a fresh set of class names on every call, and
- * `mountHighlightStyles` only ever puts one set of rules in the document. So a second caller
- * building its own style gets class names that match nothing: spans come out marked up and
- * completely uncoloured, which is exactly how the diff viewer looked — 187 tagged runs, all
- * inheriting one colour from their parent.
- *
- * The singleton lived in CodeBlock, where it worked for as long as code blocks were the only
- * thing colouring text outside an editor. It belongs here, next to what generates the names.
+ * `mountHighlightStyles` updates the rules in the document so changes to the light/dark code theme
+ * propagate to every CodeBlock, DiffView, and FileViewer.
  */
-export function sharedHighlightStyle(): HighlightStyle {
-	if (!shared) {
-		shared = highlightStyle();
+export function sharedHighlightStyle(lightThemeId?: string, darkThemeId?: string): HighlightStyle {
+	if (!shared || currentLightId !== lightThemeId || currentDarkId !== darkThemeId) {
+		currentLightId = lightThemeId;
+		currentDarkId = darkThemeId;
+		shared = highlightStyle(lightThemeId, darkThemeId);
 		mountHighlightStyles(shared);
 	}
 	return shared;
 }
 
-let mounted = false;
+let highlightStyleEl: HTMLStyleElement | null = null;
+
 export function mountHighlightStyles(style: HighlightStyle): void {
-	if (mounted) return;
 	const rules = style.module?.getRules();
 	if (!rules) return;
-	const element = document.createElement("style");
-	element.dataset.dwHighlight = "";
-	element.textContent = rules;
-	document.head.append(element);
-	mounted = true;
+	if (!highlightStyleEl) {
+		highlightStyleEl = document.createElement("style");
+		highlightStyleEl.dataset.dwHighlight = "";
+		document.head.append(highlightStyleEl);
+	}
+	highlightStyleEl.textContent = rules;
 }

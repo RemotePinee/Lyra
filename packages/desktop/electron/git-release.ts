@@ -208,19 +208,25 @@ export async function triggerReleaseDryRun(cwd: string): Promise<{ ok: boolean; 
 		// Trigger workflow_dispatch for release-dryrun.yml
 		await execGh(cwd, ["workflow", "run", "release-dryrun.yml"]);
 
-		// Wait briefly and fetch the latest run
-		await new Promise((resolve) => setTimeout(resolve, 2500));
-		const listJson = await execGh(cwd, [
-			"run",
-			"list",
-			"--workflow=release-dryrun.yml",
-			"--limit=1",
-			"--json=databaseId,status,url",
-		]);
+		// Wait briefly and poll for the newly started run
+		for (let i = 0; i < 4; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			const listJson = await execGh(cwd, [
+				"run",
+				"list",
+				"--workflow=release-dryrun.yml",
+				"--limit=1",
+				"--json=databaseId,status,url",
+			]);
 
-		const runs = JSON.parse(listJson);
-		if (Array.isArray(runs) && runs[0]?.databaseId) {
-			return { ok: true, runId: runs[0].databaseId };
+			try {
+				const runs = JSON.parse(listJson);
+				if (Array.isArray(runs) && runs[0]?.databaseId) {
+					return { ok: true, runId: runs[0].databaseId };
+				}
+			} catch {
+				// parse failed, continue retry
+			}
 		}
 		return { ok: true };
 	} catch (err) {

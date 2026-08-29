@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Scroller } from "../Scroller.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { GhostButton } from "./controls.tsx";
+import { FetchModelsModal } from "./FetchModelsModal.tsx";
 import { ModelEditor } from "./ModelEditor.tsx";
 import { ProviderEditor } from "./ProviderEditor.tsx";
 import { useProviders } from "./useProviders.ts";
@@ -155,6 +156,16 @@ export function ModelSettings() {
             void p.saveModel(editingModel.providerId, model, editingModel.model);
             setEditingModel(null);
           }}
+        />
+      )}
+
+      {p.discoveredModels && (
+        <FetchModelsModal
+          open={Boolean(p.discoveredModels)}
+          models={p.discoveredModels}
+          existingModelIds={new Set(p.selected?.models.map((m) => m.modelId) ?? [])}
+          onClose={p.closeDiscoveredModal}
+          onImport={(selectedIds) => void p.importDiscoveredModels(selectedIds)}
         />
       )}
     </div>

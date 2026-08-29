@@ -7,6 +7,7 @@
  */
 
 import type { ApprovalDecision, Message, UserContent } from "@lyra/core";
+import { emptyUsage } from "@lyra/core";
 import { without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
@@ -95,7 +96,11 @@ export function turnSlice(set: Set, get: Get) {
          * Counting the message the composer already sent is the honest fix: the stored count is
          * stale rather than zero, and the refresh at `agent_end` replaces it with the real one.
          */
-        const listed = { ...snapshot.meta, messageCount: 1 };
+        const listed = {
+          ...snapshot.meta,
+          messageCount: 1,
+          usage: snapshot.meta.usage ?? emptyUsage(),
+        };
         set({
           activeSessionId: sessionId,
           meta: listed,

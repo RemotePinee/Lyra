@@ -1,6 +1,8 @@
 import type { AppearanceSettings as Appearance } from "@lyra/core";
 import { useApp } from "../../store.ts";
-import { Card, GhostButton, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
+import { Card, GhostButton, InlineSelect, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
+import { findCodeTheme, LIGHT_CODE_THEMES, DARK_CODE_THEMES } from "../code-themes.ts";
+import { CodeAppearancePreview } from "./CodeAppearancePreview.tsx";
 
 /**
  * Mirrors `DEFAULT_APPEARANCE` in @lyra/core.
@@ -17,6 +19,8 @@ const FACTORY_APPEARANCE: Appearance = {
 	darkForeground: "#EDEDED",
 	uiFont: '"Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
 	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
+	codeLightTheme: "solarized-light",
+	codeDarkTheme: "github-dark",
 	uiFontSize: 13,
 	codeFontSize: 12,
 	contrast: 60,
@@ -113,17 +117,6 @@ export function AppearanceSettings() {
 					}
 				/>
 				<Row
-					title="代码字体"
-					control={
-						<TextInput
-							value={appearance.codeFont}
-							onChange={(codeFont) => patch({ codeFont })}
-							mono
-							className="w-[220px]"
-						/>
-					}
-				/>
-				<Row
 					title="对比度"
 					control={
 						<div className="flex items-center gap-3">
@@ -138,6 +131,55 @@ export function AppearanceSettings() {
 						</div>
 					}
 				/>
+			</Card>
+
+			<SectionTitle>代码外观 (Code appearance)</SectionTitle>
+			<Card className="mb-8 p-4 space-y-4">
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div className="flex-1 min-w-0">
+						<span className="block text-label font-medium text-ink">浅色代码高亮</span>
+						<span className="block text-caption text-ink-muted">浅色模式下文件预览与代码块的高亮主题</span>
+					</div>
+					<InlineSelect
+						value={appearance.codeLightTheme ?? "solarized-light"}
+						onChange={(codeLightTheme) => patch({ codeLightTheme })}
+						options={LIGHT_CODE_THEMES.map((t) => ({ value: t.id, label: t.label }))}
+					/>
+				</div>
+
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
+					<div className="flex-1 min-w-0">
+						<span className="block text-label font-medium text-ink">深色代码高亮</span>
+						<span className="block text-caption text-ink-muted">深色模式下文件预览与代码块的高亮主题</span>
+					</div>
+					<InlineSelect
+						value={appearance.codeDarkTheme ?? "github-dark"}
+						onChange={(codeDarkTheme) => patch({ codeDarkTheme })}
+						options={DARK_CODE_THEMES.map((t) => ({ value: t.id, label: t.label }))}
+					/>
+				</div>
+
+				<div className="pt-2">
+					<CodeAppearancePreview
+						lightTheme={findCodeTheme(appearance.codeLightTheme, "light")}
+						darkTheme={findCodeTheme(appearance.codeDarkTheme, "dark")}
+						fontFamily={appearance.codeFont}
+					/>
+				</div>
+
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
+					<div className="flex-1 min-w-0">
+						<span className="block text-label font-medium text-ink">代码字体 (Code font)</span>
+						<span className="block text-caption text-ink-muted">用于文件预览、代码编辑器与终端的等宽字体栈</span>
+					</div>
+					<TextInput
+						value={appearance.codeFont}
+						onChange={(codeFont) => patch({ codeFont })}
+						mono
+						placeholder="e.g. JetBrains Mono, SF Mono"
+						className="w-full sm:w-[260px]"
+					/>
+				</div>
 			</Card>
 
 			<SectionTitle>偏好设置</SectionTitle>

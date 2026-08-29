@@ -1,6 +1,19 @@
-import { Check, CheckCircle2, ChevronRight, ExternalLink, Loader2, Sparkles, Tag, X, XCircle } from "lucide-react";
+import {
+	Check,
+	CheckCircle2,
+	ChevronRight,
+	Edit3,
+	Eye,
+	ExternalLink,
+	Loader2,
+	Sparkles,
+	Tag,
+	X,
+	XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ReleaseInfo, WorkflowRunStatus } from "../../../electron/ipc-types.ts";
+import { Markdown } from "../Markdown.tsx";
 import { Overlay } from "../modals/Overlay.tsx";
 import { Scroller } from "../Scroller.tsx";
 
@@ -16,11 +29,14 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 	const [customVersion, setCustomVersion] = useState("");
 	const [notes, setNotes] = useState("");
 	const [generatingNotes, setGeneratingNotes] = useState(false);
+	const [notesLang, setNotesLang] = useState<"zh" | "en">("zh");
+	const [previewMode, setPreviewMode] = useState(false);
 
 	// Dry Run state
 	const [dryRunId, setDryRunId] = useState<number | null>(null);
 	const [dryRunStatus, setDryRunStatus] = useState<WorkflowRunStatus | null>(null);
 	const [triggeringDryRun, setTriggeringDryRun] = useState(false);
+	const [dryRunNotice, setDryRunNotice] = useState<string | null>(null);
 
 	// Publishing state
 	const [publishing, setPublishing] = useState(false);
@@ -54,13 +70,13 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 			? customVersion.trim()
 			: (info?.suggestedVersion[selectedType] ?? customVersion);
 
-	// Generate Release notes with Agent prompt assistance or commit log template
-	const handleGenerateNotes = useCallback(async () => {
+	// Generate Release notes with categorized sections in Chinese or English
+	const handleGenerateNotes = useCallback(async (lang: "zh" | "en" = notesLang) => {
 		if (!info) return;
 		setGeneratingNotes(true);
 		try {
 			const commits = info.commitsSinceTag;
-			const commitLines = commits.map((c) => `- ${c.subject} (${c.shortSha}) by @${c.author}`).join("\n");
+			const isZh = lang === "zh";
 
 			// Build categorized notes outline
 			const featCommits = commits.filter((c) => /^feat(\(.*\))?:/i.test(c.subject));
@@ -70,31 +86,51 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 				(c) => !featCommits.includes(c) && !perfCommits.includes(c) && !fixCommits.includes(c),
 			);
 
+			const cleanSubject = (subject: string) => {
+				return subject.replace(/^(feat|fix|perf|style|refactor|docs|chore|test)(\(.*?\))?:\s*/i, "");
+			};
+
 			const sections: string[] = [];
 			if (featCommits.length > 0) {
-				sections.push(`### ✨ 新功能\n${featCommits.map((c) => `- ${c.subject}`).join("\n")}`);
+				sections.push(
+					`### ${isZh ? "✨ 新功能" : "✨ Features"}\n${featCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+				);
 			}
 			if (perfCommits.length > 0) {
-				sections.push(`### ⚡ 优化与重构\n${perfCommits.map((c) => `- ${c.subject}`).join("\n")}`);
+				sections.push(
+					`### ${isZh ? "⚡ 优化与体验" : "⚡ Performance & Improvements"}\n${perfCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+				);
 			}
 			if (fixCommits.length > 0) {
-				sections.push(`### 🐛 问题修复\n${fixCommits.map((c) => `- ${c.subject}`).join("\n")}`);
+				sections.push(
+					`### ${isZh ? "🐛 问题修复" : "🐛 Bug Fixes"}\n${fixCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+				);
 			}
 			if (otherCommits.length > 0) {
-				sections.push(`### 📝 其它改动\n${otherCommits.map((c) => `- ${c.subject}`).join("\n")}`);
+				sections.push(
+					`### ${isZh ? "📝 其它改动" : "📝 Other Changes"}\n${otherCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+				);
 			}
 
-			const generated = sections.length > 0 ? sections.join("\n\n") : commitLines || "无新增变更记录";
+			let generated = "";
+			if (sections.length > 0) {
+				generated = sections.join("\n\n");
+			} else if (commits.length > 0) {
+				generated = commits.map((c) => `- ${c.subject} (${c.shortSha})`).join("\n");
+			} else {
+				generated = isZh ? "无新增变更记录" : "No new changes recorded";
+			}
+
 			setNotes(generated);
 		} finally {
 			setGeneratingNotes(false);
 		}
-	}, [info]);
+	}, [info, notesLang]);
 
 	// Initialize default notes when info is loaded
 	useEffect(() => {
 		if (info && !notes) {
-			void handleGenerateNotes();
+			void handleGenerateNotes("zh");
 		}
 	}, [info, notes, handleGenerateNotes]);
 
@@ -120,15 +156,24 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 
 	const handleTriggerDryRun = async () => {
 		setError(null);
+		setDryRunNotice(null);
 		setTriggeringDryRun(true);
-		const res = await window.lyra.git.triggerDryRun(cwd);
-		setTriggeringDryRun(false);
-		if (!res.ok) {
-			setError(res.error ?? "触发 GitHub Actions 试运行失败");
-			return;
-		}
-		if (res.runId) {
-			setDryRunId(res.runId);
+		try {
+			const res = await window.lyra.git.triggerDryRun(cwd);
+			if (!res.ok) {
+				setError(res.error ?? "触发 GitHub Actions 试运行失败");
+				return;
+			}
+			if (res.runId) {
+				setDryRunId(res.runId);
+				setDryRunNotice("已成功触发 GitHub Actions 跨平台打包试运行！正在实时监听进度…");
+			} else {
+				setDryRunNotice("已触发 GitHub Actions release-dryrun.yml，等待调度排队中…");
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setTriggeringDryRun(false);
 		}
 	};
 
@@ -157,7 +202,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 	};
 
 	return (
-		<Overlay onClose={onClose} width={520}>
+		<Overlay onClose={onClose} width={560}>
 			<div className="flex flex-col max-h-[85vh] bg-float text-ink">
 				{/* Clean Header */}
 				<div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-line-soft">
@@ -180,7 +225,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 				</div>
 
 				{/* Body Content */}
-				<Scroller className="flex-1 max-h-[60vh]" contentClassName="p-5 space-y-4">
+				<Scroller className="flex-1 max-h-[62vh]" contentClassName="p-5 space-y-4">
 					{loading && (
 						<div className="flex items-center justify-center py-12">
 							<Loader2 size={20} className="animate-spin text-ink-faint" />
@@ -263,7 +308,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 											type="text"
 											value={customVersion}
 											onChange={(e) => setCustomVersion(e.target.value)}
-											placeholder="0.8.3"
+											placeholder="0.8.6"
 											className="mt-2.5 w-full rounded-lg border border-line-soft bg-card-hover/30 px-3 py-1.5 text-detail font-mono text-ink focus:border-primary focus:outline-none"
 										/>
 									)}
@@ -276,31 +321,85 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 									<span className="text-caption font-medium text-ink-muted">
 										版本更新日志 (Release Notes)
 									</span>
-									<button
-										type="button"
-										onClick={handleGenerateNotes}
-										disabled={generatingNotes}
-										className="flex items-center gap-1 text-micro font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
-									>
-										<Sparkles size={11} className="text-amber-500" />
-										<span>重新提取</span>
-									</button>
+									<div className="flex items-center gap-1.5">
+										{/* Language Toggle */}
+										<div className="flex items-center rounded-md border border-line bg-card-hover/30 p-0.5 text-micro">
+											<button
+												type="button"
+												onClick={() => {
+													setNotesLang("zh");
+													void handleGenerateNotes("zh");
+												}}
+												className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+													notesLang === "zh" ? "bg-card font-medium text-ink shadow-xs" : "text-ink-muted hover:text-ink"
+												}`}
+											>
+												中文
+											</button>
+											<button
+												type="button"
+												onClick={() => {
+													setNotesLang("en");
+													void handleGenerateNotes("en");
+												}}
+												className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+													notesLang === "en" ? "bg-card font-medium text-ink shadow-xs" : "text-ink-muted hover:text-ink"
+												}`}
+											>
+												EN
+											</button>
+										</div>
+
+										{/* Preview Toggle */}
+										<button
+											type="button"
+											onClick={() => setPreviewMode(!previewMode)}
+											className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-micro border transition-colors cursor-pointer ${
+												previewMode
+													? "border-primary bg-primary/10 text-primary font-medium"
+													: "border-line bg-card hover:bg-card-hover text-ink-muted"
+											}`}
+										>
+											{previewMode ? <Edit3 size={11} /> : <Eye size={11} />}
+											<span>{previewMode ? "编辑" : "预览"}</span>
+										</button>
+
+										{/* Re-extract Action */}
+										<button
+											type="button"
+											onClick={() => void handleGenerateNotes(notesLang)}
+											disabled={generatingNotes}
+											className="flex items-center gap-1 rounded-md px-2 py-0.5 text-micro font-medium text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
+										>
+											<Sparkles size={11} className={generatingNotes ? "animate-spin text-amber-500" : "text-amber-500"} />
+											<span>{generatingNotes ? "提取中…" : "重新提取"}</span>
+										</button>
+									</div>
 								</div>
-								<textarea
-									value={notes}
-									onChange={(e) => setNotes(e.target.value)}
-									rows={6}
-									className="w-full rounded-xl border border-line-soft bg-card p-3 text-detail font-mono text-ink focus:border-primary focus:outline-none resize-none leading-relaxed"
-									placeholder="在此编辑发版说明..."
-								/>
+
+								{previewMode ? (
+									<div className="min-h-[140px] max-h-[220px] overflow-y-auto rounded-xl border border-line-soft bg-card p-3.5 text-detail text-ink leading-relaxed">
+										<Markdown text={notes || "*(无内容)*"} />
+									</div>
+								) : (
+									<textarea
+										value={notes}
+										onChange={(e) => setNotes(e.target.value)}
+										rows={6}
+										className="w-full rounded-xl border border-line-soft bg-card p-3 text-detail font-mono text-ink focus:border-primary focus:outline-none resize-none leading-relaxed"
+										placeholder="在此编辑发版说明..."
+									/>
+								)}
 							</div>
 
 							{/* Pre-flight Checks / GitHub Actions Dry Run */}
 							<div className="rounded-xl bg-card p-3.5 space-y-2.5">
 								<div className="flex items-center justify-between">
-									<span className="text-detail font-medium text-ink">
-										跨平台打包试运行 (Dry Run)
-									</span>
+									<div className="flex items-center gap-2">
+										<span className="text-detail font-medium text-ink">
+											跨平台打包试运行 (Dry Run)
+										</span>
+									</div>
 									<button
 										type="button"
 										onClick={handleTriggerDryRun}
@@ -313,10 +412,21 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 											<Sparkles size={12} className="text-amber-500" />
 										)}
 										<span>
-											{dryRunStatus?.status === "in_progress" ? "正在构建..." : "触发 Dry Run"}
+											{triggeringDryRun
+												? "触发中…"
+												: dryRunStatus?.status === "in_progress"
+													? "正在构建..."
+													: "触发 Dry Run"}
 										</span>
 									</button>
 								</div>
+
+								{dryRunNotice && !dryRunStatus && (
+									<div className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-detail text-primary">
+										<Loader2 size={13} className="animate-spin shrink-0" />
+										<span>{dryRunNotice}</span>
+									</div>
+								)}
 
 								{dryRunStatus && (
 									<div className="rounded-lg bg-card-hover/50 p-2.5 text-detail space-y-2">
@@ -358,10 +468,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 																<XCircle size={12} className="text-rose-500 shrink-0" />
 															)
 														) : (
-															<Loader2
-																size={12}
-																className="animate-spin text-amber-500 shrink-0"
-															/>
+															<Loader2 size={12} className="animate-spin text-amber-500 shrink-0" />
 														)}
 														<span className="truncate">{job.name}</span>
 													</div>
@@ -373,7 +480,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 							</div>
 
 							{error && (
-								<div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-detail text-rose-500">
+								<div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 text-caption text-rose-500">
 									{error}
 								</div>
 							)}
@@ -381,9 +488,9 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 					)}
 				</Scroller>
 
-				{/* Clean Footer Actions */}
+				{/* Footer Actions */}
 				{!publishSuccess && (
-					<div className="flex items-center justify-between border-t border-line-soft px-5 py-3 shrink-0 bg-surface-alt/30">
+					<div className="flex items-center justify-between border-t border-line-soft px-5 py-3 bg-card-hover/20">
 						<div className="text-detail text-ink-muted">
 							发布目标: <span className="font-mono font-semibold text-ink">v{currentTargetVersion}</span>
 						</div>
@@ -391,19 +498,27 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 							<button
 								type="button"
 								onClick={onClose}
-								className="rounded-lg px-3 py-1.5 text-detail font-medium text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer"
+								className="rounded-lg px-3 py-1.5 text-detail text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer"
 							>
 								取消
 							</button>
 							<button
 								type="button"
 								onClick={handlePublish}
-								disabled={publishing || !currentTargetVersion || loading}
-								className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-shell hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+								disabled={publishing || !currentTargetVersion}
+								className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-canvas hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
 							>
-								{publishing && <Loader2 size={13} className="animate-spin" />}
-								<span>确认并发布 (打 Tag & Push)</span>
-								<ChevronRight size={14} />
+								{publishing ? (
+									<>
+										<Loader2 size={13} className="animate-spin" />
+										<span>发布中...</span>
+									</>
+								) : (
+									<>
+										<span>确认并发布 (打 Tag & Push)</span>
+										<ChevronRight size={13} />
+									</>
+								)}
 							</button>
 						</div>
 					</div>

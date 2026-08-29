@@ -253,6 +253,16 @@ export class SessionStore implements SessionStorage {
 		if (!meta) return null;
 		const messages = entries.map((e) => e.message);
 		meta.messageCount = messages.length;
+		// Re-accumulate usage across assistant messages if it was lost/cleared
+		let totalUsage = emptyUsage();
+		for (const msg of messages) {
+			if (msg.role === "assistant" && msg.usage) {
+				totalUsage = addUsage(totalUsage, msg.usage);
+			}
+		}
+		if (totalUsage.total > 0 || meta.usage.total === 0) {
+			meta.usage = totalUsage;
+		}
 		// Seed the append queue's view so a reopened session keeps numbering where it left off.
 		this.latestMeta.set(this.keyFor(meta), meta);
 		return { meta, messages, compactions, compaction };

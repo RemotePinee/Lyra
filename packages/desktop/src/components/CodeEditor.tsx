@@ -19,6 +19,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 
+import { useApp } from "../store.ts";
 import { GRAMMARS, grammarKeyFor, highlightStyle } from "./highlight.ts";
 import { editorTheme } from "./editor/theme.ts";
 import { CHEVRON_DOWN, CHEVRON_RIGHT, OPTION_ICONS, SEARCH_ICONS, SEARCH_PHRASES, SEARCH_TIPS } from "./editor/chrome.ts";
@@ -83,6 +84,11 @@ export function CodeEditor({
 	/** Assigned below; held in a ref so the keymap built once can reach the current one. */
 	const openFindRef = useRef<(withReplace: boolean) => void>(() => {});
 
+	const appearance = useApp((s) => s.settings?.appearance);
+	const codeLightTheme = appearance?.codeLightTheme;
+	const codeDarkTheme = appearance?.codeDarkTheme;
+	const highlightCompartment = useRef(new Compartment());
+
 	useEffect(() => {
 		const element = host.current;
 		if (!element) return;
@@ -117,7 +123,7 @@ export function CodeEditor({
 				 * this. Missing keys fall through to the English original rather than blanking.
 				 */
 				EditorState.phrases.of(SEARCH_PHRASES),
-				syntaxHighlighting(highlightStyle()),
+				highlightCompartment.current.of(syntaxHighlighting(highlightStyle(codeLightTheme, codeDarkTheme))),
 				EditorState.readOnly.of(Boolean(readOnly)),
 				wrapping.current.of(wrap ? EditorView.lineWrapping : []),
 				language.current.of([]),
@@ -252,6 +258,14 @@ export function CodeEditor({
 			effects: wrapping.current.reconfigure(wrap ? EditorView.lineWrapping : []),
 		});
 	}, [wrap]);
+
+	useEffect(() => {
+		view.current?.dispatch({
+			effects: highlightCompartment.current.reconfigure(
+				syntaxHighlighting(highlightStyle(codeLightTheme, codeDarkTheme)),
+			),
+		});
+	}, [codeLightTheme, codeDarkTheme]);
 
 	/*
 	 * Adopt an outside change without disturbing the caret.

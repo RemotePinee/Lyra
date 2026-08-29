@@ -18,11 +18,17 @@
  * unambiguous vendors are asked first.
  */
 
-export type Brand = "openai" | "claude" | "deepseek" | "gemini" | "qwen" | "grok" | "mistral" | "hunyuan";
+export type Brand = "openai" | "claude" | "deepseek" | "gemini" | "qwen" | "grok" | "mistral" | "hunyuan" | "kimi" | "minimax" | "stepfun" | "baichuan" | "doubao" | "yi";
 
 const RULES: { brand: Brand; test: RegExp }[] = [
 	{ brand: "deepseek", test: /deepseek/ },
 	{ brand: "claude", test: /claude|anthropic|\bopus\b|\bsonnet\b|\bhaiku\b/ },
+	{ brand: "kimi", test: /kimi|moonshot/ },
+	{ brand: "doubao", test: /doubao|豆包|skylark|ep-/ },
+	{ brand: "minimax", test: /minimax|abab/ },
+	{ brand: "stepfun", test: /stepfun|step-|阶跃/ },
+	{ brand: "baichuan", test: /baichuan|百川/ },
+	{ brand: "yi", test: /\byi-|\blingyi\b|零一万物/ },
 	{ brand: "qwen", test: /qwen|qwq|qvq|tongyi|通义|千问/ },
 	{ brand: "gemini", test: /gemini|gemma|\bpalm\b/ },
 	{ brand: "grok", test: /\bgrok\b|\bxai\b/ },

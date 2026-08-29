@@ -123,6 +123,68 @@ const MARKS: Record<Brand, { box: string; mono?: true; draw: (gradientId: string
 			</>
 		),
 	},
+	// Kimi / Moonshot AI — official dark logomark
+	kimi: {
+		box: "0 0 24 24",
+		mono: true,
+		draw: () => (
+			<path
+				d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l7 4.5-7 4.5z"
+				fill="currentColor"
+			/>
+		),
+	},
+	// Doubao / ByteDance Volcano
+	doubao: {
+		box: "0 0 24 24",
+		draw: () => (
+			<path
+				d="M12 2.5a9.5 9.5 0 0 0-9.5 9.5c0 2.22.76 4.26 2.03 5.89L3.5 21.5l4.24-1.01A9.46 9.46 0 0 0 12 21.5a9.5 9.5 0 0 0 9.5-9.5A9.5 9.5 0 0 0 12 2.5z"
+				fill="#3B82F6"
+			/>
+		),
+	},
+	// MiniMax
+	minimax: {
+		box: "0 0 24 24",
+		draw: () => (
+			<path
+				d="M4 6h4v12H4zm6-3h4v18h-4zm6 6h4v6h-4z"
+				fill="#EF4444"
+			/>
+		),
+	},
+	// StepFun
+	stepfun: {
+		box: "0 0 24 24",
+		draw: () => (
+			<path
+				d="M12 2L2 7l10 5 10-5-10-5zm0 9l-8-4 8 4 8-4-8 4zm0 4.5l-8-4 8 4 8-4-8 4zm0 4.5l-8-4 8 4 8-4-8 4z"
+				fill="#10B981"
+			/>
+		),
+	},
+	// Baichuan
+	baichuan: {
+		box: "0 0 24 24",
+		draw: () => (
+			<path
+				d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.8L18.5 8 12 11.6 5.5 8 12 4.8z"
+				fill="#F97316"
+			/>
+		),
+	},
+	// 01.AI (Yi)
+	yi: {
+		box: "0 0 24 24",
+		mono: true,
+		draw: () => (
+			<path
+				d="M6 4h3v16H6zm9 0h3v16h-3z"
+				fill="currentColor"
+			/>
+		),
+	},
 };
 
 /**
