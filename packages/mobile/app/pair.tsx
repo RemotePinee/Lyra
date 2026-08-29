@@ -34,7 +34,6 @@ export default function PairScreen() {
 
 	async function testAndSave() {
 		setBusy(true);
-		setMessage(null);
 		try {
 			const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
 			const parsedPort = Number(port);
@@ -45,13 +44,20 @@ export default function PairScreen() {
 
 			const pingResult = await SyncClient.ping(cleanHost, parsedPort);
 			if (!pingResult.ok) {
-				setMessage({ tone: "error", text: `无法连接到 ${cleanHost}:${parsedPort} (${pingResult.reason || "网络超时"})，请确认电脑和手机在同一网络。` });
+				setMessage({
+					tone: "error",
+					text: `无法连接到 ${cleanHost}:${parsedPort} (${pingResult.reason || "网络超时"})，请确认电脑和手机在同一网络。`,
+				});
 				return;
 			}
 
 			const ok = await pair({ host: cleanHost, port: parsedPort, token: token.trim() });
-			if (ok) router.back();
-			else setMessage({ tone: "error", text: "令牌不正确，请在桌面端重新复制。" });
+			if (ok) {
+				setMessage(null);
+				router.back();
+			} else {
+				setMessage({ tone: "error", text: "令牌不正确，请在桌面端重新复制。" });
+			}
 		} finally {
 			setBusy(false);
 		}
@@ -109,9 +115,11 @@ export default function PairScreen() {
 
 				{message && (
 					<View
-						className={`mt-4 rounded-xl border px-3.5 py-3 ${
-							message.tone === "ok" ? "border-ok/40 bg-ok/10" : "border-danger/40 bg-danger/10"
-						}`}
+						style={{
+							backgroundColor: message.tone === "ok" ? "#14281f" : "#2d1618",
+							borderColor: message.tone === "ok" ? "#22593d" : "#5c2427",
+						}}
+						className="mt-4 rounded-xl border px-3.5 py-3"
 					>
 						<Text className={`text-[13px] leading-5 ${message.tone === "ok" ? "text-ok" : "text-danger"}`}>
 							{message.text}
