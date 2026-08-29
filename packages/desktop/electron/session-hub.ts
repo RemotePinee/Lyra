@@ -45,7 +45,10 @@ export const sideChats = new Map<string, SideChat>();
 
 
 export function broadcast(sessionId: string, event: AgentEvent): void {
-	deps.window()?.webContents.send("agent:event", { sessionId, event });
+	const win = deps.window();
+	if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+		win.webContents.send("agent:event", { sessionId, event });
+	}
 	deps.sync?.()?.broadcast(sessionId, event);
 }
 
@@ -56,7 +59,10 @@ export function broadcast(sessionId: string, event: AgentEvent): void {
  * sitting at. A phone replaying the session log would have no conversation to attach these to.
  */
 export function broadcastSideChat(sessionId: string, event: AgentEvent): void {
-	deps.window()?.webContents.send("sidechat:event", { sessionId, event });
+	const win = deps.window();
+	if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+		win.webContents.send("sidechat:event", { sessionId, event });
+	}
 }
 
 export async function getOrCreateSession(cwd: string, _modelId: string): Promise<AgentSession> {

@@ -10,6 +10,7 @@ import type {
 } from "../types.ts";
 import { anthropicMessagesProvider } from "./anthropic-messages.ts";
 import { openaiResponsesProvider } from "./openai-responses.ts";
+import { openaiChatCompletionsProvider } from "./openai-chat-completions.ts";
 
 /**
  * The adapters this module falls back to.
@@ -22,6 +23,7 @@ import { openaiResponsesProvider } from "./openai-responses.ts";
 const BUILT_IN: Record<ApiFormat, Provider> = {
 	"anthropic-messages": anthropicMessagesProvider,
 	"openai-responses": openaiResponsesProvider,
+	"openai-chat-completions": openaiChatCompletionsProvider,
 };
 
 /** Set once by the host that owns the plugin context; read on every lookup. */
@@ -40,6 +42,7 @@ export function useLlmRegistry(next: { get(api: string): Provider | undefined } 
 
 export const API_FORMATS: { value: ApiFormat; label: string; hint: string }[] = [
 	{ value: "openai-responses", label: "Responses (/responses)", hint: "OpenAI Responses API" },
+	{ value: "openai-chat-completions", label: "Chat Completions (/chat/completions)", hint: "OpenAI Chat Completions API" },
 	{ value: "anthropic-messages", label: "Messages (/messages)", hint: "Anthropic Messages API" },
 ];
 
@@ -63,3 +66,5 @@ export { anthropicMessagesProvider } from "./anthropic-messages.ts";
 export { toAnthropicMessages } from "./anthropic-messages-request.ts";
 export { openaiResponsesProvider } from "./openai-responses.ts";
 export { toResponsesInput } from "./openai-responses-request.ts";
+export { openaiChatCompletionsProvider } from "./openai-chat-completions.ts";
+export { toChatCompletionsMessages, toChatCompletionsTools } from "./openai-chat-completions-request.ts";

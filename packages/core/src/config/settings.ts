@@ -120,6 +120,17 @@ export interface Settings {
 	providers: ProviderConfig[];
 	mcpServers: McpServerConfig[];
 	projects: ProjectEntry[];
+	/** Pinned session IDs across projects and loose chats. */
+	pinnedSessionIds?: string[];
+	/** Worktrees configuration and auto-cleanup preferences. */
+	worktrees?: {
+		rootDir?: string;
+		fetchUpstreamBeforeCreate?: boolean;
+		autoCleanOld?: boolean;
+		keepLimit?: number;
+	};
+	/** Update check frequency in hours (e.g. 4, 8, 12, 24). Default is 6. */
+	updateCheckIntervalHours?: number;
 	/** `${providerId}/${modelId}` of the model used for new sessions. */
 	defaultModelId: string | null;
 	permissionMode: PermissionMode;

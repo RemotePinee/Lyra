@@ -140,7 +140,7 @@ test("the default context provides the seams the app is built on", async () => {
 	assert.deepEqual(ctx.pending(), [], "nothing left waiting");
 
 	const llm = ctx.require<LlmRegistry>(LLM);
-	assert.deepEqual(llm.list().sort(), ["anthropic-messages", "openai-responses"]);
+	assert.deepEqual(llm.list().sort(), ["anthropic-messages", "openai-chat-completions", "openai-responses"]);
 
 	assert.ok(ctx.require<Sandbox>(SANDBOX), "commands have somewhere to run");
 	assert.ok(ctx.require<CompactionStrategy>(COMPACTION), "a full window has an answer");

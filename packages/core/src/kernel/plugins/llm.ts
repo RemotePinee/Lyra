@@ -1,5 +1,6 @@
 import { anthropicMessagesProvider } from "../../ai/anthropic-messages.ts";
 import { openaiResponsesProvider } from "../../ai/openai-responses.ts";
+import { openaiChatCompletionsProvider } from "../../ai/openai-chat-completions.ts";
 import type { Provider } from "../../types.ts";
 import type { Context, Plugin } from "../context.ts";
 import { LLM, type LlmRegistry } from "../services.ts";
@@ -30,7 +31,7 @@ class Registry implements LlmRegistry {
 	}
 }
 
-/** The two APIs the app speaks out of the box. */
+/** The APIs the app speaks out of the box. */
 export const llmPlugin: Plugin = {
 	name: "llm",
 	apply(ctx: Context) {
@@ -39,6 +40,7 @@ export const llmPlugin: Plugin = {
 
 		const adapters = [
 			registry.register(openaiResponsesProvider.api, openaiResponsesProvider),
+			registry.register(openaiChatCompletionsProvider.api, openaiChatCompletionsProvider),
 			registry.register(anthropicMessagesProvider.api, anthropicMessagesProvider),
 		];
 

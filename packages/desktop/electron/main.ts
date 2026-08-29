@@ -39,7 +39,6 @@ import {
 	STORAGE,
 	TOOLS,
 	SessionStore,
-	SideChat,
 	type AgentLoop,
 	type ApprovalPolicy,
 	type CompactionStrategy,
@@ -59,6 +58,7 @@ import {
 	configureHub,
 	getOrCreateSession,
 	sessions,
+	sideChats,
 } from "./session-hub.ts";
 import { resolveInside } from "./file-ops.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
@@ -173,13 +173,6 @@ let store: SessionStorage = new SessionStore();
 let kernel: CapabilityContext | null = null;
 /** Per-session browser instances, disposed alongside the session that owns them. */
 /**
- * Side chats, keyed by the session each one is attached to.
- *
- * Memory only. They hold a live `AgentSession` reference, so one cannot outlive the session
- * it reads — disposing a session drops its side chat with it.
- */
-const sideChats = new Map<string, SideChat>();
-/**
  * Live pseudo-terminals, one per project directory. Killed when the app quits.
  *
  * Deliberately outliving the panes that show them — see `ipc/terminal.ts` for why.
@@ -290,7 +283,9 @@ function reportToTopLevel(error: unknown, origin: string): void {
 	const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
 	console.error(`[${origin}]`, message);
 	for (const win of BrowserWindow.getAllWindows()) {
-		win.webContents.send("app:mainError", { origin, message });
+		if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+			win.webContents.send("app:mainError", { origin, message });
+		}
 	}
 }
 
@@ -382,7 +377,10 @@ app.whenReady().then(async () => {
 		for (const chat of sideChats.values()) chat.updateSettings(next);
 		if (next.sync.enabled && !syncStatusSource()?.running) await startSync();
 		else if (!next.sync.enabled && syncStatusSource()?.running) await stopSync();
-		getWindow()?.webContents.send("settings:changed", next);
+		const win = getWindow();
+		if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+			win.webContents.send("settings:changed", next);
+		}
 	});
 	useSettingsSource(() => settings);
 	configureHub({ store: () => store, settings: () => settings, window: getWindow, sync: syncStatusSource });
@@ -431,7 +429,12 @@ app.whenReady().then(async () => {
 		getSettings: () => settings,
 		saveSettings: async (next) => void (await applySettings(next)),
 		createSession: (cwd, modelId) => getOrCreateSession(cwd, modelId),
-		notify: (message, level) => getWindow()?.webContents.send("scheduler:notice", { message, level }),
+		notify: (message, level) => {
+			const win = getWindow();
+			if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("scheduler:notice", { message, level });
+			}
+		},
 	});
 	scheduler.start();
 

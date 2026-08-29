@@ -50,6 +50,8 @@ export type SettingsSection =
   | "forges"
   | "usage"
   | "sync"
+  | "worktrees"
+  | "about"
   | "archived";
 
 export interface ToolRun {
@@ -153,8 +155,8 @@ export interface AppState {
    * - `new:scratch` for blank session without a project (Chat / 不在项目中工作)
    * - `<sessionId>` for drafts typed in an existing session
    */
-  drafts: Record<string, { text: string; attachments: { id: string; name: string; mimeType: string; data: string }[] }>;
-  setDraft(key: string, draft: { text: string; attachments?: { id: string; name: string; mimeType: string; data: string }[] } | null): void;
+  drafts: Record<string, { text: string; attachments: { id: string; name: string; mimeType: string; data?: string; text?: string; isText?: boolean }[] }>;
+  setDraft(key: string, draft: { text: string; attachments?: { id: string; name: string; mimeType: string; data?: string; text?: string; isText?: boolean }[] } | null): void;
 
   activeSessionId: string | null;
   meta: SessionMeta | null;
@@ -310,6 +312,9 @@ export interface AppState {
   /** Rename a project, or drop it from the list without touching anything on disk. */
   renameProject(path: string, name: string): Promise<void>;
   setProjectPinned(path: string, pinned: boolean): Promise<void>;
+  setSessionPinned(sessionId: string, pinned: boolean): Promise<void>;
+  renameSession(session: SessionMeta, title: string): Promise<void>;
+  moveSessionProject(session: SessionMeta, targetPath: string): Promise<void>;
   removeProject(path: string): Promise<void>;
   /** Archive every session belonging to one project. */
   archiveProjectSessions(path: string): Promise<void>;

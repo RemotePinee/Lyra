@@ -162,6 +162,7 @@ export async function openWith(stored: string, path: string): Promise<void> {
 		 * and both are one option each.
 		 */
 		const child = execFile(located, [target], { windowsHide: false });
+		child.on("error", () => void shell.openPath(target));
 		child.unref();
 	} catch {
 		await shell.openPath(target);

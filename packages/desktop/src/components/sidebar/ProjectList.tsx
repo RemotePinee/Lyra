@@ -55,19 +55,32 @@ export function ProjectList({
 }) {
 	const { compact } = useLayout();
 	const pinnedShut = collapsed.includes(PINNED);
+	const hasPinned = (groups.pinnedSessions?.length ?? 0) > 0 || groups.pinned.length > 0;
+	const pinnedCount = (groups.pinnedSessions?.length ?? 0) + groups.pinned.length;
 
-	if (groups.pinned.length === 0 && groups.projects.length === 0 && groups.loose.length === 0) {
+	if (!hasPinned && groups.projects.length === 0 && groups.loose.length === 0) {
 		return <>{empty}</>;
 	}
 
 	return (
 		<>
-			{groups.pinned.length > 0 && (
+			{hasPinned && (
 				<>
-					<SectionLabel count={groups.pinned.length} collapsed={pinnedShut} onToggle={() => onToggleCollapsed(PINNED)}>
+					<SectionLabel count={pinnedCount} collapsed={pinnedShut} onToggle={() => onToggleCollapsed(PINNED)}>
 						置顶
 					</SectionLabel>
 					<Collapsible open={!pinnedShut}>
+						<div className={`flex flex-col ${compact ? "gap-[5px]" : "gap-[4px]"}`}>
+							{groups.pinnedSessions?.map((session) => (
+								<SessionRow
+									key={session.id}
+									session={session}
+									active={activeSessionId === session.id}
+									project={session.projectName}
+									{...rowActions(actions, session)}
+								/>
+							))}
+						</div>
 						{groups.pinned.map((group) => (
 							<ProjectGroup
 								key={group.path}

@@ -23,6 +23,8 @@ export interface ProjectRef {
 }
 
 export interface Grouped {
+	/** Pinned individual sessions (shown at the top of the sidebar under 置顶). */
+	pinnedSessions: SessionMeta[];
 	/** Pinned projects, in configured order. */
 	pinned: Group[];
 	/** Everything else that is a project, in configured order, unknown ones last. */
@@ -54,9 +56,22 @@ export function groupSessions(
 	 * record the path they were created under.
 	 */
 	scratchRoots: string[] = [],
+	pinnedSessionIds: string[] = [],
 ): Grouped {
 	const needle = query.trim().toLowerCase();
 	const filtered = needle ? sessions.filter((s) => s.title.toLowerCase().includes(needle)) : sessions;
+	const pinnedIdSet = new Set(pinnedSessionIds);
+
+	const pinnedSessions: SessionMeta[] = [];
+	const unpinnedSessions: SessionMeta[] = [];
+
+	for (const s of filtered) {
+		if (pinnedIdSet.has(s.id)) {
+			pinnedSessions.push(s);
+		} else {
+			unpinnedSessions.push(s);
+		}
+	}
 
 	const byPath = new Map<string, Group>();
 	for (const project of projects) {
@@ -64,7 +79,7 @@ export function groupSessions(
 	}
 
 	const loose: SessionMeta[] = [];
-	for (const session of filtered) {
+	for (const session of unpinnedSessions) {
 		if (isScratch(session.cwd, scratchRoots)) {
 			loose.push(session);
 			continue;
@@ -85,16 +100,9 @@ export function groupSessions(
 		.sort((a, b) => (order.get(a.path) ?? 999) - (order.get(b.path) ?? 999));
 
 	return {
+		pinnedSessions: pinnedSessions.sort((a, b) => b.updatedAt - a.updatedAt),
 		pinned: all.filter((g) => pinnedPaths.has(g.path)),
 		projects: all.filter((g) => !pinnedPaths.has(g.path)),
-		/*
-		 * Newest first, decided here rather than trusted from the caller.
-		 *
-		 * Inside a project the rows arrive in whatever order the session list came in, and that has
-		 * always been recency — but these rows are the ones under a heading that literally says
-		 * 「最近」, so the order is part of what the section claims rather than an accident of the
-		 * input.
-		 */
 		loose: loose.sort((a, b) => b.updatedAt - a.updatedAt),
 	};
 }

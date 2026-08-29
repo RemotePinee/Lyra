@@ -117,7 +117,7 @@ export function Scroller({
 		observer.observe(el);
 
 		const mutations = new MutationObserver(scheduleMeasure);
-		mutations.observe(el, { childList: true, subtree: true, characterData: true });
+		mutations.observe(el, { childList: true, subtree: false });
 
 		return () => {
 			if (frame) cancelAnimationFrame(frame);
@@ -129,7 +129,13 @@ export function Scroller({
 	// Dragging continues outside the thumb, so the listeners live on the window.
 	useEffect(() => {
 		if (!drag.current && !active) return;
-		const onMove = (event: MouseEvent) => {
+		let frame = 0;
+		let latestEvent: MouseEvent | null = null;
+
+		const updateScroll = () => {
+			frame = 0;
+			const event = latestEvent;
+			if (!event) return;
 			const el = viewport.current;
 			const state = drag.current;
 			if (!el || !state) return;
@@ -138,15 +144,24 @@ export function Scroller({
 			const ratio = (event.clientY - state.startY) / travel;
 			el.scrollTop = state.startTop + ratio * (el.scrollHeight - el.clientHeight);
 		};
+
+		const onMove = (event: MouseEvent) => {
+			latestEvent = event;
+			if (!frame) {
+				frame = requestAnimationFrame(updateScroll);
+			}
+		};
 		const onUp = () => {
 			drag.current = null;
 			setActive(false);
+			if (frame) cancelAnimationFrame(frame);
 		};
 		window.addEventListener("mousemove", onMove);
 		window.addEventListener("mouseup", onUp);
 		return () => {
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
+			if (frame) cancelAnimationFrame(frame);
 		};
 	}, [active, metrics.thumbHeight, viewport]);
 

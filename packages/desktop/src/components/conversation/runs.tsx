@@ -20,7 +20,7 @@ import type { Call } from "./grouping.ts";
  * Large enough that an ordinary conversation is never truncated, small enough that a session
  * with thousands of messages still scrolls like an empty one.
  */
-export const WINDOW_STEP = 120;
+export const WINDOW_STEP = 60;
 
 export type Segment =
   | { kind: "block"; block: AssistantContent; index: number }

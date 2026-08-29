@@ -63,7 +63,9 @@ function harness() {
 		insideAProject: () => true,
 		window: () =>
 			({
+				isDestroyed: () => false,
 				webContents: {
+					isDestroyed: () => false,
 					send: (channel: string, payload: { id: string; data?: string }) => sent.push({ channel, payload }),
 				},
 			}) as never,
@@ -399,4 +401,56 @@ test("a shell started in a project is still there after moving to another", () =
 		"the terminal you were using is still one of the tabs",
 	);
 	assert.equal(registry.attach(inProject.id, 80, 24)?.pid, inProject.pid, "and still the same shell");
+});
+
+test("data and exit events are silently ignored when window or webContents is destroyed", () => {
+	const terminals = new Map();
+	let dataHandler: ((data: string) => void) | undefined;
+	let exitHandler: ((event: { exitCode: number }) => void) | undefined;
+	let destroyed = false;
+
+	const spawned = {
+		pid: 1234,
+		killed: false,
+		write: () => {},
+		resize: () => {},
+		kill: () => {},
+		onData: (fn: (d: string) => void) => {
+			dataHandler = fn;
+		},
+		onExit: (fn: (e: { exitCode: number }) => void) => {
+			exitHandler = fn;
+		},
+	};
+
+	let sendCount = 0;
+	const registry = createTerminalRegistry({
+		terminals,
+		spawnPty: () => spawned as never,
+		insideAProject: () => true,
+		window: () =>
+			({
+				isDestroyed: () => destroyed,
+				webContents: {
+					isDestroyed: () => destroyed,
+					send: () => {
+						sendCount++;
+					},
+				},
+			}) as never,
+	});
+
+	const tab = registry.open("/work/app", 80, 24);
+	assert.ok(tab);
+
+	dataHandler?.("hello");
+	assert.equal(sendCount, 1);
+
+	// Destroy window and ensure events don't throw or send
+	destroyed = true;
+	assert.doesNotThrow(() => {
+		dataHandler?.("world");
+		exitHandler?.({ exitCode: 0 });
+	});
+	assert.equal(sendCount, 1);
 });

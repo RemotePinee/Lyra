@@ -177,10 +177,20 @@ export function ProjectMenu({
 					icon={pinned ? <PinOff size={13} strokeWidth={1.8} /> : <Pin size={13} strokeWidth={1.8} />}
 					onClick={() => {
 						void setPinned(path, !pinned);
+						notify(pinned ? "已取消置顶项目" : "已置顶项目");
 						onClose();
 					}}
 				>
 					{pinned ? "取消置顶项目" : "置顶项目"}
+				</MenuItem>
+				<MenuItem
+					icon={<Settings2 size={13} strokeWidth={1.8} />}
+					onClick={() => {
+						setDraft(name);
+						setMode("rename");
+					}}
+				>
+					重命名
 				</MenuItem>
 				<MenuItem
 					icon={<FolderOpen size={13} strokeWidth={1.8} />}
@@ -199,15 +209,6 @@ export function ProjectMenu({
 					}}
 				>
 					创建永久工作树
-				</MenuItem>
-				<MenuItem
-					icon={<Settings2 size={13} strokeWidth={1.8} />}
-					onClick={() => {
-						setDraft(name);
-						setMode("rename");
-					}}
-				>
-					编辑项目
 				</MenuItem>
 
 				<MenuSeparator />

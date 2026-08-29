@@ -21,6 +21,7 @@ import { RollingText } from "../RollingText.tsx";
 
 const API_OPTIONS: { value: ApiFormat; label: string }[] = [
 	{ value: "openai-responses", label: "Responses (/responses)" },
+	{ value: "openai-chat-completions", label: "Chat Completions (/chat/completions)" },
 	{ value: "anthropic-messages", label: "Messages (/messages)" },
 ];
 
