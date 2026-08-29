@@ -185,11 +185,17 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 			while (live.bytes > SCROLLBACK_BYTES && live.scrollback.length > 1) {
 				live.bytes -= live.scrollback.shift()?.length ?? 0;
 			}
-			if (live.attached) window()?.webContents.send("terminal:data", { id, data });
+			const win = window();
+			if (live.attached && win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("terminal:data", { id, data });
+			}
 		});
 		child.onExit(({ exitCode }) => {
 			terminals.delete(id);
-			window()?.webContents.send("terminal:exit", { id, code: exitCode });
+			const win = window();
+			if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("terminal:exit", { id, code: exitCode });
+			}
 		});
 		terminals.set(id, live);
 		return { id, title: live.title, pid: child.pid, epoch: 1, replay: "" };

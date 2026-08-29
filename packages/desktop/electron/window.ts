@@ -52,6 +52,7 @@ export function useSettingsSource(read: () => Settings | undefined): void {
 
 /** The live window, or null between "all closed" and the next activate. */
 export function getWindow(): BrowserWindow | null {
+	if (!mainWindow || mainWindow.isDestroyed()) return null;
 	return mainWindow;
 }
 

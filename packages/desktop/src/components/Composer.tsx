@@ -1,7 +1,7 @@
 import type { UserContent } from "@lyra/core";
 // Through the browser-safe door: the main barrel reaches the filesystem, and this runs in a page.
 import { expandCommand, parseInvocation, rankCommands, type SlashCommand } from "@lyra/core/commands-view";
-import { CircleAlert, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
+import { CircleAlert, FileText, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
 import { openFromEvent } from "./image/viewer-store.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
@@ -35,7 +35,9 @@ interface Attachment {
 	id: string;
 	name: string;
 	mimeType: string;
-	data: string;
+	data?: string;
+	text?: string;
+	isText: boolean;
 }
 
 export function Composer() {
@@ -63,7 +65,7 @@ export function Composer() {
 	const setDraft = useApp((s) => s.setDraft);
 
 	const [text, setText] = useState(() => savedDraft?.text ?? "");
-	const [attachments, setAttachments] = useState<Attachment[]>(() => savedDraft?.attachments ?? []);
+	const [attachments, setAttachments] = useState<Attachment[]>(() => (savedDraft?.attachments as Attachment[]) ?? []);
 
 	// Keep a ref of current text and attachments so we can sync them to store on unmount or key change.
 	const textRef = useRef(text);
@@ -85,7 +87,7 @@ export function Composer() {
 			// Restore draft for the key we just moved to.
 			const nextDraft = useApp.getState().drafts[draftKey];
 			setText(nextDraft?.text ?? "");
-			setAttachments(nextDraft?.attachments ?? []);
+			setAttachments((nextDraft?.attachments as Attachment[]) ?? []);
 		}
 	}, [draftKey, setDraft]);
 
@@ -410,8 +412,20 @@ export function Composer() {
 			}
 		}
 
+		if (attachments.length > 0) {
+			const textFiles = attachments.filter((a) => a.isText && a.text);
+			if (textFiles.length > 0) {
+				const attachedTexts = textFiles.map((f) => `### 附件文件: ${f.name}\n\`\`\`\n${f.text}\n\`\`\``);
+				outgoing = outgoing ? `${outgoing}\n\n${attachedTexts.join("\n\n")}` : attachedTexts.join("\n\n");
+			}
+		}
+
+		const images = attachments
+			.filter((a) => !a.isText && a.data)
+			.map((a): UserContent => ({ type: "image", data: a.data!, mimeType: a.mimeType }));
+
 		const content: UserContent[] = [
-			...attachments.map((a): UserContent => ({ type: "image", data: a.data, mimeType: a.mimeType })),
+			...images,
 			...(outgoing ? [{ type: "text" as const, text: outgoing }] : []),
 		];
 		setText("");
@@ -424,14 +438,29 @@ export function Composer() {
 		if (!files) return;
 		const next: Attachment[] = [];
 		for (const file of Array.from(files).slice(0, 8)) {
-			if (!file.type.startsWith("image/")) continue;
-			const buffer = await file.arrayBuffer();
-			next.push({
-				id: `${file.name}-${Date.now()}-${Math.random()}`,
-				name: file.name,
-				mimeType: file.type,
-				data: bytesToBase64(new Uint8Array(buffer)),
-			});
+			if (file.type.startsWith("image/")) {
+				const buffer = await file.arrayBuffer();
+				next.push({
+					id: `${file.name}-${Date.now()}-${Math.random()}`,
+					name: file.name,
+					mimeType: file.type,
+					data: bytesToBase64(new Uint8Array(buffer)),
+					isText: false,
+				});
+			} else {
+				try {
+					const content = await file.text();
+					next.push({
+						id: `${file.name}-${Date.now()}-${Math.random()}`,
+						name: file.name,
+						mimeType: file.type || "text/plain",
+						text: content,
+						isText: true,
+					});
+				} catch {
+					useApp.getState().notify(`无法读取文件 ${file.name} 的内容`, "warn");
+				}
+			}
 		}
 		if (next.length > 0) setAttachments((prev) => [...prev, ...next]);
 	}
@@ -563,40 +592,47 @@ export function Composer() {
 					attachments={
 						attachments.length > 0 ? (
 							<div className="flex flex-wrap gap-2 px-4 pt-3.5">
-								{attachments.map((attachment, index) => (
+								{attachments.map((attachment) => (
 									<div key={attachment.id} className="relative">
-										{/*
-										 * A button, because it is one: clicking a thumbnail opens the picture.
-										 * Its rectangle is what the viewer flies from, which is why the handler
-										 * takes the event rather than just the index.
-										 */}
-										<button
-											type="button"
-											aria-label={`预览 ${attachment.name}`}
-											onClick={(event) =>
-												openFromEvent(
-													event,
-													attachments.map((a) => ({
-														src: `data:${a.mimeType};base64,${a.data}`,
-														alt: a.name,
-														onReplace: (dataUrl: string) =>
-															setAttachments((prev) =>
-																prev.map((item) =>
-																	item.id === a.id ? { ...item, ...fromDataUrl(dataUrl, item) } : item,
-																),
-															),
-													})),
-													index,
-												)
-											}
-											className="block overflow-hidden rounded-lg border border-line transition-opacity duration-[var(--ly-t-quick)] hover:opacity-85"
-										>
-											<img
-												src={`data:${attachment.mimeType};base64,${attachment.data}`}
-												alt={attachment.name}
-												className="h-[68px] w-[92px] object-cover"
-											/>
-										</button>
+										{attachment.isText ? (
+											<div className="flex h-[68px] w-[110px] flex-col justify-between rounded-lg border border-line bg-card p-2.5 text-left shadow-xs">
+												<div className="flex items-center gap-1.5 text-ink-muted">
+													<FileText size={15} className="shrink-0" />
+													<span className="truncate text-xs font-medium text-ink">{attachment.name}</span>
+												</div>
+												<span className="text-[10px] text-ink-faint">文本 / 代码附件</span>
+											</div>
+										) : (
+											<button
+												type="button"
+												aria-label={`预览 ${attachment.name}`}
+												onClick={(event) =>
+													openFromEvent(
+														event,
+														attachments
+															.filter((a) => !a.isText && a.data)
+															.map((a) => ({
+																src: `data:${a.mimeType};base64,${a.data}`,
+																alt: a.name,
+																onReplace: (dataUrl: string) =>
+																	setAttachments((prev) =>
+																		prev.map((item) =>
+																			item.id === a.id ? { ...item, ...fromDataUrl(dataUrl, item) } : item,
+																		),
+																	),
+															})),
+														attachments.filter((a) => !a.isText).findIndex((a) => a.id === attachment.id),
+													)
+												}
+												className="block overflow-hidden rounded-lg border border-line transition-opacity duration-[var(--ly-t-quick)] hover:opacity-85"
+											>
+												<img
+													src={`data:${attachment.mimeType};base64,${attachment.data}`}
+													alt={attachment.name}
+													className="h-[68px] w-[92px] object-cover"
+												/>
+											</button>
+										)}
 										<button
 											type="button"
 											onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
@@ -613,8 +649,8 @@ export function Composer() {
 						<>
 							<button
 								type="button"
-								data-ly-tip="添加图片"
-								aria-label="添加图片"
+								data-ly-tip="添加附件文件或图片"
+								aria-label="添加附件文件或图片"
 								onClick={() => fileRef.current?.click()}
 								className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 							>
@@ -623,7 +659,6 @@ export function Composer() {
 							<input
 								ref={fileRef}
 								type="file"
-								accept="image/*"
 								multiple
 								hidden
 								onChange={(e) => {

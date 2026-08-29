@@ -184,9 +184,6 @@ export function GeneralSettings() {
 
       {/*
        * The version, and the way back to an update that was waved off.
-       *
-       * Here rather than in a page of its own: 「我在用哪个版本」 is asked in the same breath as
-       * 「这是什么环境」, which is the row directly above it.
        */}
       <UpdateSection />
     </div>

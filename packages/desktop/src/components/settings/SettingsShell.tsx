@@ -1,21 +1,23 @@
 import {
+	Anchor,
+	Archive,
 	ArrowLeft,
 	BarChart3,
 	Blocks,
 	Bot,
 	Database,
+	FolderGit2,
+	GitPullRequest,
 	Globe,
-	Search,
-	ShieldCheck,
+	Info,
 	Layers,
 	Palette,
 	Rocket,
+	Search,
 	Settings2,
-	SquareTerminal,
-	Anchor,
+	ShieldCheck,
 	Smartphone,
-	Archive,
-	GitPullRequest,
+	SquareTerminal,
 } from "lucide-react";
 import { useEffect } from "react";
 import { NavPane, useLayout } from "../../layout.tsx";
@@ -25,6 +27,7 @@ import { useApp } from "../../store.ts";
 import { ToolbarButton } from "../WindowControls.tsx";
 import { AgentsSettings } from "./AgentsSettings.tsx";
 import { ArchivedSettings } from "./ArchivedSettings.tsx";
+import { AboutSettings } from "./AboutSettings.tsx";
 import { AppearanceSettings } from "./AppearanceSettings.tsx";
 import { CommandsSettings } from "./CommandsSettings.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
@@ -40,6 +43,7 @@ import { ForgeSettings } from "./ForgeSettings.tsx";
 import { SearchSettings } from "./SearchSettings.tsx";
 import { SyncSettings } from "./SyncSettings.tsx";
 import { UsageSettings } from "./UsageSettings.tsx";
+import { WorktreesSettings } from "./WorktreesSettings.tsx";
 
 /**
  * Sections that fill the window and scroll their own panes.
@@ -80,8 +84,17 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 		],
 	},
 	{
-		label: "已归档",
-		items: [{ id: "archived", label: "已归档的聊天", icon: Archive }],
+		label: "代码与版本控制",
+		items: [
+			{ id: "worktrees", label: "Worktrees", icon: FolderGit2 },
+		],
+	},
+	{
+		label: "关于与归档",
+		items: [
+			{ id: "about", label: "关于", icon: Info },
+			{ id: "archived", label: "已归档的聊天", icon: Archive },
+		],
 	},
 ];
 
@@ -279,6 +292,10 @@ function SectionBody({ section }: { section: SettingsSection }) {
 			return <SyncSettings />;
 		case "usage":
 			return <UsageSettings />;
+		case "worktrees":
+			return <WorktreesSettings />;
+		case "about":
+			return <AboutSettings />;
 		case "archived":
 			return <ArchivedSettings />;
 		default:

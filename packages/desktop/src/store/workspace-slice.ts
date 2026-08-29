@@ -6,6 +6,7 @@
  * few pieces of state, and they are together because forgetting one of them is the bug.
  */
 
+import type { SessionMeta } from "@lyra/core";
 import type { AppState } from "../store.ts";
 
 type Get = () => AppState;
@@ -164,6 +165,67 @@ export function workspaceSlice(set: Set, get: Get) {
         p.path === path ? { ...p, pinned } : p,
       ),
     });
+  },
+
+  async setSessionPinned(sessionId: string, pinned: boolean) {
+    const settings = get().settings;
+    if (!settings) return;
+    const current = new Set(settings.pinnedSessionIds ?? []);
+    if (pinned) {
+      current.add(sessionId);
+    } else {
+      current.delete(sessionId);
+    }
+    await get().saveSettings({
+      ...settings,
+      pinnedSessionIds: Array.from(current),
+    });
+  },
+
+  async renameSession(session: SessionMeta, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    set({
+      sessions: get().sessions.map((s) => (s.id === session.id ? { ...s, title: trimmed } : s)),
+      ...(get().activeSessionId === session.id && get().meta ? { meta: { ...get().meta!, title: trimmed } } : {}),
+    });
+  },
+
+  async moveSessionProject(session: SessionMeta, targetPath: string) {
+    const targetProject = get().settings?.projects.find((p) => p.path === targetPath);
+    const segments = targetPath.split(/[/\\]/);
+    const lastSegment = segments.length > 0 ? segments[segments.length - 1] : "";
+    const projectName = targetProject?.name ?? (lastSegment || "项目");
+    // In our sessions metadata, cwd and projectName determine where it is filed.
+    // If targetPath is empty, it moves to loose/scratch.
+    const isLoose = !targetPath;
+    const nextCwd = isLoose ? (get().scratchRoots[0] ?? session.cwd) : targetPath;
+    const nextProjectId = isLoose ? "" : targetProject?.id ?? session.projectId;
+    const nextProjectName = isLoose ? "Chat" : projectName;
+
+    set({
+      sessions: get().sessions.map((s) =>
+        s.id === session.id
+          ? {
+              ...s,
+              cwd: nextCwd,
+              projectId: nextProjectId,
+              projectName: nextProjectName,
+            }
+          : s,
+      ),
+      ...(get().activeSessionId === session.id && get().meta
+        ? {
+            meta: {
+              ...get().meta!,
+              cwd: nextCwd,
+              projectId: nextProjectId,
+              projectName: nextProjectName,
+            },
+          }
+        : {}),
+    });
+    get().notify(`已将对话移动至「${nextProjectName}」`);
   },
 
   async removeProject(path: string) {

@@ -290,7 +290,9 @@ function reportToTopLevel(error: unknown, origin: string): void {
 	const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
 	console.error(`[${origin}]`, message);
 	for (const win of BrowserWindow.getAllWindows()) {
-		win.webContents.send("app:mainError", { origin, message });
+		if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+			win.webContents.send("app:mainError", { origin, message });
+		}
 	}
 }
 
@@ -382,7 +384,10 @@ app.whenReady().then(async () => {
 		for (const chat of sideChats.values()) chat.updateSettings(next);
 		if (next.sync.enabled && !syncStatusSource()?.running) await startSync();
 		else if (!next.sync.enabled && syncStatusSource()?.running) await stopSync();
-		getWindow()?.webContents.send("settings:changed", next);
+		const win = getWindow();
+		if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+			win.webContents.send("settings:changed", next);
+		}
 	});
 	useSettingsSource(() => settings);
 	configureHub({ store: () => store, settings: () => settings, window: getWindow, sync: syncStatusSource });
@@ -431,7 +436,12 @@ app.whenReady().then(async () => {
 		getSettings: () => settings,
 		saveSettings: async (next) => void (await applySettings(next)),
 		createSession: (cwd, modelId) => getOrCreateSession(cwd, modelId),
-		notify: (message, level) => getWindow()?.webContents.send("scheduler:notice", { message, level }),
+		notify: (message, level) => {
+			const win = getWindow();
+			if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("scheduler:notice", { message, level });
+			}
+		},
 	});
 	scheduler.start();
 

@@ -25,8 +25,8 @@ export interface UpdateState {
 	checking: boolean;
 }
 
-/** Rechecked this often while the window stays open; the main process caches under it. */
-const EVERY_MS = 6 * 60 * 60 * 1000;
+/** Default interval in hours for checking updates in background. */
+const DEFAULT_INTERVAL_HOURS = 6;
 
 /*
  * One object per change, never mutated.
@@ -62,6 +62,15 @@ export async function check(force = false): Promise<void> {
 }
 
 let started = false;
+let checkTimer: number | null = null;
+
+export function restartCheckTimer(intervalHours = 6): void {
+	if (checkTimer !== null) {
+		window.clearInterval(checkTimer);
+	}
+	const ms = Math.max(1, intervalHours) * 60 * 60 * 1000;
+	checkTimer = window.setInterval(() => void check(), ms);
+}
 
 /**
  * Begin watching, once per window however many components ask.
@@ -75,7 +84,7 @@ function start(): void {
 	started = true;
 
 	void check();
-	window.setInterval(() => void check(), EVERY_MS);
+	restartCheckTimer(DEFAULT_INTERVAL_HOURS);
 
 	/*
 	 * Asked once, because a download already in progress emits nothing until its next chunk — and a

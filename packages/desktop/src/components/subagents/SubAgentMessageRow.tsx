@@ -124,8 +124,8 @@ function AssistantRow({
 					}
 					if (block.type === "text") {
 						return block.text ? (
-							<div key={index} className="mb-2">
-								<Markdown text={block.text} />
+							<div key={index} className="mb-2 min-w-0 max-w-full overflow-hidden">
+								<Markdown text={block.text} className="min-w-0 max-w-full break-words" />
 							</div>
 						) : null;
 					}

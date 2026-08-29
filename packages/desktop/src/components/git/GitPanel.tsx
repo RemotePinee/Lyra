@@ -66,7 +66,7 @@ export function GitPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
-  const [narrowNav, navRef] = useNarrow(270);
+  const [narrowNav, navRef] = useNarrow(330);
 
   /*
    * Rescan when the workspace changes; the selection follows unless it is still valid.
@@ -371,33 +371,24 @@ export function GitPanel() {
       </div>
 
       {/* One row of views, counted where a count means something. */}
-      <div ref={navRef} className="flex shrink-0 items-center gap-0.5 px-1.5 pb-1.5 overflow-x-auto ly-scroll">
+      <div ref={navRef} className="flex shrink-0 items-center gap-1 px-1.5 pb-1.5">
         {VIEWS.map((entry) => (
           <button
             key={entry.id}
             type="button"
             data-ly-tip={narrowNav ? `${entry.label}${entry.id === "changes" && changeCount > 0 ? ` (${changeCount})` : ""}` : undefined}
             onClick={() => setView(entry.id)}
-            className={`flex h-[26px] items-center gap-1.5 rounded-md text-detail transition-colors duration-[var(--ly-t-quick)] shrink-0 ${
-              narrowNav ? "px-2" : "px-2.5"
+            className={`flex h-[26px] flex-1 items-center justify-center gap-1.5 rounded-md text-detail transition-colors duration-[var(--ly-t-quick)] ${
+              narrowNav ? "px-1.5" : "px-2"
             } ${
               view === entry.id
                 ? "bg-card-hover text-ink"
                 : "text-ink-muted hover:bg-card-hover/60"
             }`}
           >
-            <entry.icon size={12} strokeWidth={1.8} className="shrink-0" />
-            {!narrowNav && entry.label}
+            <entry.icon size={13} strokeWidth={1.8} className="shrink-0" />
+            {!narrowNav && <span className="truncate">{entry.label}</span>}
             {entry.id === "changes" && changeCount > 0 && (
-              /*
-               * Travels to the new figure rather than jumping to it — the same treatment the
-               * change bar above the composer gives its counts. Switching branch can move this
-               * from 3 to 40, and a number that lands without moving reads as a different number
-               * appearing rather than as this one having changed.
-               *
-               * Mounted only once there is a count, so opening the panel shows the figure rather
-               * than counting up to it from a zero that was never true. See `CountUp`.
-               */
               <CountUp value={changeCount} className="text-ink-faint tabular-nums" />
             )}
           </button>

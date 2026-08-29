@@ -15,12 +15,14 @@
 
 import type { SessionMeta } from "@lyra/core";
 import { visibleActivity } from "@lyra/core/activity";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Pin, PinOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useLayout } from "../../layout.tsx";
 import { sessionTitle } from "../../sessionTitle.ts";
 import { useApp } from "../../store.ts";
 import { SessionCard, useSessionCard } from "./SessionCard.tsx";
+import { SessionMenu } from "../modals/SessionMenu.tsx";
+import { usePopover } from "../Popover.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { SessionStatus } from "../SessionStatus.tsx";
 import { useTypedText } from "../TypedText.tsx";
@@ -97,7 +99,11 @@ export function SessionRow({
 	 * value that did not change and stay put.
 	 */
 	const activity = useApp((s) => s.activity[session.id] ?? null);
+	const settings = useApp((s) => s.settings);
+	const setSessionPinned = useApp((s) => s.setSessionPinned);
+	const isPinned = settings?.pinnedSessionIds?.includes(session.id) ?? false;
 	const { compact } = useLayout();
+	const menu = usePopover();
 
 	/*
 	 * Two motions, for the two things that happen to a new conversation's name.
@@ -125,48 +131,27 @@ export function SessionRow({
 	return (
 		<div
 			{...card.bind}
-			/*
-			 * Marked so the list can animate it from wherever it was.
-			 *
-			 * Writing to a conversation moves it between bands — a change of parent, which no CSS
-			 * transition can carry. See `useReflow`.
-			 */
 			data-ly-row={session.id}
-			/*
-			 * How deep the title has to dissolve on hover: as wide as this row's own controls.
-			 *
-			 * The archive has three, everywhere else has one — a fixed depth would either leave the
-			 * archive's buttons sitting on legible text or dissolve far more than the one button
-			 * elsewhere ever covers.
-			 */
-			style={{ "--ly-row-controls": onRestore && onDelete ? "58px" : "34px" } as React.CSSProperties}
+			onContextMenu={(event) => {
+				event.preventDefault();
+				menu.openAtPoint(event);
+			}}
+			style={{ "--ly-row-controls": onRestore && onDelete ? "58px" : isPinned ? "58px" : "34px" } as React.CSSProperties}
 			className={`ly-scroll group/session relative rounded-lg transition-colors duration-[var(--ly-t-quick)] active:bg-elevated ${
 				justCreated ? "ly-drop" : ""
 			} ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
 		>
 			{card.anchor && <SessionCard session={session} anchor={card.anchor} project={project} leaving={card.leaving} />}
+			{menu.open && <SessionMenu anchor={menu.anchor} session={session} onClose={menu.close} />}
 			<button
 				type="button"
 				onClick={onOpen}
-				/*
-				 * The room for the controls appears with the controls, and not before.
-				 *
-				 * Reserved permanently — `pr-12` in the archive, `pr-7` elsewhere — every row in a
-				 * list of forty was short by that much all of the time, for buttons that are only
-				 * there while you are pointing at one; in a pane dragged wide it read as a column of
-				 * dead space down the right-hand side.
-				 *
-				 * Reserving *on hover* is what both halves need. The padding is what actually keeps
-				 * the title out from under the icons: the pane is translucent, so there is no colour
-				 * a gradient behind an icon could fade to, and `ly-fade-tail` softens the title's end
-				 * rather than hiding it — text under a button stays half-legible, and the two read as
-				 * overlapping. The mask still runs, over the width being given up, which is what
-				 * keeps the last word from being sliced mid-letter while the padding eases in.
-				 */
 				className={`flex w-full items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
 					onRestore && onDelete
 						? "pr-2 group-hover/session:pr-12 group-focus-within/session:pr-12"
-						: "pr-2 group-hover/session:pr-7 group-focus-within/session:pr-7"
+						: isPinned
+							? "pr-2 group-hover/session:pr-12 group-focus-within/session:pr-12"
+							: "pr-2 group-hover/session:pr-7 group-focus-within/session:pr-7"
 				} ${compact ? "h-[34px]" : "h-[27px]"} ${
 					active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"
 				}`}
@@ -179,10 +164,6 @@ export function SessionRow({
 			{/* The strip never takes pointer events; only the button does. Anything wider would
 			    shadow the row button and cost it its hover. */}
 			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-100 focus-within:opacity-100">
-				{/*
-				 * The settled name in every label, not the one being typed: a title read aloud
-				 * mid-rewrite is a truncation of a name nobody ever gave this conversation.
-				 */}
 				{onRestore && (
 					<button
 						type="button"
@@ -194,11 +175,6 @@ export function SessionRow({
 						<ArchiveRestore size={12.5} strokeWidth={1.8} />
 					</button>
 				)}
-				{/*
-				 * Red on hover only. An archive is a list of things you have already put away, so a
-				 * permanently red control on every row of it reads as a warning about the list
-				 * rather than as one button on one row.
-				 */}
 				{onDelete && (
 					<button
 						type="button"
@@ -208,6 +184,17 @@ export function SessionRow({
 						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-danger"
 					>
 						<Trash2 size={12.5} strokeWidth={1.8} />
+					</button>
+				)}
+				{!onRestore && !onDelete && (
+					<button
+						type="button"
+						data-ly-tip={isPinned ? "取消置顶" : "置顶会话"}
+						aria-label={isPinned ? "取消置顶" : "置顶会话"}
+						onClick={() => void setSessionPinned(session.id, !isPinned)}
+						className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
+					>
+						{isPinned ? <PinOff size={12.5} strokeWidth={1.8} /> : <Pin size={12.5} strokeWidth={1.8} />}
 					</button>
 				)}
 				{onArchive && (

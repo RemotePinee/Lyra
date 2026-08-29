@@ -68,7 +68,7 @@ export function useSidebarLists({
 	);
 
 	const groups = useMemo(
-		() => groupSessions(pool, settings?.projects ?? [], query, scratchRoots),
+		() => groupSessions(pool, settings?.projects ?? [], query, scratchRoots, settings?.pinnedSessionIds ?? []),
 		[pool, settings, query, scratchRoots],
 	);
 

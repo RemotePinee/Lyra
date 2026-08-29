@@ -527,6 +527,25 @@
     line-height: var(--text-code--line-height);
   }
 
+  .prose-dw pre {
+    background: var(--color-card);
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .prose-dw pre code {
+    background: transparent;
+    padding: 0;
+    font-size: var(--text-code);
+    line-height: var(--text-code--line-height);
+    white-space: pre;
+    word-break: normal;
+  }
+
   .prose-dw code {
     /* Same reasoning as `body`: CJK-only range, so it only catches what the mono face gets wrong. */
     font-family: "Lyra CJK", var(--ly-code-font, var(--font-mono));
@@ -537,21 +556,8 @@
     padding: 1.5px 5px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
-  }
-
-  .prose-dw pre {
-    background: var(--color-card);
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-    padding: 12px 14px;
-    overflow-x: auto;
-  }
-
-  .prose-dw pre code {
-    background: transparent;
-    padding: 0;
-    font-size: var(--text-code);
-    line-height: var(--text-code--line-height);
+    word-break: break-all;
+    overflow-wrap: anywhere;
   }
 
   .prose-dw a {
@@ -1223,6 +1229,8 @@
 }
 
 .ly-fade-y {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
   mask-image: linear-gradient(
     to bottom,
     /* Above the held band: the list, softened into the top edge as it always was. Collapses to

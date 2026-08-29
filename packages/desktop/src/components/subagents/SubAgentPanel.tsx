@@ -16,12 +16,13 @@
  * for, and choosing between them *is* the title.
  */
 
-import { Bot, CircleStop, RotateCcw, Send, X } from "lucide-react";
+import { Bot, CircleStop, FileText, Plus, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { SubAgentSummary } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { rosterOrder, useSubAgents } from "../../store/subAgents.ts";
+import { ComposerSend, ComposerShell } from "../ComposerShell.tsx";
 import { Markdown } from "../Markdown.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
 import { Scroller } from "../Scroller.tsx";
@@ -30,6 +31,15 @@ import { SubAgentMessageRow, subAgentRuns } from "./SubAgentMessageRow.tsx";
 
 /** How close to the bottom still counts as "following along" — the side chat's own slack. */
 const PIN_SLACK = 60;
+
+interface SubAgentAttachment {
+	id: string;
+	name: string;
+	mimeType: string;
+	data?: string;
+	text?: string;
+	isText: boolean;
+}
 
 export function SubAgentPanel() {
 	const sessionId = useApp((s) => s.activeSessionId);
@@ -200,7 +210,7 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 				 * the transcript legible as "what was delegated and what came back".
 				 */}
 				{agent.status === "done" && agent.answer && (
-					<div className="mt-2 rounded-lg border border-line-soft bg-card/50 px-3 py-2">
+					<div className="mt-2 min-w-0 max-w-full overflow-hidden rounded-lg border border-line-soft bg-card/50 px-3 py-2">
 						<p className="mb-1 text-caption text-ink-faint">回报给主 Agent</p>
 						{/*
 						 * Rendered, not printed.
@@ -211,7 +221,7 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 						 * harder to read than the plain prose it replaced and inconsistent with the
 						 * same text everywhere else in the window.
 						 */}
-						<Markdown text={agent.answer} />
+						<Markdown text={agent.answer} className="min-w-0 max-w-full break-words" />
 					</div>
 				)}
 				{agent.status === "failed" && agent.error && (
@@ -309,52 +319,166 @@ function Header({ agent, sessionId }: { agent: SubAgentSummary; sessionId: strin
 /**
  * Say something to a sub-agent that is still running.
  *
- * Only while it is running, and not as a disabled field afterwards: there is no loop left to read
- * the message, so an input that accepted one would swallow it. A finished sub-agent is a transcript.
+ * Designed with the exact same visual styling and interaction polish as SideComposer / ComposerShell:
+ * Supports text, multi-format attachments (images, code files, logs, docs), and unified buttons.
  */
 function Steer({ agent, sessionId }: { agent: SubAgentSummary; sessionId: string }) {
 	const [text, setText] = useState("");
+	const [attachments, setAttachments] = useState<SubAgentAttachment[]>([]);
 	const [sending, setSending] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	const addFiles = async (fileList: FileList | null) => {
+		if (!fileList || fileList.length === 0) return;
+		const next: SubAgentAttachment[] = [];
+		for (const file of Array.from(fileList)) {
+			if (file.type.startsWith("image/")) {
+				const buffer = await file.arrayBuffer();
+				const base64 = bytesToBase64(new Uint8Array(buffer));
+				next.push({
+					id: `${Date.now()}-${Math.random()}`,
+					name: file.name,
+					mimeType: file.type,
+					data: base64,
+					isText: false,
+				});
+			} else {
+				// Non-image attachments (text, markdown, code, config, logs, etc.)
+				try {
+					const content = await file.text();
+					next.push({
+						id: `${Date.now()}-${Math.random()}`,
+						name: file.name,
+						mimeType: file.type || "text/plain",
+						text: content,
+						isText: true,
+					});
+				} catch {
+					useApp.getState().notify(`无法读取文件 ${file.name} 的内容`, "warn");
+				}
+			}
+		}
+		if (next.length > 0) {
+			setAttachments((prev) => [...prev, ...next]);
+		}
+	};
 
 	const send = async () => {
-		const message = text.trim();
-		if (!message || sending) return;
+		const trimmed = text.trim();
+		if ((!trimmed && attachments.length === 0) || sending) return;
+
+		let finalMessage = trimmed;
+		if (attachments.length > 0) {
+			const textFiles = attachments.filter((a) => a.isText && a.text);
+			const attachedTexts = textFiles.map((f) => `### 附件文件: ${f.name}\n\`\`\`\n${f.text}\n\`\`\``);
+			if (attachedTexts.length > 0) {
+				finalMessage = finalMessage
+					? `${finalMessage}\n\n${attachedTexts.join("\n\n")}`
+					: attachedTexts.join("\n\n");
+			}
+		}
+
+		if (!finalMessage) return;
+
 		setSending(true);
-		const delivered = await window.lyra.subAgents.steer(sessionId, agent.id, message);
+		const delivered = await window.lyra.subAgents.steer(sessionId, agent.id, finalMessage);
 		setSending(false);
-		if (delivered) setText("");
-		// It finished between typing and pressing. Saying so beats clearing the box as though it
-		// had been delivered.
-		else useApp.getState().notify("这个子 Agent 已经结束了，消息没有送达。", "error");
+		if (delivered) {
+			setText("");
+			setAttachments([]);
+		} else {
+			useApp.getState().notify("这个子 Agent 已经结束了，消息没有送达。", "error");
+		}
 	};
 
 	return (
-		<div className="shrink-0 border-t border-line p-2">
-			<div className="flex items-end gap-1.5 rounded-lg border border-hairline bg-shell px-2 py-1.5">
-				<textarea
-					value={text}
-					rows={1}
-					placeholder="纠偏、补充信息，或让它收尾…"
-					onChange={(event) => setText(event.target.value)}
-					onKeyDown={(event) => {
-						if (event.key === "Enter" && !event.shiftKey) {
-							event.preventDefault();
-							void send();
-						}
-					}}
-					className="ly-scroll max-h-24 min-w-0 flex-1 resize-none bg-transparent text-label leading-relaxed text-ink outline-none placeholder:text-ink-faint"
-				/>
-				<button
-					type="button"
-					data-ly-tip="发给这个子 Agent（它会读完再继续，不会重来）"
-					aria-label="发给这个子 Agent"
-					disabled={!text.trim() || sending}
-					onClick={() => void send()}
-					className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink disabled:opacity-40"
-				>
-					<Send size={12} strokeWidth={1.9} />
-				</button>
-			</div>
+		<div className="mx-auto w-full max-w-[var(--ly-content)] shrink-0 px-3 pt-2 pb-[15px]">
+			<ComposerShell
+				value={text}
+				onChange={setText}
+				onSubmit={() => void send()}
+				disabled={sending}
+				placeholder="纠偏、补充信息，或让它收尾…"
+				onFiles={(files) => void addFiles(files)}
+				attachments={
+					attachments.length > 0 ? (
+						<div className="flex flex-wrap gap-2 px-3.5 pt-3">
+							{attachments.map((attachment) => (
+								<div key={attachment.id} className="relative group/att">
+									{attachment.isText ? (
+										<div className="flex h-14 w-28 flex-col justify-between rounded-lg border border-line bg-card p-2 text-left shadow-xs">
+											<div className="flex items-center gap-1 text-ink-muted">
+												<FileText size={13} className="shrink-0" />
+												<span className="truncate text-[11px] font-medium text-ink">{attachment.name}</span>
+											</div>
+											<span className="text-[9.5px] text-ink-faint">文件附件</span>
+										</div>
+									) : (
+										<div className="h-14 w-20 overflow-hidden rounded-lg border border-line bg-card shadow-xs">
+											<img
+												src={`data:${attachment.mimeType};base64,${attachment.data}`}
+												alt={attachment.name}
+												className="h-full w-full object-cover"
+											/>
+										</div>
+									)}
+									<button
+										type="button"
+										onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
+										className="absolute -top-1.5 -right-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-line bg-float text-ink-muted transition-colors hover:text-ink"
+									>
+										<X size={10} strokeWidth={2.2} />
+									</button>
+								</div>
+							))}
+						</div>
+					) : undefined
+				}
+				left={
+					<>
+						<button
+							type="button"
+							data-ly-tip="添加附件文件或图片"
+							aria-label="添加附件文件或图片"
+							onClick={() => fileInputRef.current?.click()}
+							className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+						>
+							<Plus size={16} strokeWidth={1.9} />
+						</button>
+						<input
+							ref={fileInputRef}
+							type="file"
+							multiple
+							hidden
+							onChange={(e) => {
+								void addFiles(e.target.files);
+								e.target.value = "";
+							}}
+						/>
+						<span className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-caption text-ink-faint">
+							<span className={`size-[5px] shrink-0 rounded-full ${statusTone(agent.status)}`} />
+							<span className="truncate">定向纠偏</span>
+						</span>
+					</>
+				}
+				right={
+					<ComposerSend
+						running={sending}
+						disabled={!text.trim() && attachments.length === 0}
+						onSend={() => void send()}
+						onStop={() => void window.lyra.subAgents.abort(sessionId, agent.id)}
+					/>
+				}
+			/>
 		</div>
 	);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+	let binary = "";
+	const chunk = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunk) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+	}
+	return btoa(binary);
 }
