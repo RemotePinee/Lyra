@@ -14,21 +14,20 @@
 
 import { homedir } from "node:os";
 import { isAbsolute, relative } from "node:path";
+import { TextDecoder } from "node:util";
 
 /**
  * The shell to run a command line through, and the flag that says "here is the command".
  *
- * `process.env.SHELL` is a Unix convention and is simply absent on Windows, where the previous
- * fallback — `/bin/bash` — is not a path to anything. Every command the agent ran there failed
- * with `spawn /bin/bash ENOENT`, which is to say the product's central capability did not work on
- * a platform it ships to.
- *
- * PowerShell rather than `cmd.exe`: it is present on every supported Windows, it understands the
- * `&&` and quoting that models write without being asked, and it is already what the embedded
- * terminal starts. Two different shells on one platform would be worse than either.
+ * On Windows, default `powershell.exe` (Windows PowerShell 5.1) does not support `&&` or `||`,
+ * so commands chained with `&&` fail with ParserError. `cmd.exe` natively supports `&&`, `||`,
+ * and command chaining, or `process.env.SHELL` if the user configured a custom shell.
  */
 export function systemShell(): { file: string; flag: string } {
-	if (process.platform === "win32") return { file: "powershell.exe", flag: "-Command" };
+	if (process.platform === "win32") {
+		if (process.env.SHELL) return { file: process.env.SHELL, flag: "-c" };
+		return { file: process.env.ComSpec || "cmd.exe", flag: "/c" };
+	}
 	return { file: process.env.SHELL || "/bin/bash", flag: "-c" };
 }
 
@@ -63,3 +62,26 @@ export function within(root: string, target: string): boolean {
 /** `within`, but the root counts as inside itself — for "may write here" rather than "is under". */
 export const withinOrIs = (root: string, target: string): boolean =>
 	root === target || within(root, target);
+
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+let gbkDecoder: TextDecoder | null = null;
+
+/**
+ * Decode stdout/stderr chunks from child processes.
+ *
+ * On Windows with East Asian locales, child processes (e.g. system commands or cmd/powershell errors)
+ * emit output in OEM code pages (such as GBK/CP936). Raw UTF-8 decoding turns these bytes into mojibake.
+ * This decodes as UTF-8 first and falls back to GBK if UTF-8 validation fails.
+ */
+export function decodeProcessOutput(chunk: Buffer): string {
+	try {
+		return utf8Decoder.decode(chunk);
+	} catch {
+		try {
+			gbkDecoder ??= new TextDecoder("gbk");
+			return gbkDecoder.decode(chunk);
+		} catch {
+			return chunk.toString("utf8");
+		}
+	}
+}

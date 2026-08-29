@@ -12,7 +12,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { systemShell } from "../platform.ts";
+import { decodeProcessOutput, systemShell } from "../platform.ts";
 import type { Sandbox, SandboxProcess } from "../kernel/services.ts";
 import { confine } from "./backend.ts";
 import type { SandboxMode } from "./policy.ts";
@@ -23,7 +23,13 @@ import type { SandboxMode } from "./policy.ts";
  * A pager waiting for a keypress hangs the turn, and colour codes reach the model as noise it has
  * to read past. `TERM=dumb` is what tells most programs both at once.
  */
-const QUIET_ENV = { TERM: "dumb", NO_COLOR: "1", GIT_PAGER: "cat", PAGER: "cat" };
+const QUIET_ENV = {
+	TERM: "dumb",
+	NO_COLOR: "1",
+	GIT_PAGER: "cat",
+	PAGER: "cat",
+	PYTHONIOENCODING: "utf-8",
+};
 
 export class LocalSandbox implements Sandbox {
 	run(command: string, options: { cwd: string; env?: Record<string, string>; mode?: SandboxMode }): SandboxProcess {
@@ -49,12 +55,12 @@ export class LocalSandbox implements Sandbox {
 
 		return {
 			onOutput(listener) {
-				const forward = (chunk: Buffer) => listener(chunk.toString("utf8"));
+				const forward = (chunk: Buffer) => listener(decodeProcessOutput(chunk));
 				child.stdout?.on("data", forward);
 				child.stderr?.on("data", forward);
 			},
 			onExit(listener) {
-				child.on("close", (code) => listener(code));
+				child.on("close", (code: number | null) => listener(code));
 			},
 			onError(listener) {
 				child.on("error", listener);

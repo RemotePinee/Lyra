@@ -48,6 +48,18 @@ function functionCallOutput(message: ToolResultMessage): unknown {
  * removed the call — keeps its place in the list rather than being dropped: it is history, and
  * inventing a call to hang it on would be worse than passing it through.
  */
+function safeArguments(argumentsText: string | undefined, args: Record<string, unknown> | undefined): string {
+	if (argumentsText) {
+		try {
+			JSON.parse(argumentsText);
+			return argumentsText;
+		} catch {
+			// If argumentsText is malformed or truncated JSON, fall back to valid serialized args.
+		}
+	}
+	return JSON.stringify(args ?? {});
+}
+
 export function toResponsesInput(messages: Message[]): unknown[] {
 	const input: unknown[] = [];
 
@@ -112,7 +124,7 @@ export function toResponsesInput(messages: Message[]): unknown[] {
 						type: "function_call",
 						call_id: c.id,
 						name: c.name,
-						arguments: c.argumentsText ?? JSON.stringify(c.arguments),
+						arguments: safeArguments(c.argumentsText, c.arguments),
 					});
 					const answer = answers.get(c.id);
 					if (answer) {

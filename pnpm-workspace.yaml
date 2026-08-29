@@ -8,9 +8,9 @@ allowBuilds:
   esbuild: true
   # Windows installer toolchain; not needed to develop or run the app.
   electron-winstaller: false
-  # Builds the pseudo-terminal addon the terminal panel runs on. Compiled against Node here,
-  # then rebuilt against Electron's ABI by the desktop package's postinstall.
-  node-pty: true
+  # Builds the pseudo-terminal addon the terminal panel runs on. Rebuilt against
+  # Electron's ABI by the desktop package's rebuild:pty script.
+  node-pty: false
   # Installs the git hook binary; the hooks are what keep lint and typecheck from being optional.
   lefthook: true
   koffi: false

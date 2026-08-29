@@ -36,10 +36,5 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kittors/Lyra.git"
-  },
-  "pnpm": {
-    "ignoredBuiltDependencies": [
-      "koffi"
-    ]
   }
 }
