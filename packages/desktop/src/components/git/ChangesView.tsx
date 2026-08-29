@@ -320,7 +320,7 @@ export function ChangesView({
 
       {/* The commit box, styled harmoniously with the main composer */}
       <div className="shrink-0 p-2">
-        <div className="ly-composer @container rounded-[14px] bg-input p-2 transition-[border-color,box-shadow]">
+        <div className="ly-composer @container rounded-[14px] border border-line-soft bg-input p-2 transition-[border-color,box-shadow]">
           <textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}

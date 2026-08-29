@@ -17,7 +17,7 @@ import { useApp } from "../../store.ts";
 import { RotateCcw } from "lucide-react";
 import { Text } from "../Text.tsx";
 import { useConfirmer } from "../Confirm.tsx";
-import { isNudge } from "./grouping.ts";
+import { isNudge, type TurnStats } from "./grouping.ts";
 import { LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
 
 /**
@@ -48,6 +48,7 @@ export const MessageRow = memo(function MessageRow({
   index,
   upTo,
   continued,
+  turnStats,
 }: {
   message: Message;
   index: number;
@@ -62,6 +63,8 @@ export const MessageRow = memo(function MessageRow({
   upTo: number;
   /** The runtime told it to keep going, so this is a pause rather than a finish. */
   continued?: boolean;
+  /** Accumulated statistics for the turn this message concludes. */
+  turnStats?: TurnStats;
 }) {
   if (message.role === "user") {
     /*
@@ -95,7 +98,7 @@ export const MessageRow = memo(function MessageRow({
   // Tool results are rendered inside their tool card, not as standalone rows.
   if (message.role === "toolResult") return null;
 
-  return <AssistantRow message={message} index={index} upTo={upTo} continued={continued} />;
+  return <AssistantRow message={message} index={index} upTo={upTo} continued={continued} turnStats={turnStats} />;
 });
 
 function AssistantRow({
@@ -103,11 +106,13 @@ function AssistantRow({
   index,
   upTo,
   continued,
+  turnStats,
 }: {
   message: AssistantMessage;
   index: number;
   upTo: number;
   continued?: boolean;
+  turnStats?: TurnStats;
 }) {
   const running = useApp((s) => s.running);
   const retryFrom = useApp((s) => s.retryFrom);
@@ -224,8 +229,8 @@ function AssistantRow({
         <MessageActions
           timestamp={message.timestamp}
           text={text}
-          durationMs={message.durationMs}
-          tokens={message.usage?.output}
+          durationMs={turnStats?.durationMs ?? message.durationMs}
+          tokens={turnStats?.outputTokens ?? message.usage?.output}
         />
       )}
     </div>
