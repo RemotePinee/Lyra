@@ -125,6 +125,27 @@ export function retryDelay(attempt: number, response?: Response, body?: string):
 }
 
 /**
+ * Wait for the given delay, unless the signal aborts first.
+ *
+ * Plain `setTimeout` cannot be cancelled, so sleeping for 60 seconds against an un-abortable timer
+ * would keep the turn alive for the whole minute even if the user pressed stop.
+ */
+function abortableSleep(ms: number, signal?: AbortSignal, customSleep?: (ms: number) => Promise<void>): Promise<void> {
+	if (signal?.aborted) return Promise.resolve();
+	if (customSleep) return customSleep(ms);
+	if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => {
+		const done = () => {
+			clearTimeout(timer);
+			signal.removeEventListener("abort", done);
+			resolve();
+		};
+		const timer = setTimeout(done, ms);
+		signal.addEventListener("abort", done, { once: true });
+	});
+}
+
+/**
  * Perform a request, retrying only what is safe to retry.
  *
  * Returns the response as soon as one arrives with a status worth keeping — including a 4xx,
@@ -137,7 +158,6 @@ export async function fetchWithRetry(
 	options: RetryOptions = {},
 ): Promise<Response> {
 	const attempts = Math.max(1, options.attempts ?? 3);
-	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	let lastError: unknown;
 
 	for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -161,7 +181,7 @@ export async function fetchWithRetry(
 					.catch(() => undefined);
 				const delay = retryDelay(attempt, response, body);
 				options.onRetry?.({ attempt, delayMs: delay, reason: `HTTP ${response.status}` });
-				await sleep(delay);
+				await abortableSleep(delay, options.signal, options.sleep);
 				continue;
 			}
 			return response;
@@ -171,7 +191,7 @@ export async function fetchWithRetry(
 			if (options.signal?.aborted || !isRetryableError(error) || attempt === attempts) throw error;
 			const delay = retryDelay(attempt);
 			options.onRetry?.({ attempt, delayMs: delay, reason: describeCause(error) });
-			await sleep(delay);
+			await abortableSleep(delay, options.signal, options.sleep);
 		}
 	}
 
@@ -235,7 +255,6 @@ export async function* retryStream<T>(
 	},
 ): AsyncGenerator<T, void> {
 	const attempts = Math.max(1, options.attempts ?? 3);
-	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
 	for (let number = 1; number <= attempts; number++) {
 		options.reset();
@@ -247,7 +266,7 @@ export async function* retryStream<T>(
 			if (last || options.signal?.aborted || !isRetryableError(error)) throw error;
 			const delayMs = retryDelay(number);
 			options.onRetry?.({ attempt: number, delayMs, reason: describeError(error) });
-			await sleep(delayMs);
+			await abortableSleep(delayMs, options.signal, options.sleep);
 		}
 	}
 }
