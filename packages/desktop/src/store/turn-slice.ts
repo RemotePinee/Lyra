@@ -6,10 +6,18 @@
  * is created reads as broken — and the stored copy replaces it when the runtime confirms it.
  */
 
-import type { ApprovalDecision, Message, UserContent } from "@lyra/core";
-import { emptyUsage } from "@lyra/core";
+import type { ApprovalDecision, Message, Usage, UserContent } from "@lyra/core";
 import { without } from "./derive.ts";
 import type { AppState } from "../store.ts";
+
+const ZERO_USAGE: Usage = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	total: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
 
 type Get = () => AppState;
 type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
@@ -99,7 +107,7 @@ export function turnSlice(set: Set, get: Get) {
         const listed = {
           ...snapshot.meta,
           messageCount: 1,
-          usage: snapshot.meta.usage ?? emptyUsage(),
+          usage: snapshot.meta.usage ?? ZERO_USAGE,
         };
         set({
           activeSessionId: sessionId,
