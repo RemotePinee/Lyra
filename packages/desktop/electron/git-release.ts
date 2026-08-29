@@ -13,6 +13,8 @@ import { promisify } from "node:util";
 import { git } from "./git-exec.ts";
 import { isGitRepo } from "./git.ts";
 
+import { repoFromRemote } from "./git-remote.ts";
+
 const pExecFile = promisify(execFile);
 
 export interface ReleaseInfo {
@@ -242,8 +244,10 @@ export async function triggerReleaseDryRun(cwd: string): Promise<{ ok: boolean; 
 
 /**
  * List recent GitHub Actions workflow runs for the repository.
+ * Tries `gh` CLI first, and falls back to public GitHub API directly (works without gh CLI installed).
  */
 export async function listWorkflowRuns(cwd: string, limit = 20): Promise<WorkflowRunSummary[]> {
+	// 1. Try local gh CLI
 	try {
 		const out = await execGh(cwd, [
 			"run",
@@ -252,29 +256,77 @@ export async function listWorkflowRuns(cwd: string, limit = 20): Promise<Workflo
 			"--json=databaseId,name,displayTitle,event,status,conclusion,headBranch,headSha,createdAt,url",
 		]);
 		const runs = JSON.parse(out);
-		if (!Array.isArray(runs)) return [];
-		return runs.map((r: {
-			databaseId: number;
-			name: string;
-			displayTitle: string;
-			event: string;
-			status: WorkflowRunSummary["status"];
-			conclusion: WorkflowRunSummary["conclusion"];
-			headBranch: string;
-			headSha: string;
-			createdAt: string;
-			url: string;
-		}) => ({
-			id: r.databaseId,
+		if (Array.isArray(runs) && runs.length > 0) {
+			return runs.map((r: {
+				databaseId: number;
+				name: string;
+				displayTitle: string;
+				event: string;
+				status: WorkflowRunSummary["status"];
+				conclusion: WorkflowRunSummary["conclusion"];
+				headBranch: string;
+				headSha: string;
+				createdAt: string;
+				url: string;
+			}) => ({
+				id: r.databaseId,
+				name: r.name,
+				displayTitle: r.displayTitle,
+				event: r.event,
+				status: r.status,
+				conclusion: r.conclusion,
+				headBranch: r.headBranch,
+				headSha: r.headSha,
+				createdAt: r.createdAt,
+				url: r.url,
+			}));
+		}
+	} catch {
+		// fallback to GitHub REST API below
+	}
+
+	// 2. Fallback: Fetch via GitHub REST API if git remote origin is GitHub
+	try {
+		const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]).then((u) => u.trim()).catch(() => "");
+		const slug = repoFromRemote(remoteUrl);
+		if (!slug) return [];
+
+		const res = await fetch(`https://api.github.com/repos/${slug}/actions/runs?per_page=${limit}`, {
+			headers: {
+				Accept: "application/vnd.github.v3+json",
+				"User-Agent": "Lyra-Desktop",
+			},
+		});
+
+		if (!res.ok) return [];
+		const data = (await res.json()) as {
+			workflow_runs?: {
+				id: number;
+				name: string;
+				display_title: string;
+				event: string;
+				status: string;
+				conclusion: string | null;
+				head_branch: string;
+				head_sha: string;
+				created_at: string;
+				html_url: string;
+			}[];
+		};
+
+		if (!Array.isArray(data.workflow_runs)) return [];
+
+		return data.workflow_runs.map((r) => ({
+			id: r.id,
 			name: r.name,
-			displayTitle: r.displayTitle,
+			displayTitle: r.display_title || r.name,
 			event: r.event,
-			status: r.status,
-			conclusion: r.conclusion,
-			headBranch: r.headBranch,
-			headSha: r.headSha,
-			createdAt: r.createdAt,
-			url: r.url,
+			status: (r.status as WorkflowRunSummary["status"]) || "unknown",
+			conclusion: (r.conclusion as WorkflowRunSummary["conclusion"]) || null,
+			headBranch: r.head_branch,
+			headSha: r.head_sha,
+			createdAt: r.created_at,
+			url: r.html_url,
 		}));
 	} catch {
 		return [];
@@ -285,6 +337,7 @@ export async function listWorkflowRuns(cwd: string, limit = 20): Promise<Workflo
  * Get GitHub Actions Run status with detailed jobs and steps
  */
 export async function getWorkflowRunStatus(cwd: string, runId: number): Promise<WorkflowRunStatus | null> {
+	// 1. Try local gh CLI
 	try {
 		const out = await execGh(cwd, [
 			"run",
@@ -335,6 +388,96 @@ export async function getWorkflowRunStatus(cwd: string, runId: number): Promise<
 							: [],
 					}))
 				: [],
+		};
+	} catch {
+		// Fallback to GitHub REST API
+	}
+
+	// 2. Fallback: Fetch via GitHub REST API
+	try {
+		const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]).then((u) => u.trim()).catch(() => "");
+		const slug = repoFromRemote(remoteUrl);
+		if (!slug) return null;
+
+		const [runRes, jobsRes] = await Promise.all([
+			fetch(`https://api.github.com/repos/${slug}/actions/runs/${runId}`, {
+				headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "Lyra-Desktop" },
+			}),
+			fetch(`https://api.github.com/repos/${slug}/actions/runs/${runId}/jobs`, {
+				headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "Lyra-Desktop" },
+			}),
+		]);
+
+		if (!runRes.ok) return null;
+		const r = (await runRes.json()) as {
+			id: number;
+			name: string;
+			display_title: string;
+			event: string;
+			status: string;
+			conclusion: string | null;
+			html_url: string;
+			created_at: string;
+			head_branch: string;
+			head_sha: string;
+		};
+
+		let jobs: WorkflowJob[] = [];
+		if (jobsRes.ok) {
+			const jData = (await jobsRes.json()) as {
+				jobs?: {
+					id: number;
+					name: string;
+					status: string;
+					conclusion: string | null;
+					html_url: string;
+					started_at?: string;
+					completed_at?: string;
+					steps?: {
+						name: string;
+						status: string;
+						conclusion: string | null;
+						number: number;
+						started_at?: string;
+						completed_at?: string;
+					}[];
+				}[];
+			};
+			if (Array.isArray(jData.jobs)) {
+				jobs = jData.jobs.map((j) => ({
+					id: j.id,
+					name: j.name,
+					status: j.status,
+					conclusion: j.conclusion,
+					url: j.html_url,
+					startedAt: j.started_at,
+					completedAt: j.completed_at,
+					steps: Array.isArray(j.steps)
+						? j.steps.map((s) => ({
+								name: s.name,
+								status: s.status,
+								conclusion: s.conclusion,
+								number: s.number,
+								startedAt: s.started_at,
+								completedAt: s.completed_at,
+							}))
+						: [],
+				}));
+			}
+		}
+
+		return {
+			id: r.id,
+			name: r.name,
+			displayTitle: r.display_title || r.name,
+			event: r.event,
+			status: (r.status as WorkflowRunStatus["status"]) || "unknown",
+			conclusion: (r.conclusion as WorkflowRunStatus["conclusion"]) || null,
+			url: r.html_url,
+			createdAt: r.created_at,
+			headBranch: r.head_branch,
+			headSha: r.head_sha,
+			jobs,
 		};
 	} catch {
 		return null;
