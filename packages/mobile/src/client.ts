@@ -51,17 +51,17 @@ export class SyncClient {
 		return (await response.json()) as T;
 	}
 
-	static async ping(host: string, port: number): Promise<boolean> {
+	static async ping(host: string, port: number): Promise<{ ok: boolean; reason?: string }> {
 		try {
 			const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
 			const response = await fetch(`http://${cleanHost}:${port}/api/ping`, {
 				signal: AbortSignal.timeout(5000),
 			});
-			if (!response.ok) return false;
+			if (!response.ok) return { ok: false, reason: `HTTP ${response.status}` };
 			const body = (await response.json()) as { app?: string };
-			return body.app === "lyra";
-		} catch {
-			return false;
+			return { ok: body.app === "lyra", reason: body.app !== "lyra" ? "不是 Lyra 服务" : undefined };
+		} catch (e) {
+			return { ok: false, reason: e instanceof Error ? e.message : String(e) };
 		}
 	}
 
