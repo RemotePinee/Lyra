@@ -293,11 +293,30 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 function localAddresses(): string[] {
-	const out: string[] = [];
-	for (const entries of Object.values(networkInterfaces())) {
+	const physical: string[] = [];
+	const virtual: string[] = [];
+
+	for (const [name, entries] of Object.entries(networkInterfaces())) {
+		const lower = (name ?? "").toLowerCase();
+		// Identify virtual network adapters (WSL, VMware, Docker, Hyper-V, vEthernet)
+		const isVirtual =
+			lower.includes("vEthernet".toLowerCase()) ||
+			lower.includes("wsl") ||
+			lower.includes("docker") ||
+			lower.includes("vmware") ||
+			lower.includes("virtual") ||
+			lower.includes("tap") ||
+			lower.includes("tailscale");
+
 		for (const entry of entries ?? []) {
-			if (entry.family === "IPv4" && !entry.internal) out.push(entry.address);
+			if (entry.family === "IPv4" && !entry.internal) {
+				if (isVirtual) {
+					virtual.push(entry.address);
+				} else {
+					physical.push(entry.address);
+				}
+			}
 		}
 	}
-	return out;
+	return [...physical, ...virtual];
 }

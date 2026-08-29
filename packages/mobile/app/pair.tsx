@@ -44,10 +44,7 @@ export default function PairScreen() {
 
 			const pingResult = await SyncClient.ping(cleanHost, parsedPort);
 			if (!pingResult.ok) {
-				setMessage({
-					tone: "error",
-					text: `无法连接到 ${cleanHost}:${parsedPort} (${pingResult.reason || "网络超时"})，请确认电脑和手机在同一网络。`,
-				});
+				setMessage({ tone: "error", text: `无法连接到 ${cleanHost}:${parsedPort}，请确认电脑和手机在同一网络，且同步服务已启用。` });
 				return;
 			}
 
