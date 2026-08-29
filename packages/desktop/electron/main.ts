@@ -39,7 +39,6 @@ import {
 	STORAGE,
 	TOOLS,
 	SessionStore,
-	SideChat,
 	type AgentLoop,
 	type ApprovalPolicy,
 	type CompactionStrategy,
@@ -59,6 +58,7 @@ import {
 	configureHub,
 	getOrCreateSession,
 	sessions,
+	sideChats,
 } from "./session-hub.ts";
 import { resolveInside } from "./file-ops.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
@@ -172,13 +172,6 @@ let store: SessionStorage = new SessionStore();
 /** The capability context: what the app can do, assembled from plugins at boot. */
 let kernel: CapabilityContext | null = null;
 /** Per-session browser instances, disposed alongside the session that owns them. */
-/**
- * Side chats, keyed by the session each one is attached to.
- *
- * Memory only. They hold a live `AgentSession` reference, so one cannot outlive the session
- * it reads — disposing a session drops its side chat with it.
- */
-const sideChats = new Map<string, SideChat>();
 /**
  * Live pseudo-terminals, one per project directory. Killed when the app quits.
  *
