@@ -128,6 +128,8 @@ export function SessionRow({
 	 */
 	const card = useSessionCard();
 
+	const actionsCount = onRestore && onDelete ? 2 : (onArchive ? 1 : 0) + 1;
+
 	return (
 		<div
 			{...card.bind}
@@ -136,7 +138,7 @@ export function SessionRow({
 				event.preventDefault();
 				menu.openAtPoint(event);
 			}}
-			style={{ "--ly-row-controls": onRestore && onDelete ? "58px" : isPinned ? "58px" : "34px" } as React.CSSProperties}
+			style={{ "--ly-row-controls": actionsCount === 2 ? "58px" : "34px" } as React.CSSProperties}
 			className={`ly-scroll group/session relative rounded-lg transition-colors duration-[var(--ly-t-quick)] active:bg-elevated ${
 				justCreated ? "ly-drop" : ""
 			} ${active ? "bg-card-hover" : "hover:bg-card-hover"}`}
@@ -147,11 +149,9 @@ export function SessionRow({
 				type="button"
 				onClick={onOpen}
 				className={`flex w-full items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
-					onRestore && onDelete
-						? "pr-2 group-hover/session:pr-12 group-focus-within/session:pr-12"
-						: isPinned
-							? "pr-2 group-hover/session:pr-12 group-focus-within/session:pr-12"
-							: "pr-2 group-hover/session:pr-7 group-focus-within/session:pr-7"
+					actionsCount === 2
+						? "pr-2 group-hover/session:pr-14 group-focus-within/session:pr-14"
+						: "pr-2 group-hover/session:pr-8 group-focus-within/session:pr-8"
 				} ${compact ? "h-[34px]" : "h-[27px]"} ${
 					active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"
 				}`}

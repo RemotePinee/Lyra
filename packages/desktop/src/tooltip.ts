@@ -21,6 +21,15 @@ let timer = 0;
 let leaving = 0;
 let current: HTMLElement | null = null;
 
+let popoverSuppressed = false;
+
+export function setTooltipSuppressed(suppressed: boolean) {
+	popoverSuppressed = suppressed;
+	if (suppressed) {
+		hideTooltipImmediate();
+	}
+}
+
 function ensureHost(): HTMLElement {
 	if (host) return host;
 	host = document.createElement("div");
@@ -103,7 +112,7 @@ function place(el: HTMLElement) {
  * The element stays in the document for the length of the exit and is only hidden afterwards, so a
  * pointer that comes back mid-fade finds it still there and simply cancels the departure.
  */
-function hide() {
+export function hide() {
 	window.clearTimeout(timer);
 	current = null;
 	if (!host || host.hidden || host.dataset.leaving !== undefined) return;
@@ -116,6 +125,17 @@ function hide() {
 	}, EXIT_MS);
 }
 
+/** Immediately hide the tooltip without playing exit animation. */
+export function hideTooltipImmediate() {
+	window.clearTimeout(timer);
+	current = null;
+	if (host) {
+		window.clearTimeout(leaving);
+		host.hidden = true;
+		delete host.dataset.leaving;
+	}
+}
+
 /**
  * Deliberately not shown on focus.
  *
@@ -126,6 +146,7 @@ export function installTooltips() {
 	document.addEventListener(
 		"pointerover",
 		(event) => {
+			if (popoverSuppressed || document.querySelector('.fixed.z-\\[60\\][role="menu"], .fixed.z-\\[60\\][role="dialog"]')) return;
 			const el = targetOf(event.target);
 			if (el === current) return;
 			hide();
@@ -133,15 +154,15 @@ export function installTooltips() {
 			current = el;
 			timer = window.setTimeout(() => {
 				// Still under the pointer, and still in the document, by the time the delay is up.
-				if (current === el && el.isConnected) place(el);
+				if (!popoverSuppressed && !document.querySelector('.fixed.z-\\[60\\][role="menu"], .fixed.z-\\[60\\][role="dialog"]') && current === el && el.isConnected) place(el);
 			}, DELAY_MS);
 		},
 		true,
 	);
 
 	// Any of these means the target is gone or no longer the thing being pointed at.
-	for (const type of ["pointerdown", "pointerout", "wheel", "keydown"] as const) {
-		document.addEventListener(type, hide, true);
+	for (const type of ["pointerdown", "pointerout", "wheel", "keydown", "contextmenu"] as const) {
+		document.addEventListener(type, hideTooltipImmediate, true);
 	}
 	window.addEventListener("blur", hide);
 	window.addEventListener("scroll", hide, true);

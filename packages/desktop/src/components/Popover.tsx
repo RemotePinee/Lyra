@@ -23,6 +23,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { setTooltipSuppressed } from "../tooltip.ts";
 import { Scroller } from "./Scroller.tsx";
 
 /**
@@ -149,7 +150,7 @@ function columnBounds(
  *
  * "Other" means unrelated, not merely earlier — see `PopoverChain`.
  */
-const openPopovers = new Set<PopoverHandle>();
+export const openPopovers = new Set<PopoverHandle>();
 
 interface PopoverHandle {
 	close: () => void;
@@ -251,6 +252,7 @@ export function Popover({
 	}).current;
 	const chain = useMemo(() => [...ancestors, self], [ancestors, self]);
 	useLayoutEffect(() => {
+		setTooltipSuppressed(true);
 		for (const other of openPopovers) {
 			if (!chain.includes(other)) other.close();
 		}
@@ -258,6 +260,9 @@ export function Popover({
 		for (const each of chain) openPopovers.add(each);
 		return () => {
 			openPopovers.delete(self);
+			if (openPopovers.size === 0) {
+				setTooltipSuppressed(false);
+			}
 		};
 	}, [chain, self]);
 
@@ -328,8 +333,8 @@ export function Popover({
 			 */
 			let origin: string;
 
-			if (placement === "right") {
-				// Beside the trigger, aligned to its top edge, nudged up only if it would run off
+			if (placement === "right" && a.width > 0) {
+				// Beside the trigger element, aligned to its top edge, nudged up only if it would run off
 				// the bottom of the window. Falls back to the left side when there is no room.
 				resolved = "right";
 				const fitsRight = a.right + GAP + w <= maxLeft + w;
