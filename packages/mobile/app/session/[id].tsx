@@ -69,7 +69,7 @@ export default function SessionScreen() {
 		<KeyboardAvoidingView
 			className="flex-1 bg-shell"
 			behavior={Platform.OS === "ios" ? "padding" : undefined}
-			keyboardVerticalOffset={insets.top + 44}
+			keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 44 : 0}
 		>
 			<ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ padding: 14, paddingBottom: 24 }}>
 				<View className="mb-3 flex-row items-center gap-2">
