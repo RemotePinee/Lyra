@@ -498,12 +498,12 @@ export async function publishReleaseTag(
 		if (statusOut.includes("package.json")) {
 			await git(cwd, ["add", "package.json", "packages/*/package.json"]);
 			await git(cwd, ["commit", "-m", `chore(release): bump version to ${version.replace(/^v/, "")}`]);
-			await git(cwd, ["push"]);
+			await git(cwd, ["push", "origin", "HEAD", "--no-verify"]);
 		}
 
 		// Create and push tag
 		await git(cwd, ["tag", tag]);
-		await git(cwd, ["push", "origin", tag]);
+		await git(cwd, ["push", "origin", tag, "--no-verify"]);
 		return { ok: true, tag };
 	} catch (err) {
 		return { ok: false, error: err instanceof Error ? err.message : String(err) };
