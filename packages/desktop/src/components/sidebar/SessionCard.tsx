@@ -206,6 +206,7 @@ export function useSessionCard(): {
 	anchor: DOMRect | null;
 	leaving: boolean;
 	bind: { onMouseEnter: (event: React.MouseEvent<HTMLElement>) => void; onMouseLeave: () => void };
+	dismiss: () => void;
 } {
 	const [anchor, setAnchor] = useState<DOMRect | null>(null);
 	/*
@@ -220,6 +221,13 @@ export function useSessionCard(): {
 	const open = useRef<number | undefined>(undefined);
 	const close = useRef<number | undefined>(undefined);
 
+	const dismiss = () => {
+		window.clearTimeout(open.current);
+		window.clearTimeout(close.current);
+		setAnchor(null);
+		setLeaving(false);
+	};
+
 	useEffect(
 		() => () => {
 			window.clearTimeout(open.current);
@@ -231,6 +239,7 @@ export function useSessionCard(): {
 	return {
 		anchor,
 		leaving,
+		dismiss,
 		bind: {
 			onMouseEnter: (event) => {
 				const box = event.currentTarget.getBoundingClientRect();

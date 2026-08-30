@@ -136,6 +136,7 @@ export function SessionRow({
 			data-ly-row={session.id}
 			onContextMenu={(event) => {
 				event.preventDefault();
+				card.dismiss();
 				menu.openAtPoint(event);
 			}}
 			style={{ "--ly-row-controls": actionsCount === 2 ? "58px" : "34px" } as React.CSSProperties}

@@ -333,7 +333,7 @@ export function Popover({
 			 */
 			let origin: string;
 
-			if (placement === "right" && a.width > 0) {
+			if (placement === "right") {
 				// Beside the trigger element, aligned to its top edge, nudged up only if it would run off
 				// the bottom of the window. Falls back to the left side when there is no room.
 				resolved = "right";
@@ -380,7 +380,7 @@ export function Popover({
 				anchorEdge = shifted
 					? {
 							top: clamp(
-								a.bottom + GAP,
+								resolved === "top" ? a.top - box.height - GAP : a.bottom + GAP,
 								MARGIN,
 								window.innerHeight - box.height - MARGIN,
 							),
@@ -420,7 +420,14 @@ export function Popover({
 
 		measure();
 		window.addEventListener("resize", measure);
-		return () => window.removeEventListener("resize", measure);
+		const resizeObserver = new ResizeObserver(() => {
+			measure();
+		});
+		resizeObserver.observe(element);
+		return () => {
+			window.removeEventListener("resize", measure);
+			resizeObserver.disconnect();
+		};
 	}, [anchor, align, placement, width, maxHeight]);
 
 	useEffect(() => {

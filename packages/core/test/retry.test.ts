@@ -82,6 +82,32 @@ test("a 429 is retried, and the caller is told each time", async () => {
 	assert.deepEqual(notices, ["HTTP 429"]);
 });
 
+test("an aborted turn during backoff wait stops immediately without waiting", async () => {
+	const controller = new AbortController();
+	let calls = 0;
+	const start = Date.now();
+
+	const promise = fetchWithRetry(
+		async () => {
+			calls++;
+			return new Response("Too Many Requests", { status: 429, headers: { "retry-after": "10" } });
+		},
+		"https://example.test",
+		{},
+		{ attempts: 3, signal: controller.signal },
+	);
+
+	// Abort after 20ms while in the 10s wait
+	setTimeout(() => {
+		controller.abort();
+	}, 20);
+
+	await assert.rejects(promise);
+	const duration = Date.now() - start;
+	assert.ok(duration < 2000, `aborted promptly instead of waiting full delay (took ${duration}ms)`);
+	assert.equal(calls, 1);
+});
+
 test("an aborted turn stops immediately instead of waiting to retry", async () => {
 	const controller = new AbortController();
 	let calls = 0;

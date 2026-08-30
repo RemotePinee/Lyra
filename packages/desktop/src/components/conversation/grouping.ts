@@ -36,6 +36,52 @@ export function isNudge(message: Message | undefined): boolean {
 	return message.content.some((c) => c.type === "text" && c.text.startsWith("（自动继续）"));
 }
 
+export type TurnStats = {
+	durationMs: number;
+	outputTokens: number;
+	requestCount: number;
+};
+
+/**
+ * Calculates accumulated turn statistics (total duration in ms, total output tokens, total requests)
+ * for the turn that ends at or before `endMessageIndex`.
+ *
+ * A turn consists of:
+ * - Assistant messages (including toolUse calls, intermediate thought steps, and the final response).
+ * - Tool result messages and continuation nudges between them.
+ * The turn starts immediately after the previous real (non-synthetic, non-nudge) user message.
+ */
+export function computeTurnStats(messages: Message[], endMessageIndex: number): TurnStats {
+	let durationMs = 0;
+	let outputTokens = 0;
+	let requestCount = 0;
+
+	// Walk backwards from endMessageIndex until we hit a real user message or index 0
+	let startIndex = 0;
+	for (let i = endMessageIndex; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === "user" && !msg.synthetic && !isNudge(msg)) {
+			startIndex = i + 1;
+			break;
+		}
+	}
+
+	for (let i = startIndex; i <= endMessageIndex && i < messages.length; i++) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			if (typeof msg.durationMs === "number" && msg.durationMs > 0) {
+				durationMs += msg.durationMs;
+			}
+			if (typeof msg.usage?.output === "number" && msg.usage.output > 0) {
+				outputTokens += msg.usage.output;
+			}
+			requestCount++;
+		}
+	}
+
+	return { durationMs, outputTokens, requestCount };
+}
+
 /**
  * How far into a reply the model was still addressing you.
  *

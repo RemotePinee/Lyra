@@ -20,23 +20,36 @@ const MARGIN = 12;
 const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
 
 /** Where the surface is placed, and what its height is capped at. */
-function place(options: { anchorTop: number; anchorBottom: number; height: number; windowHeight: number }) {
-	const { anchorTop, anchorBottom, height, windowHeight } = options;
+function place(options: {
+	anchorTop: number;
+	anchorBottom: number;
+	height: number;
+	windowHeight: number;
+	placement?: "top" | "bottom";
+}) {
+	const { anchorTop, anchorBottom, height, windowHeight, placement = "bottom" } = options;
 	const fitsAbove = anchorTop - height - GAP >= MARGIN;
 	const fitsBelow = anchorBottom + height + GAP <= windowHeight - MARGIN;
-	const resolved = fitsBelow || !fitsAbove ? "bottom" : "top";
+	const resolved =
+		placement === "top"
+			? fitsAbove || !fitsBelow
+				? "top"
+				: "bottom"
+			: fitsBelow || !fitsAbove
+				? "bottom"
+				: "top";
 	const shifted = !fitsAbove && !fitsBelow && height + MARGIN * 2 <= windowHeight;
 
 	const top = shifted
-		? clamp(anchorBottom + GAP, MARGIN, windowHeight - height - MARGIN)
+		? clamp(resolved === "top" ? anchorTop - height - GAP : anchorBottom + GAP, MARGIN, windowHeight - height - MARGIN)
 		: resolved === "bottom"
 			? anchorBottom + GAP
 			: null;
 	const maxHeight = shifted
 		? windowHeight - MARGIN * 2
-		: resolved === "bottom"
-			? windowHeight - anchorBottom - GAP - MARGIN
-			: anchorTop - GAP - MARGIN;
+		: resolved === "top"
+			? anchorTop - GAP - MARGIN
+			: windowHeight - anchorBottom - GAP - MARGIN;
 
 	return { resolved, shifted, top, maxHeight, scrolls: height > maxHeight };
 }
@@ -47,6 +60,19 @@ test("with room below, the menu hangs off the cursor as it always did", () => {
 	assert.equal(at.resolved, "bottom");
 	assert.equal(at.top, 108, "just under the cursor");
 	assert.equal(at.scrolls, false);
+});
+
+test("with room both above and below, placement top stays top and bottom stays bottom", () => {
+	const atTop = place({ anchorTop: 450, anchorBottom: 450, height: 300, windowHeight: 900, placement: "top" });
+	assert.equal(atTop.shifted, false);
+	assert.equal(atTop.resolved, "top");
+	assert.equal(atTop.scrolls, false);
+
+	const atBottom = place({ anchorTop: 450, anchorBottom: 450, height: 300, windowHeight: 900, placement: "bottom" });
+	assert.equal(atBottom.shifted, false);
+	assert.equal(atBottom.resolved, "bottom");
+	assert.equal(atBottom.top, 458);
+	assert.equal(atBottom.scrolls, false);
 });
 
 test("with room only above, it flips — no shifting needed", () => {

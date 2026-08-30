@@ -13,7 +13,7 @@ import { test } from "node:test";
 import type { AssistantContent, AssistantMessage, Message, StopReason, ToolCallContent } from "@lyra/core";
 import { emptyUsage } from "@lyra/core";
 
-import { runs, type Run } from "../src/components/conversation/grouping.ts";
+import { computeTurnStats, runs, type Run } from "../src/components/conversation/grouping.ts";
 
 function user(text: string): Message {
 	return { role: "user", content: [{ type: "text", text }], timestamp: 1 };
@@ -181,4 +181,43 @@ test("the reply carries the calls it made, so a live one reads as live", () => {
 		tools.calls.map((c) => c.stopReason),
 		["toolUse", "pending"],
 	);
+});
+
+test("computeTurnStats aggregates duration and output tokens across all assistant requests in a turn", () => {
+	const msg1 = assistant([call("a")], "toolUse");
+	msg1.durationMs = 1200;
+	msg1.usage = { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150 };
+
+	const msg2 = assistant([call("b")], "toolUse");
+	msg2.durationMs = 800;
+	msg2.usage = { input: 200, output: 30, cacheRead: 0, cacheWrite: 0, total: 230 };
+
+	const msg3 = assistant([text("完成了")], "stop");
+	msg3.durationMs = 2000;
+	msg3.usage = { input: 300, output: 120, cacheRead: 0, cacheWrite: 0, total: 420 };
+
+	const messages: Message[] = [
+		user("第一轮问题"),
+		assistant([text("第一轮回答")], "stop"),
+		user("第二轮问题"),
+		msg1,
+		answered("a"),
+		nudge(),
+		msg2,
+		answered("b"),
+		msg3,
+	];
+
+	const stats = computeTurnStats(messages, 8);
+	assert.equal(stats.durationMs, 4000);
+	assert.equal(stats.outputTokens, 200);
+	assert.equal(stats.requestCount, 3);
+});
+
+test("computeTurnStats returns zeros if no assistant messages or out of bounds", () => {
+	const messages: Message[] = [user("问题")];
+	const stats = computeTurnStats(messages, 0);
+	assert.equal(stats.durationMs, 0);
+	assert.equal(stats.outputTokens, 0);
+	assert.equal(stats.requestCount, 0);
 });
