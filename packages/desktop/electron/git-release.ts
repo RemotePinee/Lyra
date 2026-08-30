@@ -189,15 +189,40 @@ export async function bumpVersionFiles(cwd: string, newVersion: string): Promise
 }
 
 /**
- * Execute a github cli command with PATH fallback
+ * Execute a github cli command with PATH fallback and proxy-resilience.
+ *
+ * When HTTP(S)_PROXY is configured in the shell/environment pointing to a local proxy port
+ * that is currently closed/unreachable, `gh` requests fail with "proxyconnect tcp: connection refused".
+ * We first attempt with inherited environment, and if that fails with a proxy connection error,
+ * retry cleanly without invalid proxy env variables.
  */
 async function execGh(cwd: string, args: string[]): Promise<string> {
-	const env = {
+	const env: Record<string, string | undefined> = {
 		...process.env,
 		PATH: `${process.env.PATH || ""}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
 	};
-	const { stdout } = await pExecFile("gh", args, { cwd, env });
-	return stdout;
+	try {
+		const { stdout } = await pExecFile("gh", args, { cwd, env });
+		return stdout;
+	} catch (err) {
+		const msg = String(err);
+		if (
+			msg.includes("proxyconnect tcp") ||
+			msg.includes("Failed to connect") ||
+			msg.includes("connection refused")
+		) {
+			const cleanEnv = { ...env };
+			delete cleanEnv.HTTP_PROXY;
+			delete cleanEnv.HTTPS_PROXY;
+			delete cleanEnv.ALL_PROXY;
+			delete cleanEnv.http_proxy;
+			delete cleanEnv.https_proxy;
+			delete cleanEnv.all_proxy;
+			const { stdout } = await pExecFile("gh", args, { cwd, env: cleanEnv });
+			return stdout;
+		}
+		throw err;
+	}
 }
 
 /**
