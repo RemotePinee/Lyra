@@ -8,12 +8,11 @@
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { git } from "./git-exec.ts";
 import { isGitRepo } from "./git.ts";
-
-const pExecFile = promisify(execFile);
+import { listAccounts, tokenFor } from "./forge/vault.ts";
+import { json as forgeJson } from "./forge/http.ts";
+import type { ForgeConnection } from "./forge/types.ts";
 
 export interface ReleaseInfo {
 	currentVersion: string;
@@ -189,117 +188,182 @@ export async function bumpVersionFiles(cwd: string, newVersion: string): Promise
 }
 
 /**
- * Execute a github cli command with PATH fallback and proxy-resilience.
- *
- * When HTTP(S)_PROXY is configured in the shell/environment pointing to a local proxy port
- * that is currently closed/unreachable, `gh` requests fail with "proxyconnect tcp: connection refused".
- * We first attempt with inherited environment, and if that fails with a proxy connection error,
- * retry cleanly without invalid proxy env variables.
+ * Parse remote origin URL into host and owner/repo.
+ * Supports:
+ * - git@github.com:owner/repo.git
+ * - https://github.com/owner/repo.git
+ * - ssh://git@github.com/owner/repo.git
  */
-async function execGh(cwd: string, args: string[]): Promise<string> {
-	const env: Record<string, string | undefined> = {
-		...process.env,
-		PATH: `${process.env.PATH || ""}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
-	};
+export async function getRepoInfo(cwd: string): Promise<{ owner: string; name: string; host: string } | null> {
 	try {
-		const { stdout } = await pExecFile("gh", args, { cwd, env });
-		return stdout;
-	} catch (err) {
-		const msg = String(err);
-		if (
-			msg.includes("proxyconnect tcp") ||
-			msg.includes("Failed to connect") ||
-			msg.includes("connection refused")
-		) {
-			const cleanEnv = { ...env };
-			delete cleanEnv.HTTP_PROXY;
-			delete cleanEnv.HTTPS_PROXY;
-			delete cleanEnv.ALL_PROXY;
-			delete cleanEnv.http_proxy;
-			delete cleanEnv.https_proxy;
-			delete cleanEnv.all_proxy;
-			const { stdout } = await pExecFile("gh", args, { cwd, env: cleanEnv });
-			return stdout;
+		const rawUrl = await git(cwd, ["remote", "get-url", "origin"]).then((s) => s.trim());
+		if (!rawUrl) return null;
+
+		// Match SCP-like git@host:owner/repo.git
+		const scpMatch = rawUrl.match(/^(?:[\w-]+@)?([\w.-]+):([^\s/]+)\/([^\s/]+?)(?:\.git)?$/);
+		if (scpMatch) {
+			return { host: scpMatch[1], owner: scpMatch[2], name: scpMatch[3] };
 		}
-		throw err;
+
+		// Match standard URLs (https://, http://, ssh://)
+		const url = new URL(rawUrl.includes("://") ? rawUrl : `ssh://${rawUrl}`);
+		const parts = url.pathname.replace(/^\/+/, "").replace(/\.git$/, "").split("/");
+		if (parts.length >= 2) {
+			return { host: url.hostname, owner: parts[parts.length - 2], name: parts[parts.length - 1] };
+		}
+		return null;
+	} catch {
+		return null;
 	}
 }
 
 /**
- * Trigger GitHub Actions Release Dry Run workflow
+ * Get forge connection / token for the repository.
+ * Searches configured Forge accounts for matching host, or falls back to GITHUB_TOKEN environment variable.
+ */
+async function getGithubConnection(host = "github.com"): Promise<ForgeConnection | null> {
+	try {
+		const accounts = await listAccounts();
+		const matching = accounts.find((a) => a.kind === "github" && (a.baseUrl.includes(host) || (host === "github.com" && a.baseUrl.includes("github.com"))));
+		if (matching) {
+			const token = await tokenFor(matching.id);
+			if (token) {
+				return { account: matching, token };
+			}
+		}
+	} catch {
+		// Forge account lookup failed
+	}
+
+	const envToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+	if (envToken) {
+		return {
+			account: {
+				id: "env-github",
+				kind: "github",
+				label: "GitHub (Environment)",
+				baseUrl: host === "github.com" ? "https://github.com" : `https://${host}`,
+				login: "env-user",
+				avatarUrl: null,
+				addedAt: Date.now(),
+				enabled: true,
+			},
+			token: envToken,
+		};
+	}
+
+	// Anonymous / public connection for open source repositories
+	return {
+		account: {
+			id: "anonymous",
+			kind: "github",
+			label: "GitHub",
+			baseUrl: host === "github.com" ? "https://github.com" : `https://${host}`,
+			login: "anonymous",
+			avatarUrl: null,
+			addedAt: Date.now(),
+			enabled: true,
+		},
+		token: "",
+	};
+}
+
+/**
+ * Trigger GitHub Actions Release Dry Run workflow via native GitHub REST API.
  */
 export async function triggerReleaseDryRun(cwd: string): Promise<{ ok: boolean; runId?: number; error?: string }> {
 	try {
-		// Trigger workflow_dispatch for release-dryrun.yml
-		await execGh(cwd, ["workflow", "run", "release-dryrun.yml"]);
+		const repoInfo = await getRepoInfo(cwd);
+		if (!repoInfo) {
+			return { ok: false, error: "未能识别当前仓库的 Git Remote 远程地址" };
+		}
+
+		const conn = await getGithubConnection(repoInfo.host);
+		if (!conn || !conn.token) {
+			return {
+				ok: false,
+				error: "触发流水线需要 GitHub 访问令牌，请在代码托管设置中添加 GitHub 账号或设置 GITHUB_TOKEN 环境变量",
+			};
+		}
+
+		const currentBranch = (await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "main")).trim();
+
+		// Trigger workflow_dispatch REST API
+		await forgeJson(
+			conn,
+			`/repos/${encodeURIComponent(repoInfo.owner)}/${encodeURIComponent(repoInfo.name)}/actions/workflows/release-dryrun.yml/dispatches`,
+			{
+				method: "POST",
+				body: { ref: currentBranch || "main" },
+			},
+		);
 
 		// Wait briefly and poll for the newly started run
 		for (let i = 0; i < 4; i++) {
 			await new Promise((resolve) => setTimeout(resolve, 1500));
-			const listJson = await execGh(cwd, [
-				"run",
-				"list",
-				"--workflow=release-dryrun.yml",
-				"--limit=1",
-				"--json=databaseId,status,url",
-			]);
+			const res = await forgeJson<{ workflow_runs?: { id: number; status: string; html_url: string }[] }>(
+				conn,
+				`/repos/${encodeURIComponent(repoInfo.owner)}/${encodeURIComponent(repoInfo.name)}/actions/workflows/release-dryrun.yml/runs`,
+				{
+					query: { per_page: 1 },
+				},
+			).catch(() => null);
 
-			try {
-				const runs = JSON.parse(listJson);
-				if (Array.isArray(runs) && runs[0]?.databaseId) {
-					return { ok: true, runId: runs[0].databaseId };
-				}
-			} catch {
-				// parse failed, continue retry
+			if (res?.workflow_runs && res.workflow_runs.length > 0 && res.workflow_runs[0]?.id) {
+				return { ok: true, runId: res.workflow_runs[0].id };
 			}
 		}
+
 		return { ok: true };
 	} catch (err) {
 		return {
 			ok: false,
-			error:
-				err instanceof Error
-					? err.message
-					: "触发 GitHub Actions 失败，请检查是否安装配置了 gh CLI 并且具有仓库权限",
+			error: err instanceof Error ? err.message : "触发 GitHub Actions 失败，请检查网络连接与权限",
 		};
 	}
 }
 
 /**
- * List recent GitHub Actions workflow runs for the repository.
+ * List recent GitHub Actions workflow runs for the repository via native GitHub REST API.
  */
 export async function listWorkflowRuns(cwd: string, limit = 20): Promise<WorkflowRunSummary[]> {
 	try {
-		const out = await execGh(cwd, [
-			"run",
-			"list",
-			`--limit=${limit}`,
-			"--json=databaseId,name,displayTitle,event,status,conclusion,headBranch,headSha,createdAt,url",
-		]);
-		const runs = JSON.parse(out);
-		if (!Array.isArray(runs)) return [];
-		return runs.map((r: {
-			databaseId: number;
-			name: string;
-			displayTitle: string;
-			event: string;
-			status: WorkflowRunSummary["status"];
-			conclusion: WorkflowRunSummary["conclusion"];
-			headBranch: string;
-			headSha: string;
-			createdAt: string;
-			url: string;
-		}) => ({
-			id: r.databaseId,
+		const repoInfo = await getRepoInfo(cwd);
+		if (!repoInfo) return [];
+
+		const conn = await getGithubConnection(repoInfo.host);
+		if (!conn) return [];
+
+		const res = await forgeJson<{
+			workflow_runs?: {
+				id: number;
+				name: string;
+				display_title?: string;
+				event: string;
+				status: string;
+				conclusion: string | null;
+				head_branch: string;
+				head_sha: string;
+				created_at: string;
+				html_url: string;
+			}[];
+		}>(conn, `/repos/${encodeURIComponent(repoInfo.owner)}/${encodeURIComponent(repoInfo.name)}/actions/runs`, {
+			query: { per_page: limit },
+		});
+
+		if (!res || !Array.isArray(res.workflow_runs)) return [];
+
+		return res.workflow_runs.map((r) => ({
+			id: r.id,
 			name: r.name,
-			displayTitle: r.displayTitle,
+			displayTitle: r.display_title || r.name,
 			event: r.event,
-			status: r.status,
-			conclusion: r.conclusion,
-			headBranch: r.headBranch,
-			headSha: r.headSha,
-			createdAt: r.createdAt,
-			url: r.url,
+			status: (r.status as WorkflowRunSummary["status"]) || "unknown",
+			conclusion: (r.conclusion as WorkflowRunSummary["conclusion"]) || null,
+			headBranch: r.head_branch || "",
+			headSha: r.head_sha || "",
+			createdAt: r.created_at,
+			url: r.html_url,
 		}));
 	} catch {
 		return [];
@@ -307,72 +371,97 @@ export async function listWorkflowRuns(cwd: string, limit = 20): Promise<Workflo
 }
 
 /**
- * Get GitHub Actions Run status with detailed jobs and steps
+ * Get GitHub Actions Run status with detailed jobs and steps via native GitHub REST API.
  */
 export async function getWorkflowRunStatus(cwd: string, runId: number): Promise<WorkflowRunStatus | null> {
 	try {
-		const out = await execGh(cwd, [
-			"run",
-			"view",
-			String(runId),
-			"--json=databaseId,name,displayTitle,event,status,conclusion,url,jobs,createdAt,headBranch,headSha",
-		]);
-		const data = JSON.parse(out);
-		const jobs = Array.isArray(data.jobs)
-			? data.jobs.map((j: {
-					databaseId?: number;
-					id?: number;
+		const repoInfo = await getRepoInfo(cwd);
+		if (!repoInfo) return null;
+
+		const conn = await getGithubConnection(repoInfo.host);
+		if (!conn) return null;
+
+		const [runData, jobsData] = await Promise.all([
+			forgeJson<{
+				id: number;
+				name: string;
+				display_title?: string;
+				event: string;
+				status: string;
+				conclusion: string | null;
+				html_url: string;
+				created_at: string;
+				head_branch: string;
+				head_sha: string;
+			}>(conn, `/repos/${encodeURIComponent(repoInfo.owner)}/${encodeURIComponent(repoInfo.name)}/actions/runs/${runId}`),
+			forgeJson<{
+				jobs?: {
+					id: number;
 					name: string;
 					status: string;
 					conclusion: string | null;
-					url?: string;
-					startedAt?: string;
-					completedAt?: string;
-					steps?: WorkflowJobStep[];
-				}) => ({
-					id: j.databaseId ?? j.id ?? 0,
+					html_url?: string;
+					started_at?: string;
+					completed_at?: string;
+					steps?: {
+						name: string;
+						status: string;
+						conclusion: string | null;
+						number: number;
+						started_at?: string;
+						completed_at?: string;
+					}[];
+				}[];
+			}>(conn, `/repos/${encodeURIComponent(repoInfo.owner)}/${encodeURIComponent(repoInfo.name)}/actions/runs/${runId}/jobs`),
+		]);
+
+		if (!runData) return null;
+
+		const jobs: WorkflowJob[] = Array.isArray(jobsData?.jobs)
+			? jobsData.jobs.map((j) => ({
+					id: j.id,
 					name: j.name,
 					status: j.status,
 					conclusion: j.conclusion,
-					url: j.url,
-					startedAt: j.startedAt,
-					completedAt: j.completedAt,
+					url: j.html_url,
+					startedAt: j.started_at,
+					completedAt: j.completed_at,
 					steps: Array.isArray(j.steps)
 						? j.steps.map((s) => ({
 								name: s.name,
 								status: s.status,
 								conclusion: s.conclusion,
 								number: s.number,
-								startedAt: s.startedAt,
-								completedAt: s.completedAt,
+								startedAt: s.started_at,
+								completedAt: s.completed_at,
 							}))
 						: [],
 				}))
 			: [];
 
 		// If all jobs are completed, derive overall conclusion and status accurately
-		let status = data.status;
-		let conclusion = data.conclusion;
-		if (jobs.length > 0 && jobs.every((j: WorkflowJob) => j.status === "completed")) {
+		let status = (runData.status as WorkflowRunStatus["status"]) || "unknown";
+		let conclusion = (runData.conclusion as WorkflowRunStatus["conclusion"]) || null;
+		if (jobs.length > 0 && jobs.every((j) => j.status === "completed")) {
 			status = "completed";
 			if (!conclusion) {
-				const hasFailure = jobs.some((j: WorkflowJob) => j.conclusion === "failure" || j.conclusion === "timed_out");
-				const hasCancelled = jobs.some((j: WorkflowJob) => j.conclusion === "cancelled");
+				const hasFailure = jobs.some((j) => j.conclusion === "failure" || j.conclusion === "timed_out");
+				const hasCancelled = jobs.some((j) => j.conclusion === "cancelled");
 				conclusion = hasFailure ? "failure" : hasCancelled ? "cancelled" : "success";
 			}
 		}
 
 		return {
-			id: data.databaseId,
-			name: data.name,
-			displayTitle: data.displayTitle,
-			event: data.event,
+			id: runData.id,
+			name: runData.name,
+			displayTitle: runData.display_title || runData.name,
+			event: runData.event,
 			status,
 			conclusion,
-			url: data.url,
-			createdAt: data.createdAt,
-			headBranch: data.headBranch,
-			headSha: data.headSha,
+			url: runData.html_url,
+			createdAt: runData.created_at,
+			headBranch: runData.head_branch,
+			headSha: runData.head_sha,
 			jobs,
 		};
 	} catch {

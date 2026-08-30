@@ -57,6 +57,7 @@ async function fetching(): Promise<typeof fetch> {
  * for an authentication problem to present itself.
  */
 function authHeader(conn: ForgeConnection): Record<string, string> {
+	if (!conn.token) return {};
 	switch (conn.account.kind) {
 		case "gitlab":
 			return { "PRIVATE-TOKEN": conn.token };
