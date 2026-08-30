@@ -26,6 +26,7 @@ export function ComposerShell({
   left,
   right,
   onFiles,
+  onPastedText,
   onKeyDown,
   fieldRef,
 }: {
@@ -40,6 +41,8 @@ export function ComposerShell({
   right?: React.ReactNode;
   /** Supplied only where attachments are accepted; enables paste and drop. */
   onFiles?: (files: FileList | null) => void;
+  /** Optional callback to intercept pasted code/error text as an attachment */
+  onPastedText?: (pastedText: string) => boolean;
   /**
    * First refusal on every keystroke, for whatever is floating above the field.
    *
@@ -74,7 +77,10 @@ export function ComposerShell({
     if (!el) return;
     const resize = () => {
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, Math.max(72, Math.min(300, window.innerHeight * 0.34)))}px`;
+      const maxHeight = Math.min(300, window.innerHeight * 0.34);
+      const nextHeight = Math.min(el.scrollHeight, maxHeight);
+      el.style.height = `${nextHeight}px`;
+      el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
     };
     resize();
     window.addEventListener("resize", resize);
@@ -114,27 +120,22 @@ export function ComposerShell({
           autoFocus={autoFocus}
           onChange={(e) => onChange(e.target.value)}
           onPaste={
-            onFiles
-              ? (e) => {
-                  /*
-                   * A pasted file is a file, and nothing else.
-                   *
-                   * macOS puts more than one thing on the pasteboard when a screenshot is copied:
-                   * the image, and a `file://` URL pointing at where it was spooled. Taking the
-                   * image and letting the paste run its course took both — the picture became an
-                   * attachment and the path was typed into the message, so every pasted screenshot
-                   * arrived with a line of
-                   * `file:///Users/…/CoreSpotlight/PasteboardHistory/2026-08-17_19-40-12.png`
-                   * under it. The same is true of anything copied out of Finder.
-                   *
-                   * Only when there is actually a file: a paste with no files is ordinary text and
-                   * must go in as ordinary text.
-                   */
-                  if (e.clipboardData.files.length === 0) return;
+            (e) => {
+              if (e.clipboardData.files.length > 0) {
+                if (onFiles) {
                   e.preventDefault();
                   onFiles(e.clipboardData.files);
                 }
-              : undefined
+                return;
+              }
+              const pastedText = e.clipboardData.getData("text");
+              if (pastedText && onPastedText) {
+                const handled = onPastedText(pastedText);
+                if (handled) {
+                  e.preventDefault();
+                }
+              }
+            }
           }
           onKeyDown={(e) => {
             onKeyDown?.(e);
@@ -150,7 +151,7 @@ export function ComposerShell({
           }}
           rows={1}
           placeholder={placeholder}
-          className="block max-h-[min(300px,34vh)] w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-2.5 text-body leading-relaxed text-ink placeholder:text-ink-faint"
+          className="block max-h-[min(300px,34vh)] w-full resize-none bg-transparent px-4 pt-3.5 pb-2.5 text-body leading-relaxed text-ink placeholder:text-ink-faint"
         />
         <OverlayScrollbar viewport={field} orientation="vertical" />
       </div>

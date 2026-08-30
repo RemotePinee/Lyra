@@ -1,19 +1,45 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+	ActionSheetIOS,
 	ActivityIndicator,
+	Alert,
 	FlatList,
+	Image,
 	Keyboard,
+	Modal,
+	Platform,
 	Pressable,
 	ScrollView,
 	Text,
 	TextInput,
 	View,
 } from "react-native";
-import Animated, { useAnimatedKeyboard, useAnimatedStyle } from "react-native-reanimated";
+import Animated, {
+	useAnimatedKeyboard,
+	useAnimatedStyle,
+	useSharedValue,
+	withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { AssistantMessage, Message } from "../../src/protocol";
+import { detectCodeOrError, parseUserMessageContent } from "../../src/codeDetection";
+import { MobileCollapsibleCodeCard } from "../../src/CollapsibleCard";
+import type { AssistantMessage, ImageContent, Message } from "../../src/protocol";
 import { assistantText, useMobile, type ToolRun } from "../../src/store";
+
+interface SelectedImage {
+	uri: string;
+	data: string;
+	mimeType: string;
+}
+
+interface AttachedCard {
+	id: string;
+	title: string;
+	content: string;
+	language?: string;
+}
 
 export default function SessionScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,24 +61,181 @@ export default function SessionScreen() {
 	const approve = useMobile((s) => s.approve);
 
 	const [draft, setDraft] = useState("");
+	const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
+	const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
+	const [attachedCards, setAttachedCards] = useState<AttachedCard[]>([]);
+	const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const [windowSize, setWindowSize] = useState(60);
 	const setModel = useMobile((s) => s.setModel);
 	const models = useMobile((s) => s.settings?.models ?? []);
 	const listRef = useRef<FlatList>(null);
 
 	const loadingSessionId = useMobile((s) => s.loadingSessionId);
+	const loadingEarlier = useMobile((s) => s.loadingEarlier);
+	const hasEarlierMessages = useMobile((s) => s.hasEarlierMessages);
+	const loadEarlierMessages = useMobile((s) => s.loadEarlierMessages);
 	const isAtBottomRef = useRef(true);
 	const textInputRef = useRef<TextInput>(null);
 
+	// Floating scroll-to-bottom button opacity (driven purely by Reanimated UI thread, 0 React re-renders)
+	const scrollFabOpacity = useSharedValue(0);
+
+	const fabAnimatedStyle = useAnimatedStyle(() => ({
+		opacity: scrollFabOpacity.value,
+		transform: [{ scale: scrollFabOpacity.value }],
+	}));
+
+	// Reset state when switching session
+	useEffect(() => {
+		setWindowSize(60);
+		isAtBottomRef.current = true;
+		scrollFabOpacity.value = 0;
+	}, [id, scrollFabOpacity]);
+
+	// When user sends a message, snap to bottom
 	const handleSend = useCallback(() => {
 		const text = draft.trim();
-		if (!text) return;
+		if (!text && selectedImages.length === 0 && attachedCards.length === 0) return;
+
+		// Assemble prompt with attachments
+		let fullText = text;
+		if (attachedCards.length > 0) {
+			const attachmentsPayload = attachedCards
+				.map((card) => `### 附件文件: ${card.title}\n\`\`\`${card.language || ""}\n${card.content}\n\`\`\``)
+				.join("\n\n");
+			fullText = fullText ? `${fullText}\n\n${attachmentsPayload}` : attachmentsPayload;
+		}
+
+		const imagesToSend = [...selectedImages];
 		setDraft("");
+		setInputHeight(undefined);
+		setSelectedImages([]);
+		setAttachedCards([]);
 		textInputRef.current?.clear();
+		textInputRef.current?.setNativeProps?.({ text: "" });
 		textInputRef.current?.blur();
 		Keyboard.dismiss();
-		void send(text);
-	}, [draft, send]);
+		isAtBottomRef.current = true;
+		listRef.current?.scrollToOffset({ offset: 0, animated: false });
+		void send(fullText, imagesToSend);
+	}, [draft, selectedImages, attachedCards, send]);
+
+	const isPastingRef = useRef(false);
+
+	const handleDraftChange = useCallback((newText: string) => {
+		// Prevent double-triggering if paste already handled
+		if (isPastingRef.current) return;
+
+		// Detect if user pasted a large code/error block directly into the text input
+		if (newText.length > 200 || newText.split("\n").length >= 4) {
+			const detection = detectCodeOrError(newText);
+			if (detection.isMatch) {
+				isPastingRef.current = true;
+				setAttachedCards((prev) => {
+					// Deduplicate: don't add the same content twice
+					if (prev.some((c) => c.content.trim() === newText.trim())) return prev;
+					return [
+						...prev,
+						{
+							id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+							title: detection.suggestedName,
+							content: newText,
+						},
+					];
+				});
+				setDraft("");
+				setInputHeight(44);
+				textInputRef.current?.clear();
+				textInputRef.current?.setNativeProps?.({ text: "" });
+				setTimeout(() => {
+					isPastingRef.current = false;
+					setInputHeight(undefined);
+				}, 100);
+				return;
+			}
+		}
+		setDraft(newText);
+	}, []);
+
+	const pickFromLibrary = async () => {
+		try {
+			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+			if (!permission.granted) {
+				Alert.alert("权限不足", "需要访问相册权限以选择图片");
+				return;
+			}
+			const result = await ImagePicker.launchImageLibraryAsync({
+				mediaTypes: ["images"],
+				allowsMultipleSelection: true,
+				selectionLimit: 4 - selectedImages.length,
+				quality: 0.8,
+				base64: true,
+			});
+			if (!result.canceled && result.assets) {
+				const newImages: SelectedImage[] = result.assets
+					.filter((asset) => asset.base64)
+					.map((asset) => ({
+						uri: asset.uri,
+						data: asset.base64!,
+						mimeType: asset.mimeType ?? "image/jpeg",
+					}));
+				setSelectedImages((prev) => [...prev, ...newImages].slice(0, 4));
+			}
+		} catch {
+			Alert.alert("选图失败", "读取相册图片出现异常");
+		}
+	};
+
+	const takePhoto = async () => {
+		try {
+			const permission = await ImagePicker.requestCameraPermissionsAsync();
+			if (!permission.granted) {
+				Alert.alert("权限不足", "需要相机权限以进行拍照");
+				return;
+			}
+			const result = await ImagePicker.launchCameraAsync({
+				quality: 0.8,
+				base64: true,
+			});
+			if (!result.canceled && result.assets && result.assets[0]?.base64) {
+				const asset = result.assets[0];
+				const newImage: SelectedImage = {
+					uri: asset.uri,
+					data: asset.base64!,
+					mimeType: asset.mimeType ?? "image/jpeg",
+				};
+				setSelectedImages((prev) => [...prev, newImage].slice(0, 4));
+			}
+		} catch {
+			Alert.alert("拍照失败", "唤起相机出现异常");
+		}
+	};
+
+	const handlePickImage = () => {
+		if (selectedImages.length >= 4) {
+			Alert.alert("数量限制", "单次最多支持发送 4 张图片");
+			return;
+		}
+		if (Platform.OS === "ios") {
+			ActionSheetIOS.showActionSheetWithOptions(
+				{
+					options: ["取消", "拍照", "从相册选取"],
+					cancelButtonIndex: 0,
+				},
+				(buttonIndex) => {
+					if (buttonIndex === 1) void takePhoto();
+					if (buttonIndex === 2) void pickFromLibrary();
+				},
+			);
+		} else {
+			Alert.alert("添加图片", "请选择图片来源", [
+				{ text: "拍照", onPress: () => void takePhoto() },
+				{ text: "从相册选取", onPress: () => void pickFromLibrary() },
+				{ text: "取消", style: "cancel" },
+			]);
+		}
+	};
 
 	// Deep-linking straight to a session id means the store may not have it loaded yet.
 	useEffect(() => {
@@ -61,16 +244,25 @@ export default function SessionScreen() {
 		if (meta) void openSession(meta);
 	}, [id, activeSession, sessions, openSession]);
 
-	useEffect(() => () => closeSession(), [closeSession]);
-
-	// Auto-scroll when messages change or stream updates
+	// Auto-scroll anchor logic:
+	// When messages change or agent streams, if user is anchored at bottom, stay at offset 0
 	useEffect(() => {
-		if (messages.length > 0 && isAtBottomRef.current) {
-			listRef.current?.scrollToOffset({ offset: 0, animated: running });
+		if (isAtBottomRef.current) {
+			listRef.current?.scrollToOffset({ offset: 0, animated: false });
 		}
 	}, [messages, toolRuns, running]);
 
-	const keyExtractor = useCallback((item: Message, index: number) => rowKey(item, index), []);
+	// Inverted list native anchor:
+	// When entering a session or when content sizes finalize, if user is at bottom, snap to 0
+	const onListContentSizeChange = useCallback(() => {
+		if (isAtBottomRef.current) {
+			listRef.current?.scrollToOffset({ offset: 0, animated: false });
+		}
+	}, []);
+
+	useEffect(() => () => closeSession(), [closeSession]);
+
+	const keyExtractor = useCallback((item: Message) => rowKey(item), []);
 
 	const containerAnimatedStyle = useAnimatedStyle(() => {
 		return {
@@ -89,6 +281,10 @@ export default function SessionScreen() {
 	const isInitialLoading = loadingSessionId === id && messages.length === 0;
 	const isBackgroundRefreshing = loadingSessionId === id && messages.length > 0;
 	const approval = approvals[0];
+
+	// Dual Protection: window slicing on client + cursor pagination on server
+	const visibleMessages = messages.slice(-windowSize);
+	const localHiddenCount = messages.length - visibleMessages.length;
 
 	return (
 		<Animated.View style={[{ flex: 1, backgroundColor: "#171717", paddingTop: insets.top }, containerAnimatedStyle]}>
@@ -122,27 +318,92 @@ export default function SessionScreen() {
 
 			<FlatList
 				ref={listRef}
-				data={[...messages].reverse()}
+				data={[...visibleMessages].reverse()}
 				inverted
-				renderItem={({ item, index }) => (
-					<MessageRow key={rowKey(item, index)} message={item} toolRuns={toolRuns} />
+				renderItem={({ item }) => (
+					<MessageRow
+						key={rowKey(item)}
+						message={item}
+						toolRuns={toolRuns}
+						onImagePress={(uri) => setViewingImageUri(uri)}
+					/>
 				)}
 				keyExtractor={keyExtractor}
 				style={{ flex: 1 }}
-				contentContainerStyle={{ padding: 14, paddingTop: 14, paddingBottom: 14 }}
+				contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 16 }}
 				maxToRenderPerBatch={10}
 				windowSize={7}
-				initialNumToRender={15}
+				initialNumToRender={20}
 				removeClippedSubviews={false}
 				keyboardDismissMode="on-drag"
 				keyboardShouldPersistTaps="always"
+				onContentSizeChange={onListContentSizeChange}
 				onScroll={(e) => {
-					// In inverted mode, contentOffset.y <= 60 means near bottom (latest messages)
-					isAtBottomRef.current = e.nativeEvent.contentOffset.y <= 60;
+					// In inverted mode: offset 0 is bottom (latest).
+					const offset = e.nativeEvent.contentOffset.y;
+					isAtBottomRef.current = offset <= 10;
+					if (offset > 160) {
+						scrollFabOpacity.value = withTiming(1, { duration: 150 });
+					} else {
+						scrollFabOpacity.value = withTiming(0, { duration: 150 });
+					}
 				}}
-				scrollEventThrottle={32}
+				onScrollBeginDrag={() => {
+					isAtBottomRef.current = false;
+				}}
+				scrollEventThrottle={16}
+				ListHeaderComponent={
+					running || error ? (
+						<View className="mb-2 pt-0.5">
+							{running && (
+								<View className="flex-row items-center gap-2">
+									<ActivityIndicator size="small" color="#6e6e6e" />
+									<Text className="text-[12px] text-ink-faint">Agent 正在工作…</Text>
+								</View>
+							)}
+							{error && (
+								<View className="mt-2 rounded-xl border border-danger/40 bg-danger/10 px-3.5 py-2.5">
+									<Text className="text-[12.5px] text-danger">{error}</Text>
+								</View>
+							)}
+						</View>
+					) : null
+				}
 				ListFooterComponent={
 					<View className="mb-3">
+						{/* If there are local loaded messages not yet expanded into the window */}
+						{localHiddenCount > 0 && (
+							<Pressable
+								onPress={() => setWindowSize((prev) => prev + 60)}
+								className="mb-3 flex-row items-center justify-center rounded-xl border border-line bg-card/60 py-2.5 active:bg-card-hover"
+							>
+								<Text className="text-[12px] font-medium text-ink-muted">
+									展开更早的 {Math.min(localHiddenCount, 60)} 条（共 {localHiddenCount} 条已拉取）
+								</Text>
+							</Pressable>
+						)}
+
+						{/* Cursor pagination: fetch earlier records from server */}
+						{hasEarlierMessages && localHiddenCount === 0 && (
+							<Pressable
+								onPress={() => {
+									setWindowSize((prev) => prev + 60);
+									void loadEarlierMessages();
+								}}
+								disabled={loadingEarlier}
+								className="mb-3 flex-row items-center justify-center gap-2 rounded-xl border border-line bg-card/60 py-2.5 active:bg-card-hover disabled:opacity-60"
+							>
+								{loadingEarlier ? (
+									<>
+										<ActivityIndicator size="small" color="#9a9a9a" />
+										<Text className="text-[12px] font-medium text-ink-muted">正在向服务器加载更早历史…</Text>
+									</>
+								) : (
+									<Text className="text-[12px] font-medium text-ink-muted">加载更早的 60 条记录</Text>
+								)}
+							</Pressable>
+						)}
+
 						<View className="flex-row items-center gap-2">
 							<Text className="flex-1 text-[11.5px] text-ink-faint" numberOfLines={1}>
 								{activeSession.cwd}
@@ -187,21 +448,6 @@ export default function SessionScreen() {
 						)}
 					</View>
 				}
-				ListHeaderComponent={
-					<>
-						{running && (
-							<View className="flex-row items-center gap-2 py-2">
-								<ActivityIndicator size="small" color="#6e6e6e" />
-								<Text className="text-[12px] text-ink-faint">Agent 正在工作…</Text>
-							</View>
-						)}
-						{error && (
-							<View className="mt-2 rounded-xl border border-danger/40 bg-danger/10 px-3.5 py-2.5">
-								<Text className="text-[12.5px] text-danger">{error}</Text>
-							</View>
-						)}
-					</>
-				}
 			/>
 
 			{approval && (
@@ -233,6 +479,61 @@ export default function SessionScreen() {
 				</View>
 			)}
 
+			{/* Attached Text/Code Cards Preview Bar */}
+			{attachedCards.length > 0 && (
+				<View className="border-t border-line-soft bg-sidebar px-3 pt-2 pb-1.5">
+					<ScrollView
+						horizontal
+						showsHorizontalScrollIndicator={false}
+						contentContainerStyle={{ gap: 8 }}
+						className="flex-row"
+					>
+						{attachedCards.map((card) => {
+							const lines = card.content.split("\n").length;
+							return (
+								<View
+									key={card.id}
+									className="flex-row items-center gap-2 rounded-xl border border-line bg-card px-3 py-2"
+								>
+									<View className="h-6 w-6 items-center justify-center rounded-lg bg-accent/15">
+										<Text className="text-[10px] font-bold text-accent">TXT</Text>
+									</View>
+									<View className="max-w-[130px]">
+										<Text className="truncate text-[12px] font-medium text-ink">{card.title}</Text>
+										<Text className="text-[10px] text-ink-faint">{lines} 行代码/日志</Text>
+									</View>
+									<Pressable
+										onPress={() => setAttachedCards((prev) => prev.filter((c) => c.id !== card.id))}
+										className="ml-1 h-5 w-5 items-center justify-center rounded-full bg-line-soft active:opacity-60"
+									>
+										<Text className="text-[10px] text-ink-muted">✕</Text>
+									</Pressable>
+								</View>
+							);
+						})}
+					</ScrollView>
+				</View>
+			)}
+
+			{/* Selected Images Preview Bar */}
+			{selectedImages.length > 0 && (
+				<View className="border-t border-line-soft bg-sidebar px-3 pt-2 pb-1">
+					<ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+						{selectedImages.map((img, idx) => (
+							<View key={idx} className="relative h-16 w-16 overflow-hidden rounded-lg border border-line">
+								<Image source={{ uri: img.uri }} className="h-full w-full" resizeMode="cover" />
+								<Pressable
+									onPress={() => setSelectedImages((prev) => prev.filter((_, i) => i !== idx))}
+									className="absolute top-1 right-1 h-5 w-5 items-center justify-center rounded-full bg-black/70"
+								>
+									<Text className="text-[10px] font-bold text-white">✕</Text>
+								</Pressable>
+							</View>
+						))}
+					</ScrollView>
+				</View>
+			)}
+
 			{/* Input Bar (Fixed, dynamically padded by Reanimated hardware keyboard offset) */}
 			<View
 				className="border-t border-line bg-sidebar px-3 pt-2.5"
@@ -242,14 +543,29 @@ export default function SessionScreen() {
 				}}
 			>
 				<View className="flex-row items-end gap-2">
+					<Pressable
+						onPress={handlePickImage}
+						className="h-11 w-11 items-center justify-center rounded-full border border-line bg-input active:bg-card-hover"
+					>
+						<View className="h-5 w-5 items-center justify-center">
+							{/* Camera top bump */}
+							<View className="h-[2px] w-[5px] rounded-t-[1px] bg-ink-muted self-start ml-0.5" />
+							{/* Camera body */}
+							<View className="h-[14px] w-[18px] items-center justify-center rounded-[3px] border border-ink-muted">
+								{/* Lens */}
+								<View className="h-[6px] w-[6px] rounded-full border border-ink-muted" />
+							</View>
+						</View>
+					</Pressable>
 					<TextInput
 						ref={textInputRef}
 						value={draft}
-						onChangeText={setDraft}
+						onChangeText={handleDraftChange}
 						placeholder="随心输入"
 						placeholderTextColor="#6e6e6e"
 						multiline
 						onSubmitEditing={handleSend}
+						style={inputHeight !== undefined ? { height: inputHeight } : undefined}
 						className="max-h-32 min-h-11 flex-1 rounded-2xl border border-line bg-input px-4 py-2.5 text-[14px] leading-5 text-ink"
 					/>
 					{running ? (
@@ -261,7 +577,7 @@ export default function SessionScreen() {
 						</Pressable>
 					) : (
 						<Pressable
-							disabled={!draft.trim()}
+							disabled={!draft.trim() && selectedImages.length === 0}
 							onPress={handleSend}
 							className="h-11 w-11 items-center justify-center rounded-full bg-elevated active:opacity-85 disabled:opacity-40"
 						>
@@ -270,36 +586,127 @@ export default function SessionScreen() {
 					)}
 				</View>
 			</View>
+
+			{/* Floating Scroll to Bottom Button */}
+			<Animated.View
+				style={[
+					{
+						position: "absolute",
+						right: 16,
+						bottom: (insets.bottom || 12) + 76,
+						zIndex: 30,
+					},
+					fabAnimatedStyle,
+				]}
+			>
+				<Pressable
+					onPress={() => {
+						isAtBottomRef.current = true;
+						scrollFabOpacity.value = withTiming(0, { duration: 150 });
+						listRef.current?.scrollToOffset({ offset: 0, animated: true });
+					}}
+					className="h-10 w-10 items-center justify-center rounded-full border border-line bg-[#202020] shadow-lg active:bg-card-hover"
+				>
+					<Text className="text-[15px] font-bold text-ink">↓</Text>
+				</Pressable>
+			</Animated.View>
+
+			{/* Fullscreen Image Preview Modal */}
+			<Modal
+				visible={!!viewingImageUri}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setViewingImageUri(null)}
+			>
+				<Pressable
+					onPress={() => setViewingImageUri(null)}
+					className="flex-1 items-center justify-center bg-black/90 p-4"
+				>
+					{viewingImageUri && (
+						<Image
+							source={{ uri: viewingImageUri }}
+							className="h-full w-full"
+							resizeMode="contain"
+						/>
+					)}
+					<Pressable
+						onPress={() => setViewingImageUri(null)}
+						className="absolute top-12 right-6 h-10 w-10 items-center justify-center rounded-full bg-white/20"
+					>
+						<Text className="text-[16px] font-bold text-white">✕</Text>
+					</Pressable>
+				</Pressable>
+			</Modal>
 		</Animated.View>
 	);
 }
 
-function rowKey(message: Message, index: number): string {
+function rowKey(message: Message): string {
 	if (message.role === "toolResult") return `tr-${message.toolCallId}`;
-	return `${message.role}-${message.timestamp}-${index}`;
+	if (message.role === "assistant") {
+		const firstCall = message.content.find((c) => c.type === "toolCall");
+		if (firstCall && firstCall.type === "toolCall") return `ast-call-${firstCall.id}`;
+	}
+	return `${message.role}-${message.timestamp}`;
+}
+
+function isSyntheticOrNudge(message: Message): boolean {
+	if (message.role === "user") {
+		if (message.synthetic) return true;
+		return message.content.some((c) => c.type === "text" && c.text.startsWith("（自动继续）"));
+	}
+	return false;
 }
 
 const MessageRow = React.memo(function MessageRow({
 	message,
 	toolRuns,
+	onImagePress,
 }: {
 	message: Message;
 	toolRuns: Record<string, ToolRun>;
+	onImagePress?: (uri: string) => void;
 }) {
 	if (message.role === "toolResult") return null;
 
 	if (message.role === "user") {
-		if (message.synthetic) return null;
+		if (isSyntheticOrNudge(message)) return null;
+		const textContents = message.content.filter((c) => c.type === "text");
+		const imageContents = message.content.filter((c) => c.type === "image") as ImageContent[];
+		const rawText = textContents.map((c) => (c.type === "text" ? c.text : "")).join("\n");
+		const parsedParts = parseUserMessageContent(rawText);
+
 		return (
 			<View className="mb-3 items-end">
 				{message.origin === "side-chat" && (
 					<Text className="mr-1 mb-1 text-[11px] text-ink-faint">来自侧边聊天</Text>
 				)}
-				<View className="max-w-[85%] rounded-2xl rounded-br-md bg-card px-3.5 py-2.5">
-					<Text className="text-[14px] leading-6 text-ink">
-						{message.content.map((c) => (c.type === "text" ? c.text : "[图片]")).join("\n")}
-					</Text>
-				</View>
+				{imageContents.length > 0 && (
+					<View className="mb-1.5 max-w-[85%] flex-row flex-wrap justify-end gap-1.5">
+						{imageContents.map((img, idx) => {
+							const uri = `data:${img.mimeType};base64,${img.data}`;
+							return (
+								<Pressable
+									key={idx}
+									onPress={() => onImagePress?.(uri)}
+									className="h-32 w-32 overflow-hidden rounded-xl border border-line bg-card active:opacity-80"
+								>
+									<Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
+								</Pressable>
+							);
+						})}
+					</View>
+				)}
+				{parsedParts.map((part, idx) => {
+					if (part.type === "attachment") {
+						return <MobileCollapsibleCodeCard key={idx} title={part.title || "file.txt"} content={part.content} />;
+					}
+					return (
+						<View key={idx} className="mb-1.5 max-w-[85%] rounded-2xl rounded-br-md bg-card px-3.5 py-2.5">
+							<Text className="text-[14px] leading-6 text-ink">{part.content}</Text>
+						</View>
+					);
+				})}
 			</View>
 		);
 	}
@@ -359,7 +766,7 @@ function ToolCard({ run, name }: { run: ToolRun | undefined; name: string }) {
 	return (
 		<Pressable
 			onPress={() => setOpen((v) => !v)}
-			className="mb-2 rounded-xl border border-line-soft bg-card/40 px-3 py-2.5"
+			className="mb-1.5 rounded-xl border border-line-soft bg-card/40 px-3 py-2.5"
 		>
 			<View className="flex-row items-center gap-2">
 				<Text className="flex-1 text-[12.5px] text-ink-muted" numberOfLines={1}>

@@ -1,6 +1,16 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { spawn as spawnPty } from "node-pty";
+let spawnPty: typeof import("node-pty").spawn = ((() => {
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		return require("node-pty").spawn;
+	} catch (e) {
+		console.warn("node-pty native addon is not available; terminal features will be disabled:", e);
+		return () => {
+			throw new Error("Embedded terminal is unavailable on this platform/build.", { cause: e });
+		};
+	}
+})());
 import { app, BrowserWindow, protocol } from "electron";
 import {
 	createContext,

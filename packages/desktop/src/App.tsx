@@ -127,13 +127,30 @@ export function App() {
 function Shell() {
 	const view = useApp((s) => s.view);
 	const { dismissNav } = useLayout();
+	const inSettings = view === "settings";
 
 	// Settings and the workspace each own a navigation pane; a drawer opened over one has no
 	// meaning over the other, so leaving the view puts it away.
 	useEffect(() => dismissNav(), [view, dismissNav]);
 
-	if (view === "settings") return <SettingsShell />;
-	return <ChatShell />;
+	/*
+	 * Keep the workspace mounted behind settings.
+	 *
+	 * Settings used to replace ChatShell outright. That tore down the dock, the active panel, and
+	 * the conversation scroll position: every trip to settings reset the view to the bottom of the
+	 * transcript, dropped the editor drafts in flight, and cost a full remount to come back.
+	 *
+	 * Keeping it alive solves all of that. When settings is open we hide the workspace visually
+	 * and disable pointer events; when settings closes the shell is exactly where it was left.
+	 */
+	return (
+		<div className="relative h-full overflow-hidden">
+			<div className={inSettings ? "pointer-events-none invisible absolute inset-0" : "h-full"}>
+				<ChatShell hidden={inSettings} />
+			</div>
+			{inSettings && <SettingsShell />}
+		</div>
+	);
 }
 
 /**
@@ -176,7 +193,7 @@ function useMainPane() {
 	};
 }
 
-function ChatShell() {
+function ChatShell({ hidden = false }: { hidden?: boolean }) {
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const workspace = useApp((s) => s.workspace);
 	const { compact, navOpen, toggleNav, dismissNav } = useLayout();
@@ -189,7 +206,7 @@ function ChatShell() {
 		void attach(activeSessionId);
 	}, [activeSessionId, attach]);
 
-	useShortcuts({ compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav });
+	useShortcuts({ compact, navOpen, activeSessionId, workspace, enabled: !hidden, toggleNav, dismissNav });
 
 	return (
 		<div className="ly-shell relative flex h-full overflow-hidden">

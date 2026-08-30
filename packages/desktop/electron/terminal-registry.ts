@@ -220,7 +220,11 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 	 */
 	const prewarm = (cwd: string, cols: number, rows: number): void => {
 		if (terminals.size > 0) return;
-		open(cwd, cols, rows, false);
+		try {
+			open(cwd, cols, rows, false);
+		} catch {
+			// Prewarm failure (e.g. node-pty native module missing on Windows dev) should never crash the app
+		}
 	};
 
 	/**

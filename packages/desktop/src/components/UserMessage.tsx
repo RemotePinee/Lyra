@@ -2,12 +2,135 @@ import type {
   UserContent,
   UserMessage as UserMessageType,
 } from "@lyra/core";
-import { MessageSquarePlus, Pencil } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Check, FileText, MessageSquarePlus, Pencil } from "lucide-react";
 import { openFromEvent } from "./image/viewer-store.ts";
 import { useEffect, useRef, useState } from "react";
 import { MessageActions } from "./MessageActions.tsx";
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
+import { extractCodeOrErrorBlocks } from "./code-detection.ts";
 import { useApp } from "../store.ts";
+
+/**
+ * Renders an extracted code snippet or stack trace block as a clean collapsible card.
+ */
+function CollapsibleCodeCard({ name, content }: { name: string; content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const lines = content.split("\n");
+  const lineCount = lines.length;
+  const sizeKb = (new TextEncoder().encode(content).length / 1024).toFixed(1);
+
+  const previewText = lines.slice(0, 5).join("\n");
+
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <div className="my-1.5 overflow-hidden rounded-xl border border-line-soft bg-input/70 transition-all">
+      {/* File Header Bar */}
+      <div className="flex items-center justify-between border-b border-line/60 bg-shell/50 px-3 py-2 text-caption select-none">
+        <div className="flex items-center gap-1.5 text-ink-muted">
+          <FileText size={13} className="text-ink-faint" />
+          <span className="font-mono text-[12px] font-medium text-ink">{name}</span>
+          <span className="text-[11px] text-ink-faint">({lineCount} 行 · {sizeKb} KB)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={copy}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-caption text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+            title="复制全文"
+          >
+            {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+            <span className="text-[11px]">{copied ? "已复制" : "复制"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-caption text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+          >
+            <span className="text-[11px]">{expanded ? "收起" : "展开"}</span>
+            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Snippet Content */}
+      <div className="relative font-mono text-[12.5px] leading-5">
+        <pre className={`overflow-x-auto p-3 text-ink-muted whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text ${expanded ? "max-h-[420px] overflow-y-auto" : "max-h-[110px] overflow-hidden pb-7"}`}>
+          {expanded ? content : previewText}
+        </pre>
+        {!expanded && lineCount > 5 && (
+          <div
+            onClick={() => setExpanded(true)}
+            className="absolute inset-x-0 bottom-0 flex h-9 cursor-pointer items-center justify-center bg-gradient-to-t from-shell via-shell/90 to-transparent text-[11px] font-medium text-ink-muted hover:text-ink transition-colors"
+          >
+            <span>点击展开余下 {lineCount - 5} 行...</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Parses user text: if attached files or raw error blocks are present,
+ * renders natural prompts and code/error attachments separately.
+ */
+function SmartUserContent({ text }: { text: string }) {
+  // 1. If text has explicit attached files format `### 附件文件: filename\n\`\`\`\n...`
+  const attachedFileRegex = /### 附件文件:\s*([^\n]+)\n```(?:\w+)?\n([\s\S]*?)\n```/g;
+  const matches = [...text.matchAll(attachedFileRegex)];
+
+  if (matches.length > 0) {
+    const nonAttachmentPrompt = text.replace(attachedFileRegex, "").trim();
+    return (
+      <div className="space-y-1.5">
+        {matches.map((m, idx) => (
+          <CollapsibleCodeCard key={idx} name={m[1].trim()} content={m[2]} />
+        ))}
+        {nonAttachmentPrompt && (
+          <p className="text-body leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-ink">
+            {nonAttachmentPrompt}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // 2. If user pasted a code/error block directly without explicit attachment header
+  const match = extractCodeOrErrorBlocks(text);
+  if (match.hasExtracted && match.extractedBlock) {
+    return (
+      <div className="space-y-1.5">
+        <CollapsibleCodeCard
+          name={match.extractedBlock.name}
+          content={match.extractedBlock.content}
+        />
+        {match.mainText && (
+          <p className="text-body leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-ink">
+            {match.mainText}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // 3. Plain normal user prose
+  return (
+    <p className="text-body leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-ink">
+      {text}
+    </p>
+  );
+}
 
 /**
  * A message you sent, with the two things you want from one afterwards: to copy it, and to
@@ -138,12 +261,8 @@ export function UserMessage({
         </span>
       )}
 
-      <div className="max-w-[75%] rounded-[16px] rounded-br-[6px] bg-card px-4 py-2.5">
-        {text && (
-          <p className="text-body leading-relaxed whitespace-pre-wrap text-ink">
-            {text}
-          </p>
-        )}
+      <div className="max-w-[75%] overflow-hidden rounded-[16px] rounded-br-[6px] bg-card px-4 py-2.5">
+        {text && <SmartUserContent text={text} />}
         {/*
          * Thumbnails in a row, not a stack of full-size pictures.
          *

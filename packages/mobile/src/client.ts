@@ -108,8 +108,18 @@ export class SyncClient {
 		return this.request("/api/settings");
 	}
 
-	records(projectId: string, sessionId: string, since = 0): Promise<{ records: SessionRecord[] }> {
-		return this.request(`/api/sessions/${projectId}/${sessionId}?since=${since}`);
+	records(
+		projectId: string,
+		sessionId: string,
+		options?: { since?: number; before?: number; limit?: number; tail?: number },
+	): Promise<{ records: SessionRecord[]; total?: number; hasEarlier?: boolean }> {
+		const params = new URLSearchParams();
+		if (typeof options?.since === "number") params.set("since", String(options.since));
+		if (typeof options?.before === "number") params.set("before", String(options.before));
+		if (typeof options?.limit === "number") params.set("limit", String(options.limit));
+		if (typeof options?.tail === "number") params.set("tail", String(options.tail));
+		const qs = params.toString();
+		return this.request(`/api/sessions/${projectId}/${sessionId}${qs ? `?${qs}` : ""}`);
 	}
 
 	status(projectId: string, sessionId: string): Promise<{

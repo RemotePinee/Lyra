@@ -55,6 +55,9 @@ interface MobileState {
 	/** Highest record seq applied, so a reconnect can resume instead of re-reading everything. */
 	seq: number;
 	loadingSessionId: string | null;
+	loadingEarlier: boolean;
+	hasEarlierMessages: boolean;
+	minSeq: number;
 	cache: Record<string, CachedSessionData>;
 
 	hydrate(): Promise<void>;
@@ -62,8 +65,9 @@ interface MobileState {
 	unpair(): Promise<void>;
 	refreshSessions(): Promise<void>;
 	openSession(meta: SessionMeta): Promise<void>;
+	loadEarlierMessages(): Promise<void>;
 	closeSession(): void;
-	send(text: string): Promise<void>;
+	send(text: string, images?: { data: string; mimeType: string }[]): Promise<void>;
 	abort(): Promise<void>;
 	approve(id: string, decision: "once" | "always" | "reject"): Promise<void>;
 	createSession(cwd: string): Promise<SessionMeta | null>;
@@ -86,6 +90,9 @@ export const useMobile = create<MobileState>((set, get) => ({
 	running: false,
 	seq: 0,
 	loadingSessionId: null,
+	loadingEarlier: false,
+	hasEarlierMessages: false,
+	minSeq: 0,
 	cache: {},
 
 	async hydrate() {
@@ -153,78 +160,48 @@ export const useMobile = create<MobileState>((set, get) => ({
 		const client = get().client;
 		if (!client) return;
 
-		const cached = get().cache[meta.id];
-		if (cached) {
-			set({
-				activeSession: meta,
-				messages: cached.messages,
-				toolRuns: cached.toolRuns,
-				seq: cached.seq,
-				loadingSessionId: null, // Cache exists: show immediately without displaying "Syncing..." banner
-				error: null,
-			});
-		} else {
-			set({
-				activeSession: meta,
-				messages: [],
-				toolRuns: {},
-				approvals: [],
-				running: false,
-				seq: 0,
-				loadingSessionId: meta.id, // Cold load: display initial loading spinner
-				error: null,
-			});
-		}
+		// Reset state for the opened session and show loading
+		set({
+			activeSession: meta,
+			messages: [],
+			toolRuns: {},
+			approvals: [],
+			running: false,
+			seq: 0,
+			minSeq: 0,
+			hasEarlierMessages: false,
+			loadingEarlier: false,
+			loadingSessionId: meta.id,
+			error: null,
+		});
 
 		try {
-			const sinceSeq = cached?.seq ?? 0;
-			const [{ records }, status] = await Promise.all([
-				client.records(meta.projectId, meta.id, sinceSeq > 0 ? sinceSeq : undefined),
+			// Fetch the latest 60 records for lightning-fast initial load
+			const [res, status] = await Promise.all([
+				client.records(meta.projectId, meta.id, { tail: 60 }),
 				client.status(meta.projectId, meta.id).catch(() => null),
 			]);
 
 			let entries: { seq: number; message: Message }[] = [];
 			let seq = 0;
+			let minSeq = Infinity;
 
-			if (sinceSeq > 0 && cached) {
-				entries = cached.messages.map((m, i) => ({ seq: i + 1, message: m }));
-				seq = cached.seq;
-				for (const record of records) {
-					seq = Math.max(seq, record.seq);
-					if (record.type === "message") {
-						if (!isDuplicateUserEcho(entries.map((e) => e.message), record.message)) {
-							entries.push({ seq: record.seq, message: record.message });
-						}
-					} else if (record.type === "truncate") {
-						entries = entries.filter((e) => e.seq <= record.afterSeq);
-					}
-				}
-			} else {
-				for (const record of records) {
-					seq = Math.max(seq, record.seq);
-					if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
-					else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
-				}
+			for (const record of res.records) {
+				seq = Math.max(seq, record.seq);
+				minSeq = Math.min(minSeq, record.seq);
+				if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
+				else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
 			}
 
 			const messages = entries.map((e) => e.message);
 			const toolRuns = rebuildToolRuns(messages);
 
-			const updatedCache = trimCache({
-				...get().cache,
-				[meta.id]: {
-					messages,
-					toolRuns,
-					seq,
-					updatedAt: Date.now(),
-				},
-			});
-
 			set({
 				messages,
 				seq,
+				minSeq: minSeq === Infinity ? 0 : minSeq,
+				hasEarlierMessages: !!res.hasEarlier,
 				toolRuns,
-				cache: updatedCache,
 				loadingSessionId: null,
 				running: status?.running ?? false,
 				approvals:
@@ -237,6 +214,39 @@ export const useMobile = create<MobileState>((set, get) => ({
 			});
 		} catch (error) {
 			set({ error: error instanceof Error ? error.message : String(error), loadingSessionId: null });
+		}
+	},
+
+	async loadEarlierMessages() {
+		const { client, activeSession, minSeq, loadingEarlier, hasEarlierMessages, messages: currentMessages } = get();
+		if (!client || !activeSession || loadingEarlier || !hasEarlierMessages || minSeq <= 1) return;
+
+		set({ loadingEarlier: true });
+		try {
+			// Fetch 60 records strictly before the current earliest sequence
+			const res = await client.records(activeSession.projectId, activeSession.id, { before: minSeq, tail: 60 });
+			let entries: { seq: number; message: Message }[] = [];
+			let nextMinSeq = minSeq;
+
+			for (const record of res.records) {
+				nextMinSeq = Math.min(nextMinSeq, record.seq);
+				if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
+				else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
+			}
+
+			const earlierMessages = entries.map((e) => e.message);
+			const mergedMessages = [...earlierMessages, ...currentMessages];
+			const toolRuns = rebuildToolRuns(mergedMessages);
+
+			set({
+				messages: mergedMessages,
+				minSeq: nextMinSeq,
+				hasEarlierMessages: res.records.length > 0 && nextMinSeq > 1,
+				toolRuns,
+				loadingEarlier: false,
+			});
+		} catch (error) {
+			set({ error: error instanceof Error ? error.message : String(error), loadingEarlier: false });
 		}
 	},
 
@@ -260,10 +270,16 @@ export const useMobile = create<MobileState>((set, get) => ({
 		}
 	},
 
-	async send(text) {
+	async send(text, images = []) {
 		const { client, activeSession } = get();
-		if (!client || !activeSession || !text.trim()) return;
-		const content: UserContent[] = [{ type: "text", text: text.trim() }];
+		const trimmed = text.trim();
+		if (!client || !activeSession || (!trimmed && images.length === 0)) return;
+
+		const content: UserContent[] = [
+			...images.map((img): UserContent => ({ type: "image", data: img.data, mimeType: img.mimeType })),
+			...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+		];
+
 		// Show it immediately (optimistic UI update)
 		set({ messages: [...get().messages, { role: "user", content, timestamp: Date.now() }], running: true });
 		// Send over network in background so UI doesn't block
@@ -404,7 +420,12 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			break;
 
 		case "message_start": {
-			if (isDuplicateUserEcho(state.messages, event.message)) break;
+			if (isDuplicateUserEcho(state.messages, event.message)) {
+				const messages = [...state.messages];
+				messages[messages.length - 1] = event.message;
+				set({ messages });
+				break;
+			}
 			set({ messages: [...state.messages, event.message] });
 			break;
 		}
@@ -493,14 +514,13 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 /** The desktop echoes the prompt we optimistically rendered; match on text to avoid a double bubble. */
 function isDuplicateUserEcho(messages: Message[], incoming: Message): boolean {
 	if (incoming.role !== "user") return false;
-	const incomingText = incoming.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-	for (let i = messages.length - 1; i >= Math.max(0, messages.length - 3); i--) {
-		const candidate = messages[i];
-		if (candidate.role !== "user") continue;
-		const text = candidate.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-		if (text === incomingText) return true;
-	}
-	return false;
+	const incomingText = incoming.content.map((c) => (c.type === "text" ? c.text.trim() : "")).join("");
+	if (!incomingText) return false;
+	// Only inspect the very latest message if it is an unsynced optimistic user prompt
+	const last = messages[messages.length - 1];
+	if (!last || last.role !== "user") return false;
+	const lastText = last.content.map((c) => (c.type === "text" ? c.text.trim() : "")).join("");
+	return lastText === incomingText;
 }
 
 function findSlot(messages: Message[], incoming: Message): number {

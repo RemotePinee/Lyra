@@ -56,7 +56,7 @@ export default function SessionListScreen() {
 	return (
 		<ScrollView
 			className="flex-1 bg-shell"
-			contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+			contentContainerStyle={{ padding: 16, paddingTop: 6, paddingBottom: 40 }}
 			refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9a9a9a" />}
 		>
 			<View className="mb-4 flex-row items-center gap-2">

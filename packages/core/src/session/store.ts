@@ -172,12 +172,18 @@ export class SessionStore implements SessionStorage {
 		return next;
 	}
 
-	/** Stream records, optionally only those newer than `sinceSeq`. */
-	async *read(projectId: string, sessionId: string, sinceSeq = 0): AsyncGenerator<SessionRecord> {
+	/** Stream records, optionally filtered by `sinceSeq`, `beforeSeq`, and/or `limit`. */
+	async *read(projectId: string, sessionId: string, options: number | { sinceSeq?: number; beforeSeq?: number; limit?: number } = 0): AsyncGenerator<SessionRecord> {
+		const opts = typeof options === "number" ? { sinceSeq: options } : options;
+		const sinceSeq = opts.sinceSeq ?? 0;
+		const beforeSeq = opts.beforeSeq;
+		const limit = opts.limit;
+
 		const file = this.fileFor(projectId, sessionId);
 		if (!(await stat(file).catch(() => null))) return;
 
 		const rl = createInterface({ input: createReadStream(file, "utf8"), crlfDelay: Infinity });
+		let yielded = 0;
 		try {
 			for await (const line of rl) {
 				if (!line.trim()) continue;
@@ -188,7 +194,12 @@ export class SessionStore implements SessionStorage {
 					// A crash mid-append can leave a partial final line; skip it rather than failing the load.
 					continue;
 				}
-				if (record.seq > sinceSeq) yield record;
+				if (record.seq <= sinceSeq) continue;
+				if (typeof beforeSeq === "number" && record.seq >= beforeSeq) break;
+
+				yield record;
+				yielded++;
+				if (typeof limit === "number" && limit > 0 && yielded >= limit) break;
 			}
 		} finally {
 			rl.close();

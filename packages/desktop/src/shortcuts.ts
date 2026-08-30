@@ -21,14 +21,17 @@ export interface ShortcutDeps {
 	navOpen: boolean;
 	activeSessionId: string | null;
 	workspace: unknown;
+	enabled?: boolean;
 	toggleNav(): void;
 	dismissNav(): void;
 }
 
 export function useShortcuts(deps: ShortcutDeps): void {
-	const { compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav } = deps;
+	const { compact, navOpen, activeSessionId, workspace, enabled = true, toggleNav, dismissNav } = deps;
 
 	useEffect(() => {
+		if (!enabled) return;
+
 		/** Open the pane, or put it away if it is already the one in front. */
 		const panel = (kind: PanelKind, allowed: unknown) => {
 			if (allowed) useDock.getState().toggle(kind);
@@ -101,5 +104,5 @@ export function useShortcuts(deps: ShortcutDeps): void {
 
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [compact, navOpen, toggleNav, dismissNav, activeSessionId, workspace]);
+	}, [compact, navOpen, toggleNav, dismissNav, activeSessionId, workspace, enabled]);
 }

@@ -6,6 +6,7 @@ import { openFromEvent } from "./image/viewer-store.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
 import { CommandMenu } from "./CommandMenu.tsx";
+import { detectCodeOrError } from "./code-detection.ts";
 import type { SkillEntry } from "../../electron/ipc-types.ts";
 import { ComposerSend, ComposerShell } from "./ComposerShell.tsx";
 import { SubAgentBar } from "./subagents/SubAgentBar.tsx";
@@ -430,8 +431,26 @@ export function Composer() {
 		];
 		setText("");
 		setAttachments([]);
+		textRef.current = "";
+		attachmentsRef.current = [];
 		setDraft(draftKey, null);
 		await send(content);
+	}
+
+	function handlePastedText(pastedText: string): boolean {
+		const match = detectCodeOrError(pastedText);
+		if (match.isMatch) {
+			const newAttachment: Attachment = {
+				id: `pasted-${Date.now()}-${Math.random()}`,
+				name: match.suggestedName,
+				mimeType: "text/plain",
+				text: pastedText,
+				isText: true,
+			};
+			setAttachments((prev) => [...prev, newAttachment]);
+			return true;
+		}
+		return false;
 	}
 
 	async function addFiles(files: FileList | null) {
@@ -546,6 +565,7 @@ export function Composer() {
 						setDismissed(false);
 					}}
 					onSubmit={() => void submit()}
+					onPastedText={handlePastedText}
 					onKeyDown={(event) => {
 						if (matches.length === 0) return;
 						/*

@@ -187,10 +187,32 @@ export class SyncServer {
 				const [, , projectId, sessionId, action] = segments;
 
 				if (req.method === "GET" && !action) {
-					const since = Number(url.searchParams.get("since") ?? "0");
-					const records = [];
-					for await (const record of this.deps.store.read(projectId, sessionId, since)) records.push(record);
-					send(200, { records });
+					const sinceParam = url.searchParams.get("since");
+					const beforeParam = url.searchParams.get("before");
+					const limitParam = url.searchParams.get("limit");
+					const tailParam = url.searchParams.get("tail");
+
+					const sinceSeq = sinceParam ? Number(sinceParam) : undefined;
+					const beforeSeq = beforeParam ? Number(beforeParam) : undefined;
+					const limit = limitParam ? Number(limitParam) : undefined;
+					const tail = tailParam ? Number(tailParam) : undefined;
+
+					const allRecords = [];
+					for await (const record of this.deps.store.read(projectId, sessionId, {
+						sinceSeq,
+						beforeSeq,
+						limit: tail ? undefined : limit,
+					})) {
+						allRecords.push(record);
+					}
+
+					// If tail is requested, return the latest N records from the filtered set
+					const records = tail && tail > 0 ? allRecords.slice(-tail) : allRecords;
+					send(200, {
+						records,
+						total: allRecords.length,
+						hasEarlier: tail ? allRecords.length > records.length : typeof beforeSeq === "number",
+					});
 					return;
 				}
 

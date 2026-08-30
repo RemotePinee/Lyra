@@ -20,6 +20,8 @@
       "buildNumber": "2",
       "infoPlist": {
         "UIUserInterfaceStyle": "Dark",
+        "NSCameraUsageDescription": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。",
+        "NSPhotoLibraryUsageDescription": "允许 Lyra 访问相册以选择要发送给 Agent 的图片。",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
@@ -66,7 +68,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "允许 Lyra 访问相机以扫描配对二维码。"
+          "cameraPermission": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许 Lyra 访问相册以选择要发送给 Agent 的图片。",
+          "cameraPermission": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。"
         }
       ],
       [
