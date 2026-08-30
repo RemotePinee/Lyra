@@ -12,6 +12,7 @@ export interface Connection {
 	host: string;
 	port: number;
 	token: string;
+	secure?: boolean;
 }
 
 export class SyncClient {
@@ -26,8 +27,15 @@ export class SyncClient {
 		this.connection = connection;
 	}
 
+	private get isHttps(): boolean {
+		if (typeof this.connection.secure === "boolean") return this.connection.secure;
+		return /^https:\/\//i.test(this.connection.host);
+	}
+
 	get baseUrl(): string {
-		return `http://${this.connection.host}:${this.connection.port}`;
+		const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+		const proto = this.isHttps ? "https" : "http";
+		return `${proto}://${cleanHost}:${this.connection.port}`;
 	}
 
 	// -------------------------------------------------------------------------
@@ -50,17 +58,37 @@ export class SyncClient {
 		return (await response.json()) as T;
 	}
 
-	static async ping(host: string, port: number): Promise<boolean> {
-		try {
-			const response = await fetch(`http://${host}:${port}/api/ping`, {
-				signal: AbortSignal.timeout(5000),
-			});
-			if (!response.ok) return false;
-			const body = (await response.json()) as { app?: string };
-			return body.app === "lyra";
-		} catch {
-			return false;
+	static async ping(host: string, port: number): Promise<{ ok: boolean; reason?: string; secure?: boolean }> {
+		const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+		const isExplicitHttps = /^https:\/\//i.test(host);
+
+		// Helper to probe a specific protocol
+		const probe = async (proto: "https" | "http") => {
+			try {
+				const response = await fetch(`${proto}://${cleanHost}:${port}/api/ping`, {
+					signal: AbortSignal.timeout(4000),
+				});
+				if (!response.ok) return { ok: false, reason: `HTTP ${response.status}` };
+				const body = (await response.json()) as { app?: string };
+				return { ok: body.app === "lyra", reason: body.app !== "lyra" ? "不是 Lyra 服务" : undefined, secure: proto === "https" };
+			} catch (e) {
+				return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+			}
+		};
+
+		// If user explicitly provided https or domain name, probe https first
+		if (isExplicitHttps) {
+			return probe("https");
 		}
+
+		// Try http first, if failed then auto probe https
+		const httpRes = await probe("http");
+		if (httpRes.ok) return httpRes;
+
+		const httpsRes = await probe("https");
+		if (httpsRes.ok) return httpsRes;
+
+		return httpRes.reason ? httpRes : httpsRes;
 	}
 
 	async verify(): Promise<boolean> {
@@ -122,6 +150,13 @@ export class SyncClient {
 		});
 	}
 
+	rename(projectId: string, sessionId: string, title: string): Promise<{ ok: boolean; meta: SessionMeta }> {
+		return this.request(`/api/sessions/${projectId}/${sessionId}/rename`, {
+			method: "POST",
+			body: JSON.stringify({ title }),
+		});
+	}
+
 	createSession(cwd: string, modelId?: string): Promise<{ meta: SessionMeta }> {
 		return this.request("/api/sessions", { method: "POST", body: JSON.stringify({ cwd, modelId }) });
 	}
@@ -145,8 +180,10 @@ export class SyncClient {
 		this.closedByUser = false;
 		this.emitState("connecting");
 
+		const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+		const wsProto = this.isHttps ? "wss" : "ws";
 		const socket = new WebSocket(
-			`ws://${this.connection.host}:${this.connection.port}/ws?token=${encodeURIComponent(this.connection.token)}`,
+			`${wsProto}://${cleanHost}:${this.connection.port}/ws?token=${encodeURIComponent(this.connection.token)}`,
 		);
 		this.socket = socket;
 
