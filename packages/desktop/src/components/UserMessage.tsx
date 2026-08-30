@@ -47,7 +47,7 @@ function CollapsibleCodeCard({ name, content }: { name: string; content: string 
             type="button"
             onClick={copy}
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-caption text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
-            title="复制全文"
+            data-ly-tip="复制全文"
           >
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
             <span className="text-[11px]">{copied ? "已复制" : "复制"}</span>
