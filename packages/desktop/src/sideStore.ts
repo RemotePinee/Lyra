@@ -51,6 +51,8 @@ interface SideState {
 	/** Painted before the round trip, replaced by the stored copy when it arrives. */
 	pending: Message | null;
 	tasks: QueuedTask[];
+	/** Client-side cache of in-memory side chats per session for seamless switching without flicker. */
+	sessionCache: Record<string, { messages: Message[]; toolRuns: Record<string, ToolRun>; running: boolean; tasks: QueuedTask[] }>;
 
 	/**
 	 * A command the user asked to run, waiting for the terminal to pick it up.
@@ -94,6 +96,7 @@ const EMPTY = {
 export const useSide = create<SideState>((set, get) => ({
 	browserTarget: null,
 	sessionId: null,
+	sessionCache: {},
 	...EMPTY,
 
 	openPreview: (preview) => set({ browserTarget: { kind: "preview", preview } }),
@@ -108,8 +111,34 @@ export const useSide = create<SideState>((set, get) => ({
 	commandTaken: () => set({ pendingCommand: null }),
 
 	async attach(sessionId) {
-		if (get().sessionId === sessionId) return;
-		set({ sessionId, ...EMPTY });
+		const currentSessionId = get().sessionId;
+		if (currentSessionId === sessionId) return;
+
+		// Save current session's state into sessionCache before switching
+		if (currentSessionId) {
+			set((s) => ({
+				sessionCache: {
+					...s.sessionCache,
+					[currentSessionId]: {
+						messages: s.messages,
+						toolRuns: s.toolRuns,
+						running: s.running,
+						tasks: s.tasks,
+					},
+				},
+			}));
+		}
+
+		// Restore cached data immediately if available to prevent flicker
+		const cached = sessionId ? get().sessionCache[sessionId] : null;
+		set({
+			sessionId,
+			messages: cached?.messages ?? [],
+			toolRuns: cached?.toolRuns ?? {},
+			running: cached?.running ?? false,
+			pending: null,
+			tasks: cached?.tasks ?? [],
+		});
 		if (!sessionId) return;
 
 		const [state, tasks] = await Promise.all([
@@ -118,12 +147,24 @@ export const useSide = create<SideState>((set, get) => ({
 		]);
 		// A second switch while this was in flight wins.
 		if (get().sessionId !== sessionId) return;
-		set({
-			messages: state?.messages ?? [],
-			running: state?.running ?? false,
-			toolRuns: state ? rebuildToolRuns(state.messages) : {},
+		const nextMessages = state?.messages ?? [];
+		const nextRunning = state?.running ?? false;
+		const nextToolRuns = state ? rebuildToolRuns(state.messages) : {};
+		set((s) => ({
+			messages: nextMessages,
+			running: nextRunning,
+			toolRuns: nextToolRuns,
 			tasks,
-		});
+			sessionCache: {
+				...s.sessionCache,
+				[sessionId]: {
+					messages: nextMessages,
+					toolRuns: nextToolRuns,
+					running: nextRunning,
+					tasks,
+				},
+			},
+		}));
 	},
 
 	async ask(content) {

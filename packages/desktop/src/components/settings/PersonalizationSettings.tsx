@@ -212,7 +212,7 @@ export function PersonalizationSettings() {
 									if (e.key === "Enter" && newMemory.trim()) void handleAddMemory();
 								}}
 								placeholder="手动添加一条用户记忆（例如：习惯使用 bun 进行包管理，项目打包目标为 ES2024）..."
-								className="h-[38px] flex-1 rounded-[10px] border border-line bg-input px-3.5 text-label text-ink placeholder:text-ink-faint focus:border-ink-faint"
+								className="h-[32px] flex-1 rounded-lg border border-line bg-input px-3 text-label text-ink placeholder:text-ink-faint focus:border-ink-faint"
 							/>
 							<PrimaryButton disabled={!newMemory.trim()} onClick={handleAddMemory}>
 								<Plus size={14} strokeWidth={2} />

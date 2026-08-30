@@ -118,7 +118,7 @@ export class SideChat {
 
 		this.controller = new AbortController();
 		try {
-			await runAgent(
+			const result = await runAgent(
 				{
 					sessionId: `${this.mainSessionId}:side`,
 					cwd: this.main.cwd,
@@ -134,6 +134,12 @@ export class SideChat {
 				},
 				(event) => this.handleEvent(event),
 			);
+			// Save the messages produced during this run (assistant answers, tool results, etc.)
+			// into the SideChat's in-memory messages array so they are persisted and returned
+			// across state queries and session switches.
+			if (result.messages && result.messages.length > 0) {
+				this.messages.push(...result.messages);
+			}
 		} finally {
 			this.controller = null;
 		}
@@ -214,8 +220,6 @@ export class SideChat {
 	}
 
 	private async handleEvent(event: AgentEvent): Promise<void> {
-		// The side chat's history lives in memory only, so there is no commit step — the
-		// message list the loop is mutating *is* the transcript.
 		await this.emit(event);
 	}
 
