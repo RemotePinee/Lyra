@@ -346,48 +346,62 @@ export async function getWorkflowRunStatus(cwd: string, runId: number): Promise<
 			"--json=databaseId,name,displayTitle,event,status,conclusion,url,jobs,createdAt,headBranch,headSha",
 		]);
 		const data = JSON.parse(out);
+		const jobs = Array.isArray(data.jobs)
+			? data.jobs.map((j: {
+					databaseId?: number;
+					id?: number;
+					name: string;
+					status: string;
+					conclusion: string | null;
+					url?: string;
+					startedAt?: string;
+					completedAt?: string;
+					steps?: WorkflowJobStep[];
+				}) => ({
+					id: j.databaseId ?? j.id ?? 0,
+					name: j.name,
+					status: j.status,
+					conclusion: j.conclusion,
+					url: j.url,
+					startedAt: j.startedAt,
+					completedAt: j.completedAt,
+					steps: Array.isArray(j.steps)
+						? j.steps.map((s) => ({
+								name: s.name,
+								status: s.status,
+								conclusion: s.conclusion,
+								number: s.number,
+								startedAt: s.startedAt,
+								completedAt: s.completedAt,
+							}))
+						: [],
+				}))
+			: [];
+
+		// If all jobs are completed, derive overall conclusion and status accurately
+		let status = data.status;
+		let conclusion = data.conclusion;
+		if (jobs.length > 0 && jobs.every((j: WorkflowJob) => j.status === "completed")) {
+			status = "completed";
+			if (!conclusion) {
+				const hasFailure = jobs.some((j: WorkflowJob) => j.conclusion === "failure" || j.conclusion === "timed_out");
+				const hasCancelled = jobs.some((j: WorkflowJob) => j.conclusion === "cancelled");
+				conclusion = hasFailure ? "failure" : hasCancelled ? "cancelled" : "success";
+			}
+		}
+
 		return {
 			id: data.databaseId,
 			name: data.name,
 			displayTitle: data.displayTitle,
 			event: data.event,
-			status: data.status,
-			conclusion: data.conclusion,
+			status,
+			conclusion,
 			url: data.url,
 			createdAt: data.createdAt,
 			headBranch: data.headBranch,
 			headSha: data.headSha,
-			jobs: Array.isArray(data.jobs)
-				? data.jobs.map((j: {
-						databaseId?: number;
-						id?: number;
-						name: string;
-						status: string;
-						conclusion: string | null;
-						url?: string;
-						startedAt?: string;
-						completedAt?: string;
-						steps?: WorkflowJobStep[];
-					}) => ({
-						id: j.databaseId ?? j.id ?? 0,
-						name: j.name,
-						status: j.status,
-						conclusion: j.conclusion,
-						url: j.url,
-						startedAt: j.startedAt,
-						completedAt: j.completedAt,
-						steps: Array.isArray(j.steps)
-							? j.steps.map((s) => ({
-									name: s.name,
-									status: s.status,
-									conclusion: s.conclusion,
-									number: s.number,
-									startedAt: s.startedAt,
-									completedAt: s.completedAt,
-								}))
-							: [],
-					}))
-				: [],
+			jobs,
 		};
 	} catch {
 		// Fallback to GitHub REST API

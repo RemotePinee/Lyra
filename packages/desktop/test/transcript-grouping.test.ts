@@ -186,14 +186,17 @@ test("the reply carries the calls it made, so a live one reads as live", () => {
 test("computeTurnStats aggregates duration and output tokens across all assistant requests in a turn", () => {
 	const msg1 = assistant([call("a")], "toolUse");
 	msg1.durationMs = 1200;
+	msg1.sseDurationMs = 900;
 	msg1.usage = { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150 };
 
 	const msg2 = assistant([call("b")], "toolUse");
 	msg2.durationMs = 800;
+	msg2.sseDurationMs = 600;
 	msg2.usage = { input: 200, output: 30, cacheRead: 0, cacheWrite: 0, total: 230 };
 
 	const msg3 = assistant([text("完成了")], "stop");
 	msg3.durationMs = 2000;
+	msg3.sseDurationMs = 1500;
 	msg3.usage = { input: 300, output: 120, cacheRead: 0, cacheWrite: 0, total: 420 };
 
 	const messages: Message[] = [
@@ -210,6 +213,7 @@ test("computeTurnStats aggregates duration and output tokens across all assistan
 
 	const stats = computeTurnStats(messages, 8);
 	assert.equal(stats.durationMs, 4000);
+	assert.equal(stats.sseDurationMs, 3000);
 	assert.equal(stats.outputTokens, 200);
 	assert.equal(stats.requestCount, 3);
 });
@@ -218,6 +222,7 @@ test("computeTurnStats returns zeros if no assistant messages or out of bounds",
 	const messages: Message[] = [user("问题")];
 	const stats = computeTurnStats(messages, 0);
 	assert.equal(stats.durationMs, 0);
+	assert.equal(stats.sseDurationMs, 0);
 	assert.equal(stats.outputTokens, 0);
 	assert.equal(stats.requestCount, 0);
 });

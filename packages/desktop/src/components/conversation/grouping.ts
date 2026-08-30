@@ -38,12 +38,13 @@ export function isNudge(message: Message | undefined): boolean {
 
 export type TurnStats = {
 	durationMs: number;
+	sseDurationMs: number;
 	outputTokens: number;
 	requestCount: number;
 };
 
 /**
- * Calculates accumulated turn statistics (total duration in ms, total output tokens, total requests)
+ * Calculates accumulated turn statistics (total duration in ms, sse output duration in ms, total output tokens, total requests)
  * for the turn that ends at or before `endMessageIndex`.
  *
  * A turn consists of:
@@ -53,6 +54,7 @@ export type TurnStats = {
  */
 export function computeTurnStats(messages: Message[], endMessageIndex: number): TurnStats {
 	let durationMs = 0;
+	let sseDurationMs = 0;
 	let outputTokens = 0;
 	let requestCount = 0;
 
@@ -72,6 +74,12 @@ export function computeTurnStats(messages: Message[], endMessageIndex: number): 
 			if (typeof msg.durationMs === "number" && msg.durationMs > 0) {
 				durationMs += msg.durationMs;
 			}
+			if (typeof msg.sseDurationMs === "number" && msg.sseDurationMs > 0) {
+				sseDurationMs += msg.sseDurationMs;
+			} else if (typeof msg.durationMs === "number" && msg.durationMs > 0) {
+				// Fallback when sseDurationMs was not recorded (e.g. older messages on disk)
+				sseDurationMs += msg.durationMs;
+			}
 			if (typeof msg.usage?.output === "number" && msg.usage.output > 0) {
 				outputTokens += msg.usage.output;
 			}
@@ -79,7 +87,7 @@ export function computeTurnStats(messages: Message[], endMessageIndex: number): 
 		}
 	}
 
-	return { durationMs, outputTokens, requestCount };
+	return { durationMs, sseDurationMs, outputTokens, requestCount };
 }
 
 /**

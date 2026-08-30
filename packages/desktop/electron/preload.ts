@@ -304,6 +304,12 @@ const api: LyraApi = {
 		workflowRunStatus: (cwd, runId) => ipcRenderer.invoke("git:workflowRunStatus", cwd, runId),
 		publishReleaseTag: (cwd, version) => ipcRenderer.invoke("git:publishReleaseTag", cwd, version),
 	},
+	memory: {
+		load: () => ipcRenderer.invoke("memory:load"),
+		add: (content) => ipcRenderer.invoke("memory:add", content),
+		remove: (id) => ipcRenderer.invoke("memory:remove", id),
+		clear: () => ipcRenderer.invoke("memory:clear"),
+	},
 	diff: {
 		workspaceDiff: (cwd) => ipcRenderer.invoke("diff:workspace", cwd),
 		blob: (cwd, path, side) => ipcRenderer.invoke("diff:blob", cwd, path, side),

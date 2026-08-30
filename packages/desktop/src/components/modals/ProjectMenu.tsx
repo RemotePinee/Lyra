@@ -1,4 +1,4 @@
-import { Archive, ArrowRight, FolderOpen, GitBranch, PinOff, Pin, Settings2, X } from "lucide-react";
+import { Archive, ArrowRight, FolderOpen, GitBranch, Pencil, PinOff, Pin, X } from "lucide-react";
 import { useState } from "react";
 import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, type Anchor } from "../Popover.tsx";
@@ -184,7 +184,7 @@ export function ProjectMenu({
 					{pinned ? "取消置顶项目" : "置顶项目"}
 				</MenuItem>
 				<MenuItem
-					icon={<Settings2 size={13} strokeWidth={1.8} />}
+					icon={<Pencil size={13} strokeWidth={1.8} />}
 					onClick={() => {
 						setDraft(name);
 						setMode("rename");

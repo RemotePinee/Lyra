@@ -19,6 +19,7 @@ import { runTurn } from "../agent/runner.ts";
 import type { streamAssistant } from "../ai/index.ts";
 import type { Settings } from "../config/settings.ts";
 import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
+import { formatMemoryForPrompt, loadMemory } from "./memory.ts";
 import { TODOS_KEY, type TodoItem } from "../tools/todo.ts";
 import { continueWhileWorkRemains } from "./continuation.ts";
 import type {
@@ -136,6 +137,16 @@ export function modelHistory(log: SessionLog, provider: ProviderConfig, model: M
 async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig; systemPrompt: string }> {
 	const { cwd, can, log, settings } = input;
 
+	let memorySnippet = "";
+	if (settings.personalization?.enableMemory !== false) {
+		try {
+			const memoryStore = await loadMemory();
+			memorySnippet = formatMemoryForPrompt(memoryStore.entries);
+		} catch {
+			// Memory loading is resilient and silent
+		}
+	}
+
 	const turn = await prepareTurn({
 		cwd,
 		tools: can.tools,
@@ -146,6 +157,9 @@ async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig
 			skills: can.skills,
 			agents: can.agents,
 			projectInstructions: await loadProjectInstructions(cwd),
+			customInstructions: settings.personalization?.customInstructions,
+			tone: settings.personalization?.tone,
+			memorySnippet,
 			platform: platform(),
 			modelName: input.model.name,
 			isGitRepo: await pathExists(join(cwd, ".git")),

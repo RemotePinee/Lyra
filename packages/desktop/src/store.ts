@@ -36,6 +36,7 @@ export type View = "chat" | "settings" | "pull-requests" | "scheduled" | "plugin
 export type SettingsSection =
   | "general"
   | "appearance"
+  | "personalization"
   | "models"
   | "browser"
   | "plugins"
@@ -181,6 +182,8 @@ export interface AppState {
       meta: SessionMeta;
       messages: Message[];
       toolRuns: Record<string, ToolRun>;
+      scrollTop?: number;
+      pinnedToBottom?: boolean;
     }
   >;
   running: boolean;

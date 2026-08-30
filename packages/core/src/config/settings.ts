@@ -191,6 +191,19 @@ export interface Settings {
 		defaultOpenTarget: string;
 		showBottomPanel: boolean;
 	};
+	/**
+	 * Personalization & custom instructions settings across all sessions.
+	 */
+	personalization?: {
+		/** Custom instructions injected into system prompt for all sessions. */
+		customInstructions?: string;
+		/** Whether to enable persistent local memory extraction. */
+		enableMemory?: boolean;
+		/** Whether memory extraction considers MCP tools and search conversations. */
+		enableToolAssistedMemory?: boolean;
+		/** Tone/personality preference for agent replies. */
+		tone?: "friendly" | "professional" | "concise" | "candid" | "humorous";
+	};
 }
 
 /**
@@ -270,6 +283,12 @@ export const DEFAULT_SETTINGS: Settings = {
 	editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
 	searchApiKeys: {},
 	allowedHosts: [],
+	personalization: {
+		customInstructions: "",
+		enableMemory: true,
+		enableToolAssistedMemory: true,
+		tone: "friendly",
+	},
 };
 
 export function settingsPath(): string {
@@ -287,6 +306,7 @@ export async function loadSettings(): Promise<Settings> {
 			...parsed,
 			sync: { ...DEFAULT_SETTINGS.sync, ...parsed.sync },
 			editor: { ...DEFAULT_SETTINGS.editor, ...parsed.editor },
+			personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization },
 			appearance: migrateAppearance({ ...DEFAULT_APPEARANCE, ...parsed.appearance }),
 			hooks: parsed.hooks ?? [],
 			scheduledTasks: parsed.scheduledTasks ?? [],

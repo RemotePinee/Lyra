@@ -17,7 +17,7 @@ import {
 	ExternalLink,
 	GitBranch,
 	GitCommitHorizontal,
-	Loader2,
+	Play,
 	RefreshCw,
 	Sparkles,
 	Tag,
@@ -68,12 +68,17 @@ function PipelineSkeletonList({ count = 6 }: { count?: number }) {
 	);
 }
 
+function isValidTimestamp(str?: string): boolean {
+	if (!str) return false;
+	const t = new Date(str).getTime();
+	return !Number.isNaN(t) && t > 0;
+}
+
 /** Format duration in seconds or minutes with live precision */
 function formatDuration(startedAt?: string, completedAt?: string): string {
-	if (!startedAt) return "";
-	const start = new Date(startedAt).getTime();
-	if (Number.isNaN(start) || start <= 0) return "";
-	const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+	if (!isValidTimestamp(startedAt)) return "";
+	const start = new Date(startedAt!).getTime();
+	const end = isValidTimestamp(completedAt) ? new Date(completedAt!).getTime() : Date.now();
 	const diff = Math.max(0, Math.floor((end - start) / 1000));
 	if (diff < 60) return `${diff}s`;
 	const mins = Math.floor(diff / 60);
@@ -92,7 +97,7 @@ function StatusIcon({
 	size?: number;
 }) {
 	if (status === "in_progress") {
-		return <Loader2 size={size} className="animate-spin text-amber-500 shrink-0" />;
+		return <Play size={size} strokeWidth={2.4} className="text-amber-500 shrink-0" />;
 	}
 	if (status === "queued" || status === "waiting") {
 		return <Clock size={size} className="text-ink-faint shrink-0" />;
@@ -121,7 +126,6 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 
 	const showSkeleton = useSlowLoad(loading && runs.length === 0);
 	const activePollRef = useRef<NodeJS.Timeout | null>(null);
-	const liveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
 	// 1-second live ticker for running tasks/steps so durations count up in real time
 	useEffect(() => {
@@ -130,16 +134,14 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 			runDetail?.status === "in_progress" ||
 			runDetail?.status === "queued";
 
-		if (hasActive) {
-			liveTimerRef.current = setInterval(() => {
-				setTick((t) => (t + 1) % 100000);
-			}, 1000);
-		} else if (liveTimerRef.current) {
-			clearInterval(liveTimerRef.current);
-		}
+		if (!hasActive) return;
+
+		const timer = setInterval(() => {
+			setTick((t) => (t + 1) % 100000);
+		}, 1000);
 
 		return () => {
-			if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+			clearInterval(timer);
 		};
 	}, [runs, runDetail]);
 
@@ -300,30 +302,34 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 					<div className="rounded-xl bg-card p-3.5 space-y-2.5">
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex items-center gap-2 min-w-0">
-								<StatusIcon status={inspectRun.status} conclusion={inspectRun.conclusion} size={16} />
+								<StatusIcon
+									status={runDetail?.status ?? inspectRun.status}
+									conclusion={runDetail?.conclusion ?? inspectRun.conclusion}
+									size={16}
+								/>
 								<span className="text-label font-medium text-ink truncate">
-									{inspectRun.displayTitle || inspectRun.name}
+									{runDetail?.displayTitle || runDetail?.name || inspectRun.displayTitle || inspectRun.name}
 								</span>
 							</div>
 							<span className="text-caption text-ink-faint whitespace-nowrap">
-								{relativeTime(inspectRun.createdAt)}
+								{relativeTime(runDetail?.createdAt ?? inspectRun.createdAt)}
 							</span>
 						</div>
 
 						<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-detail text-ink-muted pt-1">
 							<span className="flex items-center gap-1.5">
 								<GitBranch size={13} className="text-ink-faint" />
-								<span className="font-mono text-ink">{inspectRun.headBranch}</span>
+								<span className="font-mono text-ink">{runDetail?.headBranch ?? inspectRun.headBranch}</span>
 							</span>
-							{inspectRun.headSha && (
+							{(runDetail?.headSha ?? inspectRun.headSha) && (
 								<span className="flex items-center gap-1.5">
 									<GitCommitHorizontal size={13} className="text-ink-faint" />
-									<span className="font-mono text-ink-muted">{inspectRun.headSha.slice(0, 7)}</span>
+									<span className="font-mono text-ink-muted">{(runDetail?.headSha ?? inspectRun.headSha).slice(0, 7)}</span>
 								</span>
 							)}
-							{inspectRun.event && (
+							{(runDetail?.event ?? inspectRun.event) && (
 								<span className="text-caption text-ink-faint">
-									事件: {inspectRun.event}
+									事件: {runDetail?.event ?? inspectRun.event}
 								</span>
 							)}
 						</div>
@@ -446,7 +452,7 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 							className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-caption font-medium text-ink-muted hover:text-ink hover:bg-card-hover transition-colors cursor-pointer"
 							data-ly-tip="打开 Git 发版管理"
 						>
-							<Tag size={12.5} className="text-amber-500" />
+							<Tag size={12.5} strokeWidth={1.8} className="text-ink-muted" />
 							发版
 						</button>
 					)}

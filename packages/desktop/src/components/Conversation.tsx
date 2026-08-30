@@ -89,27 +89,29 @@ export function Conversation() {
   /** Something arrived while scrolled up, which is the difference between "go down" and "new". */
   const [missed, setMissed] = useState(false);
 
-  /*
-   * Before paint, not after.
-   *
-   * A remounted list starts at scrollTop 0, so setting the position in a `useEffect` means
-   * the browser paints the top of the transcript once and the bottom on the next frame. That
-   * flash is indistinguishable from a jump. `scrollTop = scrollHeight` forces a synchronous
-   * layout either way, so doing it before paint costs nothing extra.
-   */
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !pinnedToBottom.current) return;
-    el.scrollTop = el.scrollHeight;
-    /*
-     * A cheap stand-in for "output arrived".
-     *
-     * Following the bottom used to depend on the whole `toolRuns` map, which meant subscribing
-     * to every streamed chunk here as well. A count of finished calls changes when a card
-     * appears or completes — the moments that actually change the page height.
-     */
-    setMissed(false);
-  }, [messages, toolRunCount]);
+	/*
+	 * Before paint, not after.
+	 *
+	 * A remounted list starts at scrollTop 0, so setting the position in a `useEffect` means
+	 * the browser paints the top of the transcript once and the bottom on the next frame. That
+	 * flash is indistinguishable from a jump. `scrollTop = scrollHeight` forces a synchronous
+	 * layout either way, so doing it before paint costs nothing extra.
+	 */
+	useLayoutEffect(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		if (pinnedToBottom.current) {
+			el.scrollTop = el.scrollHeight;
+		}
+		/*
+		 * A cheap stand-in for "output arrived".
+		 *
+		 * Following the bottom used to depend on the whole `toolRuns` map, which meant subscribing
+		 * to every streamed chunk here as well. A count of finished calls changes when a card
+		 * appears or completes — the moments that actually change the page height.
+		 */
+		setMissed(false);
+	}, [messages, toolRunCount]);
 
   /**
    * Ride down to the newest message, on a curve, without being interrupted on the way.
@@ -174,13 +176,22 @@ export function Conversation() {
     if (!pinnedToBottom.current) setMissed(true);
   }, [messages, toolRunCount]);
 
-  // A new session starts at the bottom, not wherever the previous one was left.
-  useLayoutEffect(() => {
-    pinnedToBottom.current = true;
-    setAway(false);
-    setMissed(false);
-    setSwapping(true);
-  }, [activeSessionId]);
+	// Restore cached scroll position or default to bottom.
+	useLayoutEffect(() => {
+		const el = scrollRef.current;
+		const cached = activeSessionId ? useApp.getState().sessionCache[activeSessionId] : undefined;
+		if (cached && typeof cached.scrollTop === "number") {
+			pinnedToBottom.current = cached.pinnedToBottom ?? false;
+			if (el) el.scrollTop = cached.scrollTop;
+			setAway(!pinnedToBottom.current);
+		} else {
+			pinnedToBottom.current = true;
+			if (el) el.scrollTop = el.scrollHeight;
+			setAway(false);
+		}
+		setMissed(false);
+		setSwapping(true);
+	}, [activeSessionId]);
 
   useEffect(() => {
     if (!swapping) return;
@@ -245,6 +256,15 @@ export function Conversation() {
           pinnedToBottom.current = atBottom;
           setAway(!atBottom);
           if (atBottom) setMissed(false);
+
+          if (activeSessionId) {
+            const cache = useApp.getState().sessionCache;
+            const currentEntry = cache[activeSessionId];
+            if (currentEntry) {
+              currentEntry.scrollTop = el.scrollTop;
+              currentEntry.pinnedToBottom = atBottom;
+            }
+          }
         }}
       >
         {/*

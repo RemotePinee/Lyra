@@ -90,6 +90,7 @@ async function* streamResponses(
 
 	const doFetch = options.fetch ?? globalThis.fetch;
 
+	let firstTokenTime: number | null = null;
 	/** output_index -> position in partial.content, so deltas can find their block. */
 	const items = new Map<
 		number,
@@ -211,6 +212,7 @@ async function* streamResponses(
 						}
 
 						case "response.output_text.delta": {
+							if (firstTokenTime === null) firstTokenTime = Date.now();
 							const tracked = items.get(outputIndex);
 							const target = tracked ? partial.content[tracked.contentIndex] : undefined;
 							if (target?.type === "text") {
@@ -228,6 +230,7 @@ async function* streamResponses(
 						// Providers differ: some stream a reasoning summary, some stream raw reasoning text.
 						case "response.reasoning_summary_text.delta":
 						case "response.reasoning_text.delta": {
+							if (firstTokenTime === null) firstTokenTime = Date.now();
 							const tracked = items.get(outputIndex);
 							const target = tracked ? partial.content[tracked.contentIndex] : undefined;
 							if (target?.type === "thinking") {
@@ -243,6 +246,7 @@ async function* streamResponses(
 						}
 
 						case "response.function_call_arguments.delta": {
+							if (firstTokenTime === null) firstTokenTime = Date.now();
 							const tracked = items.get(outputIndex);
 							if (!tracked) break;
 							tracked.raw += event.delta ?? "";
@@ -332,6 +336,7 @@ async function* streamResponses(
 					items.clear();
 					inventedIds.clear();
 					incompleteReason = undefined;
+					firstTokenTime = null;
 				},
 			},
 		);
@@ -344,6 +349,9 @@ async function* streamResponses(
 		partial.errorRetryable = !aborted && isRetryableError(error);
 		partial.usage = computeCost(partial.usage, model);
 		partial.durationMs = Math.max(1, Date.now() - startTime);
+		if (firstTokenTime !== null) {
+			partial.sseDurationMs = Math.max(1, Date.now() - firstTokenTime);
+		}
 		yield {
 			type: "error",
 			error: partial.errorMessage,
@@ -353,6 +361,9 @@ async function* streamResponses(
 	}
 
 	partial.durationMs = Math.max(1, Date.now() - startTime);
+	if (firstTokenTime !== null) {
+		partial.sseDurationMs = Math.max(1, Date.now() - firstTokenTime);
+	}
 	partial.stopReason =
 		incompleteReason === "max_output_tokens"
 			? "length"

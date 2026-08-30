@@ -703,6 +703,12 @@ export interface LyraApi {
 		workflowRunStatus(cwd: string, runId: number): Promise<WorkflowRunStatus | null>;
 		publishReleaseTag(cwd: string, version: string): Promise<{ ok: boolean; tag?: string; error?: string }>;
 	};
+	memory: {
+		load(): Promise<{ entries: { id: string; content: string; createdAt: number; updatedAt: number }[] }>;
+		add(content: string): Promise<{ id: string; content: string; createdAt: number; updatedAt: number }>;
+		remove(id: string): Promise<boolean>;
+		clear(): Promise<void>;
+	};
 	diff: {
 		/** Uncommitted changes for the review panel. */
 		workspaceDiff(cwd: string): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }>;

@@ -15,7 +15,13 @@ import type { ToolRun } from "../store.ts";
 
 export type Cache = Record<
   string,
-  { meta: SessionMeta; messages: Message[]; toolRuns: Record<string, ToolRun> }
+  {
+    meta: SessionMeta;
+    messages: Message[];
+    toolRuns: Record<string, ToolRun>;
+    scrollTop?: number;
+    pinnedToBottom?: boolean;
+  }
 >;
 
 /** How many transcripts to hold. Enough to cover switching around a project, not a whole day. */

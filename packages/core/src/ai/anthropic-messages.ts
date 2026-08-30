@@ -94,6 +94,7 @@ async function* streamAnthropic(
 
 	const doFetch = options.fetch ?? globalThis.fetch;
 
+	let firstTokenTime: number | null = null;
 	const blocks = new Map<
 		number,
 		{
@@ -202,6 +203,7 @@ async function* streamAnthropic(
 						}
 
 						case "content_block_delta": {
+							if (firstTokenTime === null) firstTokenTime = Date.now();
 							const idx: number = event.index;
 							const tracked = blocks.get(idx);
 							if (!tracked) break;
@@ -293,6 +295,7 @@ async function* streamAnthropic(
 					partial.usage = emptyUsage();
 					blocks.clear();
 					stopReason = undefined;
+					firstTokenTime = null;
 				},
 			},
 		);
@@ -305,6 +308,9 @@ async function* streamAnthropic(
 		partial.errorRetryable = !aborted && isRetryableError(error);
 		partial.usage = computeCost(partial.usage, model);
 		partial.durationMs = Math.max(1, Date.now() - startTime);
+		if (firstTokenTime !== null) {
+			partial.sseDurationMs = Math.max(1, Date.now() - firstTokenTime);
+		}
 		yield {
 			type: "error",
 			error: partial.errorMessage,
@@ -314,6 +320,9 @@ async function* streamAnthropic(
 	}
 
 	partial.durationMs = Math.max(1, Date.now() - startTime);
+	if (firstTokenTime !== null) {
+		partial.sseDurationMs = Math.max(1, Date.now() - firstTokenTime);
+	}
 	partial.stopReason = mapStopReason(stopReason, partial.content);
 	partial.usage.total = partial.usage.input + partial.usage.output + partial.usage.cacheRead + partial.usage.cacheWrite;
 	partial.usage = computeCost(partial.usage, model);
