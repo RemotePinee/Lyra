@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lyra",
     "slug": "lyra",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "scheme": "lyra",
     "userInterfaceStyle": "dark",
@@ -17,6 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.lyra.app",
+      "buildNumber": "2",
       "infoPlist": {
         "UIUserInterfaceStyle": "Dark",
         "NSAppTransportSecurity": {
@@ -26,6 +27,7 @@
     },
     "android": {
       "package": "dev.lyra.app",
+      "versionCode": 2,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": true,
