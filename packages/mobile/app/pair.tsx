@@ -134,7 +134,7 @@ export default function PairScreen() {
 	return (
 		<KeyboardAvoidingView
 			className="flex-1 bg-shell"
-			behavior={Platform.OS === "ios" ? "padding" : "height"}
+			behavior={Platform.OS === "ios" ? "padding" : undefined}
 		>
 			<ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 48 }}>
 				<Text className="text-[13.5px] leading-6 text-ink-muted">
