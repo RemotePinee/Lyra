@@ -189,6 +189,15 @@ export function workspaceSlice(set: Set, get: Get) {
       sessions: get().sessions.map((s) => (s.id === session.id ? { ...s, title: trimmed } : s)),
       ...(get().activeSessionId === session.id && get().meta ? { meta: { ...get().meta!, title: trimmed } } : {}),
     });
+    try {
+      const updated = await window.lyra.sessions.rename(session.projectId, session.id, trimmed);
+      if (updated) {
+        set({
+          sessions: get().sessions.map((s) => (s.id === session.id ? { ...s, ...updated } : s)),
+          ...(get().activeSessionId === session.id && get().meta ? { meta: { ...get().meta!, ...updated } } : {}),
+        });
+      }
+    } catch {}
   },
 
   async moveSessionProject(session: SessionMeta, targetPath: string) {
