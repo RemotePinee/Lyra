@@ -17,7 +17,7 @@ import {
 	ExternalLink,
 	GitBranch,
 	GitCommitHorizontal,
-	Play,
+	Loader2,
 	RefreshCw,
 	Sparkles,
 	Tag,
@@ -97,7 +97,7 @@ function StatusIcon({
 	size?: number;
 }) {
 	if (status === "in_progress") {
-		return <Play size={size} strokeWidth={2.4} className="text-amber-500 shrink-0" />;
+		return <Loader2 size={size} strokeWidth={2.2} className="ly-spin text-amber-500 shrink-0" />;
 	}
 	if (status === "queued" || status === "waiting") {
 		return <Clock size={size} className="text-ink-faint shrink-0" />;
@@ -297,19 +297,14 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 					</div>
 				</div>
 
-				<Scroller className="flex-1 px-3.5 pb-6 space-y-4">
+				<Scroller className="flex-1 px-3.5 pb-6">
 					{/* Summary Card */}
 					<div className="rounded-xl bg-card p-3.5 space-y-2.5">
 						<div className="flex items-center justify-between gap-2">
-							<div className="flex items-center gap-2 min-w-0">
-								<StatusIcon
-									status={runDetail?.status ?? inspectRun.status}
-									conclusion={runDetail?.conclusion ?? inspectRun.conclusion}
-									size={16}
-								/>
-								<span className="text-label font-medium text-ink truncate">
+							<div className="min-w-0">
+								<div className="text-label font-medium text-ink truncate">
 									{runDetail?.displayTitle || runDetail?.name || inspectRun.displayTitle || inspectRun.name}
-								</span>
+								</div>
 							</div>
 							<span className="text-caption text-ink-faint whitespace-nowrap">
 								{relativeTime(runDetail?.createdAt ?? inspectRun.createdAt)}
@@ -336,7 +331,7 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 					</div>
 
 					{/* Matrix & Jobs */}
-					<div className="space-y-2">
+					<div className="pt-3.5 space-y-1.5">
 						<div className="px-1 text-caption font-medium text-ink-faint">
 							构建任务与矩阵 ({runDetail?.jobs?.length ?? 0})
 						</div>
