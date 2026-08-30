@@ -14,7 +14,7 @@
  * to press this".
  */
 
-import { ChevronRight, Folder, SquarePen } from "lucide-react";
+import { ChevronRight, Folder, MoreHorizontal } from "lucide-react";
 import { useLayout } from "../../layout.tsx";
 import { ProjectMenu } from "../modals/ProjectMenu.tsx";
 import { usePopover } from "../Popover.tsx";
@@ -111,7 +111,7 @@ export function ProjectHead({
 					onClick={menu.toggle}
 					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
 				>
-					<SquarePen size={12.5} strokeWidth={1.8} />
+					<MoreHorizontal size={13} strokeWidth={1.8} />
 				</button>
 			</span>
 

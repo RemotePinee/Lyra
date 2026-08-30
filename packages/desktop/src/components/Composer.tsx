@@ -708,8 +708,11 @@ export function Composer() {
 					}
 					right={
 						<>
-							{/* Beside the model it is measured against — the window is a property of that model. */}
-							<ContextMeter messages={messages} settings={settings} modelId={modelId} sessionId={activeSessionId} />
+							{/* Beside the model it is measured against — the window is a property of that model.
+							    Disappears gracefully on narrow composer widths to prevent overflowing tools. */}
+							<div className="@max-[480px]:hidden flex shrink-0 items-center">
+								<ContextMeter messages={messages} settings={settings} modelId={modelId} sessionId={activeSessionId} />
+							</div>
 
 							{modelLocked ? (
 								// A label, not a disabled button: nothing here is going to become

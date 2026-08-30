@@ -146,6 +146,8 @@ export interface AssistantMessage {
 	responseId?: string;
 	/** Latency in milliseconds from request start to completion */
 	durationMs?: number;
+	/** Latency in milliseconds of actual streaming token generation (from first token chunk to completion) */
+	sseDurationMs?: number;
 	timestamp: number;
 }
 

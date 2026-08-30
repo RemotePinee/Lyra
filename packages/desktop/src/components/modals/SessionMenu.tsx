@@ -5,9 +5,9 @@ import {
 	Eye,
 	Folder,
 	FolderInput,
+	Pencil,
 	Pin,
 	PinOff,
-	SquarePen,
 } from "lucide-react";
 import { useState } from "react";
 import type { SessionMeta } from "@lyra/core";
@@ -184,7 +184,7 @@ export function SessionMenu({
 				</MenuItem>
 
 				<MenuItem
-					icon={<SquarePen size={13} strokeWidth={1.8} />}
+					icon={<Pencil size={13} strokeWidth={1.8} />}
 					onClick={() => {
 						setDraft(session.title);
 						setMode("rename");

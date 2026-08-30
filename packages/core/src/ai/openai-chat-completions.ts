@@ -73,6 +73,7 @@ async function* streamChatCompletions(
 	options.onPayload?.(body);
 
 	const doFetch = options.fetch ?? globalThis.fetch;
+	let firstTokenTime: number | null = null;
 	const inventedIds = new Map<number, string>();
 	let refused = false;
 
@@ -132,6 +133,9 @@ async function* streamChatCompletions(
 
 					const delta = choice.delta;
 					if (delta) {
+						if (delta.content || delta.reasoning_content || delta.tool_calls) {
+							if (firstTokenTime === null) firstTokenTime = Date.now();
+						}
 						// Handle reasoning_content if emitted (e.g. DeepSeek/Ollama/relay APIs)
 						if (delta.reasoning_content) {
 							if (currentThinkingIndex === -1) {
@@ -260,6 +264,7 @@ async function* streamChatCompletions(
 					partial.content = [];
 					partial.usage = emptyUsage();
 					inventedIds.clear();
+					firstTokenTime = null;
 				},
 			},
 		);
@@ -271,6 +276,9 @@ async function* streamChatCompletions(
 		partial.errorRetryable = !aborted && isRetryableError(error);
 		partial.usage = computeCost(partial.usage, model);
 		partial.durationMs = Math.max(1, Date.now() - startTime);
+		if (firstTokenTime !== null) {
+			partial.sseDurationMs = Math.max(1, Date.now() - firstTokenTime);
+		}
 		yield {
 			type: "error",
 			error: partial.errorMessage,
@@ -280,6 +288,9 @@ async function* streamChatCompletions(
 	}
 
 	partial.durationMs = Math.max(1, Date.now() - startTime);
+	if (firstTokenTime !== null) {
+		partial.sseDurationMs = Math.max(1, Date.now() - firstTokenTime);
+	}
 	if (partial.stopReason === "pending") {
 		const hasToolCalls = partial.content.some((c) => c.type === "toolCall");
 		partial.stopReason = hasToolCalls ? "toolUse" : "stop";

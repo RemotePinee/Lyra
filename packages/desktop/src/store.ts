@@ -181,6 +181,8 @@ export interface AppState {
       meta: SessionMeta;
       messages: Message[];
       toolRuns: Record<string, ToolRun>;
+      scrollTop?: number;
+      pinnedToBottom?: boolean;
     }
   >;
   running: boolean;

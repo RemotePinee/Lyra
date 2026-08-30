@@ -68,12 +68,17 @@ function PipelineSkeletonList({ count = 6 }: { count?: number }) {
 	);
 }
 
+function isValidTimestamp(str?: string): boolean {
+	if (!str) return false;
+	const t = new Date(str).getTime();
+	return !Number.isNaN(t) && t > 0;
+}
+
 /** Format duration in seconds or minutes with live precision */
 function formatDuration(startedAt?: string, completedAt?: string): string {
-	if (!startedAt) return "";
-	const start = new Date(startedAt).getTime();
-	if (Number.isNaN(start) || start <= 0) return "";
-	const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+	if (!isValidTimestamp(startedAt)) return "";
+	const start = new Date(startedAt!).getTime();
+	const end = isValidTimestamp(completedAt) ? new Date(completedAt!).getTime() : Date.now();
 	const diff = Math.max(0, Math.floor((end - start) / 1000));
 	if (diff < 60) return `${diff}s`;
 	const mins = Math.floor(diff / 60);
@@ -121,7 +126,6 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 
 	const showSkeleton = useSlowLoad(loading && runs.length === 0);
 	const activePollRef = useRef<NodeJS.Timeout | null>(null);
-	const liveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
 	// 1-second live ticker for running tasks/steps so durations count up in real time
 	useEffect(() => {
@@ -130,16 +134,14 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 			runDetail?.status === "in_progress" ||
 			runDetail?.status === "queued";
 
-		if (hasActive) {
-			liveTimerRef.current = setInterval(() => {
-				setTick((t) => (t + 1) % 100000);
-			}, 1000);
-		} else if (liveTimerRef.current) {
-			clearInterval(liveTimerRef.current);
-		}
+		if (!hasActive) return;
+
+		const timer = setInterval(() => {
+			setTick((t) => (t + 1) % 100000);
+		}, 1000);
 
 		return () => {
-			if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+			clearInterval(timer);
 		};
 	}, [runs, runDetail]);
 

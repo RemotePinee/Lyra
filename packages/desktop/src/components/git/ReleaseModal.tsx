@@ -51,27 +51,67 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 	const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
+	// Read current release readiness information from repository.
+	const handleRefresh = useCallback(async () => {
+		setLoading(true);
+		setError(null);
+		try {
+			const res = await window.lyra.git.releaseInfo(cwd);
+			if (res) {
+				setInfo(res);
+				setCustomVersion(res.suggestedVersion.patch);
+				// Automatically generate notes if commits are found
+				if (res.commitsSinceTag.length > 0) {
+					const commits = res.commitsSinceTag;
+					const isZh = notesLang === "zh";
+					const featCommits = commits.filter((c) => /^feat(\(.*\))?:/i.test(c.subject));
+					const perfCommits = commits.filter((c) => /^(perf|style|refactor)(\(.*\))?:/i.test(c.subject));
+					const fixCommits = commits.filter((c) => /^fix(\(.*\))?:/i.test(c.subject));
+					const otherCommits = commits.filter(
+						(c) => !featCommits.includes(c) && !perfCommits.includes(c) && !fixCommits.includes(c),
+					);
+
+					const cleanSubject = (subject: string) => {
+						return subject.replace(/^(feat|fix|perf|style|refactor|docs|chore|test)(\(.*?\))?:\s*/i, "");
+					};
+
+					const sections: string[] = [];
+					if (featCommits.length > 0) {
+						sections.push(
+							`### ${isZh ? "✨ 新功能" : "✨ Features"}\n${featCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+						);
+					}
+					if (perfCommits.length > 0) {
+						sections.push(
+							`### ${isZh ? "⚡ 优化与体验" : "⚡ Performance & Improvements"}\n${perfCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+						);
+					}
+					if (fixCommits.length > 0) {
+						sections.push(
+							`### ${isZh ? "🐛 问题修复" : "🐛 Bug Fixes"}\n${fixCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+						);
+					}
+					if (otherCommits.length > 0) {
+						sections.push(
+							`### ${isZh ? "📦 其他更新" : "📦 Other Changes"}\n${otherCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+						);
+					}
+					setNotes(sections.join("\n\n"));
+				} else {
+					setNotes(notesLang === "zh" ? "无新增变更记录" : "No new changes recorded");
+				}
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setLoading(false);
+		}
+	}, [cwd, notesLang]);
+
 	// Fetch repository release status on mount
 	useEffect(() => {
-		let alive = true;
-		void (async () => {
-			setLoading(true);
-			try {
-				const res = await window.lyra.git.releaseInfo(cwd);
-				if (alive && res) {
-					setInfo(res);
-					setCustomVersion(res.suggestedVersion.patch);
-				}
-			} catch (err) {
-				if (alive) setError(err instanceof Error ? err.message : String(err));
-			} finally {
-				if (alive) setLoading(false);
-			}
-		})();
-		return () => {
-			alive = false;
-		};
-	}, [cwd]);
+		void handleRefresh();
+	}, [handleRefresh]);
 
 	const currentTargetVersion =
 		selectedType === "custom"
@@ -79,75 +119,84 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 			: (info?.suggestedVersion[selectedType] ?? customVersion);
 
 	// Generate Release notes with categorized sections in Chinese or English
-	const handleGenerateNotes = useCallback(async (lang: "zh" | "en" = notesLang, showToast = false) => {
-		if (!info) return;
-		setGeneratingNotes(true);
-		try {
-			const commits = info.commitsSinceTag;
-			const isZh = lang === "zh";
+	const handleGenerateNotes = useCallback(
+		async (lang: "zh" | "en" = notesLang, showToast = false) => {
+			setGeneratingNotes(true);
+			try {
+				const isZh = lang === "zh";
+				// Fetch fresh release info from repository
+				const freshInfo = await window.lyra.git.releaseInfo(cwd).catch(() => null);
+				const targetInfo = freshInfo ?? info;
+				if (freshInfo) setInfo(freshInfo);
 
-			if (commits.length === 0) {
-				const fallback = isZh ? "无新增变更记录" : "No new changes recorded";
-				setNotes(fallback);
-				if (showToast) {
-					notify(isZh ? "未检测到新提交记录" : "No new commits detected", "warn");
+				const commits = targetInfo?.commitsSinceTag ?? [];
+				if (commits.length === 0) {
+					const fallback = isZh ? "无新增变更记录" : "No new changes recorded";
+					setNotes(fallback);
+					if (showToast) {
+						notify(isZh ? "未检测到新提交记录（当前处于最新 Tag 上）" : "No new commits detected", "warn");
+					}
+					return;
 				}
-				return;
-			}
 
-			// Build categorized notes outline
-			const featCommits = commits.filter((c) => /^feat(\(.*\))?:/i.test(c.subject));
-			const perfCommits = commits.filter((c) => /^(perf|style|refactor)(\(.*\))?:/i.test(c.subject));
-			const fixCommits = commits.filter((c) => /^fix(\(.*\))?:/i.test(c.subject));
-			const otherCommits = commits.filter(
-				(c) => !featCommits.includes(c) && !perfCommits.includes(c) && !fixCommits.includes(c),
-			);
-
-			const cleanSubject = (subject: string) => {
-				return subject.replace(/^(feat|fix|perf|style|refactor|docs|chore|test)(\(.*?\))?:\s*/i, "");
-			};
-
-			const sections: string[] = [];
-			if (featCommits.length > 0) {
-				sections.push(
-					`### ${isZh ? "✨ 新功能" : "✨ Features"}\n${featCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+				// Build categorized notes outline
+				const featCommits = commits.filter((c) => /^feat(\(.*\))?:/i.test(c.subject));
+				const perfCommits = commits.filter((c) => /^(perf|style|refactor)(\(.*\))?:/i.test(c.subject));
+				const fixCommits = commits.filter((c) => /^fix(\(.*\))?:/i.test(c.subject));
+				const otherCommits = commits.filter(
+					(c) => !featCommits.includes(c) && !perfCommits.includes(c) && !fixCommits.includes(c),
 				);
-			}
-			if (perfCommits.length > 0) {
-				sections.push(
-					`### ${isZh ? "⚡ 优化与体验" : "⚡ Performance & Improvements"}\n${perfCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
-				);
-			}
-			if (fixCommits.length > 0) {
-				sections.push(
-					`### ${isZh ? "🐛 问题修复" : "🐛 Bug Fixes"}\n${fixCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
-				);
-			}
-			if (otherCommits.length > 0) {
-				sections.push(
-					`### ${isZh ? "📝 其它改动" : "📝 Other Changes"}\n${otherCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
-				);
-			}
 
-			let generated = "";
-			if (sections.length > 0) {
-				generated = sections.join("\n\n");
-			} else {
-				generated = commits.map((c) => `- ${c.subject} (${c.shortSha})`).join("\n");
-			}
+				const cleanSubject = (subject: string) => {
+					return subject.replace(/^(feat|fix|perf|style|refactor|docs|chore|test)(\(.*?\))?:\s*/i, "");
+				};
 
-			setNotes(generated);
-			if (showToast) {
-				notify(isZh ? `已根据 ${commits.length} 条提交生成更新日志` : `Generated release notes from ${commits.length} commits`, "info");
+				const sections: string[] = [];
+				if (featCommits.length > 0) {
+					sections.push(
+						`### ${isZh ? "✨ 新功能" : "✨ Features"}\n${featCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+					);
+				}
+				if (perfCommits.length > 0) {
+					sections.push(
+						`### ${isZh ? "⚡ 优化与体验" : "⚡ Performance & Improvements"}\n${perfCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+					);
+				}
+				if (fixCommits.length > 0) {
+					sections.push(
+						`### ${isZh ? "🐛 问题修复" : "🐛 Bug Fixes"}\n${fixCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+					);
+				}
+				if (otherCommits.length > 0) {
+					sections.push(
+						`### ${isZh ? "📝 其它改动" : "📝 Other Changes"}\n${otherCommits.map((c) => `- ${cleanSubject(c.subject)}`).join("\n")}`,
+					);
+				}
+
+				let generated = "";
+				if (sections.length > 0) {
+					generated = sections.join("\n\n");
+				} else {
+					generated = commits.map((c) => `- ${c.subject} (${c.shortSha})`).join("\n");
+				}
+
+				setNotes(generated);
+				if (showToast) {
+					notify(
+						isZh ? `已根据 ${commits.length} 条提交生成更新日志` : `Generated release notes from ${commits.length} commits`,
+						"info",
+					);
+				}
+			} catch (err) {
+				if (showToast) {
+					notify(err instanceof Error ? err.message : "提取日志失败", "error");
+				}
+			} finally {
+				setGeneratingNotes(false);
 			}
-		} catch (err) {
-			if (showToast) {
-				notify(err instanceof Error ? err.message : "提取日志失败", "error");
-			}
-		} finally {
-			setGeneratingNotes(false);
-		}
-	}, [info, notesLang, notify]);
+		},
+		[cwd, info, notesLang, notify],
+	);
 
 	// Initialize default notes when info is loaded
 	useEffect(() => {
@@ -546,7 +595,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 								type="button"
 								onClick={handlePublish}
 								disabled={publishing || !currentTargetVersion}
-								className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-canvas hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+								className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-detail font-medium text-shell hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
 							>
 								{publishing ? (
 									<>

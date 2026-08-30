@@ -136,6 +136,8 @@ export function sessionSlice(set: Set, get: Get) {
         meta: leavingMeta,
         messages: get().messages,
         toolRuns: get().toolRuns,
+        scrollTop: cache[leaving]?.scrollTop,
+        pinnedToBottom: cache[leaving]?.pinnedToBottom,
       };
     }
 
@@ -291,6 +293,8 @@ export function sessionSlice(set: Set, get: Get) {
           meta: snapshot.meta,
           messages: snapshot.messages,
           toolRuns,
+          scrollTop: get().sessionCache[meta.id]?.scrollTop,
+          pinnedToBottom: get().sessionCache[meta.id]?.pinnedToBottom,
         },
       },
     });

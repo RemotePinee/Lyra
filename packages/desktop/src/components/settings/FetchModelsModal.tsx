@@ -174,7 +174,7 @@ export function FetchModelsModal({
 							type="button"
 							disabled={selected.size === 0}
 							onClick={() => onImport(Array.from(selected))}
-							className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-caption font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer"
+							className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-1.5 text-caption font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer"
 						>
 							<Check size={13} strokeWidth={2.2} />
 							导入所选 ({selected.size})
