@@ -8,7 +8,8 @@ import {
 	ExternalLink,
 	Globe,
 	Loader2,
-	Sparkles,
+	Play,
+	RefreshCw,
 	Tag,
 	X,
 	XCircle,
@@ -460,7 +461,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 											disabled={generatingNotes}
 											className="flex h-6 items-center gap-1 rounded-md border border-line bg-card px-2 text-micro font-medium text-ink-muted hover:bg-card-hover hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
 										>
-											<Sparkles size={11} className={generatingNotes ? "animate-spin text-amber-500" : "text-amber-500"} />
+											<RefreshCw size={11} strokeWidth={1.9} className={generatingNotes ? "animate-spin text-ink" : "text-ink-muted"} />
 											<span>{generatingNotes ? "提取中…" : "重新提取"}</span>
 										</button>
 									</div>
@@ -498,7 +499,7 @@ export function ReleaseModal({ cwd, onClose }: ReleaseModalProps) {
 										{triggeringDryRun ? (
 											<Loader2 size={11} className="animate-spin text-ink-muted" />
 										) : (
-											<Sparkles size={11} className="text-accent" />
+											<Play size={11} strokeWidth={2.2} className="text-accent" />
 										)}
 										<span>
 											{triggeringDryRun

@@ -16,7 +16,6 @@ import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
 import { useConfirmer } from "../Confirm.tsx";
 import { ModelIcon } from "../ModelIcon.tsx";
 import { formatWindow } from "../ModelMenu.tsx";
-import { RollingText } from "../RollingText.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Badge, GhostButton } from "./controls.tsx";
 
@@ -72,12 +71,12 @@ export function ProviderModels({
 							data-ly-tip="从当前 Base URL 端点自动获取可用模型列表"
 							className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-caption font-medium text-ink-muted transition-colors hover:bg-card-hover hover:text-ink disabled:opacity-50 cursor-pointer"
 						>
-							<DownloadCloud size={13} className={fetchingModels ? "animate-spin text-amber-500" : ""} />
-							<RollingText>{fetchingModels ? "获取中…" : "拉取模型"}</RollingText>
+							<DownloadCloud size={13} strokeWidth={1.8} className={fetchingModels ? "animate-spin text-accent" : ""} />
+							<span>{fetchingModels ? "获取中…" : "拉取模型"}</span>
 						</button>
 					)}
 					<GhostButton onClick={onTest} disabled={testing || !!testingModelId || fetchingModels}>
-						<RollingText>{testing ? "测试中…" : "测试全部"}</RollingText>
+						<span>{testing ? "测试中…" : "测试全部"}</span>
 					</GhostButton>
 				</div>
 			</div>

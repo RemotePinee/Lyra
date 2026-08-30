@@ -96,40 +96,40 @@ Never continue the conversation and never answer its questions. Output only the 
  * sections fix both: the goal is in one place and stays there across every rewrite, and the
  * details sit dense enough to be found.
  *
- * `## Goal` first for a reason. It is the section that must survive the most rewrites intact, and
- * it is the one drift shows up in first.
+ * `## Goal & Original User Intent` first for a reason. It is the section that must survive the most
+ * rewrites intact, and it is the one drift shows up in first.
  */
 const SUMMARY_FORMAT = `Use exactly this format, omitting sections that do not apply:
 
-## Goal
-[What the user is trying to achieve. Preserve existing goals verbatim; add new ones only if the task genuinely expanded.]
+## Goal & Original User Intent
+[What the user initially requested and is aiming to accomplish in this entire session. Preserve the original root goals and task scope verbatim; never drop or shrink prior overarching requirements just because recent messages focused on a sub-problem.]
 
-## Constraints & Preferences
-- [Requirements, conventions and preferences the user stated. These are easy to lose and expensive to relearn.]
+## Constraints & User Preferences
+- [Explicit requirements, conventions, anti-patterns, and styling/architectural rules the user stated. These must be carried forward permanently.]
 
-## Progress
+## Key Work & Task Progress
 
-### Done
-- [x] [Completed work, with the file paths it touched]
+### Completed Tasks
+- [x] [Completed work, specific bugs resolved, files created/edited, with file paths]
 
-### In Progress
-- [ ] [What is being worked on right now]
+### Pending & In Progress Tasks
+- [ ] [All remaining tasks from the user's requests that have NOT yet been finished, including original checklist items and sub-tasks]
 
-### Blocked
-- [What is stopping progress, if anything]
+### Blockers / Open Questions
+- [Unresolved obstacles, pending user inputs, or external errors]
 
-## Key Decisions
-- **[Decision]**: [Why, in one line. Include approaches that were tried and rejected, so they are not tried again.]
+## Architecture Decisions & Key Findings
+- **[Decision / Root Cause]**: [Why, key technical conclusions, or verified root causes. Include approaches that were rejected.]
 
-## Next Steps
-1. [Ordered, concrete actions]
+## Actionable Next Steps
+1. [Ordered, concrete, immediately actionable next steps to finish remaining user goals]
 
 ## Critical Context
-- [Exact file paths, symbol names, commands, error text, repository state. Anything a replacement engineer would have to re-derive.]
+- [Exact file paths, symbol names, command outputs, error traces, and repository state needed to continue work seamlessly.]
 
-Keep sections tight. Preserve exact paths, identifiers and error strings — those are the parts a paraphrase destroys and the parts that cost the most to recover. Output only the summary, with no preamble.`;
+Keep sections tight, highly dense and factual. Never drop unfinished tasks or the primary objective. Output only the summary, with no preamble.`;
 
-const FIRST_SUMMARY = `Summarise the conversation above so another engineer can pick the work up with no other context.
+const FIRST_SUMMARY = `Summarise the conversation above so another engineer can pick the work up with no other context. Ensure all user requests and task lists are fully recorded.
 
 ${SUMMARY_FORMAT}`;
 
@@ -149,9 +149,9 @@ ${SUMMARY_FORMAT}`;
 const UPDATE_SUMMARY = `The conversation above begins with a summary of everything that came before it. Rewrite that summary so it also covers what has happened since.
 
 This is an update, not a fresh summary:
-- Carry every fact in the previous summary forward unless the new messages have superseded it. The goal and the stated constraints in particular are expected to survive unchanged.
-- Move finished items from In Progress to Done. Clear blockers that were resolved. Rewrite Next Steps for where the work actually stands now.
-- Drop only what has genuinely become irrelevant — not what has merely become old.
+- CRITICAL: Carry forward the complete initial user goals, requirements, constraints, and ALL unfinished task items from the previous summary. Never let past goals be forgotten or replaced by temporary sub-steps.
+- Move finished items from Pending to Completed. Update Blockers and Next Steps according to the latest progress.
+- Drop only what has genuinely become obsolete — never drop earlier task instructions that are still unfulfilled.
 
 ${SUMMARY_FORMAT}`;
 

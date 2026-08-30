@@ -3261,10 +3261,13 @@
   transition: opacity 120ms linear;
 }
 
-.ly-docx-host .docx-wrapper {
-  background: transparent;
-  padding: 0;
-  gap: 16px;
+/*
+ * Freeze transitions while resizing, so panes and floating widgets track the pointer smoothly without lag or layout judder.
+ */
+html[data-resizing],
+html[data-resizing] * {
+  transition: none !important;
+  animation: none !important;
 }
 
 .ly-docx-host .docx {
