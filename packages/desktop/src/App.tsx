@@ -128,16 +128,37 @@ function Shell() {
 	const view = useApp((s) => s.view);
 	const { dismissNav } = useLayout();
 
+	const settings = view === "settings";
+
 	// Settings and the workspace each own a navigation pane; a drawer opened over one has no
 	// meaning over the other, so leaving the view puts it away.
 	useEffect(() => dismissNav(), [view, dismissNav]);
 
+	/*
+	 * Both shells stay mounted, and settings is drawn *over* the workspace rather than in place of
+	 * it. Swapping them remounted the whole conversation on the way back, and a list that has only
+	 * just been rebuilt has no height yet — so the cached scroll offset was applied to a transcript
+	 * of zero pixels and landed at the top every time.
+	 *
+	 * Two things about how it is put away, both of which have already been got wrong once:
+	 *
+	 * `visibility`, not `display`. `display: none` throws the layout box away and takes the scroll
+	 * position with it — the exact thing this is here to preserve — and it reports a `scrollHeight`
+	 * of zero, which is what the composer measures itself against. `visibility: hidden` keeps the
+	 * box, its height and its `scrollTop` untouched.
+	 *
+	 * And the wrapper is `h-full`, never `flex-1`. `#root` is not a flex container, so `flex-1`
+	 * resolved to nothing: the box fell to `height: auto`, `ChatShell`'s own `h-full` had no
+	 * percentage to resolve against, and the transcript grew until it pushed the composer off the
+	 * bottom of the window. `absolute inset-0` then measures the same viewport `h-full` did, which
+	 * is what keeps the offset valid while it is out of the flow.
+	 */
 	return (
 		<>
-			<div className={`flex min-h-0 flex-1 flex-col ${view === "settings" ? "hidden" : ""}`}>
-				<ChatShell />
+			<div className={settings ? "pointer-events-none invisible absolute inset-0" : "h-full"}>
+				<ChatShell settings={settings} />
 			</div>
-			{view === "settings" && <SettingsShell />}
+			{settings && <SettingsShell />}
 		</>
 	);
 }
@@ -182,7 +203,7 @@ function useMainPane() {
 	};
 }
 
-function ChatShell() {
+function ChatShell({ settings }: { settings: boolean }) {
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const workspace = useApp((s) => s.workspace);
 	const { compact, navOpen, toggleNav, dismissNav } = useLayout();
@@ -195,7 +216,10 @@ function ChatShell() {
 		void attach(activeSessionId);
 	}, [activeSessionId, attach]);
 
-	useShortcuts({ compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav });
+	// Silent while settings is up. The workspace is still mounted behind it — it has to be, for the
+	// transcript to keep its place — but ⌘P for a file pane nobody can see, or Escape unmaximising
+	// one, is not what those keys mean on that screen.
+	useShortcuts({ enabled: !settings, compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav });
 
 	return (
 		<div className="ly-shell relative flex h-full overflow-hidden">

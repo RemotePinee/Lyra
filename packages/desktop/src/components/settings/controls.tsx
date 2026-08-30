@@ -151,7 +151,7 @@ export function PrimaryButton({
 			type="button"
 			disabled={disabled}
 			onClick={onClick}
-			className={`flex h-[38px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] bg-ink px-4 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer ${className}`}
+			className={`flex h-[32px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer ${className}`}
 		>
 			{children}
 		</button>

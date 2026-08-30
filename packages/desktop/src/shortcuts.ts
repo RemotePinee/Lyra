@@ -17,6 +17,12 @@ import { useDock } from "./dock/store.ts";
 import type { PanelKind } from "./sideStore.ts";
 
 export interface ShortcutDeps {
+	/**
+	 * Off while another screen is in front. The workspace stays mounted underneath so it keeps its
+	 * scroll position, which used to be the same thing as being the screen you are on — it is not
+	 * any more, and these keys act on panes that are out of sight.
+	 */
+	enabled: boolean;
 	compact: boolean;
 	navOpen: boolean;
 	activeSessionId: string | null;
@@ -26,9 +32,11 @@ export interface ShortcutDeps {
 }
 
 export function useShortcuts(deps: ShortcutDeps): void {
-	const { compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav } = deps;
+	const { enabled, compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav } = deps;
 
 	useEffect(() => {
+		if (!enabled) return;
+
 		/** Open the pane, or put it away if it is already the one in front. */
 		const panel = (kind: PanelKind, allowed: unknown) => {
 			if (allowed) useDock.getState().toggle(kind);
@@ -101,5 +109,5 @@ export function useShortcuts(deps: ShortcutDeps): void {
 
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [compact, navOpen, toggleNav, dismissNav, activeSessionId, workspace]);
+	}, [enabled, compact, navOpen, toggleNav, dismissNav, activeSessionId, workspace]);
 }
