@@ -162,6 +162,8 @@ export interface LyraApi {
 		/** Delete every archived session at once. Returns the remaining list. */
 		removeArchived(): Promise<SessionMeta[]>;
 		capabilities(sessionId: string): Promise<AgentCapabilities | null>;
+		/** Rename a session and persist to disk/log. */
+		rename(projectId: string, sessionId: string, title: string): Promise<SessionMeta | null>;
 		/** Summarise now. `reason` says why not, when it declines. */
 		compact(sessionId: string): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }>;
 		/** Null when the session is not open — this never boots one just to answer. */
