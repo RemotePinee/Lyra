@@ -28,6 +28,7 @@ export function MessageActions({
 	text,
 	className = "",
 	durationMs,
+	sseDurationMs,
 	tokens,
 	children,
 }: {
@@ -37,6 +38,8 @@ export function MessageActions({
 	className?: string;
 	/** Elapsed execution time in milliseconds (for assistant responses). */
 	durationMs?: number;
+	/** Pure SSE streaming generation duration in milliseconds (for accurate TPS calculation). */
+	sseDurationMs?: number;
 	/** Total output or consumed tokens to calculate tokens/sec throughput. */
 	tokens?: number;
 	/** Anything this side of the transcript offers beyond copying — editing, on a sent message. */
@@ -51,7 +54,7 @@ export function MessageActions({
 	}, [copied]);
 
 	const timeTip = formatTimestampTip(timestamp);
-	const durationBadge = formatDurationBadge(durationMs, tokens);
+	const durationBadge = formatDurationBadge(durationMs, sseDurationMs, tokens);
 
 	return (
 		<div
@@ -83,12 +86,14 @@ export function MessageActions({
 	);
 }
 
-function formatDurationBadge(durationMs?: number, tokens?: number): string | null {
+function formatDurationBadge(durationMs?: number, sseDurationMs?: number, tokens?: number): string | null {
 	if (!durationMs || durationMs <= 0) return null;
 	const secs = durationMs / 1000;
 	const durationText = secs < 60 ? `${secs.toFixed(1)}s` : `${Math.floor(secs / 60)}m ${(secs % 60).toFixed(0)}s`;
-	if (tokens && tokens > 0 && secs > 0) {
-		const tps = (tokens / secs).toFixed(1);
+	// Use pure streaming time (sseDurationMs) if available to compute TPS accurately, eliminating network wait and thinking TTFT
+	const tpsSecs = (sseDurationMs && sseDurationMs > 0 ? sseDurationMs : durationMs) / 1000;
+	if (tokens && tokens > 0 && tpsSecs > 0) {
+		const tps = (tokens / tpsSecs).toFixed(1);
 		return `${durationText} · ${tps} tok/s`;
 	}
 	return durationText;

@@ -149,7 +149,7 @@ export function SessionRow({
 			<button
 				type="button"
 				onClick={onOpen}
-				className={`flex w-full items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
+				className={`flex w-full min-w-0 items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
 					actionsCount === 2
 						? "pr-2 group-hover/session:pr-14 group-focus-within/session:pr-14"
 						: "pr-2 group-hover/session:pr-8 group-focus-within/session:pr-8"

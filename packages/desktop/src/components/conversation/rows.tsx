@@ -230,6 +230,7 @@ function AssistantRow({
           timestamp={message.timestamp}
           text={text}
           durationMs={turnStats?.durationMs ?? message.durationMs}
+          sseDurationMs={turnStats?.sseDurationMs ?? message.sseDurationMs}
           tokens={turnStats?.outputTokens ?? message.usage?.output}
         />
       )}
