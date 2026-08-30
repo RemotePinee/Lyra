@@ -11,7 +11,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { systemShell } from "../platform.ts";
+import { decodeProcessOutput, systemShell } from "../platform.ts";
 import type { HookConfig } from "../config/settings.ts";
 import type { ToolResult } from "../types.ts";
 
@@ -74,10 +74,10 @@ export async function runHook(
 		let settled = false;
 
 		child.stdout.on("data", (chunk: Buffer) => {
-			if (stdout.length < MAX_CAPTURE) stdout += chunk.toString("utf8");
+			if (stdout.length < MAX_CAPTURE) stdout += decodeProcessOutput(chunk);
 		});
 		child.stderr.on("data", (chunk: Buffer) => {
-			if (stderr.length < MAX_CAPTURE) stderr += chunk.toString("utf8");
+			if (stderr.length < MAX_CAPTURE) stderr += decodeProcessOutput(chunk);
 		});
 
 		// A hook that hangs must not hang the agent.

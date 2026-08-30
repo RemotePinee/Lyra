@@ -42,20 +42,38 @@ export const grepTool: Tool<GrepArgs> = {
 		required: ["pattern"],
 		additionalProperties: false,
 	},
-	summarize: (args) => `Search "${args.pattern}"`,
+	summarize: (args) => {
+		const pattern =
+			args.pattern ||
+			(args as unknown as { description?: string }).description ||
+			(args as unknown as { query?: string }).query ||
+			"";
+		return `Search "${pattern}"`;
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
-		if (typeof args.pattern !== "string" || !args.pattern) return errorResult("`pattern` is required.");
+		let pattern = args.pattern;
+		if (!pattern && typeof (args as unknown as { description?: string }).description === "string") {
+			const desc = (args as unknown as { description: string }).description.trim();
+			const match = desc.match(/^(?:pattern|query|regex|search):\s*(.+)$/i);
+			pattern = match ? match[1] : desc;
+		}
+		if (!pattern && typeof (args as unknown as { query?: string }).query === "string") {
+			pattern = (args as unknown as { query: string }).query;
+		}
+		if (typeof pattern !== "string" || !pattern) return errorResult("`pattern` is required.");
+		const resolvedArgs: GrepArgs = { ...args, pattern };
+
 		let root: string;
 		try {
-			root = args.path ? resolveWorkspacePath(ctx.cwd, args.path) : ctx.cwd;
+			root = resolvedArgs.path ? resolveWorkspacePath(ctx.cwd, resolvedArgs.path) : ctx.cwd;
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
 
-		const viaRipgrep = await runRipgrep(args, root, ctx);
+		const viaRipgrep = await runRipgrep(resolvedArgs, root, ctx);
 		if (viaRipgrep) return viaRipgrep;
-		return runFallback(args, root, ctx);
+		return runFallback(resolvedArgs, root, ctx);
 	},
 };
 
@@ -96,7 +114,16 @@ async function runRipgrep(args: GrepArgs, root: string, ctx: ToolContext): Promi
 				resolve(null);
 				return;
 			}
-			const lines = stdout.split("\n").filter(Boolean).map((line) => line.replace(`${root}/`, ""));
+			const normalizedRoot = root.replace(/\\/g, "/");
+			const lines = stdout
+				.split("\n")
+				.filter(Boolean)
+				.map((line) => {
+					if (line.startsWith(root)) return line.slice(root.length).replace(/^[/\\]/, "");
+					const normalized = line.replace(/\\/g, "/");
+					if (normalized.startsWith(normalizedRoot)) return normalized.slice(normalizedRoot.length).replace(/^\//, "");
+					return line;
+				});
 			resolve(formatMatches(lines, args, limit));
 		});
 	});

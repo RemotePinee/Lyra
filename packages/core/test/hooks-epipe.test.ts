@@ -44,8 +44,9 @@ test("a hook that ignores stdin does not take the process down with it", async (
 	process.on("uncaughtException", onUncaught);
 
 	try {
-		// Exits at once and never reads stdin. `true` is the smallest honest version of that.
-		const result = await runHook({ event: "before-tool", command: "true", blocking: false }, cwd, {
+		// Exits at once and never reads stdin. `true` (or `exit 0` on Windows cmd) is the smallest honest version of that.
+		const trueCmd = process.platform === "win32" ? "exit 0" : "true";
+		const result = await runHook({ id: "test", tools: [], enabled: true, event: "before-tool", command: trueCmd, blocking: false }, cwd, {
 			event: "before-tool",
 			toolName: "write",
 			args: { content: BIG },
@@ -74,9 +75,10 @@ test("a hook that does read stdin still gets the payload", async () => {
 	 */
 	const cwd = await mkdtemp(join(tmpdir(), "ly-hook-"));
 	try {
+		const grepCmd = process.platform === "win32" ? "findstr needle-tool" : "grep -q needle-tool";
 		const result = await runHook(
 			// Reads stdin and fails if the tool name is not in it, so the assertion is the exit code.
-			{ event: "before-tool", command: "grep -q needle-tool", blocking: false },
+			{ id: "test", tools: [], enabled: true, event: "before-tool", command: grepCmd, blocking: false },
 			cwd,
 			{ event: "before-tool", toolName: "needle-tool", args: {} },
 		);

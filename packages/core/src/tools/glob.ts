@@ -34,18 +34,35 @@ export const globTool: Tool<GlobArgs> = {
 		required: ["pattern"],
 		additionalProperties: false,
 	},
-	summarize: (args) => `Find ${args.pattern}`,
+	summarize: (args) => {
+		const pattern =
+			args.pattern ||
+			(args as unknown as { description?: string }).description ||
+			(args as unknown as { glob?: string }).glob ||
+			"";
+		return `Find ${pattern}`;
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
+		let pattern = args.pattern;
+		if (!pattern && typeof (args as unknown as { description?: string }).description === "string") {
+			const desc = (args as unknown as { description: string }).description.trim();
+			const match = desc.match(/^(?:pattern|glob):\s*(.+)$/i);
+			pattern = match ? match[1] : desc;
+		}
+		if (!pattern && typeof (args as unknown as { glob?: string }).glob === "string") {
+			pattern = (args as unknown as { glob: string }).glob;
+		}
+		if (typeof pattern !== "string" || !pattern) return errorResult("`pattern` is required.");
+
 		let root: string;
 		try {
 			root = args.path ? resolveWorkspacePath(ctx.cwd, args.path) : ctx.cwd;
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
-		if (typeof args.pattern !== "string" || !args.pattern) return errorResult("`pattern` is required.");
 
-		const regex = globToRegExp(args.pattern);
+		const regex = globToRegExp(pattern);
 		const limit = Math.min(args.limit ?? MAX_RESULTS, MAX_RESULTS);
 		const matches: { path: string; mtime: number }[] = [];
 
@@ -62,7 +79,7 @@ export const globTool: Tool<GlobArgs> = {
 				if (entry.isDirectory()) {
 					if (SKIP_DIRS.has(entry.name)) continue;
 					// Hidden directories are only traversed when the pattern asks for them.
-					if (entry.name.startsWith(".") && !args.pattern.includes("/.") && !args.pattern.startsWith(".")) continue;
+					if (entry.name.startsWith(".") && !pattern.includes("/.") && !pattern.startsWith(".")) continue;
 					await walk(full);
 					continue;
 				}
@@ -79,13 +96,13 @@ export const globTool: Tool<GlobArgs> = {
 		const shown = matches.slice(0, limit);
 
 		if (shown.length === 0) {
-			return { content: [{ type: "text", text: `No files match ${args.pattern}.` }], details: { kind: "glob", count: 0 } };
+			return { content: [{ type: "text", text: `No files match ${pattern}.` }], details: { kind: "glob", count: 0 } };
 		}
 
 		const footer = matches.length > shown.length ? `\n\n[${matches.length - shown.length} more matches not shown]` : "";
 		return {
 			content: [{ type: "text", text: shown.map((m) => m.path).join("\n") + footer }],
-			details: { kind: "glob", pattern: args.pattern, count: matches.length, files: shown.map((m) => m.path) },
+			details: { kind: "glob", pattern, count: matches.length, files: shown.map((m) => m.path) },
 		};
 	},
 };
