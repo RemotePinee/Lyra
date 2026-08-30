@@ -1229,13 +1229,11 @@
 }
 
 .ly-fade-y {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 800px;
   mask-image: linear-gradient(
     to bottom,
     /* Above the held band: the list, softened into the top edge as it always was. Collapses to
        nothing when `--ly-hold-top` is zero, which is every case except a row on its way in. */
-      transparent 0,
+    transparent 0,
     rgb(0 0 0 / 0.06) calc(var(--ly-hold-top) * 0.12),
     rgb(0 0 0 / 0.19) calc(var(--ly-hold-top) * 0.26),
     rgb(0 0 0 / 0.38) calc(var(--ly-hold-top) * 0.41),
@@ -1245,6 +1243,34 @@
     /* The held band, kept at full strength: the rows held there are inside this element, so
        softening it would fade the very rows it is supposed to start below. What hides the list
        behind them is their own fill, not this. */ #000 var(--ly-hold-top),
+    #000 var(--ly-fade-inset),
+    transparent var(--ly-fade-inset),
+    rgb(0 0 0 / 0.06) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.12),
+    rgb(0 0 0 / 0.19) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.26),
+    rgb(0 0 0 / 0.38) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.41),
+    rgb(0 0 0 / 0.6) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.57),
+    rgb(0 0 0 / 0.8) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.72),
+    rgb(0 0 0 / 0.94) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.86),
+    #000 calc(var(--ly-fade-inset) + var(--ly-fade-top)),
+    #000 calc(100% - var(--ly-fade-bottom)),
+    rgb(0 0 0 / 0.94) calc(100% - var(--ly-fade-bottom) * 0.86),
+    rgb(0 0 0 / 0.8) calc(100% - var(--ly-fade-bottom) * 0.72),
+    rgb(0 0 0 / 0.6) calc(100% - var(--ly-fade-bottom) * 0.57),
+    rgb(0 0 0 / 0.38) calc(100% - var(--ly-fade-bottom) * 0.41),
+    rgb(0 0 0 / 0.19) calc(100% - var(--ly-fade-bottom) * 0.26),
+    rgb(0 0 0 / 0.06) calc(100% - var(--ly-fade-bottom) * 0.12),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgb(0 0 0 / 0.06) calc(var(--ly-hold-top) * 0.12),
+    rgb(0 0 0 / 0.19) calc(var(--ly-hold-top) * 0.26),
+    rgb(0 0 0 / 0.38) calc(var(--ly-hold-top) * 0.41),
+    rgb(0 0 0 / 0.6) calc(var(--ly-hold-top) * 0.57),
+    rgb(0 0 0 / 0.8) calc(var(--ly-hold-top) * 0.72),
+    rgb(0 0 0 / 0.94) calc(var(--ly-hold-top) * 0.86),
+    #000 var(--ly-hold-top),
     #000 var(--ly-fade-inset),
     transparent var(--ly-fade-inset),
     rgb(0 0 0 / 0.06) calc(var(--ly-fade-inset) + var(--ly-fade-top) * 0.12),

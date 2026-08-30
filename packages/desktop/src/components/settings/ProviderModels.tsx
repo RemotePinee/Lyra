@@ -10,7 +10,7 @@
  * about to compare it against.
  */
 
-import { Check, CircleAlert, DownloadCloud, Link2, Pencil, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, CircleAlert, CloudDownload, Link2, Loader2, Pencil, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { ModelConfig } from "@lyra/core";
 import type { ProviderTestResult } from "../../../electron/ipc-types.ts";
 import { useConfirmer } from "../Confirm.tsx";
@@ -71,7 +71,11 @@ export function ProviderModels({
 							data-ly-tip="从当前 Base URL 端点自动获取可用模型列表"
 							className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-caption font-medium text-ink-muted transition-colors hover:bg-card-hover hover:text-ink disabled:opacity-50 cursor-pointer"
 						>
-							<DownloadCloud size={13} strokeWidth={1.8} className={fetchingModels ? "animate-spin text-accent" : ""} />
+							{fetchingModels ? (
+								<Loader2 size={13} strokeWidth={2} className="animate-spin text-accent" />
+							) : (
+								<CloudDownload size={13.5} strokeWidth={1.8} />
+							)}
 							<span>{fetchingModels ? "获取中…" : "拉取模型"}</span>
 						</button>
 					)}

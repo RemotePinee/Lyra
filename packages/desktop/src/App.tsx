@@ -132,8 +132,14 @@ function Shell() {
 	// meaning over the other, so leaving the view puts it away.
 	useEffect(() => dismissNav(), [view, dismissNav]);
 
-	if (view === "settings") return <SettingsShell />;
-	return <ChatShell />;
+	return (
+		<>
+			<div className={`flex min-h-0 flex-1 flex-col ${view === "settings" ? "hidden" : ""}`}>
+				<ChatShell />
+			</div>
+			{view === "settings" && <SettingsShell />}
+		</>
+	);
 }
 
 /**
