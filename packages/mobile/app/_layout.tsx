@@ -47,7 +47,12 @@ export default function RootLayout() {
 				>
 					<Stack.Screen name="index" options={{ title: "Lyra" }} />
 					<Stack.Screen name="pair" options={{ title: "连接桌面端", presentation: "modal" }} />
-					<Stack.Screen name="session/[id]" options={{ title: "会话" }} />
+					<Stack.Screen
+						name="session/[id]"
+						options={{
+							headerShown: false,
+						}}
+					/>
 				</Stack>
 			</SafeAreaProvider>
 		</GestureHandlerRootView>

@@ -29,6 +29,13 @@ export interface PendingApproval {
 	detail: string;
 }
 
+export interface CachedSessionData {
+	messages: Message[];
+	toolRuns: Record<string, ToolRun>;
+	seq: number;
+	updatedAt: number;
+}
+
 interface MobileState {
 	hydrated: boolean;
 	connection: Connection | null;
@@ -47,6 +54,8 @@ interface MobileState {
 	running: boolean;
 	/** Highest record seq applied, so a reconnect can resume instead of re-reading everything. */
 	seq: number;
+	loadingSessionId: string | null;
+	cache: Record<string, CachedSessionData>;
 
 	hydrate(): Promise<void>;
 	pair(connection: Connection): Promise<boolean>;
@@ -76,6 +85,8 @@ export const useMobile = create<MobileState>((set, get) => ({
 	approvals: [],
 	running: false,
 	seq: 0,
+	loadingSessionId: null,
+	cache: {},
 
 	async hydrate() {
 		const raw = await SecureStore.getItemAsync(CONNECTION_KEY).catch(() => null);
@@ -141,34 +152,80 @@ export const useMobile = create<MobileState>((set, get) => ({
 	async openSession(meta) {
 		const client = get().client;
 		if (!client) return;
-		set({ activeSession: meta, messages: [], toolRuns: {}, approvals: [], seq: 0, error: null });
+
+		const cached = get().cache[meta.id];
+		if (cached) {
+			set({
+				activeSession: meta,
+				messages: cached.messages,
+				toolRuns: cached.toolRuns,
+				seq: cached.seq,
+				loadingSessionId: null, // Cache exists: show immediately without displaying "Syncing..." banner
+				error: null,
+			});
+		} else {
+			set({
+				activeSession: meta,
+				messages: [],
+				toolRuns: {},
+				approvals: [],
+				running: false,
+				seq: 0,
+				loadingSessionId: meta.id, // Cold load: display initial loading spinner
+				error: null,
+			});
+		}
 
 		try {
+			const sinceSeq = cached?.seq ?? 0;
 			const [{ records }, status] = await Promise.all([
-				client.records(meta.projectId, meta.id),
+				client.records(meta.projectId, meta.id, sinceSeq > 0 ? sinceSeq : undefined),
 				client.status(meta.projectId, meta.id).catch(() => null),
 			]);
 
-			/*
-			 * Replayed with sequence numbers so a truncate record can drop the right tail.
-			 *
-			 * Editing a message on the desktop rewrites history from that point. Without this
-			 * the phone would replay the discarded reply as though it still stood, and show an
-			 * answer to a question that had been withdrawn.
-			 */
 			let entries: { seq: number; message: Message }[] = [];
 			let seq = 0;
-			for (const record of records) {
-				seq = Math.max(seq, record.seq);
-				if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
-				else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
+
+			if (sinceSeq > 0 && cached) {
+				entries = cached.messages.map((m, i) => ({ seq: i + 1, message: m }));
+				seq = cached.seq;
+				for (const record of records) {
+					seq = Math.max(seq, record.seq);
+					if (record.type === "message") {
+						if (!isDuplicateUserEcho(entries.map((e) => e.message), record.message)) {
+							entries.push({ seq: record.seq, message: record.message });
+						}
+					} else if (record.type === "truncate") {
+						entries = entries.filter((e) => e.seq <= record.afterSeq);
+					}
+				}
+			} else {
+				for (const record of records) {
+					seq = Math.max(seq, record.seq);
+					if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
+					else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
+				}
 			}
+
 			const messages = entries.map((e) => e.message);
+			const toolRuns = rebuildToolRuns(messages);
+
+			const updatedCache = trimCache({
+				...get().cache,
+				[meta.id]: {
+					messages,
+					toolRuns,
+					seq,
+					updatedAt: Date.now(),
+				},
+			});
 
 			set({
 				messages,
 				seq,
-				toolRuns: rebuildToolRuns(messages),
+				toolRuns,
+				cache: updatedCache,
+				loadingSessionId: null,
 				running: status?.running ?? false,
 				approvals:
 					status?.pendingApprovals.map((p) => ({
@@ -179,25 +236,40 @@ export const useMobile = create<MobileState>((set, get) => ({
 					})) ?? [],
 			});
 		} catch (error) {
-			set({ error: error instanceof Error ? error.message : String(error) });
+			set({ error: error instanceof Error ? error.message : String(error), loadingSessionId: null });
 		}
 	},
 
 	closeSession() {
-		set({ activeSession: null, messages: [], toolRuns: {}, approvals: [], running: false, seq: 0 });
+		const { activeSession, messages, toolRuns, seq, cache } = get();
+		if (activeSession) {
+			set({
+				cache: trimCache({
+					...cache,
+					[activeSession.id]: {
+						messages,
+						toolRuns,
+						seq,
+						updatedAt: Date.now(),
+					},
+				}),
+				activeSession: null,
+			});
+		} else {
+			set({ activeSession: null });
+		}
 	},
 
 	async send(text) {
 		const { client, activeSession } = get();
 		if (!client || !activeSession || !text.trim()) return;
 		const content: UserContent[] = [{ type: "text", text: text.trim() }];
-		// Show it immediately; the desktop echoes it back as a message_start we then dedupe.
+		// Show it immediately (optimistic UI update)
 		set({ messages: [...get().messages, { role: "user", content, timestamp: Date.now() }], running: true });
-		try {
-			await client.prompt(activeSession.projectId, activeSession.id, content);
-		} catch (error) {
+		// Send over network in background so UI doesn't block
+		client.prompt(activeSession.projectId, activeSession.id, content).catch((error) => {
 			set({ error: error instanceof Error ? error.message : String(error), running: false });
-		}
+		});
 	},
 
 	async abort() {
@@ -252,7 +324,15 @@ function attach(connection: Connection, set: Setter, get: Getter): void {
 	get().client?.disconnect();
 	const client = new SyncClient(connection);
 
-	client.onStateChange((socketState) => set({ socketState }));
+	client.onStateChange((socketState) => {
+		set({ socketState });
+		if (socketState === "open") {
+			const activeSession = get().activeSession;
+			if (activeSession) {
+				void get().openSession(activeSession);
+			}
+		}
+	});
 	client.onEvent((sessionId, event) => applyEvent(sessionId, event, set, get));
 	client.connect();
 	set({ client });
@@ -260,14 +340,60 @@ function attach(connection: Connection, set: Setter, get: Getter): void {
 
 function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Getter): void {
 	const state = get();
+
+	// If the event belongs to a session in cache but not currently active, keep cache updated
 	if (state.activeSession?.id !== sessionId) {
-		// The title lands with the first message; renaming in place beats waiting for the
-		// turn to end and re-fetching the whole list.
+		const cached = state.cache[sessionId];
+		if (cached) {
+			let cachedMessages = [...cached.messages];
+			let cachedToolRuns = { ...cached.toolRuns };
+
+			if (event.type === "message_update") {
+				const index = cachedMessages.length - 1;
+				if (index >= 0 && cachedMessages[index].role === "assistant") cachedMessages[index] = event.message;
+				else cachedMessages.push(event.message);
+			} else if (event.type === "message_end") {
+				const index = findSlot(cachedMessages, event.message);
+				if (index >= 0) cachedMessages[index] = event.message;
+				else cachedMessages.push(event.message);
+			} else if (event.type === "tool_start") {
+				cachedToolRuns[event.toolCallId] = {
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+					summary: event.summary,
+					status: "running",
+				};
+			} else if (event.type === "tool_end") {
+				cachedToolRuns[event.toolCallId] = {
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+					summary: cachedToolRuns[event.toolCallId]?.summary ?? event.toolName,
+					status: event.isError ? "error" : "done",
+					output: event.result.content
+						.map((c) => (c.type === "text" ? c.text : "[图片]"))
+						.join("\n")
+						.slice(0, 4000),
+					details: event.result.details,
+				};
+			}
+
+			set({
+				cache: {
+					...state.cache,
+					[sessionId]: {
+						...cached,
+						messages: cachedMessages,
+						toolRuns: cachedToolRuns,
+						updatedAt: Date.now(),
+					},
+				},
+			});
+		}
+
 		if (event.type === "title") {
 			set({ sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: event.title } : s)) });
 			return;
 		}
-		// Still refresh the list so the sidebar title and updated time stay current.
 		if (event.type === "agent_end") void get().refreshSessions();
 		return;
 	}
@@ -390,6 +516,16 @@ function findSlot(messages: Message[], incoming: Message): number {
 		if (candidate.timestamp === incoming.timestamp) return i;
 	}
 	return -1;
+}
+
+const MAX_CACHED_SESSIONS = 10;
+
+function trimCache(cache: Record<string, CachedSessionData>): Record<string, CachedSessionData> {
+	const entries = Object.entries(cache);
+	if (entries.length <= MAX_CACHED_SESSIONS) return cache;
+	// Sort by updatedAt descending, keep only the newest N sessions
+	entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+	return Object.fromEntries(entries.slice(0, MAX_CACHED_SESSIONS));
 }
 
 function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {

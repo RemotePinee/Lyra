@@ -17,6 +17,7 @@ export default function SessionListScreen() {
 
 	const [refreshing, setRefreshing] = useState(false);
 	const [creating, setCreating] = useState<string | null>(null);
+	const [navigatingId, setNavigatingId] = useState<string | null>(null);
 	const settings = useMobile((s) => s.settings);
 	const createSession = useMobile((s) => s.createSession);
 	const activeSessionId = useMobile((s) => s.activeSession?.id ?? null);
@@ -126,27 +127,36 @@ export default function SessionListScreen() {
 				<View key={group.projectId} className="mb-6">
 					<Text className="mb-2 px-1 text-[12px] text-ink-faint">{group.projectName}</Text>
 					<View className="overflow-hidden rounded-xl border border-line bg-card/40">
-						{group.sessions.map((session, index) => (
-							<Pressable
-								key={session.id}
-								onPress={() => {
-									void openSession(session);
-									router.push(`/session/${session.id}`);
-								}}
-								className={`px-3.5 py-3 active:bg-card-hover ${index > 0 ? "border-t border-line-soft" : ""}`}
-							>
-								<Text className="text-[14px] text-ink" numberOfLines={1}>
-									{session.title}
-								</Text>
-								<View className="mt-1 flex-row items-center gap-3">
-									<Text className="text-[11.5px] text-ink-faint">{session.messageCount} 条消息</Text>
-									<Text className="text-[11.5px] text-ink-faint">{formatTime(session.updatedAt)}</Text>
-									{session.usage.cost.total > 0 && (
-										<Text className="text-[11.5px] text-ink-faint">${session.usage.cost.total.toFixed(4)}</Text>
-									)}
-								</View>
-							</Pressable>
-						))}
+						{group.sessions.map((session, index) => {
+							const isNavigating = navigatingId === session.id;
+							return (
+								<Pressable
+									key={session.id}
+									onPress={() => {
+										setNavigatingId(session.id);
+										void openSession(session);
+										router.push(`/session/${session.id}`);
+										// Reset active press feedback shortly after route transition triggers
+										setTimeout(() => setNavigatingId(null), 500);
+									}}
+									className={`px-3.5 py-3 ${isNavigating ? "bg-card-hover/90" : "active:bg-card-hover"} ${index > 0 ? "border-t border-line-soft" : ""}`}
+								>
+									<View className="flex-row items-center justify-between gap-2">
+										<Text className="flex-1 text-[14px] text-ink" numberOfLines={1}>
+											{session.title}
+										</Text>
+										{isNavigating && <ActivityIndicator size="small" color="#9a9a9a" />}
+									</View>
+									<View className="mt-1 flex-row items-center gap-3">
+										<Text className="text-[11.5px] text-ink-faint">{session.messageCount} 条消息</Text>
+										<Text className="text-[11.5px] text-ink-faint">{formatTime(session.updatedAt)}</Text>
+										{session.usage.cost.total > 0 && (
+											<Text className="text-[11.5px] text-ink-faint">${session.usage.cost.total.toFixed(4)}</Text>
+										)}
+									</View>
+								</Pressable>
+							);
+						})}
 					</View>
 				</View>
 			))}

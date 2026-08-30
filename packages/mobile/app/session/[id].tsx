@@ -1,23 +1,25 @@
-import { useLocalSearchParams, useNavigation } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
 	ActivityIndicator,
-	KeyboardAvoidingView,
-	Platform,
+	FlatList,
+	Keyboard,
 	Pressable,
 	ScrollView,
 	Text,
 	TextInput,
 	View,
 } from "react-native";
+import Animated, { useAnimatedKeyboard, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AssistantMessage, Message } from "../../src/protocol";
 import { assistantText, useMobile, type ToolRun } from "../../src/store";
 
 export default function SessionScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>();
-	const navigation = useNavigation();
+	const router = useRouter();
 	const insets = useSafeAreaInsets();
+	const keyboard = useAnimatedKeyboard();
 
 	const activeSession = useMobile((s) => s.activeSession);
 	const sessions = useMobile((s) => s.sessions);
@@ -36,7 +38,21 @@ export default function SessionScreen() {
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const setModel = useMobile((s) => s.setModel);
 	const models = useMobile((s) => s.settings?.models ?? []);
-	const scrollRef = useRef<ScrollView>(null);
+	const listRef = useRef<FlatList>(null);
+
+	const loadingSessionId = useMobile((s) => s.loadingSessionId);
+	const isAtBottomRef = useRef(true);
+	const textInputRef = useRef<TextInput>(null);
+
+	const handleSend = useCallback(() => {
+		const text = draft.trim();
+		if (!text) return;
+		setDraft("");
+		textInputRef.current?.clear();
+		textInputRef.current?.blur();
+		Keyboard.dismiss();
+		void send(text);
+	}, [draft, send]);
 
 	// Deep-linking straight to a session id means the store may not have it loaded yet.
 	useEffect(() => {
@@ -47,13 +63,20 @@ export default function SessionScreen() {
 
 	useEffect(() => () => closeSession(), [closeSession]);
 
-	useLayoutEffect(() => {
-		navigation.setOptions({ title: activeSession?.title ?? "会话" });
-	}, [navigation, activeSession]);
-
+	// Auto-scroll when messages change or stream updates
 	useEffect(() => {
-		scrollRef.current?.scrollToEnd({ animated: true });
-	}, [messages, toolRuns]);
+		if (messages.length > 0 && isAtBottomRef.current) {
+			listRef.current?.scrollToOffset({ offset: 0, animated: running });
+		}
+	}, [messages, toolRuns, running]);
+
+	const keyExtractor = useCallback((item: Message, index: number) => rowKey(item, index), []);
+
+	const containerAnimatedStyle = useAnimatedStyle(() => {
+		return {
+			paddingBottom: keyboard.height.value,
+		};
+	});
 
 	if (!activeSession) {
 		return (
@@ -63,80 +86,123 @@ export default function SessionScreen() {
 		);
 	}
 
+	const isInitialLoading = loadingSessionId === id && messages.length === 0;
+	const isBackgroundRefreshing = loadingSessionId === id && messages.length > 0;
 	const approval = approvals[0];
 
 	return (
-		<KeyboardAvoidingView
-			className="flex-1 bg-shell"
-			behavior={Platform.OS === "ios" ? "padding" : undefined}
-			keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 44 : 0}
-		>
-			<ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ padding: 14, paddingBottom: 24 }}>
-				<View className="mb-3 flex-row items-center gap-2">
-					<Text className="flex-1 text-[11.5px] text-ink-faint" numberOfLines={1}>
-						{activeSession.cwd}
-					</Text>
-					{/*
-					 * A label once the conversation has started.
-					 *
-					 * The model is settled by the first message — the history carries handles
-					 * only that model can replay — so offering a picker here would be offering
-					 * something the desktop is going to refuse.
-					 */}
-					{messages.length > 0 ? (
-						<Text className="px-2 py-1 text-[11.5px] text-ink-faint">
-							{models.find((m) => m.id === activeSession.modelId)?.name ?? activeSession.modelId}
-						</Text>
-					) : (
-						<Pressable
-							onPress={() => setModelPickerOpen(true)}
-							className="rounded-lg border border-line px-2 py-1 active:bg-card-hover"
-						>
-							<Text className="text-[11.5px] text-ink-muted">
-								{models.find((m) => m.id === activeSession.modelId)?.name ?? "选择模型"}
-							</Text>
-						</Pressable>
-					)}
-				</View>
+		<Animated.View style={[{ flex: 1, backgroundColor: "#171717", paddingTop: insets.top }, containerAnimatedStyle]}>
+			{/* Custom Header: 100% immune to Native Stack shifts and keyboard jumps */}
+			<View className="flex-row items-center justify-between border-b border-line bg-[#1c1c1c] px-3 py-2.5">
+				<Pressable
+					onPress={() => router.back()}
+					hitSlop={12}
+					className="h-8 w-8 items-center justify-center rounded-lg active:bg-card-hover"
+				>
+					<Text className="text-[17px] font-medium text-ink">←</Text>
+				</Pressable>
+				<Text className="flex-1 text-center text-[15px] font-semibold text-ink" numberOfLines={1}>
+					{activeSession.title ?? "会话"}
+				</Text>
+				<View className="w-8" />
+			</View>
 
-				{modelPickerOpen && (
-					<View className="mb-3 overflow-hidden rounded-xl border border-line bg-card/40">
-						{models.map((model) => (
-							<Pressable
-								key={model.id}
-								onPress={() => {
-									void setModel(model.id);
-									setModelPickerOpen(false);
-								}}
-								className="border-b border-line-soft px-3.5 py-2.5 last:border-b-0 active:bg-card-hover"
-							>
-								<Text className="text-[13px] text-ink">{model.name}</Text>
-								<Text className="mt-0.5 text-[11px] text-ink-faint">{model.provider}</Text>
-							</Pressable>
-						))}
-						{models.length === 0 && (
-							<Text className="px-3.5 py-4 text-center text-[12px] text-ink-faint">桌面端还没有可用模型</Text>
+			{isInitialLoading && (
+				<View className="absolute inset-0 z-10 items-center justify-center bg-shell/90">
+					<ActivityIndicator size="large" color="#ededed" />
+					<Text className="mt-3 text-[13px] text-ink-muted">正在加载历史记录…</Text>
+				</View>
+			)}
+			{isBackgroundRefreshing && (
+				<View className="absolute top-12 left-0 right-0 z-10 flex-row items-center justify-center gap-2 bg-panel/80 py-1.5">
+					<ActivityIndicator size="small" color="#9a9a9a" />
+					<Text className="text-[11.5px] text-ink-faint">同步最新状态中…</Text>
+				</View>
+			)}
+
+			<FlatList
+				ref={listRef}
+				data={[...messages].reverse()}
+				inverted
+				renderItem={({ item, index }) => (
+					<MessageRow key={rowKey(item, index)} message={item} toolRuns={toolRuns} />
+				)}
+				keyExtractor={keyExtractor}
+				style={{ flex: 1 }}
+				contentContainerStyle={{ padding: 14, paddingTop: 14, paddingBottom: 14 }}
+				maxToRenderPerBatch={10}
+				windowSize={7}
+				initialNumToRender={15}
+				removeClippedSubviews={false}
+				keyboardDismissMode="on-drag"
+				keyboardShouldPersistTaps="always"
+				onScroll={(e) => {
+					// In inverted mode, contentOffset.y <= 60 means near bottom (latest messages)
+					isAtBottomRef.current = e.nativeEvent.contentOffset.y <= 60;
+				}}
+				scrollEventThrottle={32}
+				ListFooterComponent={
+					<View className="mb-3">
+						<View className="flex-row items-center gap-2">
+							<Text className="flex-1 text-[11.5px] text-ink-faint" numberOfLines={1}>
+								{activeSession.cwd}
+							</Text>
+							{messages.length > 0 ? (
+								<Text className="px-2 py-1 text-[11.5px] text-ink-faint">
+									{models.find((m) => m.id === activeSession.modelId)?.name ?? activeSession.modelId}
+								</Text>
+							) : (
+								<Pressable
+									onPress={() => setModelPickerOpen(true)}
+									className="rounded-lg border border-line px-2 py-1 active:bg-card-hover"
+								>
+									<Text className="text-[11.5px] text-ink-muted">
+										{models.find((m) => m.id === activeSession.modelId)?.name ?? "选择模型"}
+									</Text>
+								</Pressable>
+							)}
+						</View>
+
+						{modelPickerOpen && (
+							<View className="mt-2 overflow-hidden rounded-xl border border-line bg-card/40">
+								{models.map((model) => (
+									<Pressable
+										key={model.id}
+										onPress={() => {
+											void setModel(model.id);
+											setModelPickerOpen(false);
+										}}
+										className="border-b border-line-soft px-3.5 py-2.5 last:border-b-0 active:bg-card-hover"
+									>
+										<Text className="text-[13px] text-ink">{model.name}</Text>
+										<Text className="mt-0.5 text-[11px] text-ink-faint">{model.provider}</Text>
+									</Pressable>
+								))}
+								{models.length === 0 && (
+									<Text className="px-3.5 py-4 text-center text-[12px] text-ink-faint">
+										桌面端还没有可用模型
+									</Text>
+								)}
+							</View>
 						)}
 					</View>
-				)}
-
-				{messages.map((message, index) => (
-					<MessageRow key={rowKey(message, index)} message={message} toolRuns={toolRuns} />
-				))}
-
-				{running && (
-					<View className="flex-row items-center gap-2 py-2">
-						<ActivityIndicator size="small" color="#6e6e6e" />
-						<Text className="text-[12px] text-ink-faint">Agent 正在工作…</Text>
-					</View>
-				)}
-
-				{error && (
-					<View className="mt-2 rounded-xl border border-danger/40 bg-danger/10 px-3.5 py-2.5">
-						<Text className="text-[12.5px] text-danger">{error}</Text>
-					</View>
-				)}
-			</ScrollView>
+				}
+				ListHeaderComponent={
+					<>
+						{running && (
+							<View className="flex-row items-center gap-2 py-2">
+								<ActivityIndicator size="small" color="#6e6e6e" />
+								<Text className="text-[12px] text-ink-faint">Agent 正在工作…</Text>
+							</View>
+						)}
+						{error && (
+							<View className="mt-2 rounded-xl border border-danger/40 bg-danger/10 px-3.5 py-2.5">
+								<Text className="text-[12.5px] text-danger">{error}</Text>
+							</View>
+						)}
+					</>
+				}
+			/>
 
 			{approval && (
 				<View className="border-t border-accent/40 bg-panel px-4 py-3">
@@ -167,14 +233,23 @@ export default function SessionScreen() {
 				</View>
 			)}
 
-			<View className="border-t border-line bg-sidebar px-3 pt-2.5" style={{ paddingBottom: insets.bottom || 12 }}>
+			{/* Input Bar (Fixed, dynamically padded by Reanimated hardware keyboard offset) */}
+			<View
+				className="border-t border-line bg-sidebar px-3 pt-2.5"
+				style={{
+					flexShrink: 0,
+					paddingBottom: insets.bottom || 12,
+				}}
+			>
 				<View className="flex-row items-end gap-2">
 					<TextInput
+						ref={textInputRef}
 						value={draft}
 						onChangeText={setDraft}
 						placeholder="随心输入"
 						placeholderTextColor="#6e6e6e"
 						multiline
+						onSubmitEditing={handleSend}
 						className="max-h-32 min-h-11 flex-1 rounded-2xl border border-line bg-input px-4 py-2.5 text-[14px] leading-5 text-ink"
 					/>
 					{running ? (
@@ -187,10 +262,7 @@ export default function SessionScreen() {
 					) : (
 						<Pressable
 							disabled={!draft.trim()}
-							onPress={() => {
-								void send(draft);
-								setDraft("");
-							}}
+							onPress={handleSend}
 							className="h-11 w-11 items-center justify-center rounded-full bg-elevated active:opacity-85 disabled:opacity-40"
 						>
 							<Text className="text-[17px] leading-5 text-ink">↑</Text>
@@ -198,7 +270,7 @@ export default function SessionScreen() {
 					)}
 				</View>
 			</View>
-		</KeyboardAvoidingView>
+		</Animated.View>
 	);
 }
 
@@ -207,21 +279,19 @@ function rowKey(message: Message, index: number): string {
 	return `${message.role}-${message.timestamp}-${index}`;
 }
 
-function MessageRow({ message, toolRuns }: { message: Message; toolRuns: Record<string, ToolRun> }) {
+const MessageRow = React.memo(function MessageRow({
+	message,
+	toolRuns,
+}: {
+	message: Message;
+	toolRuns: Record<string, ToolRun>;
+}) {
 	if (message.role === "toolResult") return null;
 
 	if (message.role === "user") {
 		if (message.synthetic) return null;
 		return (
 			<View className="mb-3 items-end">
-				{/*
-				 * Dispatched from the desktop's side chat, not typed here.
-				 *
-				 * The side chat itself is a desktop thing — it lives in memory on that machine
-				 * and never syncs. What does sync is the work it hands to the session, which
-				 * arrives on the phone looking like a message you wrote and cannot remember
-				 * writing. This label is the whole explanation.
-				 */}
 				{message.origin === "side-chat" && (
 					<Text className="mr-1 mb-1 text-[11px] text-ink-faint">来自侧边聊天</Text>
 				)}
@@ -235,7 +305,7 @@ function MessageRow({ message, toolRuns }: { message: Message; toolRuns: Record<
 	}
 
 	return <AssistantRow message={message} toolRuns={toolRuns} />;
-}
+});
 
 function AssistantRow({ message, toolRuns }: { message: AssistantMessage; toolRuns: Record<string, ToolRun> }) {
 	const text = assistantText(message);
