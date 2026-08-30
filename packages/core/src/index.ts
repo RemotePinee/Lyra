@@ -132,6 +132,17 @@ export {
 	type SymbolIndex,
 } from "./index/symbols.ts";
 export { buildSystemPrompt, loadProjectInstructions } from "./prompt/system.ts";
+export {
+	addMemoryEntry,
+	clearAllMemory,
+	formatMemoryForPrompt,
+	loadMemory,
+	memoryPath,
+	removeMemoryEntry,
+	saveMemory,
+	type MemoryEntry,
+	type MemoryStore,
+} from "./runtime/memory.ts";
 export { compactIfNeeded, compactWith, useCompaction } from "./runtime/compaction.ts";
 export type { ContextBreakdown, ContextSegment, ContextSegmentKey } from "./runtime/context.ts";
 export { estimateTokens } from "./tokens.ts";

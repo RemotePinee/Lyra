@@ -112,7 +112,7 @@ function SlashCommands() {
 			<SectionTitle>新建命令</SectionTitle>
 			<Card className="mb-6">
 				<div className="flex flex-col gap-3 p-4">
-					<div className="flex items-end gap-2">
+					<div className="flex items-center gap-2">
 						<div className="min-w-0 flex-1">
 							<TextInput
 								value={name}
@@ -123,7 +123,7 @@ function SlashCommands() {
 								}}
 							/>
 						</div>
-						<div className="flex shrink-0 items-center gap-1 rounded-[10px] bg-card p-0.5">
+						<div className="flex h-[38px] shrink-0 items-center gap-1 rounded-[10px] bg-card p-1">
 							{(
 								[
 									{ id: "user", label: "个人" },
@@ -135,8 +135,8 @@ function SlashCommands() {
 									type="button"
 									disabled={entry.id === "workspace" && !cwd}
 									onClick={() => setScope(entry.id)}
-									className={`rounded-[8px] px-2.5 py-1.5 text-label transition-colors duration-[var(--ly-t-quick)] disabled:opacity-40 ${
-										scope === entry.id ? "bg-elevated text-ink" : "text-ink-muted hover:text-ink"
+									className={`h-full rounded-[8px] px-3 text-label font-medium transition-colors duration-[var(--ly-t-quick)] disabled:opacity-40 cursor-pointer ${
+										scope === entry.id ? "bg-elevated text-ink shadow-xs" : "text-ink-muted hover:text-ink"
 									}`}
 								>
 									{entry.label}
@@ -144,8 +144,8 @@ function SlashCommands() {
 							))}
 						</div>
 						<PrimaryButton disabled={!name.trim()} onClick={() => void create()}>
-							<Plus size={13} strokeWidth={2} />
-							创建并编辑
+							<Plus size={14} strokeWidth={2} />
+							<span>创建并编辑</span>
 						</PrimaryButton>
 					</div>
 					<p className="text-detail text-ink-faint">

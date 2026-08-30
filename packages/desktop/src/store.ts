@@ -36,6 +36,7 @@ export type View = "chat" | "settings" | "pull-requests" | "scheduled" | "plugin
 export type SettingsSection =
   | "general"
   | "appearance"
+  | "personalization"
   | "models"
   | "browser"
   | "plugins"

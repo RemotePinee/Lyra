@@ -6,7 +6,7 @@
  * or not anything is running.
  */
 
-import { buildIndex, indexStats, loadIndex, saveIndex, searchIndex } from "@lyra/core";
+import { addMemoryEntry, buildIndex, clearAllMemory, indexStats, loadIndex, loadMemory, removeMemoryEntry, saveIndex, searchIndex } from "@lyra/core";
 import { ipcMain } from "electron";
 import type { ProviderTestResult, SyncStatus } from "../ipc-types.ts";
 import { applySettings, settings } from "../app-settings.ts";
@@ -100,6 +100,23 @@ export function registerServicesIpc(deps: ServicesIpcDeps): void {
 			file: s.file,
 			line: s.line,
 		}));
+	});
+
+	ipcMain.handle("memory:load", async () => {
+		const store = await loadMemory();
+		return { entries: store.entries };
+	});
+
+	ipcMain.handle("memory:add", async (_event, content: string) => {
+		return addMemoryEntry(content, "user");
+	});
+
+	ipcMain.handle("memory:remove", async (_event, id: string) => {
+		return removeMemoryEntry(id);
+	});
+
+	ipcMain.handle("memory:clear", async () => {
+		return clearAllMemory();
 	});
 
 	ipcMain.handle("scheduler:runNow", async (_event, taskId: string) => {

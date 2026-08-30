@@ -1,7 +1,7 @@
 /**
  * The index, as a column you read downwards.
  */
-import { Check, FolderTree, List, Minus, Plus, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
+import { Check, FolderTree, List, Minus, Plus, RefreshCw, RotateCcw, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { GitStatus, GitStatusFile, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
@@ -363,8 +363,8 @@ export function ChangesView({
           <div className="flex items-center justify-between gap-1 px-2.5 pt-0 pb-2">
             <div className="flex min-w-0 shrink items-center gap-1">
               <IconButton
-                icon={generating ? <RefreshCw size={13.5} className="ly-spin text-accent" /> : <Sparkles size={13.5} className="text-accent" />}
-                label={generating ? "正在生成提交说明…" : "AI 自动生成 Commit 说明"}
+                icon={generating ? <RefreshCw size={13.5} className="ly-spin text-accent" /> : <Wand2 size={13.5} className="text-accent" />}
+                label={generating ? "正在生成提交说明…" : "AI 智能生成 Commit 说明"}
                 size="sm"
                 disabled={generating || (stagedPaths.length === 0 && unstagedPaths.length === 0)}
                 onClick={() => void generateCommitMessage()}

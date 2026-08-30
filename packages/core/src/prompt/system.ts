@@ -21,6 +21,12 @@ export interface SystemPromptInput {
 	agents?: AgentDefinition[];
 	/** Contents of the project's instruction file, if one exists. */
 	projectInstructions: { path: string; content: string }[];
+	/** User's global custom instructions from settings/personalization. */
+	customInstructions?: string;
+	/** User's persistent memory entries. */
+	memorySnippet?: string;
+	/** Preferred personality tone. */
+	tone?: string;
 	platform: string;
 	modelName: string;
 	isGitRepo: boolean;
@@ -103,6 +109,26 @@ Environment:
 - Model: ${input.modelName}`;
 
 	if (input.appendSystemPrompt) prompt += `\n\n${input.appendSystemPrompt}`;
+
+	if (input.tone && input.tone !== "professional") {
+		const TONE_RULES: Record<string, string> = {
+			friendly: "Tone and Style: Respond in a warm, helpful, and friendly conversational tone while maintaining technical rigor.",
+			concise: "Tone and Style: Be extremely concise, direct, and terse. Skip unnecessary conversational filler and focus purely on action and code.",
+			candid: "Tone and Style: Be candid, pragmatic, and clear. Directly point out code flaws and architectural risks without sugarcoating.",
+			humorous: "Tone and Style: Be witty and subtly humorous while solving complex engineering problems effectively.",
+		};
+		if (TONE_RULES[input.tone]) {
+			prompt += `\n\n${TONE_RULES[input.tone]}`;
+		}
+	}
+
+	if (input.customInstructions?.trim()) {
+		prompt += `\n\n<global_user_instructions>\nUser's global personal instructions across all projects and chats:\n${input.customInstructions.trim()}\n</global_user_instructions>`;
+	}
+
+	if (input.memorySnippet?.trim()) {
+		prompt += `\n\n${input.memorySnippet.trim()}`;
+	}
 
 	prompt += formatSkills(input.skills);
 	// Only worth listing when task is actually loaded — otherwise the model cannot dispatch.

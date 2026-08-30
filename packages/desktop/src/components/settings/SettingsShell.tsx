@@ -17,6 +17,7 @@ import {
 	Settings2,
 	ShieldCheck,
 	Smartphone,
+	Sparkles,
 	SquareTerminal,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -31,6 +32,7 @@ import { AboutSettings } from "./AboutSettings.tsx";
 import { AppearanceSettings } from "./AppearanceSettings.tsx";
 import { CommandsSettings } from "./CommandsSettings.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
+import { PersonalizationSettings } from "./PersonalizationSettings.tsx";
 import { McpSettings } from "./McpSettings.tsx";
 import { ModelSettings } from "./ModelSettings.tsx";
 import { ExtensionsSettings } from "./ExtensionsSettings.tsx";
@@ -59,6 +61,7 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 		items: [
 			{ id: "general", label: "常规", icon: Settings2 },
 			{ id: "appearance", label: "外观", icon: Palette },
+			{ id: "personalization", label: "个性化", icon: Sparkles },
 			{ id: "models", label: "模型设置", icon: Layers },
 			{ id: "forges", label: "代码托管", icon: GitPullRequest },
 			{ id: "browser", label: "浏览器", icon: Globe },
@@ -264,6 +267,8 @@ function SectionBody({ section }: { section: SettingsSection }) {
 			return <GeneralSettings />;
 		case "appearance":
 			return <AppearanceSettings />;
+		case "personalization":
+			return <PersonalizationSettings />;
 		case "models":
 			return <ModelSettings />;
 		case "skills":
