@@ -27,71 +27,67 @@ const GHOST_HTML = `<!DOCTYPE html>
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding-left: 6px;
+    padding: 0 4px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   .ghost-pill {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    height: 30px;
-    padding: 0 12px;
-    font-size: 12px;
+    gap: 6px;
+    height: 26px;
+    padding: 0 9px;
+    font-size: 11.5px;
     font-weight: 500;
     color: #ffffff;
-    border-radius: 8px;
+    border-radius: 6px;
     white-space: nowrap;
     pointer-events: none;
-    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
   }
   .ghost-pill.detach {
     background: #0284c7;
     border: 1px solid rgba(255, 255, 255, 0.35);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(2, 132, 199, 0.5);
-    transform: scale(1);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(2, 132, 199, 0.4);
   }
   .ghost-pill.merge {
     background: #059669;
-    border: 1.5px solid rgba(255, 255, 255, 0.5);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(5, 150, 105, 0.6);
-    transform: scale(1.06);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(5, 150, 105, 0.5);
   }
   .ghost-pill.back {
     background: #475569;
     border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    transform: scale(0.98);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   }
   .icon {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     flex-shrink: 0;
   }
   .title {
-    max-width: 120px;
+    max-width: 90px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: 5px;
-    background: rgba(255, 255, 255, 0.25);
-    letter-spacing: 0.3px;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.22);
   }
 </style>
 </head>
 <body>
   <div class="ghost-pill detach" id="pill">
-    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
       <polyline points="15 3 21 3 21 9"></polyline>
       <line x1="10" y1="14" x2="21" y2="3"></line>
     </svg>
     <span class="title" id="title">新会话</span>
-    <span class="badge" id="badge">释放以独立分屏</span>
+    <span class="badge" id="badge">独立分屏</span>
   </div>
   <script>
     const DETACH_ICON = '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line>';
@@ -106,15 +102,15 @@ const GHOST_HTML = `<!DOCTYPE html>
       if (title && titleEl) titleEl.textContent = title;
       if (mode === "merge") {
         pill.className = "ghost-pill merge";
-        badge.textContent = "释放以合并到此窗口";
+        badge.textContent = "合并窗口";
         icon.innerHTML = MERGE_ICON;
       } else if (mode === "back") {
         pill.className = "ghost-pill back";
-        badge.textContent = "放回原窗口";
+        badge.textContent = "放回原处";
         icon.innerHTML = BACK_ICON;
       } else if (mode === "detach") {
         pill.className = "ghost-pill detach";
-        badge.textContent = "释放以独立分屏";
+        badge.textContent = "独立分屏";
         icon.innerHTML = DETACH_ICON;
       }
     };
@@ -170,9 +166,9 @@ function checkTargetWindow(cursor: { x: number; y: number }, sourceWebContentsId
 
 export function showDragGhost(title: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
-	const width = 290;
-	const height = 46;
-	const rawX = Math.round(cursor.x - 24);
+	const width = 210;
+	const height = 36;
+	const rawX = Math.round(cursor.x - 20);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
@@ -221,9 +217,9 @@ export function showDragGhost(title: string, sourceWebContentsId?: number): void
 
 export function moveDragGhost(title?: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
-	const width = 290;
-	const height = 46;
-	const rawX = Math.round(cursor.x - 24);
+	const width = 210;
+	const height = 36;
+	const rawX = Math.round(cursor.x - 20);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
