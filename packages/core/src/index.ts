@@ -78,6 +78,7 @@ export {
 	DEFAULT_SCREENSHOT_SETTINGS,
 	DEFAULT_SETTINGS,
 	loadSettings,
+	migrateSecrets,
 	resolveModel,
 	saveSettings,
 	settingsPath,
@@ -89,6 +90,13 @@ export {
 	type ScreenshotSettings,
 	type Settings,
 } from "./config/settings.ts";
+/**
+ * The credential store, for the desktop's own secrets.
+ *
+ * Exported from the root because the main process is the only thing that touches it — the renderer
+ * never sees a token, which is the point of it living behind IPC.
+ */
+export { isSealed, resetVault, seal, secret, unseal } from "./config/vault.ts";
 export {
 	McpManager,
 	type McpHttpServer,

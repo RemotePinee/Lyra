@@ -53,7 +53,7 @@ import {
 	signIn,
 	signOut,
 } from "../forge/index.ts";
-import { encryptionAvailable } from "../forge/vault.ts";
+
 import { FORGE_KINDS, type ForgeKind, type ReviewVerdict } from "../forge/types.ts";
 
 export interface GitIpcDeps {
@@ -96,7 +96,9 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	 * there is deliberately no channel that reads one back — a token that can be asked for over IPC
 	 * is a token that ends up in a devtools panel.
 	 */
-	ipcMain.handle("forge:kinds", async () => ({ kinds: FORGE_KINDS, encrypted: await encryptionAvailable() }));
+	// No `encrypted` flag any more: the seal no longer depends on the machine having a keyring, so
+	// there is no longer a case where it is false. See `forge/vault.ts`.
+	ipcMain.handle("forge:kinds", async () => ({ kinds: FORGE_KINDS }));
 
 	ipcMain.handle("forge:accounts", async () => accounts());
 

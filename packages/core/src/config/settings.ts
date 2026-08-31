@@ -1,8 +1,9 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { McpServerConfig } from "../mcp/client.ts";
 import { lyraHome } from "../session/store.ts";
 import type { ProviderConfig, ThinkingLevel } from "../types.ts";
+import { keepSecrets, putSecrets, secret } from "./vault.ts";
 
 /** How much the agent may do without stopping to ask. */
 export type PermissionMode =
@@ -318,7 +319,45 @@ export function settingsPath(): string {
 	return join(lyraHome(), "settings.json");
 }
 
+/** Where a provider's key is filed in the vault. */
+const providerSecretId = (providerId: string): string => `provider:${providerId}`;
+
+/**
+ * Put the API keys back on the providers, from the vault.
+ *
+ * The rest of the app reads `provider.apiKey` and always has; keeping that true means the change
+ * of where the key is *stored* stops at this file rather than reaching every request builder and
+ * settings pane. What comes off disk has an empty `apiKey`, and this fills it in.
+ *
+ * A key still sitting in `settings.json` is honoured rather than ignored — that is what every
+ * install written by an earlier build looks like, and refusing it would log everyone out of their
+ * model providers to fix a problem about writing them down. `saveSettings` moves it on the next
+ * write; `migrateSecrets` moves it without waiting for one.
+ */
+async function withKeys(settings: Settings): Promise<Settings> {
+	if (settings.providers.length === 0) return settings;
+	const providers = await Promise.all(
+		settings.providers.map(async (provider) => {
+			const stored = await secret(providerSecretId(provider.id));
+			// `stored` wins: it is the newer of the two whenever both exist.
+			return stored === null ? provider : { ...provider, apiKey: stored };
+		}),
+	);
+	return { ...settings, providers };
+}
+
 export async function loadSettings(): Promise<Settings> {
+	return withKeys(await readSettingsFile());
+}
+
+/**
+ * Settings exactly as written, with whatever `apiKey` the file happens to hold.
+ *
+ * Separate from `loadSettings` because the migration needs to see the plaintext that is still on
+ * disk, and because `saveSettings` needs to compare against what was there without the vault's
+ * answer masking it.
+ */
+async function readSettingsFile(): Promise<Settings> {
 	const raw = await readFile(settingsPath(), "utf8").catch(() => null);
 	if (!raw) return { ...DEFAULT_SETTINGS };
 	try {
@@ -398,12 +437,59 @@ export function migrateAppearance(appearance: AppearanceSettings): AppearanceSet
 	return next;
 }
 
+/**
+ * Write the settings, with the API keys taken out of them.
+ *
+ * The keys go to the vault and the file gets an empty string in their place. `settings.json` is
+ * the most-travelled file this app owns — it is synced to the phone, copied between machines and
+ * pasted into bug reports — and it was written world-readable with every provider key in it.
+ *
+ * Removed providers are forgotten in the same pass. A key whose provider is gone is a secret with
+ * nothing to spend it on, and leaving it behind would mean deleting a provider does not delete its
+ * credential.
+ */
 export async function saveSettings(settings: Settings): Promise<void> {
+	const keys: Record<string, string> = {};
+	for (const provider of settings.providers) keys[providerSecretId(provider.id)] = provider.apiKey ?? "";
+	await putSecrets(keys);
+	await keepSecrets((id) => !id.startsWith("provider:") || id in keys);
+
 	const path = settingsPath();
 	await mkdir(lyraHome(), { recursive: true });
 	const tmp = `${path}.${process.pid}.tmp`;
-	await writeFile(tmp, JSON.stringify(settings, null, 2), "utf8");
+	const scrubbed: Settings = {
+		...settings,
+		providers: settings.providers.map((provider) => ({ ...provider, apiKey: "" })),
+	};
+	await writeFile(tmp, JSON.stringify(scrubbed, null, 2), "utf8");
+	/*
+	 * 0600, which it never was.
+	 *
+	 * The keys are out of it now, but what is left still describes every project on this machine
+	 * and every endpoint it talks to. It was 0644 — readable by every other account on the box —
+	 * for no reason other than that nothing ever set it.
+	 */
+	await chmod(tmp, 0o600).catch(() => {});
 	await rename(tmp, path);
+}
+
+/**
+ * Move any key still written in `settings.json` into the vault, once.
+ *
+ * `saveSettings` does this too, but only when something is saved — and somebody who never opens
+ * the settings page would keep their keys in a world-readable file indefinitely. Called at
+ * startup, where it is a no-op on every launch after the first.
+ *
+ * Returns how many were moved, which the caller logs and the tests assert on.
+ */
+export async function migrateSecrets(): Promise<number> {
+	const onDisk = await readSettingsFile();
+	const plaintext = onDisk.providers.filter((provider) => provider.apiKey);
+	if (plaintext.length === 0) return 0;
+	// Through `withKeys` so a provider already in the vault is not overwritten by the stale copy
+	// the file still carries.
+	await saveSettings(await withKeys(onDisk));
+	return plaintext.length;
 }
 
 /** Find a model across all configured providers by its `${providerId}/${modelId}` id. */

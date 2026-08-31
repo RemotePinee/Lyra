@@ -575,7 +575,7 @@ export interface LyraApi {
 	 */
 	forge: {
 		/** The hosts that can be added, and whether this machine can encrypt what it stores. */
-		kinds(): Promise<{ kinds: ForgeKindInfo[]; encrypted: boolean }>;
+		kinds(): Promise<{ kinds: ForgeKindInfo[] }>;
 		accounts(): Promise<ForgeAccount[]>;
 		/**
 		 * Check a token against its host, and keep it if it works.
