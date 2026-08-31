@@ -99,6 +99,8 @@ export interface ScreenshotSettings {
 	shortcut?: string;
 	/** Directory where screenshots are saved. If empty, saves to ~/Desktop or scratch directory. */
 	saveLocation?: string;
+	/** Whether to show the screenshot button in the composer input area (default false). */
+	showInComposer?: boolean;
 	/** Whether to automatically copy the screenshot image to clipboard after capture. */
 	copyToClipboard?: boolean;
 	/** Whether to automatically insert the captured screenshot into the active composer. */
@@ -110,8 +112,9 @@ export interface ScreenshotSettings {
 export const DEFAULT_SCREENSHOT_SETTINGS: ScreenshotSettings = {
 	shortcut: "Alt+A",
 	saveLocation: "",
+	showInComposer: false,
 	copyToClipboard: true,
-	insertIntoComposer: true,
+	insertIntoComposer: false,
 	openEditor: true,
 };
 

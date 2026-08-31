@@ -10,7 +10,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { app, clipboard, globalShortcut, nativeImage } from "electron";
+import { app, globalShortcut } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 import { resolveSaveDirectory } from "./screenshot-path.ts";
 
@@ -76,16 +76,6 @@ export async function captureScreen(settings?: ScreenshotSettings): Promise<Capt
 		}
 
 		const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
-
-		// Copy to system clipboard if preferred
-		if (settings?.copyToClipboard !== false) {
-			try {
-				const img = nativeImage.createFromBuffer(buffer);
-				clipboard.writeImage(img);
-			} catch (err) {
-				console.warn("[screenshot] 写入剪贴板失败:", err);
-			}
-		}
 
 		// If user did not specify a persistent saveLocation, remove the temp file
 		let finalPath: string | undefined = targetPath;

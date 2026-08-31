@@ -12,7 +12,7 @@ import {
 	GhostButton,
 	Row,
 	SectionTitle,
-	TextInput,
+	ShortcutRecorder,
 	Toggle,
 } from "./controls.tsx";
 
@@ -25,8 +25,9 @@ export function ScreenshotSettings() {
 	const config = settings.screenshot ?? {
 		shortcut: "Alt+A",
 		saveLocation: "",
+		showInComposer: false,
 		copyToClipboard: true,
-		insertIntoComposer: true,
+		insertIntoComposer: false,
 		openEditor: true,
 	};
 
@@ -53,20 +54,33 @@ export function ScreenshotSettings() {
 				截图设置
 			</h1>
 
-			<SectionTitle>快捷键与触发</SectionTitle>
+			<SectionTitle>快捷键与入口</SectionTitle>
 			<Card className="mb-9">
 				<Row
 					title="截图全局快捷键"
-					detail="在任意界面按下该快捷键即可触发系统交互式区域截图"
+					detail="在任意界面按下该快捷键即可触发系统交互式区域截图（点击后直接按键盘设置）"
 					control={
-						<div className="w-[200px]">
-							<TextInput
+						<div className="flex items-center gap-2">
+							<ShortcutRecorder
 								value={config.shortcut ?? "Alt+A"}
 								onChange={(val) => patch({ shortcut: val })}
-								placeholder="如 Alt+A 或 Option+A"
-								mono
 							/>
+							{config.shortcut && (
+								<GhostButton onClick={() => patch({ shortcut: "" })}>
+									清除
+								</GhostButton>
+							)}
 						</div>
+					}
+				/>
+				<Row
+					title="在对话输入框中显示截图按钮"
+					detail="开启后，输入框左侧附件加号旁将常驻截图相机图标"
+					control={
+						<Toggle
+							checked={config.showInComposer === true}
+							onChange={(showInComposer) => patch({ showInComposer })}
+						/>
 					}
 				/>
 				<Row
@@ -114,17 +128,17 @@ export function ScreenshotSettings() {
 				/>
 				<Row
 					title="自动插入到对话框"
-					detail="截图完成后将截图作为图片附件添加到当前的对话输入框"
+					detail="截图完成后将截图作为图片附件添加到当前的对话输入框（默认关闭）"
 					control={
 						<Toggle
-							checked={config.insertIntoComposer !== false}
+							checked={config.insertIntoComposer === true}
 							onChange={(insertIntoComposer) => patch({ insertIntoComposer })}
 						/>
 					}
 				/>
 				<Row
-					title="复制到剪贴板"
-					detail="截图完成后自动将图片写入系统剪贴板，方便随时 ⌘V 粘贴到其他应用"
+					title="完成编辑后复制到剪贴板"
+					detail="点击完成/保存标注时将图片写入系统剪贴板，方便随时 ⌘V 粘贴到其他应用"
 					control={
 						<Toggle
 							checked={config.copyToClipboard !== false}

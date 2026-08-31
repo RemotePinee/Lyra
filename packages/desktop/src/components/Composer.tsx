@@ -474,7 +474,7 @@ export function Composer() {
 		if (res.canceled || !res.dataUrl) return;
 
 		const screenshotSettings = settings?.screenshot;
-		const shouldInsert = screenshotSettings?.insertIntoComposer !== false;
+		const shouldInsert = screenshotSettings?.insertIntoComposer === true;
 		const shouldOpenEditor = screenshotSettings?.openEditor !== false;
 
 		const attachmentId = `screenshot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -717,7 +717,7 @@ export function Composer() {
 							>
 								<Plus size={16} strokeWidth={1.9} />
 							</button>
-							{window.lyra?.platform === "darwin" && (
+							{window.lyra?.platform === "darwin" && settings?.screenshot?.showInComposer && (
 								<button
 									type="button"
 									data-ly-tip={`屏幕截图 ${settings?.screenshot?.shortcut ? `(${settings.screenshot.shortcut.replace("CommandOrControl", "⌘").replace("Shift", "⇧").replace("Alt", "⌥").replace(/\+/g, "")})` : ""}`}

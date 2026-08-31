@@ -680,8 +680,12 @@ export function ImageViewer() {
 						 */
 						const dataUrl = annotator.render();
 						if (!dataUrl) return;
-						if (image.onReplace) image.onReplace(dataUrl);
-						else void toClipboard(dataUrl);
+						if (image.onReplace) {
+							image.onReplace(dataUrl);
+						}
+						// Always copy marked-up result to clipboard on save if it's not a pure in-place replacement
+						// or if user wants clipboard integration
+						void toClipboard(dataUrl);
 						setEditing(false);
 						dismiss();
 					}}
