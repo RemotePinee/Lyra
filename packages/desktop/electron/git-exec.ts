@@ -7,9 +7,64 @@
  */
 
 import { execFile } from "node:child_process";
+import { delimiter } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * The variables that tell git to work somewhere other than `cwd`.
+ *
+ * Every one of these outranks the directory a process is started in. `GIT_DIR=…` alone is enough
+ * to make `git rev-parse --is-inside-work-tree` answer about a completely different repository, or
+ * refuse to answer at all — and the answer the window drew from that was 「不是 Git 仓库」 about a
+ * project with a perfectly good `.git` in it.
+ *
+ * They arrive by inheritance. Anything that starts Lyra from inside a git operation passes them
+ * down: a `git` hook, `git rebase --exec`, a terminal still holding them from an earlier command.
+ * The app never sets them and never wants them, so they are dropped rather than trusted — the
+ * directory is the whole of what these calls mean to ask about.
+ */
+const REDIRECTING = [
+	"GIT_DIR",
+	"GIT_WORK_TREE",
+	"GIT_COMMON_DIR",
+	"GIT_INDEX_FILE",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_NAMESPACE",
+	"GIT_CEILING_DIRECTORIES",
+	"GIT_PREFIX",
+];
+
+/**
+ * Where git is likely to be, for a process that was not started from a shell.
+ *
+ * A GUI-launched app on macOS inherits `/usr/bin:/bin:/usr/sbin:/sbin` and nothing else — none of
+ * the login shell's additions. `git` from Homebrew or MacPorts is then simply not on the path, and
+ * the spawn fails with ENOENT, which reads exactly like a directory that is not a repository.
+ * Appended rather than prepended, so a path the user did set still wins.
+ */
+const LIKELY_PATHS = ["/usr/local/bin", "/opt/homebrew/bin", "/opt/local/bin", "/usr/bin", "/bin"];
+
+/** The environment git should run in, given the one this process was handed. */
+export function gitEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const env = { ...base };
+	for (const name of REDIRECTING) delete env[name];
+
+	const path = env.PATH ?? "";
+	const known = new Set(path.split(delimiter).filter(Boolean));
+	const missing = LIKELY_PATHS.filter((dir) => !known.has(dir));
+	if (missing.length > 0) env.PATH = [path, ...missing].filter(Boolean).join(delimiter);
+
+	return env;
+}
+
+/**
+ * Built once. `process.env` does not change under us, and rebuilding it per call would put this
+ * work on the path of every `git show` in a two-hundred-file diff.
+ */
+const GIT_ENV = gitEnvironment(process.env);
 
 export const MAX_FILES = 200;
 export const MAX_BLOB_BYTES = 400_000;
@@ -44,7 +99,7 @@ export async function mapLimit<T, R>(items: T[], run: (item: T) => Promise<R>): 
 }
 
 export async function git(cwd: string, args: string[]): Promise<string> {
-	const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+	const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 32 * 1024 * 1024, env: GIT_ENV });
 	return stdout;
 }
 
@@ -61,6 +116,7 @@ export async function gitBuffer(cwd: string, args: string[]): Promise<Buffer> {
 		cwd,
 		maxBuffer: 32 * 1024 * 1024,
 		encoding: "buffer",
+		env: GIT_ENV,
 	});
 	return stdout;
 }

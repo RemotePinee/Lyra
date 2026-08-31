@@ -45,6 +45,14 @@ export interface WorkspaceInfo {
 	name: string;
 	isGitRepo: boolean;
 	branch: string | null;
+	/**
+	 * Why git could not say whether this is a repository, when it could not say.
+	 *
+	 * Distinct from `isGitRepo: false`, which means git answered no. This is the case where the
+	 * question never got through — git missing, a checkout owned by someone else — and where the
+	 * panel would otherwise offer to `git init` a directory that is already a repository.
+	 */
+	gitProblem?: string;
 }
 
 export interface SessionSnapshot {

@@ -7,7 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { gitBranch, isGitRepo } from "./git.ts";
+import { gitBranch, probeRepo } from "./git.ts";
 import type { WorkspaceInfo } from "./ipc-types.ts";
 
 /**
@@ -25,7 +25,7 @@ import type { WorkspaceInfo } from "./ipc-types.ts";
  */
 export async function workspaceInfo(path: string): Promise<WorkspaceInfo | null> {
 	if (!existsSync(path)) return null;
-	const git = await isGitRepo(path);
+	const { repo: git, problem } = await probeRepo(path);
 	return {
 		path,
 		/*
@@ -37,5 +37,8 @@ export async function workspaceInfo(path: string): Promise<WorkspaceInfo | null>
 		name: basename(path) || path,
 		isGitRepo: git,
 		branch: git ? await gitBranch(path) : null,
+		// Only when git could not answer. A directory that simply has no repository in it is not a
+		// problem to report — it is the ordinary case the panel already has words for.
+		gitProblem: problem,
 	};
 }

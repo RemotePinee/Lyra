@@ -279,6 +279,22 @@ export function GitPanel() {
     );
   }
 
+  /*
+   * git could not answer, which is not the same as answering no.
+   *
+   * The panel used to draw the sentence below for both, so a repository git had refused to read —
+   * one owned by another user, or with no git on the path at all — was described as having no
+   * version control, under a button offering to initialise it. Two wrong claims and one dangerous
+   * suggestion. When the main process could not get an answer it now says what stopped it.
+   */
+  if (workspace.gitProblem) {
+    return (
+      <PanelEmpty icon={GitBranch} title="读不到 Git 仓库">
+        <span className="block">{workspace.gitProblem}</span>
+      </PanelEmpty>
+    );
+  }
+
   if (!cwd) {
     return (
       <PanelEmpty icon={GitBranch} title="不是 Git 仓库">

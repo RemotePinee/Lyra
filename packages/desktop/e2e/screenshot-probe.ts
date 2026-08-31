@@ -11,9 +11,13 @@
  * Run: `node --experimental-strip-types e2e/screenshot-probe.ts`
  */
 
+import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { startApp } from "./app.ts";
+
+const execFileAsync = promisify(execFile);
 
 const PORT = 9411;
 
@@ -95,6 +99,24 @@ async function click(socket: string, x: number, y: number) {
 }
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Which application is frontmost, according to the window server.
+ *
+ * `lsappinfo` rather than AppleScript: it needs no accessibility grant, so it works on a machine
+ * where nobody has clicked through a permission dialog for the test runner. macOS only — elsewhere
+ * this returns null and the check is skipped, which is honest about what it covers.
+ */
+async function frontmostApp(): Promise<string | null> {
+	if (process.platform !== "darwin") return null;
+	try {
+		const { stdout: asn } = await execFileAsync("lsappinfo", ["front"]);
+		const { stdout } = await execFileAsync("lsappinfo", ["info", "-only", "name", asn.trim()]);
+		return /"LSDisplayName"="(.*)"/.exec(stdout.trim())?.[1] ?? null;
+	} catch {
+		return null;
+	}
+}
 
 /** Where the finished screenshot should land, so the export can be checked as a file on disk. */
 let shots = "";
@@ -374,10 +396,28 @@ try {
 		if (size.width < 600 || size.height < 400) problems.push(`导出的图片尺寸不对：${size.width}×${size.height}`);
 	}
 
-	// The overlay is destroyed by now, so the main window must have the foreground back.
+	// ---- 11. 焦点回到应用本身 ----------------------------------------------
+	/*
+	 * Not "the main window is still rendering" — it always was.
+	 *
+	 * The reported bug is that the app disappears behind whatever was on screen before it: the
+	 * overlay is `alwaysOnTop` at screen-saver level, and when macOS destroys it the foreground
+	 * goes to the application underneath, not back to Lyra. Nothing about the main window's DOM
+	 * changes, which is why the first version of this check passed while the bug was there. The
+	 * window server is the only thing that can answer it.
+	 *
+	 * Confirmed to fail when it should: with `app.focus({ steal: true })` removed from
+	 * `closeScreenshotOverlay`, this reports whichever application happened to be behind the
+	 * overlay instead of Lyra.
+	 */
 	const alive = await app.evaluate<boolean>(`Boolean(document.querySelector(".ly-shell"))`);
-	note(`  11. 主窗口 → ${alive ? "仍在渲染" : "不见了"}`);
 	if (!alive) problems.push("完成截图后主窗口没了");
+	await pause(600);
+	const front = await frontmostApp();
+	note(`  11. 主窗口 ${alive ? "仍在渲染" : "不见了"}，前台应用 → ${front ?? "(这个平台读不到)"}`);
+	if (front !== null && !/electron|lyra/i.test(front)) {
+		problems.push(`浮层关掉后前台跑到了「${front}」，应用没有拿回焦点`);
+	}
 } finally {
 	await app.stop();
 }
