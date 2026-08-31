@@ -81,12 +81,15 @@ const GHOST_HTML = `<!DOCTYPE html>
 </html>`;
 
 export function showDragGhost(title: string, screenX: number, screenY: number): void {
+	const posX = Math.round(screenX - 70);
+	const posY = Math.round(screenY - 18);
+
 	if (!ghostWindow || ghostWindow.isDestroyed()) {
 		ghostWindow = new BrowserWindow({
 			width: 260,
 			height: 48,
-			x: Math.round(screenX - 80),
-			y: Math.round(screenY - 20),
+			x: posX,
+			y: posY,
 			frame: false,
 			transparent: true,
 			alwaysOnTop: true,
@@ -109,7 +112,7 @@ export function showDragGhost(title: string, screenX: number, screenY: number): 
 			ghostWindow.showInactive();
 		});
 	} else {
-		ghostWindow.setPosition(Math.round(screenX - 80), Math.round(screenY - 20));
+		ghostWindow.setBounds({ x: posX, y: posY, width: 260, height: 48 });
 		if (!ghostWindow.isVisible()) {
 			ghostWindow.webContents.postMessage("", { title });
 			ghostWindow.showInactive();
@@ -119,7 +122,12 @@ export function showDragGhost(title: string, screenX: number, screenY: number): 
 
 export function moveDragGhost(screenX: number, screenY: number): void {
 	if (ghostWindow && !ghostWindow.isDestroyed() && ghostWindow.isVisible()) {
-		ghostWindow.setPosition(Math.round(screenX - 80), Math.round(screenY - 20));
+		ghostWindow.setBounds({
+			x: Math.round(screenX - 70),
+			y: Math.round(screenY - 18),
+			width: 260,
+			height: 48,
+		});
 	}
 }
 

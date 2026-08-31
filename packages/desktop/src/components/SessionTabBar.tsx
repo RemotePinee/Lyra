@@ -131,16 +131,14 @@ export function SessionTabBar() {
 
 			const isDragging = current.isDragging || dist > 4;
 
-			// Tear off when moved outside the top tab bar:
-			// 1. Below top bar (> 45px down)
-			// 2. Above window top (< 0px up)
-			// 3. Beyond window left (< 0px) or right (> window.innerWidth)
+			// Tear off only when dragged downwards past the top bar (> 45px down)
+			// or actually dragged well outside window boundaries
 			const isOutsideWindow =
-				moveEvt.clientX < 0 ||
-				moveEvt.clientX > window.innerWidth ||
-				moveEvt.clientY < 0 ||
-				moveEvt.clientY > window.innerHeight;
-			const isTornOff = isDragging && (moveEvt.clientY > 45 || moveEvt.clientY < 0 || isOutsideWindow);
+				moveEvt.clientX < -10 ||
+				moveEvt.clientX > window.innerWidth + 10 ||
+				moveEvt.clientY < -10 ||
+				moveEvt.clientY > window.innerHeight + 10;
+			const isTornOff = isDragging && (moveEvt.clientY > 45 || isOutsideWindow);
 
 			if (isTornOff) {
 				const session = sessionMap.get(id);
