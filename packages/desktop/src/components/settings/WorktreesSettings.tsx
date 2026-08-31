@@ -1,4 +1,4 @@
-import { FolderGit2, RefreshCw } from "lucide-react";
+import { FolderGit2, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useApp } from "../../store.ts";
 import { Card, Row, SectionTitle } from "./controls.tsx";
@@ -6,11 +6,14 @@ import { Card, Row, SectionTitle } from "./controls.tsx";
 export function WorktreesSettings() {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
+	const notify = useApp((s) => s.notify);
 	const projects = settings?.projects ?? [];
-	const [worktrees, setWorktrees] = useState<{ path: string; label: string; branch?: string; isMain?: boolean }[]>([]);
+	const [worktrees, setWorktrees] = useState<{ path: string; label: string; branch?: string; isMain?: boolean; repoPath: string }[]>([]);
 	const [refreshing, setRefreshing] = useState(false);
+	const [deletingPath, setDeletingPath] = useState<string | null>(null);
 
 	const rootDir = settings?.worktrees?.rootDir ?? "";
+	const autoCreate = settings?.worktrees?.autoCreateOnNewSession ?? false;
 	const fetchUpstream = settings?.worktrees?.fetchUpstreamBeforeCreate ?? false;
 	const autoClean = settings?.worktrees?.autoCleanOld ?? true;
 	const keepLimit = settings?.worktrees?.keepLimit ?? 15;
@@ -29,7 +32,7 @@ export function WorktreesSettings() {
 	const refreshList = async () => {
 		setRefreshing(true);
 		try {
-			const all: { path: string; label: string; branch?: string; isMain?: boolean }[] = [];
+			const all: { path: string; label: string; branch?: string; isMain?: boolean; repoPath: string }[] = [];
 			for (const p of projects) {
 				const trees = await window.lyra.git.worktrees(p.path).catch(() => []);
 				for (const t of trees) {
@@ -39,6 +42,7 @@ export function WorktreesSettings() {
 							label: t.label,
 							branch: t.branch ?? undefined,
 							isMain: false,
+							repoPath: p.path,
 						});
 					}
 				}
@@ -46,6 +50,24 @@ export function WorktreesSettings() {
 			setWorktrees(all);
 		} finally {
 			setRefreshing(false);
+		}
+	};
+
+	const removeTree = async (repoPath: string, treePath: string) => {
+		if (deletingPath) return;
+		setDeletingPath(treePath);
+		try {
+			const res = await window.lyra.git.removeWorktree(repoPath, treePath);
+			if (res.ok) {
+				notify("已移除工作树");
+				await refreshList();
+			} else {
+				notify(res.error ?? "移除工作树失败", "error");
+			}
+		} catch (err) {
+			notify(err instanceof Error ? err.message : "移除工作树失败", "error");
+		} finally {
+			setDeletingPath(null);
 		}
 	};
 
@@ -76,6 +98,27 @@ export function WorktreesSettings() {
 							onChange={(e) => update({ rootDir: e.target.value })}
 							className="h-8 w-72 rounded-lg border border-line bg-input px-2.5 font-mono text-detail text-ink placeholder:text-ink-faint focus:border-ink-faint"
 						/>
+					}
+				/>
+				<Row
+					title="新建会话时自动创建独立工作树"
+					detail="为每个新开启的对话会话自动创建专属的 Git 工作树与分支，避免破坏主工作区状态。"
+					control={
+						<button
+							type="button"
+							role="switch"
+							aria-checked={autoCreate}
+							onClick={() => update({ autoCreateOnNewSession: !autoCreate })}
+							className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-[var(--ly-t-quick)] ${
+								autoCreate ? "bg-accent" : "bg-card-hover"
+							}`}
+						>
+							<span
+								className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-[var(--ly-t-quick)] ${
+									autoCreate ? "translate-x-4" : "translate-x-0"
+								}`}
+							/>
+						</button>
 					}
 				/>
 				<Row
@@ -169,13 +212,25 @@ export function WorktreesSettings() {
 								</div>
 								<div className="truncate text-caption text-ink-faint font-mono">{tree.path}</div>
 							</div>
-							<button
-								type="button"
-								onClick={() => void window.lyra.workspace.reveal(tree.path)}
-								className="ml-3 rounded-md px-2 py-1 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
-							>
-								在 Finder 中显示
-							</button>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => void window.lyra.workspace.reveal(tree.path)}
+									className="rounded-md px-2 py-1 text-detail text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+								>
+									在访达中显示
+								</button>
+								<button
+									type="button"
+									disabled={deletingPath === tree.path}
+									onClick={() => void removeTree(tree.repoPath, tree.path)}
+									className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-card-hover hover:text-red-500 disabled:opacity-50"
+									aria-label="删除工作树"
+									data-ly-tip="删除工作树"
+								>
+									<Trash2 size={14} />
+								</button>
+							</div>
 						</div>
 					))}
 				</div>

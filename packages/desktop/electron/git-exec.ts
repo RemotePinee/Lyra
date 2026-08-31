@@ -52,10 +52,17 @@ export function gitEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const env = { ...base };
 	for (const name of REDIRECTING) delete env[name];
 
-	const path = env.PATH ?? "";
-	const known = new Set(path.split(delimiter).filter(Boolean));
-	const missing = LIKELY_PATHS.filter((dir) => !known.has(dir));
-	if (missing.length > 0) env.PATH = [path, ...missing].filter(Boolean).join(delimiter);
+	// Windows env variables are case-insensitive and typically named `Path` rather than `PATH`.
+	// A spread object `{ ...process.env }` loses the case-insensitive proxy, so find whichever key was used.
+	const pathKey = Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+	const path = env[pathKey] ?? "";
+
+	// POSIX-style search paths are only relevant on non-Windows platforms.
+	if (process.platform !== "win32") {
+		const known = new Set(path.split(delimiter).filter(Boolean));
+		const missing = LIKELY_PATHS.filter((dir) => !known.has(dir));
+		if (missing.length > 0) env[pathKey] = [path, ...missing].filter(Boolean).join(delimiter);
+	}
 
 	return env;
 }

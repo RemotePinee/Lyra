@@ -20,6 +20,8 @@ import type {
 	WorkflowJobStep,
 	WorkflowRunStatus,
 	WorkflowRunSummary,
+	WorktreeCreateOptions,
+	WorktreeResult,
 } from "./git.ts";
 export type {
 	BranchList,
@@ -31,6 +33,8 @@ export type {
 	WorkflowJobStep,
 	WorkflowRunStatus,
 	WorkflowRunSummary,
+	WorktreeCreateOptions,
+	WorktreeResult,
 };
 /*
  * Re-exported under a name that means something on this side of the boundary.
@@ -666,7 +670,9 @@ export interface LyraApi {
 		/** Local and remote branches, for the composer's branch switcher. */
 		branches(cwd: string): Promise<BranchList>;
 		switchBranch(cwd: string, branch: string): Promise<{ ok: boolean; error?: string }>;
-		createWorktree(cwd: string, branch: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+		createWorktree(cwd: string, branch: string, options?: WorktreeCreateOptions): Promise<WorktreeResult>;
+		removeWorktree(cwd: string, worktreePath: string): Promise<{ ok: boolean; error?: string }>;
+		pruneWorktrees(cwd: string): Promise<{ ok: boolean; error?: string }>;
 		/**
 		 * How much is uncommitted, as three numbers.
 		 *

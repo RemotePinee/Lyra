@@ -274,14 +274,21 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 			const unfinished = readTodos(state).filter((todo) => todo.status !== "completed");
 			if ((unfinished.length > 0 || saidNothing) && nudges < MAX_NUDGES) {
 				nudges += 1;
+				let nudgeText = "（自动继续）上一条回复是空的。请直接开始执行：说明你要做什么，并调用工具去做。";
+				if (!saidNothing && unfinished.length > 0) {
+					const inProgress = unfinished.find((t) => t.status === "in_progress") ?? unfinished[0];
+					const listStr = unfinished
+						.map((t, idx) => `  ${idx + 1}. [${t.status === "in_progress" ? "进行中" : "待处理"}] ${t.content}`)
+						.join("\n");
+					nudgeText = `（自动继续）清单里还有 ${unfinished.length} 项没有完成：\n${listStr}\n\n请直接执行【${inProgress.content}】，调用工具继续，不要只描述计划。`;
+				}
+
 				const nudge: Message = {
 					role: "user",
 					content: [
 						{
 							type: "text",
-							text: saidNothing
-								? "（自动继续）上一条回复是空的。请直接开始执行：说明你要做什么，并调用工具去做。"
-								: `（自动继续）清单里还有 ${unfinished.length} 项没有完成。直接执行下一项，不要只描述计划。`,
+							text: nudgeText,
 						},
 					],
 					timestamp: Date.now(),

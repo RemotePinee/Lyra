@@ -209,7 +209,7 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		frame: false,
 		transparent: true,
 		alwaysOnTop: true,
-		skipTaskbar: true,
+		skipTaskbar: process.platform !== "darwin",
 		resizable: false,
 		movable: false,
 		fullscreenable: false,

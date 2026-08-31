@@ -326,7 +326,10 @@ export async function compactIfNeeded(
 	const older = messages.slice(0, cut);
 	const recent = messages.slice(cut);
 
-	const summary = await summarize(older, model, provider, streamFn);
+	let summary = await summarize(older, model, provider, streamFn);
+	if (!summary) {
+		summary = fallbackSummary(older);
+	}
 	if (!summary) return dropOldest(messages, model, overhead, scale);
 
 	/*
@@ -570,6 +573,65 @@ function clip(text: string, limit: number): string {
 }
 
 /**
+ * Deterministic fallback summary when the LLM summarization request fails.
+ *
+ * Rather than losing all context and instructions completely, this extracts
+ * the original user requests, recent actions, and key tool usages mechanically.
+ */
+export function fallbackSummary(messages: Message[]): string {
+	const userPrompts: string[] = [];
+	const touchedFiles = new Set<string>();
+	const keyActions: string[] = [];
+
+	for (const msg of messages) {
+		if (msg.role === "user" && !msg.synthetic) {
+			const text = msg.content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text.trim())
+				.filter(Boolean)
+				.join("\n");
+			if (text && !userPrompts.includes(text)) {
+				userPrompts.push(text);
+			}
+		} else if (msg.role === "assistant") {
+			for (const part of msg.content) {
+				if (part.type === "toolCall") {
+					const name = part.name;
+					const args = (part.arguments ?? {}) as Record<string, unknown>;
+					const path = (args.path ?? args.file ?? args.filePath) as string | undefined;
+					if (path && typeof path === "string") {
+						touchedFiles.add(path);
+					}
+					if (name === "write" || name === "edit" || name === "bash") {
+						const desc = (args.description as string | undefined) ?? (args.command as string | undefined)?.split("\n")[0];
+						const line = desc ? `${name}: ${desc}` : path ? `${name} ${path}` : name;
+						if (!keyActions.includes(line)) keyActions.push(line);
+					}
+				}
+			}
+		}
+	}
+
+	const sections: string[] = [];
+
+	if (userPrompts.length > 0) {
+		sections.push(`## Goal & Original User Intent\n${userPrompts.map((p) => `- ${p}`).join("\n")}`);
+	}
+
+	if (keyActions.length > 0) {
+		const recentActions = keyActions.slice(-10);
+		sections.push(`## Key Work & Task Progress\n### Recent Key Actions\n${recentActions.map((a) => `- ${a}`).join("\n")}`);
+	}
+
+	if (touchedFiles.size > 0) {
+		const files = Array.from(touchedFiles).slice(-15);
+		sections.push(`## Critical Context\n- Touched files: ${files.join(", ")}`);
+	}
+
+	return sections.join("\n\n") || "Previous turns were compacted.";
+}
+
+/**
  * Getting under the line without a model, for when the summary could not be had.
  *
  * Summarising is a request, and a request fails — the relay is out of credentials, the key is
@@ -595,8 +657,10 @@ function dropOldest(messages: Message[], model: ModelConfig, overhead: number, s
 	}
 	if (start === 0) return null;
 
+	const older = messages.slice(0, start);
 	const tail = messages.slice(start);
-	return { messages: [droppedMessage(), ...tail], summary: "", kept: tail.length };
+	const standing = lastRequest(older) ?? lastRequest(messages);
+	return { messages: [droppedMessage(standing), ...tail], summary: "", kept: tail.length };
 }
 
 /**
@@ -610,13 +674,23 @@ function dropOldest(messages: Message[], model: ModelConfig, overhead: number, s
  * drop rather than a summary, because it means nobody read what went: the model should trust
  * nothing about the earlier work except what it recalls for itself.
  */
-export function droppedMessage(): Message {
+export function droppedMessage(standing: string | null = null): Message {
+	const text = [
+		`<dropped-history>\nEarlier turns were removed to fit the context window. Summarising them was not possible, so they are gone from this conversation rather than condensed — do not assume anything about what came before.`,
+		standing
+			? `<standing-request>\nThis is the most recent thing the user asked for, quoted exactly. It remains active and must be fulfilled directly without greeting or asking what to do:\n\n${standing}\n</standing-request>`
+			: null,
+		RECALL_NOTE + "\n</dropped-history>",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+
 	return {
 		role: "user",
 		content: [
 			{
 				type: "text",
-				text: `<dropped-history>\nEarlier turns were removed to fit the context window. Summarising them was not possible, so they are gone from this conversation rather than condensed — do not assume anything about what came before.\n\n${RECALL_NOTE}\n</dropped-history>`,
+				text,
 			},
 		],
 		timestamp: Date.now(),

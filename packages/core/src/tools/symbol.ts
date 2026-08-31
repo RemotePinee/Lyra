@@ -41,6 +41,9 @@ export const symbolTool: Tool<SymbolArgs> = {
 		type: "object",
 		properties: {
 			name: { type: "string", description: "Symbol name or a fragment of it." },
+			query: { type: "string", description: "Alias for name." },
+			symbol: { type: "string", description: "Alias for name." },
+			pattern: { type: "string", description: "Alias for name." },
 			kind: {
 				type: "string",
 				description: "Restrict to one kind: function, class, interface, type, enum, const, def, func, struct, method.",
@@ -48,32 +51,47 @@ export const symbolTool: Tool<SymbolArgs> = {
 			limit: { type: "number", description: "Maximum matches. Default 40." },
 		},
 		required: ["name"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
-	summarize: (args) => `Find definition of ${args.name}`,
+	summarize: (args) => {
+		const raw = args as unknown as Record<string, unknown>;
+		const name = String(raw.name ?? raw.query ?? raw.symbol ?? raw.pattern ?? "");
+		return name ? `Find definition of ${name}` : "Find definition";
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
-		if (typeof args.name !== "string" || !args.name.trim()) return errorResult("`name` is required.");
+		const raw = args as unknown as Record<string, unknown>;
+		const name = typeof raw.name === "string" && raw.name
+			? raw.name
+			: typeof raw.query === "string" && raw.query
+				? raw.query
+				: typeof raw.symbol === "string" && raw.symbol
+					? raw.symbol
+					: typeof raw.pattern === "string" && raw.pattern
+						? raw.pattern
+						: "";
+
+		if (!name.trim()) return errorResult("`name` is required.");
 
 		const index = await getIndex(ctx);
-		const matches = searchIndex(index, args.name.trim(), args.kind, args.limit ?? 40);
+		const matches = searchIndex(index, name.trim(), args.kind, args.limit ?? 40);
 
 		if (matches.length === 0) {
 			return {
 				content: [
 					{
 						type: "text",
-						text: `No definition found for "${args.name}" among ${index.symbols.length} indexed symbols across ${index.fileCount} files. It may be defined in a dependency, or declared in a form the index does not recognise — try grep.`,
+						text: `No definition found for "${name}" among ${index.symbols.length} indexed symbols across ${index.fileCount} files. It may be defined in a dependency, or declared in a form the index does not recognise — try grep.`,
 					},
 				],
-				details: { kind: "symbol", query: args.name, count: 0 },
+				details: { kind: "symbol", query: name, count: 0 },
 			};
 		}
 
 		const body = matches.map((m) => `${m.file}:${m.line}  [${m.kind}]  ${m.text}`).join("\n");
 		return {
 			content: [{ type: "text", text: body }],
-			details: { kind: "symbol", query: args.name, count: matches.length, matches },
+			details: { kind: "symbol", query: name, count: matches.length, matches },
 		};
 	},
 };

@@ -8,7 +8,16 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { git } from "./git-exec.ts";
-import { createWorktree, gitBranch, isGitRepo } from "./git.ts";
+import { gitBranch, isGitRepo } from "./git.ts";
+import {
+	createWorktree,
+	pruneWorktrees,
+	removeWorktree,
+	type WorktreeCreateOptions,
+	type WorktreeResult,
+} from "./git-worktrees.ts";
+
+export { createWorktree, pruneWorktrees, removeWorktree, type WorktreeCreateOptions, type WorktreeResult };
 
 /** Runs a git command for its effect, turning failure into readable text rather than a throw. */
 

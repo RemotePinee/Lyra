@@ -28,24 +28,41 @@ export const globTool: Tool<GlobArgs> = {
 		type: "object",
 		properties: {
 			pattern: { type: "string", description: "Glob pattern, relative to the search root." },
+			query: { type: "string", description: "Alias for pattern." },
+			search: { type: "string", description: "Alias for pattern." },
 			path: { type: "string", description: "Directory to search. Defaults to the workspace root." },
 			limit: { type: "number", description: "Maximum number of matches. Default 500." },
 		},
 		required: ["pattern"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
-	summarize: (args) => `Find ${args.pattern}`,
+	summarize: (args) => {
+		const raw = args as unknown as Record<string, unknown>;
+		const term = String(raw.pattern ?? raw.query ?? raw.search ?? "");
+		return term ? `Find ${term}` : "Find";
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
+		const raw = args as unknown as Record<string, unknown>;
+		const pattern = typeof raw.pattern === "string" && raw.pattern
+			? raw.pattern
+			: typeof raw.query === "string" && raw.query
+				? raw.query
+				: typeof raw.search === "string" && raw.search
+					? raw.search
+					: "";
+
+		const path = typeof raw.path === "string" ? raw.path : typeof raw.dir === "string" ? raw.dir : typeof raw.cwd === "string" ? raw.cwd : undefined;
+
 		let root: string;
 		try {
-			root = args.path ? resolveWorkspacePath(ctx.cwd, args.path) : ctx.cwd;
+			root = path ? resolveWorkspacePath(ctx.cwd, path) : ctx.cwd;
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
-		if (typeof args.pattern !== "string" || !args.pattern) return errorResult("`pattern` is required.");
+		if (!pattern) return errorResult("`pattern` is required.");
 
-		const regex = globToRegExp(args.pattern);
+		const regex = globToRegExp(pattern);
 		const limit = Math.min(args.limit ?? MAX_RESULTS, MAX_RESULTS);
 		const matches: { path: string; mtime: number }[] = [];
 
@@ -62,7 +79,7 @@ export const globTool: Tool<GlobArgs> = {
 				if (entry.isDirectory()) {
 					if (SKIP_DIRS.has(entry.name)) continue;
 					// Hidden directories are only traversed when the pattern asks for them.
-					if (entry.name.startsWith(".") && !args.pattern.includes("/.") && !args.pattern.startsWith(".")) continue;
+					if (entry.name.startsWith(".") && !pattern.includes("/.") && !pattern.startsWith(".")) continue;
 					await walk(full);
 					continue;
 				}
@@ -79,13 +96,13 @@ export const globTool: Tool<GlobArgs> = {
 		const shown = matches.slice(0, limit);
 
 		if (shown.length === 0) {
-			return { content: [{ type: "text", text: `No files match ${args.pattern}.` }], details: { kind: "glob", count: 0 } };
+			return { content: [{ type: "text", text: `No files match ${pattern}.` }], details: { kind: "glob", count: 0 } };
 		}
 
 		const footer = matches.length > shown.length ? `\n\n[${matches.length - shown.length} more matches not shown]` : "";
 		return {
 			content: [{ type: "text", text: shown.map((m) => m.path).join("\n") + footer }],
-			details: { kind: "glob", pattern: args.pattern, count: matches.length, files: shown.map((m) => m.path) },
+			details: { kind: "glob", pattern, count: matches.length, files: shown.map((m) => m.path) },
 		};
 	},
 };

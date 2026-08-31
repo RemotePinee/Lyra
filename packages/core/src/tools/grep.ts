@@ -32,6 +32,8 @@ export const grepTool: Tool<GrepArgs> = {
 		type: "object",
 		properties: {
 			pattern: { type: "string", description: "Regular expression to search for." },
+			query: { type: "string", description: "Alias for pattern." },
+			search: { type: "string", description: "Alias for pattern." },
 			path: { type: "string", description: "Directory or file to search. Defaults to the workspace root." },
 			glob: { type: "string", description: "Only search files matching this glob, e.g. `**/*.ts`." },
 			case_insensitive: { type: "boolean", description: "Ignore case." },
@@ -40,22 +42,41 @@ export const grepTool: Tool<GrepArgs> = {
 			limit: { type: "number", description: "Maximum matches to return. Default 200." },
 		},
 		required: ["pattern"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
-	summarize: (args) => `Search "${args.pattern}"`,
+	summarize: (args) => {
+		const raw = args as unknown as Record<string, unknown>;
+		const term = String(raw.pattern ?? raw.query ?? raw.search ?? "");
+		return term ? `Search "${term}"` : "Search";
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
-		if (typeof args.pattern !== "string" || !args.pattern) return errorResult("`pattern` is required.");
+		const raw = args as unknown as Record<string, unknown>;
+		const pattern = typeof raw.pattern === "string" && raw.pattern
+			? raw.pattern
+			: typeof raw.query === "string" && raw.query
+				? raw.query
+				: typeof raw.search === "string" && raw.search
+					? raw.search
+					: "";
+
+		if (!pattern) return errorResult("`pattern` is required.");
+		const normalizedArgs: GrepArgs = {
+			...args,
+			pattern,
+			path: typeof raw.path === "string" ? raw.path : typeof raw.dir === "string" ? raw.dir : typeof raw.cwd === "string" ? raw.cwd : undefined,
+		};
+
 		let root: string;
 		try {
-			root = args.path ? resolveWorkspacePath(ctx.cwd, args.path) : ctx.cwd;
+			root = normalizedArgs.path ? resolveWorkspacePath(ctx.cwd, normalizedArgs.path) : ctx.cwd;
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
 
-		const viaRipgrep = await runRipgrep(args, root, ctx);
+		const viaRipgrep = await runRipgrep(normalizedArgs, root, ctx);
 		if (viaRipgrep) return viaRipgrep;
-		return runFallback(args, root, ctx);
+		return runFallback(normalizedArgs, root, ctx);
 	},
 };
 

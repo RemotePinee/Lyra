@@ -14,7 +14,7 @@
  */
 
 import { Coins, FolderOpen, MessagesSquare, Zap } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { SessionMeta } from "@lyra/core";
@@ -205,7 +205,11 @@ export function SessionCard({
 export function useSessionCard(): {
 	anchor: DOMRect | null;
 	leaving: boolean;
-	bind: { onMouseEnter: (event: React.MouseEvent<HTMLElement>) => void; onMouseLeave: () => void };
+	bind: {
+		onMouseEnter: (event: React.MouseEvent<HTMLElement>) => void;
+		onMouseLeave: () => void;
+		onClick: () => void;
+	};
 	dismiss: () => void;
 } {
 	const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -221,20 +225,26 @@ export function useSessionCard(): {
 	const open = useRef<number | undefined>(undefined);
 	const close = useRef<number | undefined>(undefined);
 
-	const dismiss = () => {
+	const dismiss = useCallback(() => {
 		window.clearTimeout(open.current);
 		window.clearTimeout(close.current);
 		setAnchor(null);
 		setLeaving(false);
-	};
+	}, []);
 
-	useEffect(
-		() => () => {
+	useEffect(() => {
+		const hide = () => dismiss();
+		window.addEventListener("scroll", hide, true);
+		window.addEventListener("wheel", hide, true);
+		window.addEventListener("blur", hide);
+		return () => {
 			window.clearTimeout(open.current);
 			window.clearTimeout(close.current);
-		},
-		[],
-	);
+			window.removeEventListener("scroll", hide, true);
+			window.removeEventListener("wheel", hide, true);
+			window.removeEventListener("blur", hide);
+		};
+	}, [dismiss]);
 
 	return {
 		anchor,
@@ -256,6 +266,9 @@ export function useSessionCard(): {
 					setAnchor(null);
 					setLeaving(false);
 				}, LEAVE_MS);
+			},
+			onClick: () => {
+				dismiss();
 			},
 		},
 	};

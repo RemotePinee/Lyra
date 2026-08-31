@@ -51,7 +51,6 @@ import {
 	redo,
 	resizeShape,
 	shapeBounds,
-	stepNumber,
 	undo,
 	WIDTH_HANDLE,
 	type History,
@@ -61,8 +60,7 @@ import {
 } from "./annotate.ts";
 import {
 	fontOf,
-	paint,
-	paintMosaic,
+	paintAll,
 	strokeFor,
 	LINE,
 	PAD,
@@ -133,6 +131,8 @@ export interface Annotator {
 	/** What sits behind a caption; undefined is nothing at all. */
 	backdrop: string | undefined;
 	setBackdrop: (backdrop: string | undefined) => void;
+	weight: number;
+	setWeight: (weight: number) => void;
 	undo: () => void;
 	redo: () => void;
 	clear: () => void;
@@ -163,17 +163,35 @@ export interface Annotator {
 	width: number;
 }
 
-export function useAnnotator(src: string): Annotator {
+// ---------------------------------------------------------------------------
+// Custom weight and shared helpers
+// ---------------------------------------------------------------------------
+
+/** Multipliers for mark and text weight, used in Annotator and ScreenshotOverlay. */
+export const WEIGHT_LEVELS: [number, string, number][] = [
+	[0.6, "细", 4],
+	[1, "中", 6],
+	[1.8, "粗", 9],
+];
+
+export interface AnnotatorOptions {
+	initialTool?: Tool;
+	initialColour?: string;
+	initialWeight?: number;
+}
+
+export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const image = useRef<HTMLImageElement | null>(null);
 	const pixels = useRef<HTMLCanvasElement | null>(null);
-	const [tool, setTool] = useState<Tool>("pen");
-	const [colour, setColour] = useState(COLOURS[0]!);
+	const [tool, setTool] = useState<Tool>(options?.initialTool ?? "pen");
+	const [colour, setColour] = useState(options?.initialColour ?? COLOURS[0]!);
 	const [backdrop, setBackdrop] = useState<string | undefined>(undefined);
 	const [history, setHistory] = useState<History>(emptyHistory);
 	const [selected, setSelected] = useState<number | null>(null);
 	const [ready, setReady] = useState(false);
 	const [width, setWidth] = useState(0);
+	const [weight, setWeight] = useState(options?.initialWeight ?? 1);
 
 	// Load once; every repaint draws this same decoded bitmap rather than re-decoding the data URL.
 	useEffect(() => {
@@ -246,6 +264,8 @@ export function useAnnotator(src: string): Annotator {
 		setColour,
 		backdrop,
 		setBackdrop,
+		weight,
+		setWeight,
 		undo: useCallback(() => step(undo), [step]),
 		redo: useCallback(() => step(redo), [step]),
 		clear: useCallback(() => step((h) => (current(h).length === 0 ? h : commit(h, []))), [step]),
@@ -290,7 +310,7 @@ const CURSOR: Partial<Record<Tool, string>> = {
 };
 
 export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom: number }) {
-	const { canvas, image, pixels, ready, width, tool, colour, backdrop, shapes, setHistory, selected, setSelected } =
+	const { canvas, image, pixels, ready, width, tool, colour, backdrop, weight, shapes, setHistory, selected, setSelected } =
 		annotator;
 	const [drawing, setDrawing] = useState<Shape | null>(null);
 	const [typing, setTyping] = useState<Typing | null>(null);
@@ -300,7 +320,8 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
 	const carrying = useRef<{ x: number; y: number; from: Point; scale: number } | null>(null);
 
-	const stroke = strokeFor(width);
+	const base = strokeFor(width);
+	const stroke = Math.max(1, base * weight);
 	const typeSize = stroke * TEXT_SCALE;
 
 	/*
@@ -367,12 +388,14 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 		ctx.drawImage(img, 0, 0);
 
 		const block = mosaicBlock(width);
-		const brush = mosaicBrush(width);
-		live.forEach((shape, index) => {
-			if (shape.tool === "mosaic") paintMosaic(ctx, shape, pixels.current, block, brush);
-			else paint(ctx, shape, stroke, stepNumber(live, index));
+		const brush = mosaicBrush(width) * weight;
+		paintAll(ctx, live, {
+			stroke,
+			pixels: pixels.current,
+			block,
+			brush,
 		});
-	}, [live, ready, width, stroke, canvas, image, pixels]);
+	}, [live, ready, width, stroke, weight, canvas, image, pixels]);
 
 	/** Whether the field has been focused for the caption currently open in it. */
 	const entered = useRef(false);
@@ -1003,6 +1026,29 @@ export function AnnotateToolbar({
 					<Icon size={14} strokeWidth={1.9} />
 				</ToolButton>
 			))}
+
+			<Divider />
+
+			{/*
+			 * Weight, shown as what it does rather than named.
+			 */}
+			<div className="flex items-center gap-0.5" data-ly-tip="粗细">
+				{WEIGHT_LEVELS.map(([value, label, dot]) => (
+					<button
+						key={label}
+						type="button"
+						onClick={() => annotator.setWeight(value)}
+						data-ly-tip={`粗细：${label}`}
+						data-ly-tip-side="top"
+						aria-label={`粗细 ${label}`}
+						className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+							annotator.weight === value ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
+						}`}
+					>
+						<span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
+					</button>
+				))}
+			</div>
 
 			<Divider />
 

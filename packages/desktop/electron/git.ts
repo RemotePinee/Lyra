@@ -6,7 +6,6 @@
  * `from "./git.ts"` and does not have to know which file a function moved to.
  */
 
-import { basename, join } from "node:path";
 import { git } from "./git-exec.ts";
 
 export { git, run } from "./git-exec.ts";
@@ -40,7 +39,18 @@ export {
 	pullBranch,
 	pushBranch,
 } from "./git-history.ts";
-export { addWorktree, initRepo, listRepos, listWorktrees, type RepoRef } from "./git-repos.ts";
+export {
+	addWorktree,
+	createWorktree,
+	initRepo,
+	listRepos,
+	listWorktrees,
+	pruneWorktrees,
+	removeWorktree,
+	type RepoRef,
+	type WorktreeCreateOptions,
+	type WorktreeResult,
+} from "./git-repos.ts";
 export {
 	bumpSemver,
 	bumpVersionFiles,
@@ -209,36 +219,5 @@ export async function switchBranch(cwd: string, branch: string): Promise<{ ok: b
 	} catch (cause) {
 		const message = cause instanceof Error && "stderr" in cause ? String(cause.stderr) : String(cause);
 		return { ok: false, error: message.trim() || "切换分支失败" };
-	}
-}
-
-/**
- * Create a git worktree beside the repository.
- *
- * A worktree gets its own directory and its own branch, so an agent can work on one task
- * without disturbing whatever is checked out in the main tree. It is placed as a sibling —
- * inside the repo it would show up as an untracked directory in every diff.
- */
-export async function createWorktree(
-	cwd: string,
-	branch: string,
-): Promise<{ ok: boolean; path?: string; error?: string }> {
-	if (!(await isGitRepo(cwd))) return { ok: false, error: "当前项目不是 Git 仓库" };
-
-	const safe = branch.trim().replace(/[^\w.\-/]/g, "-");
-	if (!safe) return { ok: false, error: "分支名不能为空" };
-
-	const root = await git(cwd, ["rev-parse", "--show-toplevel"])
-		.then((out) => out.trim())
-		.catch(() => cwd);
-	const target = join(root, "..", `${basename(root)}-${safe.replace(/\//g, "-")}`);
-
-	try {
-		// `-B` so re-running with the same name resets rather than failing on "already exists".
-		await git(cwd, ["worktree", "add", "-B", safe, target]);
-		return { ok: true, path: target };
-	} catch (cause) {
-		const message = cause instanceof Error && "stderr" in cause ? String(cause.stderr) : String(cause);
-		return { ok: false, error: message.trim() || "创建工作树失败" };
 	}
 }

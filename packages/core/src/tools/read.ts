@@ -42,18 +42,35 @@ export const readTool: Tool<ReadArgs> = {
 		type: "object",
 		properties: {
 			path: { type: "string", description: "File path, absolute or relative to the workspace root." },
+			file: { type: "string", description: "Alias for path." },
+			filePath: { type: "string", description: "Alias for path." },
 			offset: { type: "number", description: "1-indexed line to start from." },
 			limit: { type: "number", description: "Maximum number of lines to return. Defaults to 2000." },
 		},
 		required: ["path"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
-	summarize: (args) => `Read ${args.path}`,
+	summarize: (args) => {
+		const raw = args as unknown as Record<string, unknown>;
+		const path = String(raw.path ?? raw.file ?? raw.filePath ?? "");
+		return path ? `Read ${path}` : "Read file";
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
+		const raw = args as unknown as Record<string, unknown>;
+		const path = typeof raw.path === "string" && raw.path
+			? raw.path
+			: typeof raw.file === "string" && raw.file
+				? raw.file
+				: typeof raw.filePath === "string" && raw.filePath
+					? raw.filePath
+					: "";
+
+		if (!path) return errorResult("`path` is required.");
+
 		let absolute: string;
 		try {
-			absolute = resolveWorkspacePath(ctx.cwd, args.path);
+			absolute = resolveWorkspacePath(ctx.cwd, path);
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
@@ -62,9 +79,9 @@ export const readTool: Tool<ReadArgs> = {
 		try {
 			info = await stat(absolute);
 		} catch {
-			return errorResult(`File not found: ${args.path}`);
+			return errorResult(`File not found: ${path}`);
 		}
-		if (info.isDirectory()) return errorResult(`${args.path} is a directory. Use \`ls\` or \`glob\` instead.`);
+		if (info.isDirectory()) return errorResult(`${path} is a directory. Use \`ls\` or \`glob\` instead.`);
 
 		const mime = imageMimeType(absolute);
 		if (mime) {

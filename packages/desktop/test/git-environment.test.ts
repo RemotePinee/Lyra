@@ -45,7 +45,7 @@ test("but the rest of the environment is left alone", () => {
 	assert.equal(env.LANG, "en_US.UTF-8");
 });
 
-test("the usual install locations are added when they are missing", () => {
+test("the usual install locations are added when they are missing", { skip: process.platform === "win32" }, () => {
 	const env = gitEnvironment({ PATH: "/usr/bin:/bin" });
 	const dirs = (env.PATH ?? "").split(delimiter);
 	assert.ok(dirs.includes("/opt/homebrew/bin"), env.PATH);
@@ -58,17 +58,22 @@ test("and appended, so a directory the user chose still wins", () => {
 	assert.equal(dirs[0], "/my/own/bin");
 });
 
-test("a directory already on the path is not added twice", () => {
+test("a directory already on the path is not added twice", { skip: process.platform === "win32" }, () => {
 	const env = gitEnvironment({ PATH: "/opt/homebrew/bin:/usr/bin" });
 	const dirs = (env.PATH ?? "").split(delimiter);
 	assert.equal(dirs.filter((d) => d === "/opt/homebrew/bin").length, 1, env.PATH);
 });
 
-test("an empty path still ends up with somewhere to look", () => {
+test("an empty path still ends up with somewhere to look", { skip: process.platform === "win32" }, () => {
 	const env = gitEnvironment({});
 	const dirs = new Set((env.PATH ?? "").split(delimiter).filter(Boolean));
 	assert.ok(dirs.has("/usr/bin"), env.PATH);
 	assert.ok(!dirs.has(""), "no empty segments");
+});
+
+test("Path key case-insensitivity on Windows is preserved", { skip: process.platform !== "win32" }, () => {
+	const env = gitEnvironment({ Path: "C:\\Program Files\\Git\\cmd" });
+	assert.equal(env.Path, "C:\\Program Files\\Git\\cmd");
 });
 
 /**
