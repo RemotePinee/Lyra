@@ -63,7 +63,7 @@ const COLOURS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#ffffff", "#111827
 /** How far from a handle still counts as grabbing it — see `hitHandle`. */
 const HANDLE_GRAB = 10;
 /** Roughly what the toolbar measures, only ever used to keep it on screen. Erring wide is safe. */
-const TOOLBAR_SIZE = { width: 560, height: 40 };
+const TOOLBAR_SIZE = { width: 660, height: 40 };
 /** The smallest drag that is a selection rather than a stray click, in CSS pixels. */
 const MIN_SELECTION = 10;
 
@@ -91,6 +91,28 @@ const TOOL_KEYS: Record<string, Tool> = {
 	s: "step",
 	m: "mosaic",
 	t: "text",
+};
+
+/**
+ * The three weights, as multipliers with the dot that stands for each.
+ *
+ * Light is the default, not medium. What shipped was the equivalent of the heaviest of these and
+ * had no control at all — a mosaic brush over a hundred pixels wide and captions to match — so the
+ * one that needs to be one press away is the one that annotates rather than obliterates.
+ */
+const WEIGHTS: [number, string, number][] = [
+	[0.6, "细", 4],
+	[1, "中", 6],
+	[1.8, "粗", 9],
+];
+
+const COLOUR_NAMES: Record<string, string> = {
+	"#ef4444": "红色",
+	"#3b82f6": "蓝色",
+	"#22c55e": "绿色",
+	"#eab308": "黄色",
+	"#ffffff": "白色",
+	"#111827": "黑色",
 };
 
 /** Tools that are placed with one click rather than dragged out. */
@@ -144,9 +166,22 @@ export function ScreenshotOverlay() {
 	/** The snapshot averaged down to one pixel per mosaic block, and the block size it was built at. */
 	const mosaicRef = useRef<{ pixels: HTMLCanvasElement; block: number; brush: number } | null>(null);
 
-	/** Stroke and type size, scaled to the snapshot like every other mark. */
-	const stroke = strokeFor(imageRef.current?.naturalWidth ?? 1920);
+	/**
+	 * How heavy the marks are, as a multiplier on everything that has a size.
+	 *
+	 * There was no control at all: stroke, type and the mosaic brush were all derived from the
+	 * screen's pixel width and that was that. On a Retina display that put the brush at over a
+	 * hundred pixels — a redaction that covers half a paragraph to hide one word — and set captions
+	 * at a size nothing could be said about. One number moves all three together, so a heavy mark
+	 * and heavy text stay in proportion to each other.
+	 */
+	const [weight, setWeight] = useState(0.6);
+
+	/** Stroke and type size, scaled to the snapshot like every other mark, times the chosen weight. */
+	const base = strokeFor(imageRef.current?.naturalWidth ?? 1920);
+	const stroke = Math.max(1, base * weight);
 	const typeSize = stroke * TEXT_SCALE;
+	const brush = Math.max(4, (mosaicRef.current?.brush ?? 16) * weight);
 
 	// 1. The main process hands over the frozen screen.
 	useEffect(() => {
@@ -252,10 +287,10 @@ export function ScreenshotOverlay() {
 			stroke,
 			pixels: mosaic?.pixels ?? null,
 			block: mosaic?.block ?? 8,
-			brush: mosaic?.brush ?? 16,
+			brush,
 		});
 		ctx.restore();
-	}, [history, drawing, selection, scaleFactor, stroke]);
+	}, [history, drawing, selection, scaleFactor, stroke, brush]);
 
 	// The caption field takes focus as it appears, and grows to fit what is typed into it.
 	useEffect(() => {
@@ -435,11 +470,11 @@ export function ScreenshotOverlay() {
 			stroke,
 			pixels: mosaic?.pixels ?? null,
 			block: mosaic?.block ?? 8,
-			brush: mosaic?.brush ?? 16,
+			brush,
 		});
 
 		await window.lyra.screenshot.finish(out.toDataURL("image/png"), settings);
-	}, [selection, scaleFactor, history, settings, stroke]);
+	}, [selection, scaleFactor, history, settings, stroke, brush]);
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -596,12 +631,38 @@ export function ScreenshotOverlay() {
 
 					<Divider />
 
+					{/*
+					 * Weight, shown as what it does rather than named.
+					 *
+					 * Three dots at the sizes they produce: the control is a preview of the mark. A
+					 * caption, a stroke and a mosaic brush all move together, because a heavy mark
+					 * beside hairline text reads as two different annotations of the same picture.
+					 */}
+					<div className="flex items-center gap-0.5" data-ly-tip="粗细">
+						{WEIGHTS.map(([value, label, dot]) => (
+							<button
+								key={label}
+								type="button"
+								onClick={() => setWeight(value)}
+								data-ly-tip={label}
+								className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+									weight === value ? "bg-blue-500" : "hover:bg-white/15"
+								}`}
+							>
+								<span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
+							</button>
+						))}
+					</div>
+
+					<Divider />
+
 					<div className="flex items-center gap-1">
 						{COLOURS.map((c) => (
 							<button
 								key={c}
 								type="button"
 								onClick={() => setColour(c)}
+								data-ly-tip={COLOUR_NAMES[c] ?? c}
 								className={`h-4 w-4 rounded-full border border-black/40 transition-transform ${
 									colour === c ? "scale-125 ring-2 ring-white" : "hover:scale-110"
 								}`}

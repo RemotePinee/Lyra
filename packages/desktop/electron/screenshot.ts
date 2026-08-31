@@ -21,6 +21,19 @@ let overlayWindows: BrowserWindow[] = [];
  * the sender identifies the window. See `revealScreenshotOverlay`.
  */
 const revealers = new Map<number, () => void>();
+/**
+ * Whether Lyra was the application in front when the screenshot started.
+ *
+ * Decides where the foreground goes afterwards, and the two answers are opposite. Triggered from
+ * inside Lyra — the composer's button, the tray — finishing should come back to Lyra, because that
+ * is where the picture is going. Triggered by the global shortcut while reading something else, it
+ * should not: taking a screenshot of a browser and being thrown into a different application is
+ * the app barging in on work it was only meant to observe.
+ *
+ * What the fix for the disappearing window actually owed was "do not leave Lyra buried behind two
+ * other applications with no way back" — not "always jump to the front".
+ */
+let cameFromApp = false;
 let activeShortcut: string | null = null;
 let onCaptureTriggered: (() => void) | null = null;
 let currentSettingsProvider: (() => Settings | undefined) | null = null;
@@ -150,6 +163,16 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): vo
 	const main = BrowserWindow.getAllWindows().find((win) => !overlays.has(win) && !win.isDestroyed());
 	if (!main) return;
 	if (main.isMinimized()) main.restore();
+
+	/*
+	 * Raised within Lyra either way, so it is never buried under its own overlay's leftovers — but
+	 * `showInactive`, which does not take the foreground from whatever the user is actually looking
+	 * at. Only a screenshot that started from Lyra brings Lyra back.
+	 */
+	if (!cameFromApp) {
+		main.showInactive();
+		return;
+	}
 	main.show();
 	main.focus();
 	// The application, not just the window — see above.
@@ -160,6 +183,12 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): vo
  * Open the interactive fullscreen overlay window on the display where the cursor currently is.
  */
 export async function startScreenshotSession(customSettings?: ScreenshotSettings): Promise<void> {
+	/*
+	 * Asked before anything is shown, because in a moment the overlay itself will be the focused
+	 * window and the answer will always be yes. See `cameFromApp`.
+	 */
+	cameFromApp = BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isFocused());
+
 	// A leftover overlay from a previous session, cleared without handing the foreground back —
 	// this one is about to take it.
 	closeScreenshotOverlay({ restoreFocus: false });

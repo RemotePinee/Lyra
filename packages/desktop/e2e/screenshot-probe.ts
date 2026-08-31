@@ -174,6 +174,22 @@ try {
 	if (painted.blank) problems.push("背景快照没有画出来");
 
 	// ---- 1. 拉出一个选区 -------------------------------------------------
+	/*
+	 * Wait for the window to be its full size before pressing anything.
+	 *
+	 * The overlay appears in the target list before it has been shown, and `clampRect` clamps the
+	 * selection to `window.innerHeight` — so a drag dispatched too early is trimmed to whatever the
+	 * window measured at the time, which showed up as an intermittent short selection.
+	 */
+	let stable = 0;
+	let last = 0;
+	for (let i = 0; i < 30 && stable < 3; i++) {
+		const tall = await run<number>(`window.innerHeight`);
+		stable = tall === last && tall > 700 ? stable + 1 : 0;
+		last = tall;
+		await pause(100);
+	}
+	note(`  0. 窗口高度稳定在 ${last}`);
 	await drag(socket, [300, 220], [900, 620]);
 	await pause(150);
 	const drawn = await run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
@@ -415,9 +431,16 @@ try {
 	await pause(600);
 	const front = await frontmostApp();
 	note(`  11. 主窗口 ${alive ? "仍在渲染" : "不见了"}，前台应用 → ${front ?? "(这个平台读不到)"}`);
-	if (front !== null && !/electron|lyra/i.test(front)) {
-		problems.push(`浮层关掉后前台跑到了「${front}」，应用没有拿回焦点`);
-	}
+	/*
+	 * Reported, not asserted, and the reason is the point.
+	 *
+	 * Where the foreground goes now depends on where the screenshot came from — see `cameFromApp`
+	 * in `screenshot.ts`. Started from inside Lyra it comes back to Lyra; started by the global
+	 * shortcut while reading something else it deliberately does not, because being yanked into a
+	 * different application after screenshotting a browser is the complaint that produced that
+	 * rule. Whether *this* run had focus at the moment it began is not something the probe controls,
+	 * so asserting either answer would make it flaky in one direction or the other.
+	 */
 } finally {
 	await app.stop();
 }
