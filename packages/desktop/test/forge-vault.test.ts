@@ -86,6 +86,8 @@ test("a saved token comes back, and is not written down in the clear", async () 
 });
 
 test("the file stays 0600", async () => {
+	// Windows NTFS does not support POSIX file mode bits (reports 0666)
+	if (process.platform === "win32") return;
 	await saveAccount(account, "ghp_not_a_real_token");
 	const mode = (await stat(join(home, "forges.json"))).mode & 0o777;
 	assert.equal(mode, 0o600, `forges.json is ${mode.toString(8)}`);

@@ -83,6 +83,8 @@ test("a value this key cannot open is null, not a throw", async () => {
 });
 
 test("the key file is 0600, and so is the store beside it", async () => {
+	// Windows NTFS does not support POSIX file mode bits (reports 0666)
+	if (process.platform === "win32") return;
 	await saveSettings(withProviders(provider("p1", "sk-one")));
 	for (const name of ["vault.key", "credentials.json"]) {
 		const mode = (await stat(join(home, name))).mode & 0o777;
@@ -113,6 +115,8 @@ test("saving takes the keys out of settings.json and gives them back on load", a
 });
 
 test("settings.json stops being world-readable", async () => {
+	// Windows NTFS does not support POSIX file mode bits (reports 0666)
+	if (process.platform === "win32") return;
 	await saveSettings(withProviders(provider("p1", "sk-one")));
 	const mode = (await stat(settingsPath())).mode & 0o777;
 	assert.equal(mode, 0o600, `settings.json is ${mode.toString(8)}`);
