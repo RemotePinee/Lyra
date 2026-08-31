@@ -388,16 +388,25 @@ export function sessionSlice(set: Set, get: Get) {
 
     // If the closed tab is currently active, switch to adjacent or fallback tab
     if (get().activeSessionId === sessionId) {
-      const closedIndex = currentTabs.indexOf(sessionId);
-      const nextActiveId = nextTabs[Math.min(closedIndex, nextTabs.length - 1)];
-      if (nextActiveId) {
+      // If there are other tabs open, switch to the nearest one
+      if (nextTabs.length > 0) {
+        const closedIndex = currentTabs.indexOf(sessionId);
+        const nextActiveId = nextTabs[Math.min(closedIndex, nextTabs.length - 1)];
         const targetMeta = get().sessions.find((s) => s.id === nextActiveId);
         if (targetMeta) {
           await get().openSession(targetMeta);
           return;
         }
       }
-      // No remaining open tabs: clear to blank session
+      // If no remaining open tabs:
+      // In a standalone session window (opened via ?session=...), closing the only tab should close the window
+      const params = new URLSearchParams(window.location.search);
+      const standaloneSession = params.get("session");
+      if (standaloneSession) {
+        void window.lyra.windowControls?.close();
+        return;
+      }
+      // Otherwise in main window, clear to blank new session
       await get().newSession();
     }
   },

@@ -87,8 +87,8 @@ function getPhysicalCursor(): { x: number; y: number } {
 
 export function showDragGhost(title: string): void {
 	const cursor = getPhysicalCursor();
-	const posX = cursor.x - 20;
-	const posY = cursor.y - 14;
+	const posX = Math.round(cursor.x - 70);
+	const posY = Math.round(cursor.y - 18);
 
 	if (!ghostWindow || ghostWindow.isDestroyed()) {
 		ghostWindow = new BrowserWindow({
@@ -118,7 +118,7 @@ export function showDragGhost(title: string): void {
 			ghostWindow.showInactive();
 		});
 	} else {
-		ghostWindow.setPosition(posX, posY);
+		ghostWindow.setBounds({ x: posX, y: posY, width: 260, height: 48 });
 		if (!ghostWindow.isVisible()) {
 			ghostWindow.webContents.postMessage("", { title });
 			ghostWindow.showInactive();
@@ -128,13 +128,13 @@ export function showDragGhost(title: string): void {
 
 export function moveDragGhost(title?: string): void {
 	const cursor = getPhysicalCursor();
-	const posX = cursor.x - 20;
-	const posY = cursor.y - 14;
+	const posX = Math.round(cursor.x - 70);
+	const posY = Math.round(cursor.y - 18);
 
 	if (!ghostWindow || ghostWindow.isDestroyed() || !ghostWindow.isVisible()) {
 		showDragGhost(title ?? "新会话");
 	} else {
-		ghostWindow.setPosition(posX, posY);
+		ghostWindow.setBounds({ x: posX, y: posY, width: 260, height: 48 });
 	}
 }
 
