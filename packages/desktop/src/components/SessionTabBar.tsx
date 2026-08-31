@@ -143,7 +143,8 @@ export function SessionTabBar() {
 			if (isTornOff) {
 				const session = sessionMap.get(id);
 				const title = session?.title?.trim() || "新对话";
-				void window.lyra.system.dragGhost("show", { title, x: moveEvt.screenX, y: moveEvt.screenY });
+				// Use screen.getCursorScreenPoint() in main process or absolute screenX/screenY directly
+				void window.lyra.system.dragGhost("move", { title, x: moveEvt.screenX, y: moveEvt.screenY });
 			} else {
 				void window.lyra.system.dragGhost("hide");
 			}

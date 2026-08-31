@@ -5,7 +5,7 @@
  * tracks the mouse cursor across multiple monitors without DOM clipping.
  */
 
-import { BrowserWindow } from "electron";
+import { BrowserWindow, screen } from "electron";
 
 let ghostWindow: BrowserWindow | null = null;
 
@@ -22,7 +22,8 @@ const GHOST_HTML = `<!DOCTYPE html>
     background: transparent;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
+    padding-left: 8px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   .ghost-pill {
@@ -80,9 +81,14 @@ const GHOST_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-export function showDragGhost(title: string, screenX: number, screenY: number): void {
-	const posX = Math.round(screenX - 70);
-	const posY = Math.round(screenY - 18);
+function getPhysicalCursor(): { x: number; y: number } {
+	return screen.getCursorScreenPoint();
+}
+
+export function showDragGhost(title: string): void {
+	const cursor = getPhysicalCursor();
+	const posX = cursor.x - 20;
+	const posY = cursor.y - 14;
 
 	if (!ghostWindow || ghostWindow.isDestroyed()) {
 		ghostWindow = new BrowserWindow({
@@ -112,7 +118,7 @@ export function showDragGhost(title: string, screenX: number, screenY: number): 
 			ghostWindow.showInactive();
 		});
 	} else {
-		ghostWindow.setBounds({ x: posX, y: posY, width: 260, height: 48 });
+		ghostWindow.setPosition(posX, posY);
 		if (!ghostWindow.isVisible()) {
 			ghostWindow.webContents.postMessage("", { title });
 			ghostWindow.showInactive();
@@ -120,14 +126,15 @@ export function showDragGhost(title: string, screenX: number, screenY: number): 
 	}
 }
 
-export function moveDragGhost(screenX: number, screenY: number): void {
-	if (ghostWindow && !ghostWindow.isDestroyed() && ghostWindow.isVisible()) {
-		ghostWindow.setBounds({
-			x: Math.round(screenX - 70),
-			y: Math.round(screenY - 18),
-			width: 260,
-			height: 48,
-		});
+export function moveDragGhost(title?: string): void {
+	const cursor = getPhysicalCursor();
+	const posX = cursor.x - 20;
+	const posY = cursor.y - 14;
+
+	if (!ghostWindow || ghostWindow.isDestroyed() || !ghostWindow.isVisible()) {
+		showDragGhost(title ?? "新会话");
+	} else {
+		ghostWindow.setPosition(posX, posY);
 	}
 }
 
