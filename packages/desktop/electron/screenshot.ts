@@ -1,35 +1,27 @@
 /**
- * Screen capture service for macOS desktop integration.
+ * Screen capture overlay window manager for desktop integration.
  *
- * Uses native macOS `/usr/sbin/screencapture` utility with interactive selection mode (`-i`).
- * Handles saving to custom location or temp scratch, clipboard copy, and emitting data URLs.
+ * Creates a full-screen, frameless, transparent overlay across active displays,
+ * captures background screen snapshot, and lets the user drag-to-select and annotate
+ * directly on top of the frozen screen.
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { app, globalShortcut } from "electron";
+import { app, BrowserWindow, clipboard, globalShortcut, nativeImage, screen } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 import { resolveSaveDirectory } from "./screenshot-path.ts";
 
 const execFileAsync = promisify(execFile);
 
-export interface CaptureResult {
-	ok: boolean;
-	canceled?: boolean;
-	dataUrl?: string;
-	filePath?: string;
-	error?: string;
-}
-
+let overlayWindows: BrowserWindow[] = [];
 let activeShortcut: string | null = null;
 let onCaptureTriggered: (() => void) | null = null;
+let currentSettingsProvider: (() => Settings | undefined) | null = null;
 
-/**
- * Format a timestamp filename for screenshot: Screenshot 2026-08-30 at 14.30.00.png
- */
 function generateScreenshotFilename(): string {
 	const now = new Date();
 	const pad = (n: number) => String(n).padStart(2, "0");
@@ -43,61 +35,165 @@ function generateScreenshotFilename(): string {
 }
 
 /**
- * Take an interactive screenshot on macOS using screencapture CLI.
+ * Capture full screen snapshot quietly to a base64 data URL.
  */
-export async function captureScreen(settings?: ScreenshotSettings): Promise<CaptureResult> {
-	if (process.platform !== "darwin") {
-		return { ok: false, error: "系统截图功能目前仅支持 macOS" };
-	}
+async function captureFullDisplaySnapshot(displayId?: number): Promise<{ dataUrl: string; width: number; height: number; scaleFactor: number } | null> {
+	if (process.platform !== "darwin") return null;
 
-	const saveDir = settings?.saveLocation?.trim()
-		? resolveSaveDirectory(settings.saveLocation, app.getPath("desktop"))
-		: tmpdir();
+	const targetDisplay = displayId !== undefined
+		? screen.getAllDisplays().find((d) => d.id === displayId) ?? screen.getPrimaryDisplay()
+		: screen.getPrimaryDisplay();
 
-	try {
-		await mkdir(saveDir, { recursive: true });
-	} catch {
-		// Fallback to tmpdir if user directory cannot be created
-	}
-
-	const filename = generateScreenshotFilename();
-	const targetPath = join(saveDir, filename);
+	const tempPath = join(tmpdir(), `lyra_screen_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`);
 
 	try {
-		// -i: interactive (select window or drag rectangle)
-		// -r: do not add dpi metadata header (keeps raw canvas friendly)
-		// targetPath: file to output
-		await execFileAsync("/usr/sbin/screencapture", ["-i", "-r", targetPath]);
+		// -x: do not play sound
+		// -C: do not capture cursor
+		const args = ["-x", "-C", tempPath];
+		await execFileAsync("/usr/sbin/screencapture", args);
 
-		// screencapture exits with code 0 even if canceled (ESC), but does not create the file.
-		const buffer = await readFile(targetPath).catch(() => null);
-		if (!buffer || buffer.length === 0) {
-			return { ok: true, canceled: true };
-		}
+		const buffer = await readFile(tempPath).catch(() => null);
+		await rm(tempPath, { force: true }).catch(() => {});
 
-		const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+		if (!buffer || buffer.length === 0) return null;
 
-		// If user did not specify a persistent saveLocation, remove the temp file
-		let finalPath: string | undefined = targetPath;
-		if (!settings?.saveLocation?.trim()) {
-			await rm(targetPath, { force: true }).catch(() => {});
-			finalPath = undefined;
-		}
+		const img = nativeImage.createFromBuffer(buffer);
+		const size = img.getSize();
 
 		return {
-			ok: true,
-			canceled: false,
-			dataUrl,
-			filePath: finalPath,
+			dataUrl: `data:image/png;base64,${buffer.toString("base64")}`,
+			width: size.width,
+			height: size.height,
+			scaleFactor: targetDisplay.scaleFactor || 2,
 		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { ok: false, error: message };
+	} catch (err) {
+		console.error("[screenshot] failed to capture full display:", err);
+		return null;
 	}
 }
 
 /**
- * Register or update global shortcut for screenshot.
+ * Close and destroy all active overlay windows.
+ */
+export function closeScreenshotOverlay(): void {
+	for (const win of overlayWindows) {
+		if (!win.isDestroyed()) {
+			win.destroy();
+		}
+	}
+	overlayWindows = [];
+}
+
+/**
+ * Open the interactive fullscreen overlay window on the display where the cursor currently is.
+ */
+export async function startScreenshotSession(customSettings?: ScreenshotSettings): Promise<void> {
+	closeScreenshotOverlay();
+
+	const cursorPoint = screen.getCursorScreenPoint();
+	const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
+
+	const snapshot = await captureFullDisplaySnapshot(currentDisplay.id);
+	if (!snapshot) return;
+
+	const { bounds } = currentDisplay;
+
+	const win = new BrowserWindow({
+		x: bounds.x,
+		y: bounds.y,
+		width: bounds.width,
+		height: bounds.height,
+		frame: false,
+		transparent: true,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		resizable: false,
+		movable: false,
+		fullscreenable: false,
+		hasShadow: false,
+		backgroundColor: "#00000000",
+		enableLargerThanScreen: true,
+		webPreferences: {
+			preload: join(import.meta.dirname, "../preload/index.js"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: false,
+			backgroundThrottling: false,
+		},
+	});
+
+	// Level screen-saver makes sure it sits above normal fullscreen apps and menu bar on macOS
+	win.setAlwaysOnTop(true, "screen-saver");
+	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+	overlayWindows.push(win);
+
+	win.on("closed", () => {
+		overlayWindows = overlayWindows.filter((w) => w !== win);
+	});
+
+	// Pass snapshot data and initial settings to overlay via query / hash
+	const devServer = process.env.ELECTRON_RENDERER_URL;
+	const overlayUrl = devServer
+		? `${devServer}#/screenshot-overlay`
+		: `file://${join(import.meta.dirname, "../renderer/index.html")}#/screenshot-overlay`;
+
+	win.webContents.once("did-finish-load", () => {
+		win.webContents.send("screenshot:init", {
+			snapshot: snapshot.dataUrl,
+			bounds,
+			scaleFactor: snapshot.scaleFactor,
+			settings: customSettings ?? currentSettingsProvider?.()?.screenshot,
+		});
+		win.show();
+		win.focus();
+	});
+
+	if (devServer) {
+		void win.loadURL(overlayUrl);
+	} else {
+		void win.loadFile(join(import.meta.dirname, "../renderer/index.html"), {
+			hash: "/screenshot-overlay",
+		});
+	}
+}
+
+/**
+ * Handle save/finish from overlay renderer
+ */
+export async function finishScreenshot(dataUrl: string, settings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }> {
+	closeScreenshotOverlay();
+
+	const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+	const buffer = Buffer.from(base64Data, "base64");
+
+	// 1. Copy to clipboard
+	const copyToClipboard = settings?.copyToClipboard !== false;
+	if (copyToClipboard) {
+		const img = nativeImage.createFromBuffer(buffer);
+		clipboard.writeImage(img);
+	}
+
+	// 2. Save to file if saveLocation is configured
+	let filePath: string | undefined;
+	if (settings?.saveLocation?.trim()) {
+		try {
+			const saveDir = resolveSaveDirectory(settings.saveLocation, app.getPath("desktop"));
+			const filename = generateScreenshotFilename();
+			filePath = join(saveDir, filename);
+			const { writeFile, mkdir } = await import("node:fs/promises");
+			await mkdir(saveDir, { recursive: true });
+			await writeFile(filePath, buffer);
+		} catch (err) {
+			console.error("[screenshot] failed to save screenshot file:", err);
+		}
+	}
+
+	return { ok: true, filePath };
+}
+
+/**
+ * Register global shortcut
  */
 export function registerScreenshotShortcut(
 	getSettings: () => Settings | undefined,
@@ -105,10 +201,11 @@ export function registerScreenshotShortcut(
 ): void {
 	if (process.platform !== "darwin") return;
 
+	currentSettingsProvider = getSettings;
 	onCaptureTriggered = onTrigger;
+
 	let shortcut = getSettings()?.screenshot?.shortcut?.trim();
 	if (shortcut) {
-		// Normalize "Option+" to "Alt+" for Electron's Accelerator parser
 		shortcut = shortcut.replace(/Option/gi, "Alt");
 	}
 
@@ -123,6 +220,7 @@ export function registerScreenshotShortcut(
 
 	try {
 		const success = globalShortcut.register(shortcut, () => {
+			void startScreenshotSession();
 			onCaptureTriggered?.();
 		});
 		if (success) {

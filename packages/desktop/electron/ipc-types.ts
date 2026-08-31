@@ -547,15 +547,11 @@ export interface LyraApi {
 		remoteImage(url: string): Promise<string | null>;
 	};
 	screenshot: {
-		capture(settings?: ScreenshotSettings): Promise<{
-			ok: boolean;
-			canceled?: boolean;
-			dataUrl?: string;
-			filePath?: string;
-			error?: string;
-		}>;
+		start(settings?: ScreenshotSettings): Promise<void>;
+		finish(dataUrl: string, settings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }>;
+		cancel(): Promise<void>;
 		pickDirectory(): Promise<string | null>;
-		onTrigger(handler: () => void): () => void;
+		onInit(handler: (payload: { snapshot: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number; settings?: ScreenshotSettings }) => void): () => void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

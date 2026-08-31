@@ -87,7 +87,7 @@ export function ScreenshotSettings() {
 					title="测试截图"
 					detail="立即触发一次屏幕区域截图"
 					control={
-						<GhostButton icon={<Camera size={14} />} onClick={() => void window.lyra.screenshot.capture()}>
+						<GhostButton icon={<Camera size={14} />} onClick={() => void window.lyra.screenshot.start()}>
 							立即截屏
 						</GhostButton>
 					}

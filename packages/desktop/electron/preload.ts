@@ -247,12 +247,14 @@ const api: LyraApi = {
 		remoteImage: (url) => ipcRenderer.invoke("system:remoteImage", url),
 	},
 	screenshot: {
-		capture: (settings) => ipcRenderer.invoke("screenshot:capture", settings),
+		start: (settings) => ipcRenderer.invoke("screenshot:start", settings),
+		finish: (dataUrl, settings) => ipcRenderer.invoke("screenshot:finish", dataUrl, settings),
+		cancel: () => ipcRenderer.invoke("screenshot:cancel"),
 		pickDirectory: () => ipcRenderer.invoke("screenshot:pickDirectory"),
-		onTrigger: (handler) => {
-			const listener = () => handler();
-			ipcRenderer.on("screenshot:trigger", listener);
-			return () => ipcRenderer.removeListener("screenshot:trigger", listener);
+		onInit: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("screenshot:init", listener);
+			return () => ipcRenderer.removeListener("screenshot:init", listener);
 		},
 	},
 	index: {

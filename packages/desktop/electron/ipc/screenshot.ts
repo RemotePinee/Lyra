@@ -4,7 +4,11 @@
 
 import { dialog, ipcMain } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
-import { captureScreen, type CaptureResult } from "../screenshot.ts";
+import {
+	closeScreenshotOverlay,
+	finishScreenshot,
+	startScreenshotSession,
+} from "../screenshot.ts";
 
 export interface ScreenshotIpcDeps {
 	settings: () => Settings;
@@ -12,9 +16,18 @@ export interface ScreenshotIpcDeps {
 }
 
 export function registerScreenshotIpc(deps: ScreenshotIpcDeps): void {
-	ipcMain.handle("screenshot:capture", async (_event, customSettings?: ScreenshotSettings): Promise<CaptureResult> => {
+	ipcMain.handle("screenshot:start", async (_event, customSettings?: ScreenshotSettings): Promise<void> => {
 		const current = customSettings ?? deps.settings().screenshot;
-		return captureScreen(current);
+		await startScreenshotSession(current);
+	});
+
+	ipcMain.handle("screenshot:finish", async (_event, dataUrl: string, customSettings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }> => {
+		const current = customSettings ?? deps.settings().screenshot;
+		return finishScreenshot(dataUrl, current);
+	});
+
+	ipcMain.handle("screenshot:cancel", async (): Promise<void> => {
+		closeScreenshotOverlay();
 	});
 
 	ipcMain.handle("screenshot:pickDirectory", async (): Promise<string | null> => {
