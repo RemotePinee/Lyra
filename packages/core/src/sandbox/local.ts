@@ -29,6 +29,8 @@ const QUIET_ENV = {
 	GIT_PAGER: "cat",
 	PAGER: "cat",
 	PYTHONIOENCODING: "utf-8",
+	PYTHONUNBUFFERED: "1",
+	FORCE_COLOR: "0",
 };
 
 export class LocalSandbox implements Sandbox {

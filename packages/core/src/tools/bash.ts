@@ -174,14 +174,35 @@ export const bashTool: Tool<BashArgs> = {
 
 			let output = "";
 			let settled = false;
+			let progressTimer: NodeJS.Timeout | null = null;
+			let lastEmittedTime = 0;
+			const THROTTLE_MS = 50;
+
+			const emitProgress = () => {
+				if (progressTimer) {
+					clearTimeout(progressTimer);
+					progressTimer = null;
+				}
+				lastEmittedTime = Date.now();
+				ctx.onProgress?.({ content: [{ type: "text", text: clip(output) }] });
+			};
+
 			child.onOutput((chunk) => {
 				if (output.length < MAX_OUTPUT_CHARS * 2) output += chunk;
-				ctx.onProgress?.({ content: [{ type: "text", text: clip(output) }] });
+				if (!ctx.onProgress) return;
+
+				const now = Date.now();
+				if (now - lastEmittedTime >= THROTTLE_MS) {
+					emitProgress();
+				} else if (!progressTimer) {
+					progressTimer = setTimeout(emitProgress, THROTTLE_MS - (now - lastEmittedTime));
+				}
 			});
 
 			const timer = setTimeout(() => {
 				if (settled) return;
 				settled = true;
+				if (progressTimer) clearTimeout(progressTimer);
 				child.kill();
 				resolve({
 					content: [{ type: "text", text: `${clip(output)}\n\n[timed out after ${timeout}ms]` }],
@@ -193,6 +214,7 @@ export const bashTool: Tool<BashArgs> = {
 			const onAbort = () => {
 				if (settled) return;
 				settled = true;
+				if (progressTimer) clearTimeout(progressTimer);
 				clearTimeout(timer);
 				child.kill();
 				resolve({
@@ -206,6 +228,7 @@ export const bashTool: Tool<BashArgs> = {
 			child.onError((error) => {
 				if (settled) return;
 				settled = true;
+				if (progressTimer) clearTimeout(progressTimer);
 				clearTimeout(timer);
 				ctx.signal?.removeEventListener("abort", onAbort);
 				resolve(errorResult(`Failed to start command: ${error.message}`));
@@ -214,6 +237,7 @@ export const bashTool: Tool<BashArgs> = {
 			child.onExit((code) => {
 				if (settled) return;
 				settled = true;
+				if (progressTimer) clearTimeout(progressTimer);
 				clearTimeout(timer);
 				ctx.signal?.removeEventListener("abort", onAbort);
 				const text = clip(output).trim();
