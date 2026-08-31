@@ -206,7 +206,11 @@ export function SessionCard({
 export function useSessionCard(): {
 	anchor: DOMRect | null;
 	leaving: boolean;
-	bind: { onMouseEnter: (event: React.MouseEvent<HTMLElement>) => void; onMouseLeave: () => void };
+	bind: {
+		onMouseEnter: (event: React.MouseEvent<HTMLElement>) => void;
+		onMouseLeave: () => void;
+		onPointerDown: () => void;
+	};
 	dismiss: () => void;
 } {
 	const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -245,6 +249,9 @@ export function useSessionCard(): {
 		leaving,
 		dismiss,
 		bind: {
+			onPointerDown: () => {
+				dismiss();
+			},
 			onMouseEnter: (event) => {
 				if (isTooltipSuppressed()) return;
 				const box = event.currentTarget.getBoundingClientRect();

@@ -148,7 +148,10 @@ export function SessionRow({
 			{menu.open && <SessionMenu anchor={menu.anchor} session={session} onClose={menu.close} />}
 			<button
 				type="button"
-				onClick={onOpen}
+				onClick={() => {
+					card.dismiss();
+					onOpen();
+				}}
 				className={`flex w-full min-w-0 items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
 					actionsCount === 2
 						? "pr-2 group-hover/session:pr-14 group-focus-within/session:pr-14"
