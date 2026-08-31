@@ -558,6 +558,8 @@ export interface LyraApi {
 		onInit(handler: (payload: { snapshot: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number; settings?: ScreenshotSettings }) => void): () => void;
 		/** Say the snapshot has been drawn, so the overlay can be shown without a blank frame. */
 		ready(): void;
+		/** The window is on screen — from here a fade has frames to run in. Returns an unsubscribe. */
+		onShown(handler: () => void): () => void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

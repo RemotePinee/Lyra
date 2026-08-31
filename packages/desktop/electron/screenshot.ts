@@ -9,7 +9,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
-import { appIconPath } from "./window.ts";
+
 import { resolveSaveDirectory } from "./screenshot-path.ts";
 
 
@@ -143,7 +143,7 @@ export function revealScreenshotOverlay(webContentsId: number): void {
  * showing and focusing a window belonging to an application that is not frontmost raises it within
  * that application, and leaves the application itself behind.
  */
-export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): void {
+export function closeScreenshotOverlay(options?: { restoreFocus?: boolean; foreground?: boolean }): void {
 	const overlays = new Set(overlayWindows);
 	for (const win of overlayWindows) {
 		if (!win.isDestroyed()) {
@@ -151,14 +151,6 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): vo
 		}
 	}
 	overlayWindows = [];
-
-	// Re-apply dock icon on macOS to ensure dock logo does not disappear or reset
-	if (process.platform === "darwin") {
-		const icon = appIconPath();
-		if (icon && app.dock) {
-			app.dock.setIcon(icon);
-		}
-	}
 
 	// Not when another overlay is about to take its place — see the call in
 	// `startScreenshotSession`. Raising the app for one frame between two overlays is a flicker.
@@ -176,10 +168,31 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): vo
 	/*
 	 * Raised within Lyra either way, so it is never buried under its own overlay's leftovers — but
 	 * `showInactive`, which does not take the foreground from whatever the user is actually looking
-	 * at. Only a screenshot that started from Lyra brings Lyra back.
+	 * at.
+	 *
+	 * Two things have to be true at once and they pull in opposite directions. A finished capture
+	 * has produced something that is going to Lyra, so Lyra comes forward. A *cancelled* one has
+	 * produced nothing: pressing Escape is how you say "never mind", and answering that by throwing
+	 * the whole application in front of whatever the user was reading is the opposite of never
+	 * mind. Same for a capture the global shortcut started from another app — see `cameFromApp`.
 	 */
-	if (!cameFromApp) {
+	if (!(options?.foreground ?? cameFromApp)) {
 		main.showInactive();
+		/*
+		 * Hand the foreground back, rather than merely not asking for it.
+		 *
+		 * `showInactive` is not enough here and that is easy to miss. The overlay had to take focus
+		 * to receive Escape at all, and taking it made *Lyra* the frontmost application; destroying
+		 * the overlay leaves the foreground there, on the main window, however politely this one is
+		 * shown. So a capture started with the global shortcut while reading something else ended
+		 * with Lyra in front of it — the exact barging-in this branch exists to avoid.
+		 *
+		 * `app.hide()` is how a macOS application steps back: the window is not closed and nothing
+		 * is lost, the frontmost slot returns to whatever had it, and the dock icon brings Lyra back
+		 * exactly as it was. Only when the capture did not come from Lyra in the first place —
+		 * hiding an app the user is actually looking at would be its own rudeness.
+		 */
+		if (process.platform === "darwin" && !cameFromApp) app.hide();
 		return;
 	}
 	main.show();
@@ -246,15 +259,22 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 
 	// Level screen-saver makes sure it sits above normal fullscreen apps and menu bar on macOS
 	win.setAlwaysOnTop(true, "screen-saver");
-	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-	// Ensure dock icon remains set on macOS when overlay starts
-	if (process.platform === "darwin") {
-		const icon = appIconPath();
-		if (icon && app.dock) {
-			app.dock.setIcon(icon);
-		}
-	}
+	/*
+	 * `skipTransformProcessType` is the whole of the disappearing dock icon, and of the flicker.
+	 *
+	 * Electron's macOS implementation of `setVisibleOnAllWorkspaces(true)` switches the *process*
+	 * between `ForegroundApplication` and `UIElementApplication` — its own documentation says so,
+	 * and says what it costs: "this will hide the window and dock for a short time every time it is
+	 * called". A `UIElement` process has no dock tile by definition, so the icon does not flicker,
+	 * it goes; and because the transform is never undone, it stays gone after the capture ends.
+	 * Confirmed by asking LaunchServices what it thinks this process is before and after — see
+	 * `e2e/dock-policy-probe.ts`.
+	 *
+	 * Skipping the transform keeps the process a regular application. The overlay still covers
+	 * everything it needs to: `visibleOnFullScreen` puts it over a fullscreen app's space, and the
+	 * `screen-saver` level above puts it over the menu bar.
+	 */
+	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
 
 	overlayWindows.push(win);
 
@@ -285,6 +305,15 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		if (win.isDestroyed() || win.isVisible()) return;
 		win.show();
 		win.focus();
+		/*
+		 * Now that it is on screen, the renderer can fade the dimming in.
+		 *
+		 * It cannot start that itself: until this line the page is hidden, a hidden page is not
+		 * composited, and a CSS transition started there has no frames to run in — it would jump
+		 * straight to its end state and the capture would appear fully dimmed, all at once, which
+		 * is exactly the abruptness being fixed.
+		 */
+		if (!win.webContents.isDestroyed()) win.webContents.send("screenshot:shown");
 	};
 	// Read now and kept, because `win.webContents` is not reachable from the `closed` handler that
 	// has to clean this up.

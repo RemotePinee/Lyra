@@ -161,6 +161,8 @@ export interface Annotator {
 	 * `ready` flag standing in for it is a lie the linter is right to reject.
 	 */
 	width: number;
+	/** The mosaic grid, which `pixels` was averaged for. The two are one decision, never two. */
+	block: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,22 +213,6 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 				el.height = img.naturalHeight;
 			}
 
-			/*
-			 * The mosaic source, built once.
-			 *
-			 * Drawing the whole image into a canvas one pixel per block gives, in a single call, the
-			 * average colour of every block — which is what a mosaic is. Painting a block is then
-			 * blitting one pixel of it back at block size with smoothing off. The alternative, reading
-			 * pixels and averaging them per block per frame, is the same answer computed thousands of
-			 * times a second.
-			 */
-			const block = mosaicBlock(img.naturalWidth);
-			const small = document.createElement("canvas");
-			small.width = Math.max(1, Math.ceil(img.naturalWidth / block));
-			small.height = Math.max(1, Math.ceil(img.naturalHeight / block));
-			small.getContext("2d")?.drawImage(img, 0, 0, small.width, small.height);
-			pixels.current = small;
-
 			setWidth(img.naturalWidth);
 			setReady(true);
 		};
@@ -235,6 +221,32 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 			img.onload = null;
 		};
 	}, [src]);
+
+	/**
+	 * The mosaic grid, and the averaged image it is blitted from.
+	 *
+	 * Drawing the whole picture into a canvas one pixel per block gives, in a single call, the
+	 * average colour of every block — which is what a mosaic is. Painting a block is then blitting
+	 * one pixel of it back at block size with smoothing off; the alternative, averaging pixels per
+	 * block per frame, is the same answer computed thousands of times a second.
+	 *
+	 * Rebuilt when the grain changes, and rebuilt *during render* rather than in an effect. The
+	 * source's resolution is `naturalWidth / block`, so the two are one decision: a canvas built for
+	 * one block size and blitted at another samples the wrong pixel for every cell. Effects in a
+	 * child run before effects in its parent, so `AnnotateCanvas` would repaint with the new grain
+	 * and the old source — visibly wrong for a frame, every time the size is changed.
+	 */
+	const block = width > 0 ? mosaicBlock(width, weight) : 0;
+	const mosaicSource = useMemo(() => {
+		const img = image.current;
+		if (!img || !ready || block <= 0) return null;
+		const small = document.createElement("canvas");
+		small.width = Math.max(1, Math.ceil(img.naturalWidth / block));
+		small.height = Math.max(1, Math.ceil(img.naturalHeight / block));
+		small.getContext("2d")?.drawImage(img, 0, 0, small.width, small.height);
+		return small;
+	}, [ready, block, image]);
+	pixels.current = mosaicSource;
 
 	const shapes = current(history);
 
@@ -293,6 +305,7 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 		pixels,
 		ready,
 		width,
+		block,
 	};
 }
 
@@ -404,15 +417,15 @@ export function AnnotateCanvas({
 		ctx.clearRect(0, 0, el.width, el.height);
 		ctx.drawImage(img, 0, 0);
 
-		const block = mosaicBlock(width);
-		const brush = mosaicBrush(width) * weight;
+		// The grid comes from the annotator, which is also what `pixels` was averaged for — computing
+		// it again here is how the two drift apart.
 		paintAll(ctx, live, {
 			stroke,
 			pixels: pixels.current,
-			block,
-			brush,
+			block: annotator.block,
+			brush: mosaicBrush(width) * weight,
 		});
-	}, [live, ready, width, stroke, weight, canvas, image, pixels]);
+	}, [live, ready, width, stroke, weight, canvas, image, pixels, annotator.block]);
 
 	/** Whether the field has been focused for the caption currently open in it. */
 	const entered = useRef(false);
@@ -971,6 +984,17 @@ const TOOLS: [Tool, typeof Pencil, string][] = [
 	["mosaic", Grid2x2, "马赛克"],
 ];
 
+/**
+ * What the size control is sizing, per tool.
+ *
+ * One control has always driven all three; only its name was ever about lines.
+ */
+const SIZE_LABEL: Partial<Record<Tool, string>> = {
+	text: "字号",
+	mosaic: "马赛克大小",
+	step: "标号大小",
+};
+
 const COLOUR_NAMES: Record<string, string> = {
 	"#ef4444": "红色",
 	"#3b82f6": "蓝色",
@@ -1073,17 +1097,22 @@ export function AnnotateToolbar({
 			<Divider />
 
 			{/*
-			 * Weight, shown as what it does rather than named.
+			 * One control, named for whatever it is currently sizing.
+			 *
+			 * It has always driven three things — stroke width, caption size, mosaic grain — and
+			 * calling all three "粗细" made two of them undiscoverable: nobody looks under a word
+			 * about lines for the size of their text. The control does not change, only the word for
+			 * it, which is the honest version of what it does.
 			 */}
-			<div className="flex items-center gap-0.5" data-ly-tip="粗细">
+			<div className="flex items-center gap-0.5" data-ly-tip={SIZE_LABEL[annotator.tool] ?? "粗细"}>
 				{WEIGHT_LEVELS.map(([value, label, dot]) => (
 					<button
 						key={label}
 						type="button"
 						onClick={() => annotator.setWeight(value)}
-						data-ly-tip={`粗细：${label}`}
+						data-ly-tip={`${SIZE_LABEL[annotator.tool] ?? "粗细"}：${label}`}
 						data-ly-tip-side="top"
-						aria-label={`粗细 ${label}`}
+						aria-label={`${SIZE_LABEL[annotator.tool] ?? "粗细"} ${label}`}
 						className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
 							annotator.weight === value ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
 						}`}
@@ -1093,6 +1122,15 @@ export function AnnotateToolbar({
 				))}
 			</div>
 
+			{/*
+			 * No colour for the mosaic, because a mosaic has none.
+			 *
+			 * It samples the picture underneath it; the swatches would sit there doing nothing to
+			 * every stroke made with that tool. A control that cannot affect what is selected is
+			 * worse than a missing one — it is a promise the tool does not keep.
+			 */}
+			{annotator.tool !== "mosaic" && (
+				<>
 			<Divider />
 
 			{/*
@@ -1122,6 +1160,8 @@ export function AnnotateToolbar({
 					/>
 				))}
 			</div>
+				</>
+			)}
 
 			{/*
 			 * Only while the text tool is up.

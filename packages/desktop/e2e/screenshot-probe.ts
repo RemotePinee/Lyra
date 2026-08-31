@@ -101,6 +101,33 @@ async function click(socket: string, x: number, y: number) {
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Press a toolbar button the way a person does: a real pointer press at its real coordinates.
+ *
+ * Not `element.click()`, and this distinction cost a release. A DOM click dispatches one `click`
+ * event and no pointer events at all, so it cannot see anything that goes wrong on `pointerdown` —
+ * and what was wrong was that pressing any tool button fell through to the overlay's own handler,
+ * which read it as "pressed outside the selection", threw the selection away and went back to the
+ * empty crosshair. Every button was broken in the shipped app while this file reported all green.
+ */
+async function pressTool(
+	socket: string,
+	run: <T>(expression: string) => Promise<T>,
+	tip: string,
+): Promise<{ x: number; y: number } | null> {
+	const at = await run<{ x: number; y: number } | null>(`(() => {
+		const b = [...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith(${JSON.stringify(tip)}));
+		if (!b) return null;
+		const r = b.getBoundingClientRect();
+		if (!r.width || !r.height) return null;
+		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+	})()`);
+	if (!at) return null;
+	await call(socket, "Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
+	await call(socket, "Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+	return at;
+}
+
+/**
  * Which application is frontmost, according to the window server.
  *
  * `lsappinfo` rather than AppleScript: it needs no accessibility grant, so it works on a machine
@@ -153,6 +180,36 @@ try {
 
 	// Anything the renderer throws, kept where the probe can read it at the end. A React effect that
 	// throws leaves a half-painted canvas and no other trace.
+	/*
+	 * Wait for the document before putting anything on `window`.
+	 *
+	 * The debugger target exists from the moment the page is created, so an injection made too
+	 * early is thrown away by the navigation that follows it — which is why the frame recorder
+	 * below came back empty. Loading is not showing: this completes while the window is still
+	 * hidden, which is exactly the window of opportunity that is wanted.
+	 */
+	for (let i = 0; i < 60; i++) {
+		if (await run<boolean>(`document.readyState === "complete"`)) break;
+		await pause(100);
+	}
+
+	/*
+	 * Record the dimming's opacity every frame, starting now.
+	 *
+	 * `requestAnimationFrame` is exactly the right clock for this: a hidden window is not
+	 * composited, so nothing is recorded until the moment it is shown — which is when the fade
+	 * begins. Sampling over the debugger instead would race the 160ms transition and mostly miss it.
+	 */
+	await run(`(() => {
+		window.__fade = [];
+		const tick = () => {
+			const el = [...document.querySelectorAll("div")].find(d => d.style.opacity !== "" && String(d.style.transition).includes("opacity"));
+			if (el && window.__fade.length < 40) window.__fade.push(Number(getComputedStyle(el).opacity));
+			if (window.__fade.length < 40) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	})()`);
+
 	await run(`(() => {
 		window.__probeErrors = [];
 		window.addEventListener("error", (e) => window.__probeErrors.push(String(e.message)));
@@ -193,6 +250,35 @@ try {
 	 * selection to `window.innerHeight` — so a drag dispatched too early is trimmed to whatever the
 	 * window measured at the time, which showed up as an intermittent short selection.
 	 */
+	/*
+	 * Wait for the window to actually be on screen, not merely to exist.
+	 *
+	 * The overlay is created with `show: false` and revealed only once the renderer says the
+	 * snapshot is painted, so its debugger target is listed well before it is visible. Pointer
+	 * events dispatched into a window that has not been shown go nowhere useful, which showed up
+	 * as the first drag intermittently producing no selection at all — a flaky probe reporting a
+	 * real feature as broken, and worse, sometimes reporting a broken one as fine.
+	 */
+	let visible = false;
+	for (let i = 0; i < 60 && !visible; i++) {
+		visible = await run<boolean>(`document.visibilityState === "visible" && !document.hidden`);
+		if (!visible) await pause(100);
+	}
+	if (!visible) problems.push("浮层窗口一直没有显示出来");
+
+	/*
+	 * The way in is a fade, not a cut.
+	 *
+	 * Sampled the instant the window becomes visible, because that is when the transition starts —
+	 * the complaint is that capture mode arrives all at once. A dimming layer that reads 1 on the
+	 * very first sample never animated: it was already at its end state, which is what happens when
+	 * the transition is started while the page is still hidden and has no frames to run in.
+	 */
+	const fade = await run<number[]>(`window.__fade ?? []`);
+	note(`     进入时的遮罩透明度 → ${fade.length ? fade.map((n) => n.toFixed(2)).join(" → ") : "(没采到)"}`);
+	if (fade.length === 0) problems.push("采不到遮罩的透明度，淡入无法验证");
+	else if (Math.min(...fade) >= 1) problems.push("浮层是直接跳到最终状态的，没有淡入过渡");
+
 	let stable = 0;
 	let last = 0;
 	for (let i = 0; i < 30 && stable < 3; i++) {
@@ -201,7 +287,9 @@ try {
 		last = tall;
 		await pause(100);
 	}
-	note(`  0. 窗口高度稳定在 ${last}`);
+	// And let the way-in finish, so nothing below is racing a transition.
+	await pause(250);
+	note(`  0. 窗口已显示，高度稳定在 ${last}`);
 	await drag(socket, [300, 220], [900, 620]);
 	await pause(150);
 	const drawn = await run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
@@ -226,6 +314,29 @@ try {
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) };
 	})()`);
 	note(`  3. 工具条 → ${bar ? `${bar.x},${bar.y} 宽 ${bar.w}` : "没有出现"}`);
+	/*
+	 * Every control has to be reachable, which means the whole bar has to be on screen.
+	 *
+	 * It is placed by clamping against a declared width, so a declared width that has drifted from
+	 * the real one pushes the far end — 完成 among them — past the edge of the display, where no
+	 * pointer can go. Checked per button rather than on the bar as a whole, because that is the
+	 * thing that actually has to be clickable.
+	 */
+	const offscreen = await run<{ tip: string; x: number; right: number }[]>(`(() => {
+		const out = [];
+		for (const b of document.querySelectorAll("button[data-ly-tip]")) {
+			const r = b.getBoundingClientRect();
+			if (r.width === 0 && r.height === 0) continue;
+			if (r.left < 0 || r.top < 0 || r.right > window.innerWidth || r.bottom > window.innerHeight) {
+				out.push({ tip: b.dataset.lyTip, x: Math.round(r.left), right: Math.round(r.right) });
+			}
+		}
+		return out;
+	})()`);
+	note(`     控件是否都在屏幕内 → ${offscreen.length === 0 ? "是" : `${offscreen.length} 个跑到屏幕外`}`);
+	if (offscreen.length > 0) {
+		problems.push(`工具条有 ${offscreen.length} 个控件在屏幕外点不到：${offscreen.map((o) => o.tip).join("、")}（窗口宽 ${await run<number>(`window.innerWidth`)}）`);
+	}
 	if (!bar) problems.push("工具条没有出现");
 	else {
 		if (Math.abs(bar.x - (drawn?.x ?? 0)) > 2) problems.push(`工具条没有和选区左边缘对齐（${bar.x} vs ${drawn?.x}）`);
@@ -367,17 +478,34 @@ try {
 	 */
 	for (const [index, entry] of tools.entries()) {
 		const [name, key] = entry;
-		const picked = await run<boolean>(`(() => {
-			const b = [...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith(${JSON.stringify(name)}));
-			if (!b) return false;
-			b.click();
-			return true;
-		})()`);
+		const picked = await pressTool(socket, run, name);
 		if (!picked) {
 			problems.push(`工具条上没有「${name}」按钮`);
 			continue;
 		}
-		await pause(60);
+		await pause(80);
+		/*
+		 * The selection has to survive being pressed on the toolbar.
+		 *
+		 * This is the check that would have caught the shipped bug: the bar floats outside the
+		 * selection, so a press on it that reaches the overlay's handler is read as "start a new
+		 * region" and the selection is gone. On screen that is a capture that resets itself the
+		 * moment you pick a tool.
+		 */
+		const alive = await run<boolean>(`Boolean(document.querySelector('[class*="border-white/90"]'))`);
+		if (!alive) {
+			problems.push(`点了「${name}」按钮之后选区没了——工具条的点击穿到浮层上了`);
+			break;
+		}
+		/*
+		 * The colour swatches belong to tools that draw in a colour.
+		 *
+		 * A mosaic samples the picture underneath it, so colours shown beside it do nothing to
+		 * anything — a control that cannot affect what is selected is a promise the tool does not keep.
+		 */
+		const swatches = await run<number>(`document.querySelectorAll('[data-ly-tip="红色"], [data-ly-tip="蓝色"]').length`);
+		if (name === "马赛克" && swatches > 0) problems.push("选中马赛克时还显示着颜色选择——马赛克没有颜色");
+		if (name !== "马赛克" && swatches === 0) problems.push(`选中「${name}」时颜色选择不见了`);
 		const lane = inside.y + index * 32;
 		// A short drag for the ones that are dragged; a click is enough for the step badge.
 		if (name === "步骤标号") await click(socket, inside.x + 400, lane);
@@ -439,7 +567,7 @@ try {
 	 * repaints and would otherwise read that noise as a fault in undo.
 	 */
 	await run(keepFrame);
-	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("画笔")).click()`);
+	await pressTool(socket, run, "画笔");
 	await pause(200);
 	const noise = await run<{ count: number } | null>(frameDiff);
 	note(`     重绘噪声基线 → ${noise?.count ?? "?"} 像素`);
@@ -482,7 +610,7 @@ try {
 		}
 		return { count, area: (x1 - x0) * (y1 - y0) };
 	})()`;
-	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("文字")).click()`);
+	await pressTool(socket, run, "文字");
 	await pause(120);
 	await diffCount("选中文字工具后");
 	/*
@@ -524,7 +652,7 @@ try {
 	}
 
 	// ---- 8. 撤销 / 重做 ---------------------------------------------------
-	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("撤销")).click()`);
+	await pressTool(socket, run, "撤销");
 	await pause(200);
 	const undone = await inkOf();
 	note(`  8. 撤销 → ${undone.ink} 像素（此前 ${before.ink}）`);
@@ -544,7 +672,7 @@ try {
 			problems.push(`撤销之后文字没有从画布上消失（还差 ${back?.count} 个像素）`);
 		}
 	}
-	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("重做")).click()`);
+	await pressTool(socket, run, "重做");
 	await pause(200);
 	const redone = await inkOf();
 	note(`     重做 → ${redone.ink} 像素`);
@@ -572,9 +700,19 @@ try {
 	 * timed out. Seeding a save directory and looking at what lands in it covers the whole path
 	 * instead: the renderer's export, the IPC hop, and the main process writing the PNG.
 	 */
-	await run(`[...document.querySelectorAll("button")].find(b => b.textContent.includes("完成")).click()`).catch(
-		() => {},
-	);
+	// The destination the app believes in, printed because a mismatch between this and the directory
+	// below is what a stale instance on the debug port looks like from here.
+	note(`      保存位置 → ${await app.evaluate<string>(`window.lyra.settings.get().then(s => s.screenshot?.saveLocation ?? "(没有)")`)}`);
+	const finished = await pressTool(socket, run, "完成");
+	if (!finished) problems.push("工具条上没有「完成」按钮");
+	await pause(700);
+	const overlayGone = !(await targets()).some((t) => t.type === "page" && t.url.includes("screenshot-overlay"));
+	note(`      点「完成」之后浮层${overlayGone ? "已关闭" : "还开着"}`);
+	if (!overlayGone) {
+		problems.push("点了完成之后浮层没有关闭——还停在截图状态");
+		const why = await run<string[]>(`window.__probeErrors ?? []`).catch(() => []);
+		if (why.length) note(`      渲染进程报错：${why.slice(0, 4).join(" | ")}`);
+	}
 	let saved: { name: string; bytes: number } | null = null;
 	for (let i = 0; i < 40 && !saved; i++) {
 		await pause(250);
@@ -582,7 +720,22 @@ try {
 		if (name) saved = { name, bytes: (await stat(join(shots, name))).size };
 	}
 	note(`  10. 完成 → ${saved ? `${saved.name}，${Math.round(saved.bytes / 1024)} KB` : "没有保存任何文件"}`);
-	if (!saved) problems.push("点了完成之后没有保存出文件");
+	if (!saved) {
+		problems.push("点了完成之后没有保存出文件");
+		// Which half is broken: the save path itself, or the overlay's call into it.
+		const direct = await app.evaluate<string>(
+			`window.lyra.screenshot.finish("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==").then(r => JSON.stringify(r), e => "threw: " + e.message)`,
+		).catch((e) => `evaluate failed: ${e.message}`);
+		note(`      直接调用保存 → ${direct}`);
+		const now = await readdir(shots).catch((e) => [`(读不了: ${e.message})`]);
+		note(`      探针在看的目录 → ${shots}`);
+		note(`      直接调用之后目录里 → ${now.length ? now.join(", ") : "(还是空的)"}`);
+		const claimed = /"filePath":"([^"]+)"/.exec(direct)?.[1];
+		if (claimed) {
+			note(`      主进程说写到了 → ${claimed}`);
+			note(`      那个文件真的在吗 → ${await stat(claimed).then((s) => `${s.size} 字节`, (e) => `不在：${e.code}`)}`);
+		}
+	}
 	else {
 		const size = await pngSize(join(shots, saved.name));
 		note(`      图片尺寸 ${size.width}×${size.height}`);

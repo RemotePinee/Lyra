@@ -16,6 +16,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +55,32 @@ export async function startApp({
 	port: number;
 	seed?: (home: string) => Promise<void>;
 }): Promise<RunningApp> {
+	/*
+	 * Refuse to start while something is already on this port.
+	 *
+	 * This is not tidiness, it is the difference between a test and a lie. The debugger port is how
+	 * everything here reaches the app; a leftover instance from an earlier run holds it, the new
+	 * Electron fails to bind — it says so on stderr and carries on running — and every probe then
+	 * drives *the old process*, with the old code and the old profile directory. Green results,
+	 * about a build that no longer exists. That happened, and it is why a set of fixes that passed
+	 * here was broken the moment it was installed.
+	 */
+	await new Promise<void>((resolve, reject) => {
+		const probe = createServer();
+		probe.once("error", (error: NodeJS.ErrnoException) => {
+			reject(
+				new Error(
+					error.code === "EADDRINUSE"
+						? `调试端口 ${port} 已被占用——多半是上一次没退干净的实例。跑之前先清掉：\n` +
+							`  pkill -f "node_modules/.pnpm/electron@.*--remote-debugging-port"\n` +
+							`  pkill -f "electron-vite.js preview"`
+						: `无法确认调试端口 ${port} 是否空闲：${error.message}`,
+				),
+			);
+		});
+		probe.listen(port, "127.0.0.1", () => probe.close(() => resolve()));
+	});
+
 	// A profile of its own: this must not read, or write to, whatever is on the machine already.
 	const home = await mkdtemp(join(tmpdir(), "lyra-e2e-"));
 	await seed?.(home);
@@ -62,22 +89,33 @@ export async function startApp({
 	const output: string[] = [];
 
 	/*
+	 * The built bundle when `LYRA_E2E_APP` names one, and the dev preview otherwise.
+	 *
+	 * They are not the same program in the ways that have bitten hardest. A packaged build runs out
+	 * of an asar, resolves `app.getAppPath()` somewhere else entirely, and has whatever
+	 * `electron-builder.yml` decided to include rather than the whole source tree — which is how a
+	 * dock icon can be found in development and missing in the app people install. Testing the
+	 * thing that ships is the only way to see that class of fault.
+	 */
+	const bundle = process.env.LYRA_E2E_APP;
+	const executable = bundle ? join(bundle, "Contents", "MacOS", "Lyra") : "pnpm";
+	const argv = bundle
+		? [`--remote-debugging-port=${port}`]
+		: ["exec", "electron-vite", "preview", "--", `--remote-debugging-port=${port}`];
+
+	/*
 	 * Its own process group.
 	 *
 	 * `electron-vite preview` spawns Electron as a child, so killing the one we started leaves the
 	 * window running and the test runner waiting on a handle that never closes — which shows up as
 	 * a suite that passes and then hangs for ten minutes.
 	 */
-	const app: ChildProcess = spawn(
-		"pnpm",
-		["exec", "electron-vite", "preview", "--", `--remote-debugging-port=${port}`],
-		{
-			cwd: ROOT,
-			env: { ...process.env, LYRA_HOME: home, ELECTRON_ENABLE_LOGGING: "1" },
-			stdio: "pipe",
-			detached: true,
-		},
-	);
+	const app: ChildProcess = spawn(executable, argv, {
+		cwd: ROOT,
+		env: { ...process.env, LYRA_HOME: home, ELECTRON_ENABLE_LOGGING: "1" },
+		stdio: "pipe",
+		detached: true,
+	});
 	const record = (chunk: Buffer) => {
 		output.push(chunk.toString());
 		if (process.env.DEBUG_E2E) process.stdout.write(chunk);

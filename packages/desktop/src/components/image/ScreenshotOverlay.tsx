@@ -49,6 +49,14 @@ const MIN_SELECTION = 10;
  * already reads as the edge of the shot, and the same convention every other capture tool uses.
  */
 const EDGE_GRAB = 8;
+/**
+ * How long the dimming takes to arrive, and to leave.
+ *
+ * Short enough not to be a wait before you can drag, long enough to read as a transition rather
+ * than a jump — the complaint being answered is a capture that appears all at once.
+ */
+const ENTER_MS = 160;
+const LEAVE_MS = 120;
 
 interface ScreenshotInit {
 	snapshot: string;
@@ -82,6 +90,18 @@ export function ScreenshotOverlay() {
 	const [isAnnotating, setIsAnnotating] = useState(false);
 
 	const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	/** The toolbar's measured size, so it is kept on screen against what it really is. */
+	const [toolbarSize, setToolbarSize] = useState<{ width: number; height: number } | null>(null);
+	const measureToolbar = useCallback((el: HTMLDivElement | null) => {
+		if (!el) return;
+		const r = el.getBoundingClientRect();
+		if (!r.width || !r.height) return;
+		setToolbarSize((was) =>
+			was && Math.abs(was.width - r.width) < 1 && Math.abs(was.height - r.height) < 1
+				? was
+				: { width: Math.ceil(r.width), height: Math.ceil(r.height) },
+		);
+	}, []);
 
 	/*
 	 * The whole screen, decoded once.
@@ -134,10 +154,64 @@ export function ScreenshotOverlay() {
 		window.lyra?.screenshot?.ready?.();
 	}, [initData, snapshotReady, snapshotImage]);
 
+	/*
+	 * The way in and the way out, as a fade rather than a cut.
+	 *
+	 * The frozen snapshot is not what fades — it is a picture of the screen it is covering, so
+	 * showing it instantly is invisible by construction. What fades is the dimming and the hint,
+	 * which is the part that says "you are in capture mode now": the screen darkens over a beat
+	 * instead of the whole thing arriving in one frame.
+	 *
+	 * `entered` is driven by the main process rather than by a mount effect, because until the
+	 * window is shown this page is not composited and a transition started here has no frames to
+	 * run in — it would land on its end state immediately, which is the abruptness being removed.
+	 */
+	const [entered, setEntered] = useState(false);
+	const [leaving, setLeaving] = useState(false);
+
+	useEffect(() => {
+		const cleanup = window.lyra?.screenshot?.onShown?.(() => setEntered(true));
+		/*
+		 * The main process is the only thing that knows, and `document.hidden` is not it.
+		 *
+		 * An Electron window that has never been shown still reports its document as visible — it is
+		 * a window, not a background tab. Trusting that here set the end state before the window was
+		 * on screen, so the transition had nothing left to run and capture mode arrived in one
+		 * frame: the abruptness this is supposed to remove, reintroduced by the safety net.
+		 *
+		 * The timer is the real safety net. `reveal` sends the message from every path that shows
+		 * the window, including the failsafe one, so this should never fire — and if it somehow
+		 * does, an overlay that is a little abrupt beats one that is permanently invisible.
+		 */
+		const safety = setTimeout(() => setEntered(true), 2000);
+		return () => {
+			cleanup?.();
+			clearTimeout(safety);
+		};
+	}, []);
+
+	/**
+	 * Play the way out, then do the thing. Guarded, so a second Escape cannot double-fire it.
+	 *
+	 * The guard is a ref and the timer is set outside any updater, which is not a style choice. A
+	 * state updater has to be a pure function of the state — React calls it more than once per
+	 * commit, and may not call it at all when the value it would return is the one already there.
+	 * Scheduling the timer inside one is therefore a coin toss on whether the screenshot is ever
+	 * delivered: press 完成, watch it fade, and stay in capture mode forever with nothing on the
+	 * clipboard. Which is exactly what it did.
+	 */
+	const leavingRef = useRef(false);
+	const leaveThen = useCallback((act: () => void) => {
+		if (leavingRef.current) return;
+		leavingRef.current = true;
+		setLeaving(true);
+		setTimeout(act, LEAVE_MS);
+	}, []);
+
 	// Cancel / close screenshot
 	const handleCancel = useCallback(() => {
-		window.lyra?.screenshot?.cancel?.();
-	}, []);
+		leaveThen(() => window.lyra?.screenshot?.cancel?.());
+	}, [leaveThen]);
 
 	// Escape shortcut
 	useEffect(() => {
@@ -180,12 +254,25 @@ export function ScreenshotOverlay() {
 			out.height,
 		);
 
-		window.lyra?.screenshot?.finish?.(out.toDataURL("image/png"), initData.settings);
-	}, [annotator, selection, initData]);
+		// Rendered before the fade, so the picture is of the marks and not of them half faded out.
+		const png = out.toDataURL("image/png");
+		leaveThen(() => window.lyra?.screenshot?.finish?.(png, initData.settings));
+	}, [annotator, selection, initData, leaveThen]);
 
 	// Selection pointer events
 	const handlePointerDown = (e: React.PointerEvent) => {
 		if (!initData) return;
+		/*
+		 * A press on a control is not a press on the screen.
+		 *
+		 * The toolbar floats *outside* the selection — below it, by `toolbarPosition` — so without
+		 * this every press on it falls through to the rule at the bottom of this function and is
+		 * read as "start a new region somewhere else". Pressing any tool button therefore threw the
+		 * selection away and went back to the empty crosshair, which is the whole of "点一个按钮就
+		 * 立马出现新的截图". Nothing about it is visible to a test that clicks buttons through the
+		 * DOM: `element.click()` dispatches a click and no pointer event at all.
+		 */
+		if ((e.target as HTMLElement).closest?.("[data-screenshot-ui]")) return;
 		const pt: Point = { x: e.clientX, y: e.clientY };
 
 		if (selection) {
@@ -269,7 +356,16 @@ export function ScreenshotOverlay() {
 	const { bounds } = initData;
 	// Snapshot pixels → screen pixels, which is the scale the annotator's hit tolerances are in.
 	const zoom = annotator.width > 0 ? bounds.width / annotator.width : 1;
-	const toolbarAt = selection ? toolbarPosition(selection, bounds, TOOLBAR_SIZE) : null;
+	/*
+	 * Placed against the bar's real width, not a guess at it.
+	 *
+	 * `toolbarPosition` keeps the bar on screen by clamping against the width it is told, so a
+	 * constant that has drifted from the truth clamps to the wrong place — the bar was 742pt wide
+	 * and declared 660, which put its last 82pt, the 完成 button among them, off the right edge of
+	 * the screen with no way to reach it. Measured after the first paint and remembered, so this
+	 * cannot drift again as controls are added.
+	 */
+	const toolbarAt = selection ? toolbarPosition(selection, bounds, { ...TOOLBAR_SIZE, ...toolbarSize }) : null;
 
 	return (
 		<div
@@ -279,9 +375,26 @@ export function ScreenshotOverlay() {
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
-			{/* Frozen snapshot canvas */}
+			{/*
+			 * The frozen screen, shown instantly and deliberately not faded.
+			 *
+			 * It is a picture of what is already there, so there is nothing to fade *from* — it is
+			 * everything drawn on top of it that arrives.
+			 */}
 			<canvas ref={bgCanvasRef} className="absolute inset-0 block h-full w-full pointer-events-none" />
 
+			{/*
+			 * `pointer-events-none`, and everything inside it that is meant to be touched says so
+			 * itself. A full-screen layer that swallowed presses would put itself between the user
+			 * and the overlay's own handlers — the selection is dragged on the root, not here.
+			 */}
+			<div
+				className="pointer-events-none absolute inset-0"
+				style={{
+					opacity: leaving || !entered ? 0 : 1,
+					transition: `opacity ${leaving ? LEAVE_MS : ENTER_MS}ms ease-out`,
+				}}
+			>
 			{/* Dim mask around selection */}
 			{selection && (
 				<svg className="pointer-events-none absolute inset-0 h-full w-full">
@@ -319,7 +432,7 @@ export function ScreenshotOverlay() {
 			 */}
 			{isAnnotating && selection && (
 				<div
-					className="absolute overflow-hidden"
+					className="pointer-events-auto absolute overflow-hidden"
 					style={{
 						left: selection.x,
 						top: selection.y,
@@ -362,19 +475,39 @@ export function ScreenshotOverlay() {
 				</div>
 			)}
 
+			{/*
+			 * Marked as a control, and belt-and-braces about it.
+			 *
+			 * `data-screenshot-ui` is what `handlePointerDown` looks for; stopping the press here as
+			 * well means it never reaches the overlay's handlers at all, so no rule added there
+			 * later can start reading the toolbar as part of the screen either.
+			 *
+			 * Only the press, never the move or the release. Stopping all three looks tidier and
+			 * breaks dragging: the bar sits directly below the selection, so resizing by the
+			 * bottom-right handle ends with the pointer over it — and a `pointerup` swallowed there
+			 * never reaches the overlay, which is left believing the drag is still going.
+			 */}
 			{isAnnotating && toolbarAt && (
-				<AnnotateToolbar
-					annotator={annotator}
-					onCancel={handleCancel}
-					onSave={handleFinish}
-					canReplace={false}
-					saveLabel="完成"
-					cancelLabel="取消"
-					requireDirty={false}
-					className="pointer-events-auto absolute z-[120] flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
+				<div
+					ref={measureToolbar}
+					data-screenshot-ui
+					className="pointer-events-auto absolute z-[120]"
 					style={{ left: toolbarAt.x, top: toolbarAt.y }}
-				/>
+					onPointerDown={(e) => e.stopPropagation()}
+				>
+					<AnnotateToolbar
+						annotator={annotator}
+						onCancel={handleCancel}
+						onSave={handleFinish}
+						canReplace={false}
+						saveLabel="完成"
+						cancelLabel="取消"
+						requireDirty={false}
+						className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
+					/>
+				</div>
 			)}
+			</div>
 		</div>
 	);
 }

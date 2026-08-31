@@ -259,6 +259,14 @@ const api: LyraApi = {
 		// "The snapshot is on the canvas" — the overlay stays hidden until this arrives, so that
 		// what appears is the frozen screen rather than an empty window catching up to it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
+		// The other half of that handshake: "you are on screen now", which is when a fade has
+		// frames to run in. A hidden page is not composited and a transition started there jumps
+		// straight to its end.
+		onShown: (handler: () => void) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:shown", listener);
+			return () => ipcRenderer.removeListener("screenshot:shown", listener);
+		},
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),
