@@ -10,7 +10,7 @@
  */
 
 import { AgentSession, type AgentEvent, type SessionStorage, type Settings, type SideChat } from "@lyra/core";
-import type { BrowserWindow } from "electron";
+import { BrowserWindow } from "electron";
 import { createBrowserTools } from "./browser-tools.ts";
 import type { SessionSnapshot } from "./ipc-types.ts";
 import { ensureSessionWorkspace } from "./scratch.ts";
@@ -45,10 +45,13 @@ export const sideChats = new Map<string, SideChat>();
 
 
 export function broadcast(sessionId: string, event: AgentEvent): void {
-	const win = deps.window();
-	if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-		win.webContents.send("agent:event", { sessionId, event });
+	// Broadcast to all open renderer windows
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+			win.webContents.send("agent:event", { sessionId, event });
+		}
 	}
+
 	deps.sync?.()?.broadcast(sessionId, event);
 }
 

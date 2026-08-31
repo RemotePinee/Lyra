@@ -171,6 +171,7 @@ export function sessionSlice(set: Set, get: Get) {
       activity: readOutcome(get().activity, meta.id),
       sessionCache: prune(cache, meta.id),
       activeSessionId: meta.id,
+      openTabs: get().openTabs.includes(meta.id) ? get().openTabs : [...get().openTabs, meta.id],
       meta: cached?.meta ?? meta,
       messages: cached?.messages ?? [],
       toolRuns: cached?.toolRuns ?? {},
@@ -315,23 +316,31 @@ export function sessionSlice(set: Set, get: Get) {
   },
 
   async deleteSession(meta: SessionMeta) {
+    const nextTabs = get().openTabs.filter((id) => id !== meta.id);
     set({
       sessionCache: without(get().sessionCache, meta.id),
       drafts: without(get().drafts, meta.id),
+      openTabs: nextTabs,
     });
     await window.lyra.sessions.remove(meta.projectId, meta.id);
     const sessions = await window.lyra.sessions.list();
     set({ sessions });
     if (get().activeSessionId === meta.id) {
-      set({
-        activeSessionId: null,
-        meta: null,
-        messages: [],
-        toolRuns: {},
-        approvals: [],
-        loadingSession: false,
-        pendingUserMessage: null,
-      });
+      const fallbackId = nextTabs[nextTabs.length - 1];
+      const fallbackMeta = fallbackId ? sessions.find((s) => s.id === fallbackId) : undefined;
+      if (fallbackMeta) {
+        await get().openSession(fallbackMeta);
+      } else {
+        set({
+          activeSessionId: null,
+          meta: null,
+          messages: [],
+          toolRuns: {},
+          approvals: [],
+          loadingSession: false,
+          pendingUserMessage: null,
+        });
+      }
     }
   },
 
@@ -370,6 +379,35 @@ export function sessionSlice(set: Set, get: Get) {
 
   async deleteArchivedSessions() {
     set({ sessions: await window.lyra.sessions.removeArchived() });
+  },
+
+  async closeTab(sessionId: string) {
+    const currentTabs = get().openTabs;
+    const nextTabs = currentTabs.filter((id) => id !== sessionId);
+    set({ openTabs: nextTabs });
+
+    // If the closed tab is currently active, switch to adjacent or fallback tab
+    if (get().activeSessionId === sessionId) {
+      const closedIndex = currentTabs.indexOf(sessionId);
+      const nextActiveId = nextTabs[Math.min(closedIndex, nextTabs.length - 1)];
+      if (nextActiveId) {
+        const targetMeta = get().sessions.find((s) => s.id === nextActiveId);
+        if (targetMeta) {
+          await get().openSession(targetMeta);
+          return;
+        }
+      }
+      // No remaining open tabs: clear to blank session
+      await get().newSession();
+    }
+  },
+
+  async switchTab(sessionId: string) {
+    if (get().activeSessionId === sessionId) return;
+    const targetMeta = get().sessions.find((s) => s.id === sessionId);
+    if (targetMeta) {
+      await get().openSession(targetMeta);
+    }
   },
   };
 }

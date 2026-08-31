@@ -27,6 +27,7 @@ import type { SettingsSection } from "../../store.ts";
 import { Scroller } from "../Scroller.tsx";
 import { useApp } from "../../store.ts";
 import { ToolbarButton } from "../WindowControls.tsx";
+import { WindowActionButtons } from "../WindowActionButtons.tsx";
 import { AgentsSettings } from "./AgentsSettings.tsx";
 import { ArchivedSettings } from "./ArchivedSettings.tsx";
 import { AboutSettings } from "./AboutSettings.tsx";
@@ -132,6 +133,8 @@ export function SettingsShell() {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [compact, navOpen, toggleNav, dismissNav]);
 
+	const isDarwin = typeof navigator !== "undefined" && /Mac|iP(hone|od|ad)/.test(navigator.platform);
+
 	return (
 		/*
 		 * The page is the palest surface here, as it is in the workspace.
@@ -140,134 +143,190 @@ export function SettingsShell() {
 		 * two columns read as one undifferentiated field. The workspace already answers this: the
 		 * nav is tinted and the thing you are working in is the plain page.
 		 */
-		<div className="ly-shell relative flex h-full">
-			<NavPane width={sidebarWidth} label="设置导航">
-				{/* Same as the workspace sidebar: separated by its tint, not by a rule. */}
-				<nav className="ly-sidebar-fill flex h-full w-full flex-col">
-					<div className="h-[44px] shrink-0" />
-
-					{/*
-					 * Filled on hover, like the section rows below it. The outlined variant used
-					 * here before highlighted its border instead, which made the one button you
-					 * press most often behave unlike everything around it.
-					 */}
-					<div className={`pb-2 ${compact ? "px-3" : "px-2.5"}`}>
+		<div className="relative flex h-full flex-col overflow-hidden bg-sidebar">
+			{/* On Windows / Linux: Dedicated full-width immersive title bar for Settings */}
+			{!isDarwin && (
+				<header
+					className="drag-region relative z-50 flex h-[38px] w-full shrink-0 select-none items-center justify-between bg-sidebar pl-2 pr-0 text-ink-muted text-xs"
+				>
+					<div className="no-drag flex items-center gap-1">
+						<button
+							type="button"
+							aria-label={navOpen ? "收起设置导航" : "展开设置导航"}
+							data-ly-tip={navOpen ? "收起设置导航" : "展开设置导航"}
+							data-ly-tip-side="bottom"
+							onClick={toggleNav}
+							className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-card-hover hover:text-ink ${
+								compact && navOpen ? "bg-card-hover text-ink" : "text-ink-muted"
+							}`}
+						>
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+								<rect x="3" y="4" width="18" height="16" rx="2.5" />
+								<line x1="9.5" y1="4" x2="9.5" y2="20" />
+								<rect
+									x="3"
+									y="4"
+									width="6.5"
+									height="16"
+									rx="2.5"
+									fill="currentColor"
+									stroke="none"
+									className="transition-opacity duration-[var(--ly-t-base)]"
+									opacity={navOpen ? 0.5 : 0}
+								/>
+							</svg>
+						</button>
 						<button
 							type="button"
 							onClick={() => {
 								setView("chat");
 								dismissNav();
 							}}
-							className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink active:bg-elevated ${
-								compact ? "h-[40px]" : "h-[32px]"
-							}`}
+							className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-sm text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
 						>
-							<ArrowLeft size={15} strokeWidth={1.8} className="shrink-0" />
+							<ArrowLeft size={15} strokeWidth={1.8} />
 							返回工作区
 						</button>
 					</div>
 
-					{/* Same as the workspace sidebar: both ends soften. */}
-					<Scroller className="flex-1" contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}>
-						{groups.map((group) => (
-							// Spaced for the same reason as the session list: adjacent filled rows
-							// would otherwise merge into one block on hover.
-							<div key={group.label} className="flex flex-col gap-[2px]">
-								<div className="px-2 pt-4 pb-1 text-detail text-ink-faint">{group.label}</div>
-								{group.items.map((item) => (
-									<button
-										key={item.id}
-										type="button"
-										onClick={() => {
-											setSection(item.id);
-											dismissNav();
-										}}
-										className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label transition-colors ${
-											compact ? "h-[40px]" : "h-[32px]"
-										} ${
-											section === item.id
-												? "bg-card-hover text-ink"
-												: "text-ink-muted hover:bg-card-hover/60 hover:text-ink"
-										}`}
-									>
-										<item.icon size={15} strokeWidth={1.8} className="shrink-0" />
-										{item.label}
-									</button>
-								))}
+					{/* Center drag area */}
+					<div className="flex-1 h-full" />
+
+					{/* Right window action controls */}
+					<WindowActionButtons />
+				</header>
+			)}
+
+			<div className="relative flex flex-1 overflow-hidden bg-sidebar">
+				<NavPane width={sidebarWidth} label="设置导航">
+					{/* Same as the workspace sidebar: separated by its tint, not by a rule. */}
+					<nav className="ly-sidebar-fill flex h-full w-full flex-col">
+						{isDarwin && <div className="h-[44px] shrink-0" />}
+
+						{/*
+						 * On macOS: show the return button under the traffic light band.
+						 * On Windows/Linux: the return action is already in the top AppHeader.
+						 */}
+						{isDarwin && (
+							<div className={`pb-2 ${compact ? "px-3" : "px-2.5"}`}>
+								<button
+									type="button"
+									onClick={() => {
+										setView("chat");
+										dismissNav();
+									}}
+									className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink active:bg-elevated ${
+										compact ? "h-[40px]" : "h-[32px]"
+									}`}
+								>
+									<ArrowLeft size={15} strokeWidth={1.8} className="shrink-0" />
+									返回工作区
+								</button>
 							</div>
-						))}
-					</Scroller>
+						)}
 
-					<div className={`pb-3 ${compact ? "px-3" : "px-2.5"}`}>
-						{/* The dashed edge marks it as the odd one out; the fill on hover keeps it
-						    behaving like the rest of the pane. */}
-						<button
-							type="button"
-							onClick={() => {
-								setSection("models");
-								dismissNav();
-							}}
-							className="flex h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink active:bg-elevated"
-						>
-							<Rocket size={14} strokeWidth={1.8} />
-							引导
-						</button>
-					</div>
-				</nav>
-			</NavPane>
+						{/* Same as the workspace sidebar: both ends soften. */}
+						<Scroller className="flex-1" contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}>
+							{groups.map((group) => (
+								// Spaced for the same reason as the session list: adjacent filled rows
+								// would otherwise merge into one block on hover.
+								<div key={group.label} className="flex flex-col gap-[2px]">
+									<div className={`px-2 pb-1 text-detail text-ink-faint ${isDarwin ? "pt-4" : "first:pt-1 pt-3"}`}>{group.label}</div>
+									{group.items.map((item) => (
+										<button
+											key={item.id}
+											type="button"
+											onClick={() => {
+												setSection(item.id);
+												dismissNav();
+											}}
+											className={`flex w-full items-center gap-2.5 rounded-lg px-2 text-left text-label transition-colors ${
+												compact ? "h-[40px]" : "h-[32px]"
+											} ${
+												section === item.id
+													? "bg-card-hover text-ink"
+													: "text-ink-muted hover:bg-card-hover/60 hover:text-ink"
+											}`}
+										>
+											<item.icon size={15} strokeWidth={1.8} className="shrink-0" />
+											{item.label}
+										</button>
+									))}
+								</div>
+							))}
+						</Scroller>
 
-			<main className="ly-opaque flex min-w-0 flex-1 flex-col">
-				<div className="h-[44px] shrink-0" />
-				{/*
-				 * Most sections are a column of settings and scroll as one page. A few are
-				 * two-pane layouts whose halves scroll independently — putting those inside a page
-				 * scroller as well would give the window two nested scrollbars for one screen, and
-				 * the outer one would move the pane headers out from over their own content.
-				 */}
-				{SELF_SCROLLING.has(section) ? (
-					<div className={`mx-auto flex min-h-0 w-full max-w-[900px] flex-1 flex-col pb-6 ${compact ? "px-4" : "px-9"}`}>
-						<SectionBody section={section} />
-					</div>
-				) : (
-				<Scroller className="flex-1">
-					<div className={`mx-auto w-full max-w-[900px] pb-16 ${compact ? "px-4" : "px-9"}`}>
-						<SectionBody section={section} />
-					</div>
-				</Scroller>
-				)}
-			</main>
+						<div className={`pb-3 ${compact ? "px-3" : "px-2.5"}`}>
+							{/* The dashed edge marks it as the odd one out; the fill on hover keeps it
+							    behaving like the rest of the pane. */}
+							<button
+								type="button"
+								onClick={() => {
+									setSection("models");
+									dismissNav();
+								}}
+								className="flex h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink active:bg-elevated"
+							>
+								<Rocket size={14} strokeWidth={1.8} />
+								引导
+							</button>
+						</div>
+					</nav>
+				</NavPane>
 
-			{/* Last child, for the same DOM-order reason as the chat shell's toolbar. */}
-			<div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]">
-				<div className="no-drag absolute top-0 flex h-[44px] items-center gap-0.5" style={{ left: titlebar.start }}>
+				<main
+					className={`relative flex min-w-0 flex-1 flex-col bg-shell ${
+						!isDarwin ? "overflow-hidden rounded-tl-xl border-t border-l border-line-soft shadow-xs" : "ly-opaque"
+					}`}
+				>
+					{isDarwin && <div className="h-[44px] shrink-0" />}
 					{/*
-					 * Settings shares the shell's nav state, so a sidebar collapsed in the workspace
-					 * arrives collapsed here too. Without this button there would be no way back to
-					 * the section list — or, in a compact window, out of the drawer.
+					 * Most sections are a column of settings and scroll as one page. A few are
+					 * two-pane layouts whose halves scroll independently — putting those inside a page
+					 * scroller as well would give the window two nested scrollbars for one screen, and
+					 * the outer one would move the pane headers out from over their own content.
 					 */}
-					<ToolbarButton
-						label={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
-						onClick={toggleNav}
-						active={compact && navOpen}
-					>
-						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-							<rect x="3" y="4" width="18" height="16" rx="2.5" />
-							<line x1="9.5" y1="4" x2="9.5" y2="20" />
-							<rect
-								x="3"
-								y="4"
-								width="6.5"
-								height="16"
-								rx="2.5"
-								fill="currentColor"
-								stroke="none"
-								className="transition-opacity duration-[var(--ly-t-base)]"
-								opacity={navOpen ? 0.5 : 0}
-							/>
-						</svg>
-					</ToolbarButton>
-				</div>
+					{SELF_SCROLLING.has(section) ? (
+						<div className={`mx-auto flex min-h-0 w-full max-w-[900px] flex-1 flex-col py-6 ${compact ? "px-4" : "px-9"}`}>
+							<SectionBody section={section} />
+						</div>
+					) : (
+						<Scroller className="flex-1">
+							<div className={`mx-auto w-full max-w-[900px] py-8 ${compact ? "px-4" : "px-9"}`}>
+								<SectionBody section={section} />
+							</div>
+						</Scroller>
+					)}
+				</main>
 
+				{/* On macOS: render native traffic light neighbour buttons */}
+				{isDarwin && (
+					<div className="drag-region absolute inset-x-0 top-0 z-40 h-[44px]">
+						<div className="no-drag absolute top-0 flex h-[44px] items-center gap-0.5" style={{ left: titlebar.start }}>
+							<ToolbarButton
+								label={navOpen ? "隐藏设置导航 ⌘B" : "显示设置导航 ⌘B"}
+								onClick={toggleNav}
+								active={compact && navOpen}
+							>
+								<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+									<rect x="3" y="4" width="18" height="16" rx="2.5" />
+									<line x1="9.5" y1="4" x2="9.5" y2="20" />
+									<rect
+										x="3"
+										y="4"
+										width="6.5"
+										height="16"
+										rx="2.5"
+										fill="currentColor"
+										stroke="none"
+										className="transition-opacity duration-[var(--ly-t-base)]"
+										opacity={navOpen ? 0.5 : 0}
+									/>
+								</svg>
+							</ToolbarButton>
+						</div>
+					</div>
+				)}
 			</div>
 		</div>
 	);

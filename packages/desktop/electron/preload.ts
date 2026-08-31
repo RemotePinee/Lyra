@@ -83,6 +83,11 @@ const api: LyraApi = {
 		rename: (projectId, sessionId, title) => ipcRenderer.invoke("sessions:rename", projectId, sessionId, title),
 		compact: (sessionId) => ipcRenderer.invoke("sessions:compact", sessionId),
 		contextBreakdown: (sessionId) => ipcRenderer.invoke("sessions:contextBreakdown", sessionId),
+		onListChanged: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("sessions:listChanged", listener);
+			return () => ipcRenderer.removeListener("sessions:listChanged", listener);
+		},
 	},
 	agent: {
 		prompt: (sessionId, content, options) => ipcRenderer.invoke("agent:prompt", sessionId, content, options),
@@ -206,6 +211,18 @@ const api: LyraApi = {
 	
 	setWindowTheme: (colors: { color: string; symbolColor: string }) =>
 		ipcRenderer.send("window:theme", colors),
+	windowControls: {
+		minimize: () => ipcRenderer.invoke("window:minimize"),
+		maximize: () => ipcRenderer.invoke("window:maximize"),
+		unmaximize: () => ipcRenderer.invoke("window:unmaximize"),
+		close: () => ipcRenderer.invoke("window:close"),
+		isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+		onMaximizedChange: (handler) => {
+			const listener = (_e: Electron.IpcRendererEvent, max: boolean) => handler(max);
+			ipcRenderer.on("window:maximized", listener);
+			return () => ipcRenderer.removeListener("window:maximized", listener);
+		},
+	},
 	onFullScreenChange: (handler) => {
 		const listener = (_e: Electron.IpcRendererEvent, full: boolean) => handler(full);
 		ipcRenderer.on("window:fullscreen", listener);

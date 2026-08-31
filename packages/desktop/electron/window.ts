@@ -45,7 +45,7 @@ export function appIconPath(): string | undefined {
  */
 let readSettings: () => Settings | undefined = () => undefined;
 let mainWindow: BrowserWindow | null = null;
-const sessionWindows = new Map<string, BrowserWindow>();
+export const sessionWindows = new Map<string, BrowserWindow>();
 
 export function useSettingsSource(read: () => Settings | undefined): void {
 	readSettings = read;
@@ -115,9 +115,6 @@ export function createSessionWindow(sessionId: string): void {
 		backgroundColor: resolvedBackground(),
 		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
 		trafficLightPosition: { x: 16, y: 16 },
-		...(process.platform !== "darwin"
-			? { titleBarOverlay: { color: resolvedBackground(), symbolColor: "#9a9a9a", height: 44 } }
-			: {}),
 		webPreferences: {
 			preload: join(import.meta.dirname, "../preload/index.js"),
 			contextIsolation: true,
@@ -138,6 +135,10 @@ export function createSessionWindow(sessionId: string): void {
 	win.on("closed", () => {
 		sessionWindows.delete(sessionId);
 	});
+
+	const reportMaximized = () => win?.webContents.send("window:maximized", win.isMaximized());
+	win.on("maximize", reportMaximized);
+	win.on("unmaximize", reportMaximized);
 
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		void shell.openExternal(url);
@@ -193,11 +194,6 @@ export function createWindow(): void {
 		// Centres the 12pt lights on the 46px toolbar row the renderer draws, matching the
 		// reference where the lights line up with the sidebar toggle and nav arrows.
 		trafficLightPosition: { x: 16, y: 16 },
-		// Windows/Linux draw their own controls into this strip. The colours are a starting
-		// point; the renderer sends the real ones once the theme is resolved.
-		...(process.platform !== "darwin"
-			? { titleBarOverlay: { color: resolvedBackground(), symbolColor: "#9a9a9a", height: 44 } }
-			: {}),
 		webPreferences: {
 			preload: join(import.meta.dirname, "../preload/index.js"),
 			contextIsolation: true,
@@ -259,6 +255,10 @@ export function createWindow(): void {
 	mainWindow.on("leave-full-screen", reportFullScreen);
 	// The window can be restored into full screen, so the first frame has to be told as well.
 	mainWindow.webContents.on("did-finish-load", reportFullScreen);
+
+	const reportMaximized = () => mainWindow?.webContents.send("window:maximized", mainWindow.isMaximized());
+	mainWindow.on("maximize", reportMaximized);
+	mainWindow.on("unmaximize", reportMaximized);
 
 	// External links open in the user's browser, never inside the app shell.
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -341,13 +341,35 @@ function writeWindowState(): void {
  * backing colour before the renderer has reflowed, so that colour has to track the theme.
  */
 export function registerWindowIpc(): void {
+	ipcMain.handle("window:minimize", (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		win?.minimize();
+	});
+	ipcMain.handle("window:maximize", (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (win?.isMaximized()) win.unmaximize();
+		else win?.maximize();
+	});
+	ipcMain.handle("window:unmaximize", (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		win?.unmaximize();
+	});
+	ipcMain.handle("window:close", (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		win?.close();
+	});
+	ipcMain.handle("window:is-maximized", (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		return win?.isMaximized() ?? false;
+	});
+
 	ipcMain.on("window:theme", (_event, colors: { color: string; symbolColor: string }) => {
 		for (const window of BrowserWindow.getAllWindows()) {
 			if (window.isDestroyed()) continue;
 			window.setBackgroundColor(colors.color);
 			if (process.platform !== "darwin") {
 				try {
-					window.setTitleBarOverlay({ ...colors, height: 44 });
+					window.setTitleBarOverlay({ ...colors, height: 38 });
 				} catch {}
 			}
 		}

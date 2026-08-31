@@ -40,6 +40,7 @@ const TAB_KEY = "ly-sidebar-tab";
 const SORT_KEY = "ly-sidebar-sort";
 
 export function Sidebar() {
+	const isDarwin = typeof navigator !== "undefined" && /Mac|iP(hone|od|ad)/.test(navigator.platform);
 	const workspace = useApp((s) => s.workspace);
 	const activeSessionId = useApp((s) => s.activeSessionId);
 	const scratchRoots = useApp((s) => s.scratchRoots);
@@ -223,7 +224,8 @@ export function Sidebar() {
 			 */
 			style={{ "--ly-rail": `${rail}px` } as React.CSSProperties}
 		>
-			<div className="h-[44px] shrink-0" />
+			{/* Only on macOS reserve top 44px for native traffic lights */}
+			{isDarwin && <div className="h-[44px] shrink-0" />}
 
 			<SidebarHead searching={searching} query={query} onQuery={setQuery} onToggleSearch={toggleSearch} />
 

@@ -20,6 +20,7 @@ import { ScheduledView } from "./components/ScheduledView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SettingsShell } from "./components/settings/SettingsShell.tsx";
 import { DragBand, PanelMenu, WindowButtons } from "./components/WindowToolbar.tsx";
+import { AppHeader } from "./components/AppHeader.tsx";
 import { DockView } from "./dock/DockView.tsx";
 import { LayoutProvider, NavPane, useLayout, useSidebarFit } from "./layout.tsx";
 import { sessionTitle } from "./sessionTitle.ts";
@@ -220,50 +221,45 @@ function ChatShell({ settings }: { settings: boolean }) {
 	// one, is not what those keys mean on that screen.
 	useShortcuts({ enabled: !settings, compact, navOpen, activeSessionId, workspace, toggleNav, dismissNav });
 
+	const isDarwin = typeof navigator !== "undefined" && /Mac|iP(hone|od|ad)/.test(navigator.platform);
+
 	return (
-		<div className="ly-shell relative flex h-full overflow-hidden">
-			<NavPane width={sidebarDrawn} maxWidth={sidebarMax} label="侧边栏">
-				<Sidebar />
-			</NavPane>
+		<div className="relative flex h-full flex-col overflow-hidden bg-sidebar">
+			{/* On Windows / Linux: Dedicated full-width immersive title bar */}
+			{!isDarwin && <AppHeader navOpen={navOpen} compact={compact} onToggleNav={toggleNav} />}
 
-			{/*
-			 * The draggable top edge, declared before anything that cuts a hole in it.
-			 *
-			 * Electron composites drag regions by walking the document in order, so a `drag` element
-			 * after a `no-drag` one fills that hole straight back in. This used to sit after `main`,
-			 * which was fine for as long as nothing inside `main` put controls in the top 44px — and
-			 * then the pull request header did. Its buttons were drawn, were on top, passed every
-			 * hit test the page can run, and did nothing at all: the press was going to the window
-			 * manager as a drag.
-			 *
-			 * First, therefore. Everything after it — this view's own header, the panel controls,
-			 * the window buttons — is a `no-drag` hole, and holes only stay open if nothing
-			 * re-covers them.
-			 */}
-			<DragBand navOpen={navOpen && !compact} sidebarWidth={sidebarDrawn} />
+			<div className="relative flex flex-1 overflow-hidden bg-sidebar">
+				<NavPane width={sidebarDrawn} maxWidth={sidebarMax} label="侧边栏">
+					<Sidebar />
+				</NavPane>
 
-			<main className="ly-opaque relative flex min-w-0 flex-1 flex-col">
 				{/*
-				 * The dock, holding the conversation and every panel alongside it, up to the window's
-				 * top edge.
-				 *
-				 * There is no toolbar row above it. The first row of panes *is* the window's top row:
-				 * their title bars are 44px and sit on the traffic lights' line, and the controls that
-				 * used to need a strip of their own now ride on the conversation's own title bar. A
-				 * separate row cost the height twice — once for the toolbar, once for the titles under
-				 * it — and put the buttons on a different line from the panes they act on.
+				 * The draggable top edge on macOS, declared before anything that cuts a hole in it.
+				 * On Windows/Linux, AppHeader provides the unified drag-region.
 				 */}
-				<DockView
-					title={main.title}
-					icon={main.icon}
-					// No panel controls on a screen the panels do not belong to.
-					actions={main.solo ? undefined : <PanelMenu />}
-					solo={main.solo}
-					renderConversation={() => main.body}
-				/>
-			</main>
+				{isDarwin && <DragBand navOpen={navOpen && !compact} sidebarWidth={sidebarDrawn} />}
 
-			<WindowButtons navOpen={navOpen} compact={compact} onToggleNav={toggleNav} />
+				<main
+					className={`relative flex min-w-0 flex-1 flex-col bg-shell ${
+						!isDarwin ? "overflow-hidden rounded-tl-xl border-t border-l border-line-soft shadow-xs" : ""
+					}`}
+				>
+					{/*
+					 * The dock, holding the conversation and every panel alongside it.
+					 */}
+					<DockView
+						title={main.title}
+						icon={main.icon}
+						// On macOS: Panel controls ride on conversation title bar. On Windows: AppHeader handles it.
+						actions={isDarwin && !main.solo ? <PanelMenu /> : undefined}
+						solo={main.solo}
+						renderConversation={() => main.body}
+					/>
+				</main>
+
+				{/* On macOS: render native traffic light neighbour buttons */}
+				{isDarwin && <WindowButtons navOpen={navOpen} compact={compact} onToggleNav={toggleNav} />}
+			</div>
 		</div>
 	);
 }

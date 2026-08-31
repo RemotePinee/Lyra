@@ -81,9 +81,10 @@ export function turnSlice(set: Set, get: Get) {
       ),
     });
 
-    // This is where a blank conversation becomes a real one — the first message is the
-    // first thing worth storing, so it is also the first thing that creates a session.
-    if (!sessionId) {
+    // Optimistically mark this conversation as running so the activity dot updates immediately in this window
+    if (sessionId) {
+      set({ activity: { ...get().activity, [sessionId]: "running" } });
+    } else {
       try {
         const snapshot = await window.lyra.sessions.create(
           cwd!,
@@ -111,6 +112,7 @@ export function turnSlice(set: Set, get: Get) {
         };
         set({
           activeSessionId: sessionId,
+          openTabs: get().openTabs.includes(sessionId) ? get().openTabs : [...get().openTabs, sessionId],
           meta: listed,
           toolRuns: {},
           approvals: [],

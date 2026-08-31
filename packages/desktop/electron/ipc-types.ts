@@ -169,6 +169,7 @@ export interface LyraApi {
 		compact(sessionId: string): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }>;
 		/** Null when the session is not open — this never boots one just to answer. */
 		contextBreakdown(sessionId: string): Promise<ContextBreakdown | null>;
+		onListChanged(handler: (sessions: SessionMeta[]) => void): () => void;
 	};
 	agent: {
 		/**
@@ -444,6 +445,17 @@ export interface LyraApi {
 			replace?: boolean,
 		): Promise<{ ok: true; dir: string; kind: BundleKind; servers: number } | { ok: false; message: string }>;
 		uninstall(id: string): Promise<void>;
+	};
+	/**
+	 * Window action controls (minimize, maximize, unmaximize, close, isMaximized).
+	 */
+	windowControls: {
+		minimize(): Promise<void>;
+		maximize(): Promise<void>;
+		unmaximize(): Promise<void>;
+		close(): Promise<void>;
+		isMaximized(): Promise<boolean>;
+		onMaximizedChange(handler: (maximized: boolean) => void): () => void;
 	};
 	/**
 	 * Tell the window itself what the theme is.

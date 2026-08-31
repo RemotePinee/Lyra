@@ -19,7 +19,7 @@ import {
 	type Settings,
 	type UserContent,
 } from "@lyra/core";
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import type { AgentCapabilities } from "../ipc-types.ts";
 import {
 	activateSession,
@@ -45,6 +45,16 @@ export function registerSessionsIpc({
 	saveSettings,
 }: SessionsIpcDeps): void {
 	const store = readStore();
+
+	const broadcastSessionsList = async () => {
+		const list = await store.listSessions();
+		for (const win of BrowserWindow.getAllWindows()) {
+			if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("sessions:listChanged", list);
+			}
+		}
+		return list;
+	};
 
 	ipcMain.handle("sessions:list", async () => store.listSessions());
 
@@ -78,6 +88,7 @@ export function registerSessionsIpc({
 		async (_event, cwd: string, modelId: string) => {
 			const session = await getOrCreateSession(cwd, modelId);
 			if (modelId) await session.setModel(modelId);
+			void broadcastSessionsList();
 			return snapshot(session);
 		},
 	);
@@ -145,6 +156,7 @@ export function registerSessionsIpc({
 			await disposeSession(sessionId);
 			await store.delete(projectId, sessionId);
 			await removeSessionArtifacts(lyraHome(), sessionId);
+			void broadcastSessionsList();
 		},
 	);
 
@@ -153,16 +165,19 @@ export function registerSessionsIpc({
 		async (_event, projectId: string, sessionId: string, title: string) => {
 			const cleanTitle = title.trim();
 			if (!cleanTitle) return null;
+			let updatedMeta = null;
 			const live = sessions.get(sessionId);
 			if (live) {
 				await live.rename(cleanTitle);
-				return live.meta;
+				updatedMeta = live.meta;
+			} else {
+				const meta = (await store.listSessions()).find((s) => s.id === sessionId);
+				if (!meta) return null;
+				updatedMeta = await store.append(meta, { type: "title", title: cleanTitle });
 			}
-			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
-			if (!meta) return null;
-			const updated = await store.append(meta, { type: "title", title: cleanTitle });
 			broadcast(sessionId, { type: "title", title: cleanTitle });
-			return updated;
+			void broadcastSessionsList();
+			return updatedMeta;
 		},
 	);
 
@@ -172,7 +187,7 @@ export function registerSessionsIpc({
 			// An archived session has no reason to keep its MCP servers and browser alive.
 			if (archived) await disposeSession(sessionId);
 			await store.setArchived(projectId, sessionId, archived);
-			return store.listSessions();
+			return broadcastSessionsList();
 		},
 	);
 
@@ -185,7 +200,7 @@ export function registerSessionsIpc({
 		await Promise.all(
 			archived.map((s) => removeSessionArtifacts(lyraHome(), s.id)),
 		);
-		return store.listSessions();
+		return broadcastSessionsList();
 	});
 
 	/*

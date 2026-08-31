@@ -13,6 +13,7 @@
  */
 
 import { useEffect } from "react";
+import { useApp } from "./store.ts";
 import { useDock } from "./dock/store.ts";
 import type { PanelKind } from "./sideStore.ts";
 
@@ -82,6 +83,14 @@ export function useShortcuts(deps: ShortcutDeps): void {
 				event.preventDefault();
 				panel("trajectory", activeSessionId);
 				return;
+			}
+			// ⌘W / Ctrl+W to close current tab if active
+			if (mod && !event.altKey && !event.shiftKey && event.code === "KeyW") {
+				if (activeSessionId) {
+					event.preventDefault();
+					void useApp.getState().closeTab(activeSessionId);
+					return;
+				}
 			}
 			// ⌃` is what every terminal-bearing editor uses, and it is not a ⌘ shortcut.
 			if (event.ctrlKey && !event.metaKey && event.code === "Backquote") {

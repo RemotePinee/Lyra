@@ -125,7 +125,7 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 	 * that shows through whenever a resize outruns the renderer's reflow — dragging an edge
 	 * quickly is exactly that, and a stale colour there is the black frame that flashes.
 	 */
-	window.lyra?.setWindowTheme?.({ color: toHex(background), symbolColor: text(0.62) });
+	window.lyra?.setWindowTheme?.({ color: surface(0.042), symbolColor: text(0.62) });
 
 	root.classList.toggle("dark", dark);
 	root.classList.toggle("light", !dark);

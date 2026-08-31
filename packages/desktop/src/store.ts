@@ -161,6 +161,10 @@ export interface AppState {
   setDraft(key: string, draft: { text: string; attachments?: { id: string; name: string; mimeType: string; data?: string; text?: string; isText?: boolean }[] } | null): void;
 
   activeSessionId: string | null;
+  /** Open tabs (session IDs) in order of display. */
+  openTabs: string[];
+  closeTab(sessionId: string): Promise<void>;
+  switchTab(sessionId: string): Promise<void>;
   meta: SessionMeta | null;
   messages: Message[];
   /** True between clicking a session and its transcript arriving. Drives the loading state. */
@@ -370,6 +374,7 @@ export const useApp = create<AppState>((set, get) => ({
   composerDraft: { text: "", replace: false },
   drafts: {},
   activeSessionId: null,
+  openTabs: [],
   meta: null,
   messages: [],
   loadingSession: false,
@@ -427,6 +432,16 @@ export const useApp = create<AppState>((set, get) => ({
     const scratchRoots = await window.lyra.git.scratchRoots().catch(() => []);
     set({ settings, sessions, workspace, scratchRoots, ready: true });
 
+    // Register listeners before opening target session so events during bootstrap are not lost
+    window.lyra.agent.onEvent(({ sessionId, event }) =>
+      get().applyEvent(sessionId, event),
+    );
+    // The side chat is a separate conversation on a separate channel, for the same reason
+    // it is a separate store: its replies must never land in the main transcript.
+    window.lyra.sideChat.onEvent(({ sessionId, event }) =>
+      useSide.getState().applyEvent(sessionId, event),
+    );
+
     if (targetSession) {
       void get().openSession(targetSession);
     }
@@ -446,15 +461,12 @@ export const useApp = create<AppState>((set, get) => ({
     window.lyra.settings.onChanged((next) =>
       set((state) => ({ settings: next, extensionsNonce: state.extensionsNonce + 1 })),
     );
-
-    window.lyra.agent.onEvent(({ sessionId, event }) =>
-      get().applyEvent(sessionId, event),
-    );
-    // The side chat is a separate conversation on a separate channel, for the same reason
-    // it is a separate store: its replies must never land in the main transcript.
-    window.lyra.sideChat.onEvent(({ sessionId, event }) =>
-      useSide.getState().applyEvent(sessionId, event),
-    );
+    window.lyra.sessions.onListChanged((sessions) => {
+      // Sync sessions across all windows, removing deleted session from open tabs if any
+      const existingIds = new Set(sessions.map((s) => s.id));
+      const nextTabs = get().openTabs.filter((id) => existingIds.has(id));
+      set({ sessions, openTabs: nextTabs });
+    });
     void get().refreshSync();
   },
 

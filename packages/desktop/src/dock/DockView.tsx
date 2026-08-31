@@ -263,46 +263,29 @@ export function DockView({
 		return { label: def?.label ?? kind, icon: def ? <def.icon size={12.5} strokeWidth={1.8} /> : undefined };
 	};
 
+	const isDarwin = typeof navigator !== "undefined" && /Mac|iP(hone|od|ad)/.test(navigator.platform);
+
 	/*
 	 * Which pane, if any, has to make room for the traffic lights.
 	 *
-	 * With the sidebar open — which is almost always — the answer is none: the sidebar covers that
+	 * On macOS: with the sidebar open — which is almost always — the answer is none: the sidebar covers that
 	 * corner and draws the lights' inset itself. Closed, the corner belongs to whichever pane is at
 	 * the very top-left, and only that one. Native full screen takes the lights away entirely.
-	 *
-	 * This is the whole of what used to be a delayed handover of the window's own buttons between
-	 * the toolbar and the panel — 220ms of it, timed to a slide. A pane either starts at the
-	 * origin or it does not.
+	 * On Windows/Linux: AppHeader sits above DockView, so panes never need to reserve corner insets.
 	 */
 	const corner =
-		navOpen || nativeFullScreen
+		!isDarwin || navOpen || nativeFullScreen
 			? null
 			: compact
-				? /*
-					 * The narrow layout shows one pane over the whole dock, so that pane is the corner
-					 * — always, rather than only when it happens to be laid out at the origin. It used
-					 * to be excluded here on the assumption that the sidebar covers the corner, which
-					 * is true at every width except this one: at this width the sidebar is a drawer
-					 * over the window, and with it closed the pane's own title started underneath the
-					 * three buttons the system paints there.
-					 */
-					focusedPane
+				? focusedPane
 				: (boxes.find((box) => box.left === 0 && box.top === 0)?.kind ?? null);
 
 	/*
 	 * And which pane has to make room for the buttons at the *other* end.
-	 *
-	 * Windows and Linux draw minimise/maximise/close over the top-right of the page, which is
-	 * where this app puts a pane's own controls — the panel menu on the conversation, full screen
-	 * and close on a panel. They were underneath the system's buttons: drawn, and impossible to
-	 * press, because the press went to the window rather than to the page.
-	 *
-	 * Unlike the left corner the sidebar can never cover this one, so it belongs to whichever pane
-	 * reaches the right edge on the top row — always. Zero on macOS, where the system puts nothing
-	 * there, which leaves every one of these lines a no-op.
+	 * On Windows/Linux: AppHeader handles the native window buttons padding, DockView panes don't need insetEnd.
 	 */
 	const endCorner =
-		titlebar.end === 0
+		!isDarwin || titlebar.end === 0
 			? null
 			: compact
 				? focusedPane
