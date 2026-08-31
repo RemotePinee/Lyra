@@ -17,15 +17,18 @@ import { destroyDragGhost, hideDragGhost, moveDragGhost } from "../tab-drag-ghos
 export function registerSystemIpc(): void {
 	ipcMain.handle("system:openPath", async (_event, path: string) => void shell.openPath(path));
 
-	ipcMain.handle("system:dragGhost", (_event, action: "show" | "move" | "hide" | "destroy", payload?: { title?: string; x?: number; y?: number }) => {
-		if (action === "show" || action === "move") {
-			moveDragGhost(payload?.title);
-		} else if (action === "hide") {
-			hideDragGhost();
-		} else if (action === "destroy") {
-			destroyDragGhost();
-		}
-	});
+	ipcMain.handle(
+		"system:dragGhost",
+		(event, action: "show" | "move" | "hide" | "destroy", payload?: { title?: string; x?: number; y?: number }) => {
+			if (action === "show" || action === "move") {
+				moveDragGhost(payload?.title, event.sender.id);
+			} else if (action === "hide") {
+				hideDragGhost();
+			} else if (action === "destroy") {
+				destroyDragGhost();
+			}
+		},
+	);
 
 	ipcMain.handle("system:openExternal", async (event, url: string) => {
 		if (url.startsWith("lyra://session/")) {

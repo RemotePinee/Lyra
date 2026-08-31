@@ -3,11 +3,15 @@
  *
  * Appears instantly when a tab is dragged out of the window boundary and
  * tracks the mouse cursor across multiple monitors without DOM clipping.
+ * Dynamically detects whether the cursor is hovering over an existing window's
+ * tab bar area to switch visually between "Detach" and "Merge" modes (Chrome behavior).
  */
 
 import { BrowserWindow, screen } from "electron";
 
 let ghostWindow: BrowserWindow | null = null;
+let currentMode: "detach" | "merge" = "detach";
+let lastHoveredWindowId: number | null = null;
 
 const GHOST_HTML = `<!DOCTYPE html>
 <html>
@@ -35,12 +39,20 @@ const GHOST_HTML = `<!DOCTYPE html>
     font-size: 11.5px;
     font-weight: 500;
     color: #ffffff;
-    background: #0284c7;
     border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(2, 132, 199, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.25);
     white-space: nowrap;
     pointer-events: none;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .ghost-pill.detach {
+    background: #0284c7;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(2, 132, 199, 0.4);
+  }
+  .ghost-pill.merge {
+    background: #10b981;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(16, 185, 129, 0.4);
   }
   .icon {
     width: 12px;
@@ -48,7 +60,7 @@ const GHOST_HTML = `<!DOCTYPE html>
     flex-shrink: 0;
   }
   .title {
-    max-width: 150px;
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -62,19 +74,37 @@ const GHOST_HTML = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-  <div class="ghost-pill">
-    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <div class="ghost-pill detach" id="pill">
+    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
       <polyline points="15 3 21 3 21 9"></polyline>
       <line x1="10" y1="14" x2="21" y2="3"></line>
     </svg>
     <span class="title" id="title">新会话</span>
-    <span class="hint">释放以分离</span>
+    <span class="hint" id="hint">释放以分离</span>
   </div>
   <script>
+    const DETACH_ICON = '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line>';
+    const MERGE_ICON = '<path d="M12 5v14M5 12h14"></path>';
+
     window.addEventListener("message", (e) => {
-      if (e.data && typeof e.data.title === "string") {
+      if (!e.data) return;
+      if (typeof e.data.title === "string") {
         document.getElementById("title").textContent = e.data.title;
+      }
+      if (typeof e.data.mode === "string") {
+        const pill = document.getElementById("pill");
+        const hint = document.getElementById("hint");
+        const icon = document.getElementById("icon");
+        if (e.data.mode === "merge") {
+          pill.className = "ghost-pill merge";
+          hint.textContent = "释放以合并";
+          icon.innerHTML = MERGE_ICON;
+        } else {
+          pill.className = "ghost-pill detach";
+          hint.textContent = "释放以分离";
+          icon.innerHTML = DETACH_ICON;
+        }
       }
     });
   </script>
@@ -98,14 +128,40 @@ function clampToDisplay(x: number, y: number, width: number, height: number): { 
 	};
 }
 
-export function showDragGhost(title: string): void {
+/**
+ * Check if the cursor is hovering over any other window (main window or secondary session window).
+ * If hovering over any part of an existing window, we are in "Merge" mode!
+ */
+function checkTargetWindow(cursor: { x: number; y: number }, sourceWebContentsId?: number): {
+	targetWin: BrowserWindow | null;
+	isOverTabBar: boolean;
+} {
+	const allWindows = BrowserWindow.getAllWindows();
+	for (const win of allWindows) {
+		if (win.isDestroyed() || !win.isVisible()) continue;
+		if (ghostWindow && win.id === ghostWindow.id) continue;
+		if (sourceWebContentsId && win.webContents.id === sourceWebContentsId) continue;
+
+		const b = win.getBounds();
+		if (cursor.x >= b.x && cursor.x <= b.x + b.width && cursor.y >= b.y && cursor.y <= b.y + b.height) {
+			// Tab bar is located in the top region (top 50px)
+			const isOverTabBar = cursor.y <= b.y + 50;
+			return { targetWin: win, isOverTabBar };
+		}
+	}
+	return { targetWin: null, isOverTabBar: false };
+}
+
+export function showDragGhost(title: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
 	const width = 240;
 	const height = 40;
-	// Anchor: cursor sits smoothly near top-left of the drag capsule (x-24, y-12)
 	const rawX = Math.round(cursor.x - 24);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
+
+	const hit = checkTargetWindow(cursor, sourceWebContentsId);
+	currentMode = hit.targetWin ? "merge" : "detach";
 
 	if (!ghostWindow || ghostWindow.isDestroyed()) {
 		ghostWindow = new BrowserWindow({
@@ -131,19 +187,19 @@ export function showDragGhost(title: string): void {
 		void ghostWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(GHOST_HTML)}`);
 		ghostWindow.webContents.once("did-finish-load", () => {
 			if (!ghostWindow || ghostWindow.isDestroyed()) return;
-			ghostWindow.webContents.postMessage("", { title });
+			ghostWindow.webContents.postMessage("", { title, mode: currentMode });
 			ghostWindow.showInactive();
 		});
 	} else {
 		ghostWindow.setBounds({ x, y, width, height });
+		ghostWindow.webContents.postMessage("", { title, mode: currentMode });
 		if (!ghostWindow.isVisible()) {
-			ghostWindow.webContents.postMessage("", { title });
 			ghostWindow.showInactive();
 		}
 	}
 }
 
-export function moveDragGhost(title?: string): void {
+export function moveDragGhost(title?: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
 	const width = 240;
 	const height = 40;
@@ -151,20 +207,55 @@ export function moveDragGhost(title?: string): void {
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
+	const hit = checkTargetWindow(cursor, sourceWebContentsId);
+	const nextMode: "detach" | "merge" = hit.targetWin ? "merge" : "detach";
+
+	// Broadcast drag-over or drag-leave to target window if hovering state changes
+	if (hit.targetWin) {
+		const winBounds = hit.targetWin.getBounds();
+		const relativeX = cursor.x - winBounds.x;
+		hit.targetWin.webContents.send("sessions:tabDragOver", { x: relativeX, title });
+		lastHoveredWindowId = hit.targetWin.id;
+	} else if (lastHoveredWindowId !== null) {
+		const lastWin = BrowserWindow.fromId(lastHoveredWindowId);
+		if (lastWin && !lastWin.isDestroyed()) {
+			lastWin.webContents.send("sessions:tabDragLeave");
+		}
+		lastHoveredWindowId = null;
+	}
+
 	if (!ghostWindow || ghostWindow.isDestroyed() || !ghostWindow.isVisible()) {
-		showDragGhost(title ?? "新会话");
+		showDragGhost(title ?? "新会话", sourceWebContentsId);
 	} else {
 		ghostWindow.setBounds({ x, y, width, height });
+		if (nextMode !== currentMode) {
+			currentMode = nextMode;
+			ghostWindow.webContents.postMessage("", { mode: currentMode });
+		}
 	}
 }
 
 export function hideDragGhost(): void {
+	if (lastHoveredWindowId !== null) {
+		const lastWin = BrowserWindow.fromId(lastHoveredWindowId);
+		if (lastWin && !lastWin.isDestroyed()) {
+			lastWin.webContents.send("sessions:tabDragLeave");
+		}
+		lastHoveredWindowId = null;
+	}
 	if (ghostWindow && !ghostWindow.isDestroyed()) {
 		ghostWindow.hide();
 	}
 }
 
 export function destroyDragGhost(): void {
+	if (lastHoveredWindowId !== null) {
+		const lastWin = BrowserWindow.fromId(lastHoveredWindowId);
+		if (lastWin && !lastWin.isDestroyed()) {
+			lastWin.webContents.send("sessions:tabDragLeave");
+		}
+		lastHoveredWindowId = null;
+	}
 	if (ghostWindow && !ghostWindow.isDestroyed()) {
 		ghostWindow.destroy();
 		ghostWindow = null;

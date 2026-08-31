@@ -93,6 +93,16 @@ const api: LyraApi = {
 			ipcRenderer.on("sessions:mergeTab", listener);
 			return () => ipcRenderer.removeListener("sessions:mergeTab", listener);
 		},
+		onTabDragOver: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: { x: number; title?: string }) => handler(payload);
+			ipcRenderer.on("sessions:tabDragOver", listener);
+			return () => ipcRenderer.removeListener("sessions:tabDragOver", listener);
+		},
+		onTabDragLeave: (handler) => {
+			const listener = () => handler();
+			ipcRenderer.on("sessions:tabDragLeave", listener);
+			return () => ipcRenderer.removeListener("sessions:tabDragLeave", listener);
+		},
 	},
 	agent: {
 		prompt: (sessionId, content, options) => ipcRenderer.invoke("agent:prompt", sessionId, content, options),

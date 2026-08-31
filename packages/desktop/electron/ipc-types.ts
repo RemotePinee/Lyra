@@ -171,6 +171,8 @@ export interface LyraApi {
 		contextBreakdown(sessionId: string): Promise<ContextBreakdown | null>;
 		onListChanged(handler: (sessions: SessionMeta[]) => void): () => void;
 		onMergeTab(handler: (sessionId: string) => void): () => void;
+		onTabDragOver(handler: (payload: { x: number; title?: string }) => void): () => void;
+		onTabDragLeave(handler: () => void): () => void;
 	};
 	agent: {
 		/**

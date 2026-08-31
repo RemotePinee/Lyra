@@ -163,6 +163,7 @@ export interface AppState {
   activeSessionId: string | null;
   /** Open tabs (session IDs) in order of display. */
   openTabs: string[];
+  reorderTabs(fromIndex: number, toIndex: number): void;
   closeTab(sessionId: string): Promise<void>;
   switchTab(sessionId: string): Promise<void>;
   meta: SessionMeta | null;
@@ -481,6 +482,22 @@ export const useApp = create<AppState>((set, get) => ({
     void get().refreshSync();
   },
 
+  reorderTabs: (fromIndex, toIndex) =>
+    set((state) => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= state.openTabs.length ||
+        toIndex < 0 ||
+        toIndex >= state.openTabs.length ||
+        fromIndex === toIndex
+      ) {
+        return state;
+      }
+      const nextTabs = [...state.openTabs];
+      const [moved] = nextTabs.splice(fromIndex, 1);
+      nextTabs.splice(toIndex, 0, moved);
+      return { openTabs: nextTabs };
+    }),
   setView: (view) => set({ view }),
   setComposerDraft: (text, replace = false) => set({ composerDraft: { text, replace } }),
   setDraft: (key, draft) =>

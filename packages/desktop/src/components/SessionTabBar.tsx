@@ -9,15 +9,20 @@ export function SessionTabBar() {
 	const sessions = useApp((s) => s.sessions);
 	const switchTab = useApp((s) => s.switchTab);
 	const closeTab = useApp((s) => s.closeTab);
+	const reorderTabs = useApp((s) => s.reorderTabs);
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 	const activeTabRef = useRef<HTMLDivElement | null>(null);
 
 	const [fadeLeft, setFadeLeft] = useState(false);
 	const [fadeRight, setFadeRight] = useState(false);
 
-	// Pointer-based drag state
+	// External drag-over drop indicator position (when dragging a tab from another window)
+	const [externalDropX, setExternalDropX] = useState<number | null>(null);
+
+	// Pointer-based drag state for current tab
 	const [dragState, setDragState] = useState<{
 		id: string;
+		currentIndex: number;
 		startX: number;
 		startY: number;
 		currentX: number;
@@ -28,6 +33,9 @@ export function SessionTabBar() {
 
 	const dragStateRef = useRef(dragState);
 	dragStateRef.current = dragState;
+
+	// Tab element positions for real-time hit testing
+	const tabElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
 	const updateFade = () => {
 		const el = scrollContainerRef.current;
@@ -45,6 +53,20 @@ export function SessionTabBar() {
 		}
 		updateFade();
 	}, [activeSessionId, openTabs, dragState?.isDragging]);
+
+	// Listen to cross-window drag over / leave events from main process
+	useEffect(() => {
+		const cleanupOver = window.lyra.sessions.onTabDragOver?.((payload) => {
+			setExternalDropX(payload.x);
+		});
+		const cleanupLeave = window.lyra.sessions.onTabDragLeave?.(() => {
+			setExternalDropX(null);
+		});
+		return () => {
+			cleanupOver?.();
+			cleanupLeave?.();
+		};
+	}, []);
 
 	useEffect(() => {
 		const el = scrollContainerRef.current;
@@ -103,13 +125,13 @@ export function SessionTabBar() {
 		void closeTab(sessionId);
 	};
 
-	const onPointerDownTab = (e: React.PointerEvent, id: string) => {
+	const onPointerDownTab = (e: React.PointerEvent, id: string, index: number) => {
 		if (e.button !== 0) return; // Only left button
 		const target = e.target as HTMLElement;
 		if (target.closest("button")) return; // Don't drag when clicking buttons
 
-		// If current window is an auxiliary/detached window with only 1 tab (or main window with only 1 tab),
-		// dragging the tab is disabled (standard browser behavior: a sole tab cannot be torn off from itself).
+		// If current window is an auxiliary/detached window with only 1 tab,
+		// clicking simply activates it (sole tab cannot be torn off from itself).
 		const isSoleTab = openTabs.length <= 1;
 
 		if (isSoleTab) {
@@ -122,6 +144,7 @@ export function SessionTabBar() {
 
 		setDragState({
 			id,
+			currentIndex: index,
 			startX: e.clientX,
 			startY: e.clientY,
 			currentX: e.clientX,
@@ -140,8 +163,8 @@ export function SessionTabBar() {
 
 			const isDragging = current.isDragging || dist > 4;
 
-			// Tear off only when dragged downwards past the top bar (> 45px down)
-			// or actually dragged well outside window boundaries
+			// Chrome tear-off threshold:
+			// Dragging downwards past the top bar (> 45px down) or outside window boundaries
 			const isOutsideWindow =
 				moveEvt.clientX < -10 ||
 				moveEvt.clientX > window.innerWidth + 10 ||
@@ -152,8 +175,32 @@ export function SessionTabBar() {
 			if (isTornOff) {
 				const session = sessionMap.get(id);
 				const title = session?.title?.trim() || "新对话";
-				// Move native ghost smoothly
+				// Move native OS ghost across screens
 				void window.lyra.system.dragGhost("move", { title });
+			} else if (isDragging) {
+				// Internal reorder logic (Chrome horizontal tab reordering)
+				void window.lyra.system.dragGhost("hide");
+
+				const latestTabs = useApp.getState().openTabs;
+				const currentIdx = latestTabs.indexOf(id);
+				if (currentIdx !== -1) {
+					// Check neighbor tab bounding rects to swap
+					for (let i = 0; i < latestTabs.length; i++) {
+						if (i === currentIdx) continue;
+						const tabId = latestTabs[i];
+						const el = tabElementsRef.current.get(tabId);
+						if (!el) continue;
+						const rect = el.getBoundingClientRect();
+						const midX = rect.left + rect.width / 2;
+						if (i < currentIdx && moveEvt.clientX < midX) {
+							reorderTabs(currentIdx, i);
+							break;
+						} else if (i > currentIdx && moveEvt.clientX > midX) {
+							reorderTabs(currentIdx, i);
+							break;
+						}
+					}
+				}
 			} else {
 				void window.lyra.system.dragGhost("hide");
 			}
@@ -207,9 +254,17 @@ export function SessionTabBar() {
 					["--ly-fade-left" as string]: fadeLeft ? "18px" : "0px",
 					["--ly-fade-right" as string]: fadeRight ? "18px" : "0px",
 				}}
-				className="ly-fade-edge no-drag flex h-full max-w-[calc(100vw-260px)] select-none items-center gap-1 overflow-x-auto no-scrollbar px-1 py-1"
+				className="ly-fade-edge relative no-drag flex h-full max-w-[calc(100vw-260px)] select-none items-center gap-1 overflow-x-auto no-scrollbar px-1 py-1"
 			>
-				{openTabs.map((id) => {
+				{/* Drop indicator for cross-window merging */}
+				{externalDropX !== null && (
+					<div
+						style={{ left: Math.max(8, externalDropX) }}
+						className="pointer-events-none absolute top-0.5 bottom-0.5 w-[3px] rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)] z-50 transition-all duration-75 animate-pulse"
+					/>
+				)}
+
+				{openTabs.map((id, idx) => {
 					const session = sessionMap.get(id);
 					const isActive = activeSessionId === id;
 					const isThisDragging = dragState?.id === id && dragState.isDragging;
@@ -218,13 +273,17 @@ export function SessionTabBar() {
 					return (
 						<div
 							key={id}
-							ref={isActive ? activeTabRef : null}
+							ref={(el) => {
+								if (el) tabElementsRef.current.set(id, el);
+								else tabElementsRef.current.delete(id);
+								if (isActive) activeTabRef.current = el;
+							}}
 							role="tab"
 							tabIndex={0}
 							aria-selected={isActive}
 							data-ly-tip={dragState?.isDragging ? undefined : title}
 							data-ly-tip-side="bottom"
-							onPointerDown={(e) => onPointerDownTab(e, id)}
+							onPointerDown={(e) => onPointerDownTab(e, id, idx)}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" || e.key === " ") {
 									e.preventDefault();
@@ -239,7 +298,7 @@ export function SessionTabBar() {
 									void closeTab(id);
 								}
 							}}
-							className={`group relative flex h-7 shrink-0 max-w-[220px] min-w-[90px] select-none items-center justify-between gap-1.5 rounded-md px-2.5 text-xs transition-all ${
+							className={`group relative flex h-7 shrink-0 max-w-[220px] min-w-[90px] select-none items-center justify-between gap-1.5 rounded-md px-2.5 text-xs transition-all duration-150 ${
 								openTabs.length > 1 ? (isThisDragging ? "cursor-grabbing opacity-30 scale-95 border border-dashed border-accent" : "cursor-grab") : "cursor-pointer"
 							} ${
 								isActive
@@ -284,7 +343,7 @@ export function SessionTabBar() {
 				})}
 			</div>
 
-			{/* In-window drag ghost preview (only shown while moving inside the window) */}
+			{/* In-window drag ghost preview (only shown while moving inside the window without tear-off) */}
 			{dragState?.isDragging && !dragState.isTornOff && (
 				<div
 					style={{
