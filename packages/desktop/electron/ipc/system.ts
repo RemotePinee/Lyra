@@ -27,7 +27,7 @@ export function registerSystemIpc(): void {
 		}
 	});
 
-	ipcMain.handle("system:openExternal", async (_event, url: string) => {
+	ipcMain.handle("system:openExternal", async (event, url: string) => {
 		if (url.startsWith("lyra://session/")) {
 			const parsed = new URL(url);
 			const sessionId = parsed.pathname.replace(/^\/+/, "").trim() || parsed.hostname;
@@ -35,7 +35,7 @@ export function registerSystemIpc(): void {
 			const posY = parsed.searchParams.get("y");
 			const initialPosition = posX && posY ? { x: Number.parseFloat(posX), y: Number.parseFloat(posY) } : undefined;
 			if (sessionId) {
-				createSessionWindow(sessionId, initialPosition);
+				createSessionWindow(sessionId, initialPosition, event.sender);
 				return;
 			}
 		}

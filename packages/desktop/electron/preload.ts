@@ -88,6 +88,11 @@ const api: LyraApi = {
 			ipcRenderer.on("sessions:listChanged", listener);
 			return () => ipcRenderer.removeListener("sessions:listChanged", listener);
 		},
+		onMergeTab: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => handler(sessionId);
+			ipcRenderer.on("sessions:mergeTab", listener);
+			return () => ipcRenderer.removeListener("sessions:mergeTab", listener);
+		},
 	},
 	agent: {
 		prompt: (sessionId, content, options) => ipcRenderer.invoke("agent:prompt", sessionId, content, options),

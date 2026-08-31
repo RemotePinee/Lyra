@@ -94,7 +94,37 @@ function bootTheme(): { dark: boolean; background: string; foreground: string; a
 	};
 }
 
-export function createSessionWindow(sessionId: string, initialPosition?: { x: number; y: number }): void {
+export function createSessionWindow(
+	sessionId: string,
+	initialPosition?: { x: number; y: number },
+	sourceWebContents?: Electron.WebContents,
+): void {
+	// If the drag drop target landed on an existing window (e.g. main window or other session window),
+	// merge this session into that target window as a new tab instead of opening a duplicate window!
+	if (initialPosition) {
+		const allWindows = BrowserWindow.getAllWindows();
+		for (const targetWin of allWindows) {
+			if (targetWin.isDestroyed() || !targetWin.isVisible()) continue;
+			// Skip the window where the drag originated from if it's still being dragged
+			if (sourceWebContents && targetWin.webContents.id === sourceWebContents.id) continue;
+
+			const b = targetWin.getBounds();
+			if (
+				initialPosition.x >= b.x &&
+				initialPosition.x <= b.x + b.width &&
+				initialPosition.y >= b.y &&
+				initialPosition.y <= b.y + b.height
+			) {
+				// Target window found! Dispatch tab merge IPC event
+				targetWin.webContents.send("sessions:mergeTab", sessionId);
+				if (targetWin.isMinimized()) targetWin.restore();
+				targetWin.show();
+				targetWin.focus();
+				return;
+			}
+		}
+	}
+
 	const existing = sessionWindows.get(sessionId);
 	if (existing && !existing.isDestroyed()) {
 		if (existing.isMinimized()) existing.restore();

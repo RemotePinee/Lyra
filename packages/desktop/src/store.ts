@@ -467,6 +467,17 @@ export const useApp = create<AppState>((set, get) => ({
       const nextTabs = get().openTabs.filter((id) => existingIds.has(id));
       set({ sessions, openTabs: nextTabs });
     });
+    window.lyra.sessions.onMergeTab?.((sessionId) => {
+      // Add merged tab into this window and activate it
+      const currentTabs = get().openTabs;
+      if (!currentTabs.includes(sessionId)) {
+        set({ openTabs: [...currentTabs, sessionId] });
+      }
+      const targetMeta = get().sessions.find((s) => s.id === sessionId);
+      if (targetMeta) {
+        void get().openSession(targetMeta);
+      }
+    });
     void get().refreshSync();
   },
 

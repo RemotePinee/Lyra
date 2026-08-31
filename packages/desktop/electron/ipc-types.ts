@@ -170,6 +170,7 @@ export interface LyraApi {
 		/** Null when the session is not open — this never boots one just to answer. */
 		contextBreakdown(sessionId: string): Promise<ContextBreakdown | null>;
 		onListChanged(handler: (sessions: SessionMeta[]) => void): () => void;
+		onMergeTab(handler: (sessionId: string) => void): () => void;
 	};
 	agent: {
 		/**
