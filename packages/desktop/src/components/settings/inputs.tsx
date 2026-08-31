@@ -246,9 +246,16 @@ export function ShortcutRecorder({
 
 		// Validate availability
 		if (window.lyra?.screenshot?.validateShortcut) {
-			const check = await window.lyra.screenshot.validateShortcut(result);
-			if (!check.ok) {
-				onError?.(check.error || "快捷键冲突");
+			try {
+				const check = await window.lyra.screenshot.validateShortcut(result);
+				if (!check.ok) {
+					onError?.(check.error || "快捷键冲突");
+					setRecording(false);
+					return;
+				}
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				onError?.(msg);
 				setRecording(false);
 				return;
 			}
@@ -265,6 +272,12 @@ export function ShortcutRecorder({
 			onClick={() => setRecording(true)}
 			onBlur={() => setRecording(false)}
 			onKeyDown={handleKeyDown}
+			onKeyUp={(e) => {
+				if (recording) {
+					e.preventDefault();
+					e.stopPropagation();
+				}
+			}}
 			className={`flex h-[32px] min-w-[140px] items-center justify-center gap-1.5 rounded-lg border px-3 text-label font-mono transition-colors duration-[var(--ly-t-quick)] ${
 				recording
 					? "border-accent bg-accent/10 text-accent ring-2 ring-accent/20 animate-pulse"

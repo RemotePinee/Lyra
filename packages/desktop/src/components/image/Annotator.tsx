@@ -743,7 +743,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 					 */
 					event.stopPropagation();
 				}}
-				className={`${STAGE_FIT} block rounded-xl bg-white ${cursor}`}
+				className={`${STAGE_FIT} block rounded-xl bg-transparent ${cursor}`}
 				style={{ touchAction: "none" }}
 			/>
 
@@ -983,11 +983,21 @@ export function AnnotateToolbar({
 				// Backspace is the browser's "go back" on some setups; taking it is the point.
 				event.preventDefault();
 				annotator.removeSelected();
+				return;
+			}
+
+			if (event.key === "Escape") {
+				event.preventDefault();
+				if (annotator.selected !== null) {
+					annotator.setSelected(null);
+				} else {
+					onCancel();
+				}
 			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [annotator]);
+	}, [annotator, onCancel]);
 
 	return (
 		<div
@@ -1103,10 +1113,18 @@ export function AnnotateToolbar({
 
 			<button
 				type="button"
-				data-ly-tip="退出标注"
+				data-ly-tip="关闭标注"
 				data-ly-tip-side="top"
-				aria-label="退出标注"
-				onClick={onCancel}
+				aria-label="关闭标注"
+				onClick={() => {
+					if (!annotator.dirty) {
+						// Not dirty: dismiss whole viewer directly on single click
+						onCancel();
+					} else {
+						// Has unsaved drawings: exit editing mode
+						onCancel();
+					}
+				}}
 				className="flex h-7 items-center rounded-lg px-2.5 text-white/65 transition-colors duration-[var(--ly-t-quick)] hover:text-white"
 			>
 				<X size={13} strokeWidth={2} />

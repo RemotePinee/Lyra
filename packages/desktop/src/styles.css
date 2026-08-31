@@ -1729,7 +1729,7 @@
 @keyframes ly-card-in {
   from {
     opacity: 0;
-    transform: translateX(-6px) scale(0.985);
+    transform: translateX(-4px);
   }
   to {
     opacity: 1;

@@ -11,9 +11,10 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { app, clipboard, desktopCapturer, globalShortcut, screen } from "electron";
+import { app, clipboard, globalShortcut, nativeImage } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 import { resolveSaveDirectory } from "./screenshot-path.ts";
+import { openSnippingOverlay } from "./snipping-overlay.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,31 +45,22 @@ function generateScreenshotFilename(): string {
 }
 
 /**
- * Capture screen on Windows or Linux using electron desktopCapturer or clipboard image.
+ * Capture screen on Windows or Linux using native interactive snipping overlay.
  */
 async function captureScreenNonDarwin(saveDir: string, settings?: ScreenshotSettings): Promise<CaptureResult> {
+	const snippingRes = await openSnippingOverlay();
+	if (snippingRes.canceled) {
+		return { ok: true, canceled: true };
+	}
+	if (!snippingRes.dataUrl) {
+		return { ok: false, error: snippingRes.error || "未完成选区截取" };
+	}
+
 	try {
-		// First check if user already has an image freshly copied in clipboard
-		const clipImg = clipboard.readImage();
-		if (!clipImg.isEmpty()) {
-			// If non-empty, we can use it or capture primary display
-		}
-
-		const primaryDisplay = screen.getPrimaryDisplay();
-		const { width, height } = primaryDisplay.size;
-		const sources = await desktopCapturer.getSources({
-			types: ["screen"],
-			thumbnailSize: { width: width * primaryDisplay.scaleFactor, height: height * primaryDisplay.scaleFactor },
-		});
-
-		const primarySource = sources[0];
-		if (!primarySource) {
-			return { ok: false, error: "未能捕获到可用屏幕图像" };
-		}
-
-		const img = primarySource.thumbnail;
-		const buffer = img.toPNG();
-		const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+		const dataUrl = snippingRes.dataUrl;
+		const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+		const buffer = Buffer.from(base64Data, "base64");
+		const img = nativeImage.createFromBuffer(buffer);
 
 		// Copy into clipboard for immediate paste convenience
 		clipboard.writeImage(img);
@@ -150,7 +142,10 @@ export async function captureScreen(settings?: ScreenshotSettings): Promise<Capt
  * Check whether a shortcut accelerator is available and valid in the current OS.
  */
 export function checkShortcutAvailable(shortcut: string): { ok: boolean; error?: string } {
-	let normalized = shortcut?.trim();
+	if (typeof shortcut !== "string") {
+		return { ok: false, error: "快捷键格式无效" };
+	}
+	let normalized = shortcut.trim();
 	if (!normalized) return { ok: true };
 
 	normalized = normalized.replace(/Option/gi, "Alt");
@@ -161,16 +156,15 @@ export function checkShortcutAvailable(shortcut: string): { ok: boolean; error?:
 	}
 
 	try {
+		// 检查系统全局热键是否已被占用
 		const isRegistered = globalShortcut.isRegistered(normalized);
 		if (isRegistered) {
-			return { ok: false, error: "该快捷键已被系统或其他正在运行的应用程序占用" };
+			return { ok: false, error: "该快捷键已被系统或其他应用（如微信）占用" };
 		}
-		// Attempt temporary test registration
 		const success = globalShortcut.register(normalized, () => {});
 		if (!success) {
-			return { ok: false, error: "系统拒绝注册该快捷键（已被占用或受系统保护）" };
+			return { ok: false, error: "该快捷键已被微信等其他应用程序占用，无法绑定" };
 		}
-		// Unregister probe immediately
 		globalShortcut.unregister(normalized);
 		return { ok: true };
 	} catch (err) {
@@ -208,13 +202,13 @@ export function registerScreenshotShortcut(
 	if (!shortcut) return;
 
 	try {
+		// If user configured a shortcut that is used by external software (like WeChat Alt+A),
+		// let OS trigger it naturally while we handle trigger when available.
 		const success = globalShortcut.register(shortcut, () => {
 			onCaptureTriggered?.();
 		});
 		if (success) {
 			activeShortcut = shortcut;
-		} else {
-			console.warn(`[screenshot] 快捷键注册失败: ${shortcut}`);
 		}
 	} catch (err) {
 		console.warn(`[screenshot] 快捷键格式错误: ${shortcut}`, err);

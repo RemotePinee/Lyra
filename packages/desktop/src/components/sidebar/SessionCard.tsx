@@ -83,13 +83,6 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 		/*
 		 * Each column is as wide as its own contents, with the figure centred under its word.
 		 *
-		 * Two things have to hold at once, and the obvious shapes each break one. Equal thirds with
-		 * everything centred keeps the pairs together but leaves a visible margin at both edges that
-		 * the title and folder lines above do not have, so the row reads as inset from the rest of
-		 * the card. Equal thirds with the ends pushed outwards fixes the edges and breaks the pairs:
-		 * the label is centred in its third while the number is flush to the card, and 「消息」 ends
-		 * up sitting to the right of its own count.
-		 *
 		 * Sizing each column to its contents and spacing them apart satisfies both. Nothing is
 		 * centred *within* a wider box, so a label and its value share a centre line; the first
 		 * column's left edge and the last column's right edge are the row's own, which is the
@@ -157,7 +150,7 @@ export function SessionCard({
 			role="tooltip"
 			style={{ zIndex: CARD_Z, left: at?.left ?? -9999, top: at?.top ?? -9999, opacity: at ? undefined : 0 }}
 			className={`ly-glass-solid pointer-events-none fixed w-[248px] overflow-hidden rounded-[12px] border border-line-soft ${
-				leaving ? "ly-card-out" : "ly-card-in"
+				leaving ? "ly-card-out" : at ? "ly-card-in" : ""
 			}`}
 		>
 			<div className="flex items-start gap-2 px-3 pt-2.5 pb-2">

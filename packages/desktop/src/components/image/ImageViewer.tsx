@@ -382,14 +382,22 @@ export function ImageViewer() {
 			/*
 			 * Escape undoes one layer at a time.
 			 *
-			 * A selection, then annotating, then the viewer. Closing the whole thing because something
-			 * was selected throws away the work to answer a much smaller question, and the way back
-			 * from that is no way back at all.
+			 * If an element is selected, unselect it.
+			 * If in editing mode, exit editing and dismiss viewer directly if no drawing modifications.
 			 */
 			if (event.key === "Escape") {
-				if (editing && annotator.selected !== null) annotator.setSelected(null);
-				else if (editing) setEditing(false);
-				else dismiss();
+				if (editing && annotator.selected !== null) {
+					annotator.setSelected(null);
+				} else if (editing) {
+					if (!annotator.dirty) {
+						setEditing(false);
+						dismiss();
+					} else {
+						setEditing(false);
+					}
+				} else {
+					dismiss();
+				}
 				return;
 			}
 			if (editing) return;
@@ -618,6 +626,23 @@ export function ImageViewer() {
 					</div>
 				)}
 
+				{editing && (
+					<div
+						className="pointer-events-auto absolute top-4 flex items-center gap-1"
+						style={{ right: 16 + titlebar.end }}
+					>
+						<ViewerButton
+							label="关闭 Esc"
+							onClick={() => {
+								setEditing(false);
+								dismiss();
+							}}
+						>
+							<X size={16} strokeWidth={1.9} />
+						</ViewerButton>
+					</div>
+				)}
+
 				{/*
 				 * Bottom left, clear of the annotation toolbar in the middle. Present in both modes:
 				 * zooming in to place a mark precisely is the same need as zooming in to read one.
@@ -667,7 +692,10 @@ export function ImageViewer() {
 				<AnnotateToolbar
 					annotator={annotator}
 					canReplace={Boolean(image.onReplace)}
-					onCancel={() => setEditing(false)}
+					onCancel={() => {
+						setEditing(false);
+						dismiss();
+					}}
 					onSave={() => {
 						/*
 						 * Replace where that is possible, save a copy where it is not.
