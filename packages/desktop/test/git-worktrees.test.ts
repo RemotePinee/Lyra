@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import {
@@ -136,6 +136,40 @@ test("cleanOldWorktrees prunes excess worktrees above keepLimit while protecting
 	const cleanedCount = await cleanOldWorktrees(dir, cleanSettings, active);
 	assert.ok(cleanedCount >= 1);
 	assert.equal(existsSync(wt1.path), true, "active session worktree must be preserved");
+
+	await pruneWorktrees(dir);
+});
+
+/**
+ * The guard has to hold whatever the path looks like.
+ *
+ * On Windows it did not, and the failure was silent and destructive: `git worktree list` prints
+ * `C:/Users/...` while everything else in the app produces `C:\Users\...`, so the set of active
+ * worktrees never matched and the cleanup deleted the checkout the session was running in. The
+ * spelling below is the one git would have produced; the assertion is that it is still recognised.
+ */
+test("a worktree in use is protected however its path is spelled", async () => {
+	const keep = await createWorktree(dir, "spelling/in-use");
+	const doomed = await createWorktree(dir, "spelling/idle-1");
+	const alsoDoomed = await createWorktree(dir, "spelling/idle-2");
+	assert.ok(keep.path && doomed.path && alsoDoomed.path);
+
+	const settings = { ...DEFAULT_SETTINGS, worktrees: { autoCleanOld: true, keepLimit: 1 } };
+
+	/*
+	 * Built by hand, not with `join`.
+	 *
+	 * `join` normalises the `..` away, which would make this string identical to `keep.path` and
+	 * the test vacuous — it passed before the fix on macOS for exactly that reason. Written out, it
+	 * is a different string naming the same directory, which is the whole situation being tested.
+	 */
+	const awkward = `${keep.path}/../${basename(keep.path)}`;
+	assert.notEqual(awkward, keep.path, "the awkward spelling must actually differ, or this proves nothing");
+
+	const cleaned = await cleanOldWorktrees(dir, settings, new Set([awkward]));
+
+	assert.ok(cleaned >= 1, "the idle worktrees should still be cleaned");
+	assert.equal(existsSync(keep.path), true, "the worktree in use must survive an odd spelling");
 
 	await pruneWorktrees(dir);
 });

@@ -12,6 +12,7 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import type { Settings } from "@lyra/core";
 import { git } from "./git-exec.ts";
 import { isGitRepo } from "./git.ts";
+import { canonicalPath, pathKey } from "./path-key.ts";
 
 export interface WorktreeCreateOptions {
 	/** Custom target directory, if not default */
@@ -97,7 +98,15 @@ export async function createWorktree(
 			args.push(options.baseRef);
 		}
 		await git(cwd, args);
-		return { ok: true, path: target, branch: safe };
+		/*
+		 * The canonical spelling, not the one that was passed in.
+		 *
+		 * `target` is built with `join(root, "..", name)`, so it carries whatever separators, `..`
+		 * segments and short names came in with it. Callers keep this path and later compare it
+		 * against `git worktree list`, which prints the resolved long form — and a comparison that
+		 * cannot match is what let the cleanup delete a worktree that was in use.
+		 */
+		return { ok: true, path: canonicalPath(target), branch: safe };
 	} catch (cause) {
 		const message = cause instanceof Error && "stderr" in cause ? String(cause.stderr) : String(cause);
 		return { ok: false, error: message.trim() || "创建工作树失败" };
@@ -201,6 +210,15 @@ export async function cleanOldWorktrees(
 
 	const keepLimit = Math.max(1, settings.worktrees.keepLimit ?? 15);
 	const out = await git(repoCwd, ["worktree", "list", "--porcelain"]).catch(() => "");
+	/*
+	 * Canonical spellings on both sides of the guard below.
+	 *
+	 * These two sets of paths come from different places — one from git's output, one from
+	 * `path.join` in the caller — and on Windows they never matched: git prints forward slashes.
+	 * The effect was not a cosmetic mismatch but the guard silently never firing, so the cleanup
+	 * deleted the worktree of whatever session was running. See `path-key.ts`.
+	 */
+	const active = new Set([...activeSessionCwds].map(pathKey));
 	const worktrees: { path: string; isMain: boolean }[] = [];
 	let currentPath: string | null = null;
 
@@ -241,7 +259,7 @@ export async function cleanOldWorktrees(
 	for (let i = 0; i < withStats.length && cleaned < excess; i++) {
 		const target = withStats[i];
 		// Do not delete a worktree that is currently used by a live session
-		if (activeSessionCwds.has(target.path)) continue;
+		if (active.has(pathKey(target.path))) continue;
 		const res = await removeWorktree(repoCwd, target.path, true);
 		if (res.ok) cleaned++;
 	}
