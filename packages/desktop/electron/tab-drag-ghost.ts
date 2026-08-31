@@ -30,21 +30,21 @@ const GHOST_HTML = `<!DOCTYPE html>
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 28px;
-    padding: 0 12px;
-    font-size: 12px;
+    height: 26px;
+    padding: 0 10px;
+    font-size: 11.5px;
     font-weight: 500;
     color: #ffffff;
     background: #0284c7;
     border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(2, 132, 199, 0.4);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(2, 132, 199, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.25);
     white-space: nowrap;
     pointer-events: none;
   }
   .icon {
-    width: 13px;
-    height: 13px;
+    width: 12px;
+    height: 12px;
     flex-shrink: 0;
   }
   .title {
@@ -85,17 +85,34 @@ function getPhysicalCursor(): { x: number; y: number } {
 	return screen.getCursorScreenPoint();
 }
 
+/**
+ * Align coordinates with display work area bounds to ensure crisp positioning
+ * across mixed-DPI multi-monitor environments.
+ */
+function clampToDisplay(x: number, y: number, width: number, height: number): { x: number; y: number } {
+	const currentDisplay = screen.getDisplayNearestPoint({ x, y });
+	const { workArea } = currentDisplay;
+	return {
+		x: Math.max(workArea.x, Math.min(workArea.x + workArea.width - width, x)),
+		y: Math.max(workArea.y, Math.min(workArea.y + workArea.height - height, y)),
+	};
+}
+
 export function showDragGhost(title: string): void {
 	const cursor = getPhysicalCursor();
-	const posX = Math.round(cursor.x - 70);
-	const posY = Math.round(cursor.y - 18);
+	const width = 240;
+	const height = 40;
+	// Anchor: cursor sits smoothly near top-left of the drag capsule (x-24, y-12)
+	const rawX = Math.round(cursor.x - 24);
+	const rawY = Math.round(cursor.y - 12);
+	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
 	if (!ghostWindow || ghostWindow.isDestroyed()) {
 		ghostWindow = new BrowserWindow({
-			width: 260,
-			height: 48,
-			x: posX,
-			y: posY,
+			width,
+			height,
+			x,
+			y,
 			frame: false,
 			transparent: true,
 			alwaysOnTop: true,
@@ -118,7 +135,7 @@ export function showDragGhost(title: string): void {
 			ghostWindow.showInactive();
 		});
 	} else {
-		ghostWindow.setBounds({ x: posX, y: posY, width: 260, height: 48 });
+		ghostWindow.setBounds({ x, y, width, height });
 		if (!ghostWindow.isVisible()) {
 			ghostWindow.webContents.postMessage("", { title });
 			ghostWindow.showInactive();
@@ -128,13 +145,16 @@ export function showDragGhost(title: string): void {
 
 export function moveDragGhost(title?: string): void {
 	const cursor = getPhysicalCursor();
-	const posX = Math.round(cursor.x - 70);
-	const posY = Math.round(cursor.y - 18);
+	const width = 240;
+	const height = 40;
+	const rawX = Math.round(cursor.x - 24);
+	const rawY = Math.round(cursor.y - 12);
+	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
 	if (!ghostWindow || ghostWindow.isDestroyed() || !ghostWindow.isVisible()) {
 		showDragGhost(title ?? "新会话");
 	} else {
-		ghostWindow.setBounds({ x: posX, y: posY, width: 260, height: 48 });
+		ghostWindow.setBounds({ x, y, width, height });
 	}
 }
 
