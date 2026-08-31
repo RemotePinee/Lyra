@@ -25,6 +25,14 @@ packages/core/dist/
 .dev.vars
 .dev.vars.*
 
+# The macOS signing identity, written by `packages/desktop/scripts/make-signing-cert.sh`.
+#
+# This is the private key every release is signed with, and — because the certificate's fingerprint
+# is what macOS uses to recognise the app across updates — it is also what every granted permission
+# is tied to. It belongs in a password manager and in GitHub Secrets, nowhere else.
+signing/
+*.p12
+
 # Working notes, checklists and internal design docs.
 # Deliberately not published: they are written for us and for the agent working in this repo,
 # not for anyone reading the project from outside.

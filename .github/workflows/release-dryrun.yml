@@ -47,10 +47,69 @@ jobs:
       - name: Verify before building
         run: pnpm lint && pnpm typecheck && pnpm test
 
+      # Signing is here for the same reason packaging is: it is the step most likely to be broken
+      # in a way nothing else notices. A certificate that fails to import leaves a build that works
+      # perfectly and quietly resets every permission on the machine it lands on — exactly the class
+      # of fault this workflow exists to catch before a tag is pushed. Kept identical to
+      # `release.yml`; see the comments there for why each line is needed.
+      - name: Prepare the signing identity
+        if: matrix.os == 'macos-latest'
+        run: |
+          if [ -z "$MAC_CERTIFICATE_P12" ]; then
+            echo "::warning::MAC_CERTIFICATE_P12 is not set — this build will be ad-hoc signed"
+            exit 0
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/lyra-signing.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+
+          echo "$MAC_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+
+          openssl pkcs12 -legacy -in "$RUNNER_TEMP/certificate.p12" -passin "pass:$MAC_CERTIFICATE_PASSWORD" \
+            -clcerts -nokeys -out "$RUNNER_TEMP/certificate.pem"
+          security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$RUNNER_TEMP/certificate.pem"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+
       - name: Build and package
         run: pnpm package
         env:
           GH_TOKEN: ""
+
+      - name: Check the macOS build signed durably
+        if: matrix.os == 'macos-latest'
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+        run: |
+          APP=$(find packages/desktop/release -maxdepth 2 -name 'Lyra.app' -print -quit)
+          if [ -z "$APP" ]; then echo "::error::no Lyra.app in the release output"; exit 1; fi
+          REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 | tail -1)
+          echo "$REQUIREMENT"
+          case "$REQUIREMENT" in
+            *"certificate leaf"*)
+              echo "signed with a durable identity: updates keep their permissions" ;;
+            *cdhash*)
+              if [ -z "$MAC_CERTIFICATE_P12" ]; then
+                echo "::warning::ad-hoc signed, as expected without a certificate"
+              else
+                echo "::error::ad-hoc signed despite a certificate being present — the import or the identity name is wrong"
+                exit 1
+              fi ;;
+            *)
+              echo "::error::unrecognised designated requirement"
+              exit 1 ;;
+          esac
 
       # Named, not uploaded. What matters is that they exist and that the build got this far; the
       # artifacts themselves are what the real release is for.

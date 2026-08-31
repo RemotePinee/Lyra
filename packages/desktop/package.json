@@ -17,7 +17,7 @@
 		"test": "node --test --experimental-strip-types test/*.test.ts",
 		"postinstall": "node scripts/rebuild-pty.mjs && node scripts/brand-dev-electron.mjs",
 		"rebuild:pty": "node scripts/rebuild-pty.mjs",
-		"package": "node scripts/brand-dev-electron.mjs --restore && electron-vite build && electron-builder",
+		"package": "node scripts/brand-dev-electron.mjs --restore && electron-vite build && node scripts/package.mjs",
 		"test:e2e": "node --test --test-concurrency=1 --experimental-strip-types e2e/*.test.ts",
 		"brand:dev": "node scripts/brand-dev-electron.mjs",
 		"brand:restore": "node scripts/brand-dev-electron.mjs --restore",
