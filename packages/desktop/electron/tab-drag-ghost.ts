@@ -20,7 +20,15 @@ function buildGhostHtml(): string {
 	const okColor = "#3ecf8e";
 	const elevatedBg = theme.dark ? "#2c2c2c" : "#e5e5e5";
 	const textColor = theme.dark ? "#ededed" : "#1a1a1a";
-	const lineRule = theme.dark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.12)";
+	const lineRule = theme.dark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)";
+
+	/*
+	 * Shadows strictly follow .ly-glass / .ly-glass-solid design tokens in packages/desktop/src/styles.css:
+	 * Top hairline + layered ambient shadows (different alpha for dark and light modes).
+	 */
+	const glassShadow = theme.dark
+		? "inset 0 1px 0 rgb(255 255 255 / 0.07), 0 8px 24px -6px rgb(0 0 0 / 0.5), 0 1px 6px -2px rgb(0 0 0 / 0.38)"
+		: "inset 0 1px 0 rgb(255 255 255 / 0.4), 0 6px 20px -6px rgb(0 0 0 / 0.13), 0 1px 5px -2px rgb(0 0 0 / 0.09)";
 
 	return `<!DOCTYPE html>
 <html>
@@ -51,24 +59,22 @@ function buildGhostHtml(): string {
     border-radius: 6px;
     white-space: nowrap;
     pointer-events: none;
+    box-shadow: ${glassShadow};
     transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
   }
   .ghost-pill.detach {
     background: ${accentColor};
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.25);
   }
   .ghost-pill.merge {
     background: ${okColor};
     color: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.35);
   }
   .ghost-pill.back {
     background: ${elevatedBg};
     color: ${textColor};
     border: 1px solid ${lineRule};
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   }
   .icon {
     width: 12px;
@@ -165,6 +171,8 @@ function checkTargetWindow(cursor: { x: number; y: number }, sourceWebContentsId
 	const allWindows = BrowserWindow.getAllWindows();
 	let isSourceWin = false;
 
+	// In Windows/Electron, we sort or check candidate windows.
+	// We want to detect the target window under the cursor based on its bounds.
 	for (const win of allWindows) {
 		if (win.isDestroyed() || !win.isVisible()) continue;
 		if (ghostWindow && win.id === ghostWindow.id) continue;
@@ -246,12 +254,6 @@ export function moveDragGhost(title?: string, sourceWebContentsId?: number): voi
 
 	// Broadcast drag-over or drag-leave to target window if hovering state changes
 	if (hit.targetWin && !hit.isSourceWin) {
-		// Focus and bring target window to front so drop target is clearly visible and ready
-		if (lastHoveredWindowId !== hit.targetWin.id) {
-			if (hit.targetWin.isMinimized()) hit.targetWin.restore();
-			hit.targetWin.show();
-			hit.targetWin.focus();
-		}
 		const winBounds = hit.targetWin.getBounds();
 		const relativeX = cursor.x - winBounds.x;
 		hit.targetWin.webContents.send("sessions:tabDragOver", { x: relativeX, title });
