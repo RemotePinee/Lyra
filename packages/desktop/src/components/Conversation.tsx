@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { BackToLatest } from "./BackToLatest.tsx";
 import { Composer } from "./Composer.tsx";
@@ -6,13 +6,24 @@ import { ResumeRow } from "./ResumeRow.tsx";
 import { RunningIndicator } from "./RunningIndicator.tsx";
 import { TaskList } from "./TaskList.tsx";
 import { Scroller } from "./Scroller.tsx";
-import { computeTurnStats, isNudge, runs } from "./conversation/grouping.ts";
+import { isNudge, runs } from "./conversation/grouping.ts";
 import { ToolRun as ToolRunGroup, WINDOW_STEP } from "./conversation/runs.tsx";
 import { MessageRow, messageKey } from "./conversation/rows.tsx";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 
-export function Conversation() {
+/**
+ * Nothing about the window's shape belongs to the transcript.
+ *
+ * The transcript takes no props: everything it draws comes from the store, and the store tells it
+ * directly when that changes. But it is mounted inside the dock, and the dock is re-rendered by
+ * every drag — a pane's boundary, a pane being carried, the sidebar's edge — so a fresh element
+ * was handed down forty-five times a second and React rebuilt several hundred rows behind it, each
+ * one re-parsing its markdown. Dragging the sidebar across a long session cost 470KB of re-parsed
+ * prose per gesture. A memo boundary here is one comparison of two empty objects, and it is where
+ * the layout stops being the transcript's business.
+ */
+export const Conversation = memo(function Conversation() {
   const messages = useApp((s) => s.messages);
   const running = useApp((s) => s.running);
   const compactions = useApp((s) => s.compactions);
@@ -276,9 +287,15 @@ export function Conversation() {
          * 4px, and because that transform counts toward scrollHeight the browser dragged
          * the scroll position along with it as the animation settled.
          */}
+        {/*
+         * `ly-transcript`: every direct child of this is one row, and rows off screen are not
+         * drawn. See the rule in `styles.css` — it is what keeps the window responsive while a
+         * pane is being resized, and it has to be applied here because this is the only element
+         * that knows its children are rows.
+         */}
         <div
           key={activeSessionId ?? "blank"}
-          className={`ly-fade-in mx-auto w-full max-w-[var(--ly-content)] py-5 ${swapping ? "ly-no-enter" : ""}`}
+          className={`ly-transcript ly-fade-in mx-auto w-full max-w-[var(--ly-content)] py-5 ${swapping ? "ly-no-enter" : ""}`}
         >
           {/*
            * Runs of tool calls are gathered across messages, not just inside one.
@@ -327,7 +344,9 @@ export function Conversation() {
                 upTo={run.upTo}
                 /* A turn the runtime carried straight on from did not end where it stopped. */
                 continued={isNudge(messages[run.index + 1])}
-                turnStats={run.message.role === "assistant" ? computeTurnStats(messages, run.index) : undefined}
+                /* Computed with the grouping, so its identity changes only when the transcript
+                 * does — see `Run` in `grouping.ts` for what recomputing it here used to cost. */
+                turnStats={run.turnStats}
               />
             ) : (
               /* Keyed on the first call, not the position: inserting anything above must not
@@ -407,7 +426,7 @@ export function Conversation() {
       </div>
     </div>
   );
-}
+});
 
 /**
  * Stand-in for a transcript that is still being read off disk.

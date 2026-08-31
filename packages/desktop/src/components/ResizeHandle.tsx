@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { freezeMotion } from "../motion-freeze.ts";
+
 /**
  * How far the pointer can wander from the edge and still be grabbing it.
  *
@@ -132,9 +134,11 @@ export function ResizeHandle({
 		 * so it would flicker back to a text caret the moment the drag left the 9px strip.
 		 */
 		document.body.style.cursor = "col-resize";
-		document.body.style.userSelect = "none";
 		// Freezes transitions for the length of the drag, so the pane tracks the pointer instead
-		// of easing towards each intermediate width and never arriving.
+		// of easing towards each intermediate width and never arriving — and refuses the selection
+		// a drag across the content would start. Both by naming things rather than by a flag on the
+		// root, which sits above the transcript; see `motion-freeze.ts`.
+		const thaw = freezeMotion();
 		document.documentElement.dataset.resizing = "";
 
 		return () => {
@@ -143,7 +147,7 @@ export function ResizeHandle({
 			// A drag that ends mid-frame leaves nothing scheduled against an unmounted handle.
 			if (frame) cancelAnimationFrame(frame);
 			document.body.style.cursor = "";
-			document.body.style.userSelect = "";
+			thaw();
 			delete document.documentElement.dataset.resizing;
 		};
 	}, [active, edge, min, max, onResize]);

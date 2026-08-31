@@ -26,8 +26,14 @@ export type Run =
 	 * `upTo` is a count of content blocks: everything from there to the end is tool work, which
 	 * belongs to the run below rather than to the reply. It is the whole message whenever the
 	 * message has no trailing calls, which is most of them.
+	 *
+	 * `turnStats` rides along for assistant rows. It used to be computed where the row is drawn,
+	 * which meant a fresh object per render — so `MessageRow`'s memo compared unequal every time
+	 * and every visible reply was rebuilt whenever anything re-rendered the transcript. Computed
+	 * here it is derived from the messages alone, which is what it is a fact about, and its
+	 * identity changes exactly when the transcript does.
 	 */
-	| { kind: "message"; message: Message; index: number; upTo: number }
+	| { kind: "message"; message: Message; index: number; upTo: number; turnStats?: TurnStats }
 	| { kind: "tools"; calls: Call[] };
 
 /** The runtime's "carry on" message, recognised by what it says as well as by its flag. */
@@ -52,42 +58,51 @@ export type TurnStats = {
  * - Tool result messages and continuation nudges between them.
  * The turn starts immediately after the previous real (non-synthetic, non-nudge) user message.
  */
-export function computeTurnStats(messages: Message[], endMessageIndex: number): TurnStats {
-	let durationMs = 0;
-	let sseDurationMs = 0;
-	let outputTokens = 0;
-	let requestCount = 0;
+/** A turn that has spent nothing yet. */
+function noStats(): TurnStats {
+	return { durationMs: 0, sseDurationMs: 0, outputTokens: 0, requestCount: 0 };
+}
 
+/**
+ * Add one reply's cost to a running total, and hand back a new object.
+ *
+ * New rather than mutated: these are handed to a memoised row, and a total that changes in place
+ * is one React is entitled to decide has not changed at all.
+ */
+function accumulate(into: TurnStats, message: AssistantMessage): TurnStats {
+	const duration = typeof message.durationMs === "number" && message.durationMs > 0 ? message.durationMs : 0;
+	const sse = typeof message.sseDurationMs === "number" && message.sseDurationMs > 0 ? message.sseDurationMs : 0;
+	const output = typeof message.usage?.output === "number" && message.usage.output > 0 ? message.usage.output : 0;
+	return {
+		durationMs: into.durationMs + duration,
+		// Fallback when sseDurationMs was not recorded (e.g. older messages on disk).
+		sseDurationMs: into.sseDurationMs + (sse || duration),
+		outputTokens: into.outputTokens + output,
+		requestCount: into.requestCount + 1,
+	};
+}
+
+/** Whether this message is a person starting a turn, rather than the runtime keeping one going. */
+function opensTurn(message: Message): boolean {
+	return message.role === "user" && !message.synthetic && !isNudge(message);
+}
+
+export function computeTurnStats(messages: Message[], endMessageIndex: number): TurnStats {
 	// Walk backwards from endMessageIndex until we hit a real user message or index 0
 	let startIndex = 0;
 	for (let i = endMessageIndex; i >= 0; i--) {
-		const msg = messages[i];
-		if (msg.role === "user" && !msg.synthetic && !isNudge(msg)) {
+		if (opensTurn(messages[i])) {
 			startIndex = i + 1;
 			break;
 		}
 	}
 
+	let stats = noStats();
 	for (let i = startIndex; i <= endMessageIndex && i < messages.length; i++) {
 		const msg = messages[i];
-		if (msg.role === "assistant") {
-			if (typeof msg.durationMs === "number" && msg.durationMs > 0) {
-				durationMs += msg.durationMs;
-			}
-			if (typeof msg.sseDurationMs === "number" && msg.sseDurationMs > 0) {
-				sseDurationMs += msg.sseDurationMs;
-			} else if (typeof msg.durationMs === "number" && msg.durationMs > 0) {
-				// Fallback when sseDurationMs was not recorded (e.g. older messages on disk)
-				sseDurationMs += msg.durationMs;
-			}
-			if (typeof msg.usage?.output === "number" && msg.usage.output > 0) {
-				outputTokens += msg.usage.output;
-			}
-			requestCount++;
-		}
+		if (msg.role === "assistant") stats = accumulate(stats, msg);
 	}
-
-	return { durationMs, sseDurationMs, outputTokens, requestCount };
+	return stats;
 }
 
 /**
@@ -129,11 +144,23 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 		else out.push({ kind: "tools", calls });
 	};
 
+	/*
+	 * What the turn in progress has spent, carried down the transcript as it is walked.
+	 *
+	 * The same answer `computeTurnStats` gives, arrived at in one pass instead of one backward
+	 * scan per row. On a session of several thousand messages that difference is the whole cost:
+	 * the scan was being run for every visible reply, on every render of the transcript.
+	 */
+	let turn = noStats();
+
 	for (const [index, message] of messages.entries()) {
 		while (nextMark < marks.length && marks[nextMark] === index) {
 			out.push({ kind: "compaction" });
 			nextMark++;
 		}
+
+		// A person speaking starts a new turn; the runtime's own messages continue the one running.
+		if (opensTurn(message)) turn = noStats();
 
 		/*
 		 * Tool results are not entries in the transcript; they are the contents of a card.
@@ -158,6 +185,8 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 			continue;
 		}
 
+		turn = accumulate(turn, message);
+
 		const said = spoken(message.content);
 		const calls: Call[] = [];
 		for (const block of message.content.slice(said)) {
@@ -165,7 +194,7 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 		}
 
 		if (said > 0) {
-			out.push({ kind: "message", message, index, upTo: said });
+			out.push({ kind: "message", message, index, upTo: said, turnStats: turn });
 		} else if (calls.length === 0 && message.stopReason !== "pending") {
 			/*
 			 * Nothing said, nothing done, and the turn is over.
@@ -176,7 +205,7 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 			 * to arrive would take away again, and a row that exists for two seconds and then
 			 * removes itself is the flicker this whole file is arranged to avoid.
 			 */
-			out.push({ kind: "message", message, index, upTo: message.content.length });
+			out.push({ kind: "message", message, index, upTo: message.content.length, turnStats: turn });
 		}
 
 		work(calls);

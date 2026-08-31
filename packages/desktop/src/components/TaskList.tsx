@@ -167,9 +167,10 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 			 * Mounting it on open would mean measuring at the moment it becomes visible, which is
 			 * one frame too late — the box would jump to its full size and then animate from there.
 			 */}
+			{/* `ly-freeze` for the same reason as `ToolGroup`: the height follows what fits. */}
 			<div
 				style={{ height: open ? height : 0 }}
-				className="overflow-hidden transition-[height] duration-[var(--ly-t-base)] ease-out"
+				className="ly-freeze overflow-hidden transition-[height] duration-[var(--ly-t-base)] ease-out"
 			>
 				<div ref={body} className="border-t border-line-soft">
 					<Scroller className="max-h-[min(280px,38vh)]" contentClassName="px-1.5 py-1.5">
