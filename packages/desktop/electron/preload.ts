@@ -263,6 +263,7 @@ const api: LyraApi = {
 		revealSkillsDir: (scope, cwd) => ipcRenderer.invoke("system:revealSkillsDir", scope, cwd),
 		platform: () => ipcRenderer.invoke("system:platform"),
 		remoteImage: (url) => ipcRenderer.invoke("system:remoteImage", url),
+		dragGhost: (action, payload) => ipcRenderer.invoke("system:dragGhost", action, payload),
 	},
 	screenshot: {
 		capture: (settings) => ipcRenderer.invoke("screenshot:capture", settings),

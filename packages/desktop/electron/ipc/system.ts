@@ -12,9 +12,22 @@ import { clipboard, ipcMain, shell } from "electron";
 import { remoteImage } from "../avatars.ts";
 import { openTargets, openWith, type OpenTarget } from "../open-targets.ts";
 import { createSessionWindow } from "../window.ts";
+import { destroyDragGhost, hideDragGhost, moveDragGhost, showDragGhost } from "../tab-drag-ghost.ts";
 
 export function registerSystemIpc(): void {
 	ipcMain.handle("system:openPath", async (_event, path: string) => void shell.openPath(path));
+
+	ipcMain.handle("system:dragGhost", (_event, action: "show" | "move" | "hide" | "destroy", payload?: { title?: string; x?: number; y?: number }) => {
+		if (action === "show" && payload && typeof payload.x === "number" && typeof payload.y === "number") {
+			showDragGhost(payload.title ?? "新会话", payload.x, payload.y);
+		} else if (action === "move" && payload && typeof payload.x === "number" && typeof payload.y === "number") {
+			moveDragGhost(payload.x, payload.y);
+		} else if (action === "hide") {
+			hideDragGhost();
+		} else if (action === "destroy") {
+			destroyDragGhost();
+		}
+	});
 
 	ipcMain.handle("system:openExternal", async (_event, url: string) => {
 		if (url.startsWith("lyra://session/")) {

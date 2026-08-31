@@ -559,6 +559,10 @@ export interface LyraApi {
 		 * `img-src` is `self data: blob:` and stays that way — see `system:remoteImage`.
 		 */
 		remoteImage(url: string): Promise<string | null>;
+		dragGhost(
+			action: "show" | "move" | "hide" | "destroy",
+			payload?: { title?: string; x?: number; y?: number },
+		): Promise<void>;
 	};
 	screenshot: {
 		capture(settings?: ScreenshotSettings): Promise<{

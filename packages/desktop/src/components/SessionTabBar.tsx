@@ -142,6 +142,14 @@ export function SessionTabBar() {
 				moveEvt.clientY > window.innerHeight;
 			const isTornOff = isDragging && (moveEvt.clientY > 45 || moveEvt.clientY < 0 || isOutsideWindow);
 
+			if (isTornOff) {
+				const session = sessionMap.get(id);
+				const title = session?.title?.trim() || "新对话";
+				void window.lyra.system.dragGhost("show", { title, x: moveEvt.screenX, y: moveEvt.screenY });
+			} else {
+				void window.lyra.system.dragGhost("hide");
+			}
+
 			setDragState({
 				...current,
 				currentX: moveEvt.clientX,
@@ -152,6 +160,7 @@ export function SessionTabBar() {
 		};
 
 		const onPointerUp = (upEvt: PointerEvent) => {
+			void window.lyra.system.dragGhost("destroy");
 			try {
 				target.releasePointerCapture(upEvt.pointerId);
 			} catch {
@@ -267,8 +276,8 @@ export function SessionTabBar() {
 				})}
 			</div>
 
-			{/* Floating drag tear-off avatar */}
-			{dragState?.isDragging && (
+			{/* In-window drag ghost preview (only shown while moving inside the window) */}
+			{dragState?.isDragging && !dragState.isTornOff && (
 				<div
 					style={{
 						position: "fixed",
@@ -277,19 +286,10 @@ export function SessionTabBar() {
 						pointerEvents: "none",
 						zIndex: 9999,
 					}}
-					className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-xs shadow-xl backdrop-blur-md transition-colors ${
-						dragState.isTornOff
-							? "border border-accent bg-accent text-white shadow-accent/20"
-							: "border border-border/80 bg-elevated text-ink"
-					}`}
+					className="flex h-7 items-center gap-1.5 rounded-md px-3 text-xs shadow-xl backdrop-blur-md transition-colors border border-border/80 bg-elevated text-ink"
 				>
-					{dragState.isTornOff ? (
-						<ExternalLink size={13} className="shrink-0" />
-					) : (
-						<MessageSquare size={13} className="shrink-0 opacity-70" />
-					)}
+					<MessageSquare size={13} className="shrink-0 opacity-70" />
 					<span className="max-w-[140px] truncate font-medium">{draggingTitle}</span>
-					{dragState.isTornOff && <span className="text-[10px] opacity-90 pl-1 font-normal">释放以分离</span>}
 				</div>
 			)}
 		</>
