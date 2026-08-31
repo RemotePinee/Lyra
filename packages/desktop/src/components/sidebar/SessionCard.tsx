@@ -19,6 +19,7 @@ import { createPortal } from "react-dom";
 
 import type { SessionMeta } from "@lyra/core";
 import { formatTokens } from "../RunningIndicator.tsx";
+import { isTooltipSuppressed, onTooltipSuppressedChange } from "../../tooltip.ts";
 
 /**
  * How long the pointer has to rest before this appears.
@@ -228,13 +229,16 @@ export function useSessionCard(): {
 		setLeaving(false);
 	};
 
-	useEffect(
-		() => () => {
+	useEffect(() => {
+		const unsubscribe = onTooltipSuppressedChange((suppressed) => {
+			if (suppressed) dismiss();
+		});
+		return () => {
+			unsubscribe();
 			window.clearTimeout(open.current);
 			window.clearTimeout(close.current);
-		},
-		[],
-	);
+		};
+	}, []);
 
 	return {
 		anchor,
@@ -242,12 +246,15 @@ export function useSessionCard(): {
 		dismiss,
 		bind: {
 			onMouseEnter: (event) => {
+				if (isTooltipSuppressed()) return;
 				const box = event.currentTarget.getBoundingClientRect();
 				window.clearTimeout(open.current);
 				window.clearTimeout(close.current);
 				// Coming back before the exit finished is a re-entry, not a second arrival.
 				setLeaving(false);
-				open.current = window.setTimeout(() => setAnchor(box), OPEN_DELAY_MS);
+				open.current = window.setTimeout(() => {
+					if (!isTooltipSuppressed()) setAnchor(box);
+				}, OPEN_DELAY_MS);
 			},
 			onMouseLeave: () => {
 				window.clearTimeout(open.current);

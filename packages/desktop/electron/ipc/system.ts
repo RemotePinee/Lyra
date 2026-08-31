@@ -11,14 +11,24 @@ import { lyraHome } from "@lyra/core";
 import { clipboard, ipcMain, shell } from "electron";
 import { remoteImage } from "../avatars.ts";
 import { openTargets, openWith, type OpenTarget } from "../open-targets.ts";
+import { createSessionWindow } from "../window.ts";
 
 export function registerSystemIpc(): void {
 	ipcMain.handle("system:openPath", async (_event, path: string) => void shell.openPath(path));
 
 	ipcMain.handle("system:openExternal", async (_event, url: string) => {
+		if (url.startsWith("lyra://session/")) {
+			const sessionId = url.replace("lyra://session/", "").trim();
+			if (sessionId) {
+				createSessionWindow(sessionId);
+				return;
+			}
+		}
 		// Only ever hand http(s) to the OS handler; a file:// or custom scheme would be an escape hatch.
-		const parsed = new URL(url);
-		if (parsed.protocol === "http:" || parsed.protocol === "https:") await shell.openExternal(url);
+		try {
+			const parsed = new URL(url);
+			if (parsed.protocol === "http:" || parsed.protocol === "https:") await shell.openExternal(url);
+		} catch {}
 	});
 
 	/*

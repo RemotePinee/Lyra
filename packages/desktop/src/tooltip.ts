@@ -23,11 +23,23 @@ let current: HTMLElement | null = null;
 
 let popoverSuppressed = false;
 
+const listeners = new Set<(suppressed: boolean) => void>();
+
 export function setTooltipSuppressed(suppressed: boolean) {
 	popoverSuppressed = suppressed;
 	if (suppressed) {
 		hideTooltipImmediate();
 	}
+	for (const fn of listeners) fn(suppressed);
+}
+
+export function onTooltipSuppressedChange(fn: (suppressed: boolean) => void): () => void {
+	listeners.add(fn);
+	return () => listeners.delete(fn);
+}
+
+export function isTooltipSuppressed(): boolean {
+	return popoverSuppressed;
 }
 
 function ensureHost(): HTMLElement {

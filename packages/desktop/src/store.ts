@@ -407,18 +407,28 @@ export const useApp = create<AppState>((set, get) => ({
       window.lyra.settings.get(),
       window.lyra.sessions.list(),
     ]);
+
+    // If launched as an auxiliary window specifically for a session (e.g. ?session=<id>)
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetSessionId = urlParams.get("session");
+    const targetSession = targetSessionId ? sessions.find((s) => s.id === targetSessionId) : null;
+
     const lastProject = settings.projects
       .slice()
       .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0];
-    const workspace = lastProject
-      ? await window.lyra.workspace.info(lastProject.path)
-      : null;
+    const workspace = targetSession
+      ? (targetSession.cwd ? await window.lyra.workspace.info(targetSession.cwd) : null)
+      : (lastProject ? await window.lyra.workspace.info(lastProject.path) : null);
     // Where pull request conversations live, so the sidebar can leave them out. One call, at
     // boot: it is derived from the app's home and cannot change while running.
     // Where project-less conversations live, so the sidebar can leave them out. One call, at
     // boot: it is derived from the app's home and cannot change while running.
     const scratchRoots = await window.lyra.git.scratchRoots().catch(() => []);
     set({ settings, sessions, workspace, scratchRoots, ready: true });
+
+    if (targetSession) {
+      void get().openSession(targetSession);
+    }
 
     /*
      * Settings the window did not write itself.

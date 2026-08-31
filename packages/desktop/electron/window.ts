@@ -45,6 +45,7 @@ export function appIconPath(): string | undefined {
  */
 let readSettings: () => Settings | undefined = () => undefined;
 let mainWindow: BrowserWindow | null = null;
+const sessionWindows = new Map<string, BrowserWindow>();
 
 export function useSettingsSource(read: () => Settings | undefined): void {
 	readSettings = read;
@@ -91,6 +92,67 @@ function bootTheme(): { dark: boolean; background: string; foreground: string; a
 		foreground: dark ? (appearance?.darkForeground ?? "#ededed") : (appearance?.lightForeground ?? "#1a1a1a"),
 		accent: appearance?.accent ?? "#339cff",
 	};
+}
+
+export function createSessionWindow(sessionId: string): void {
+	const existing = sessionWindows.get(sessionId);
+	if (existing && !existing.isDestroyed()) {
+		if (existing.isMinimized()) existing.restore();
+		existing.show();
+		existing.focus();
+		return;
+	}
+
+	const mainBounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined;
+	const win = new BrowserWindow({
+		icon: appIconPath(),
+		width: mainBounds?.width ?? 980,
+		height: mainBounds?.height ?? 680,
+		...(mainBounds ? { x: mainBounds.x + 32, y: mainBounds.y + 32 } : {}),
+		minWidth: 380,
+		minHeight: 440,
+		show: false,
+		backgroundColor: resolvedBackground(),
+		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
+		trafficLightPosition: { x: 16, y: 16 },
+		...(process.platform !== "darwin"
+			? { titleBarOverlay: { color: resolvedBackground(), symbolColor: "#9a9a9a", height: 44 } }
+			: {}),
+		webPreferences: {
+			preload: join(import.meta.dirname, "../preload/index.js"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: false,
+			webviewTag: true,
+			backgroundThrottling: false,
+		},
+	});
+
+	sessionWindows.set(sessionId, win);
+
+	win.once("ready-to-show", () => {
+		win.show();
+		win.focus();
+	});
+
+	win.on("closed", () => {
+		sessionWindows.delete(sessionId);
+	});
+
+	win.webContents.setWindowOpenHandler(({ url }) => {
+		void shell.openExternal(url);
+		return { action: "deny" };
+	});
+
+	const devServer = process.env.ELECTRON_RENDERER_URL;
+	const query = `?session=${encodeURIComponent(sessionId)}`;
+	if (devServer) {
+		void win.loadURL(`${devServer}${query}`);
+	} else {
+		void win.loadFile(join(import.meta.dirname, "../renderer/index.html"), {
+			search: query,
+		});
+	}
 }
 
 export function createWindow(): void {
@@ -280,23 +342,14 @@ function writeWindowState(): void {
  */
 export function registerWindowIpc(): void {
 	ipcMain.on("window:theme", (_event, colors: { color: string; symbolColor: string }) => {
-		const window = getWindow();
-		if (!window || window.isDestroyed()) return;
-		/*
-		 * Repaint the window's own backing colour, not just the OS-drawn controls.
-		 *
-		 * This is the surface a fast resize exposes before the renderer has reflowed, so it has
-		 * to track the theme — otherwise dragging an edge flashes the old palette's background.
-		 */
-		window.setBackgroundColor(colors.color);
-		/*
-		 * Only Windows and Linux have a system-drawn title strip — macOS keeps its own lights
-		 * outside the page — and Electron throws if the window was not created with an overlay,
-		 * so the call is guarded rather than merely no-op'd.
-		 */
-		if (process.platform === "darwin") return;
-		try {
-			window.setTitleBarOverlay({ ...colors, height: 44 });
-		} catch {}
+		for (const window of BrowserWindow.getAllWindows()) {
+			if (window.isDestroyed()) continue;
+			window.setBackgroundColor(colors.color);
+			if (process.platform !== "darwin") {
+				try {
+					window.setTitleBarOverlay({ ...colors, height: 44 });
+				} catch {}
+			}
+		}
 	});
 }
