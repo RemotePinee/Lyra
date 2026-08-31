@@ -38,7 +38,9 @@ export function registerScreenshotIpc(deps: ScreenshotIpcDeps): void {
 	 * the window to be shown before it can carry on drawing. The sender identifies which overlay.
 	 */
 	ipcMain.on("screenshot:ready", (event) => {
-		revealScreenshotOverlay(event.sender.id);
+		if (event.sender && !event.sender.isDestroyed()) {
+			revealScreenshotOverlay(event.sender.id);
+		}
 	});
 
 	ipcMain.handle("screenshot:pickDirectory", async (): Promise<string | null> => {

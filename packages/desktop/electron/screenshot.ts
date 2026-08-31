@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
+import { appIconPath } from "./window.ts";
 import { resolveSaveDirectory } from "./screenshot-path.ts";
 
 
@@ -151,6 +152,14 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): vo
 	}
 	overlayWindows = [];
 
+	// Re-apply dock icon on macOS to ensure dock logo does not disappear or reset
+	if (process.platform === "darwin") {
+		const icon = appIconPath();
+		if (icon && app.dock) {
+			app.dock.setIcon(icon);
+		}
+	}
+
 	// Not when another overlay is about to take its place — see the call in
 	// `startScreenshotSession`. Raising the app for one frame between two overlays is a flicker.
 	if (options?.restoreFocus === false) return;
@@ -229,6 +238,14 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 	win.setAlwaysOnTop(true, "screen-saver");
 	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
+	// Ensure dock icon remains set on macOS when overlay starts
+	if (process.platform === "darwin") {
+		const icon = appIconPath();
+		if (icon && app.dock) {
+			app.dock.setIcon(icon);
+		}
+	}
+
 	overlayWindows.push(win);
 
 	win.on("closed", () => {
@@ -263,10 +280,18 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 	const failsafe = setTimeout(reveal, 1500);
 	win.on("closed", () => {
 		clearTimeout(failsafe);
-		revealers.delete(win.webContents.id);
+		// Clean up revealer mapping. The webContents may already be destroyed when window is closed,
+		// so safely iterate and remove the callback or prune dead entries.
+		for (const [id, cb] of revealers.entries()) {
+			if (cb === reveal) {
+				revealers.delete(id);
+				break;
+			}
+		}
 	});
 
 	win.webContents.once("did-finish-load", () => {
+		if (win.isDestroyed() || win.webContents.isDestroyed()) return;
 		win.webContents.send("screenshot:init", {
 			snapshot: snapshot.dataUrl,
 			bounds,

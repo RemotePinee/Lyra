@@ -538,7 +538,7 @@ export function ScreenshotOverlay() {
 
 			{selection && (
 				<div
-					className="absolute border border-blue-500 pointer-events-none"
+					className="absolute border border-[var(--ly-accent,#339cff)] pointer-events-none shadow-[0_0_0_1px_rgba(255,255,255,0.2)]"
 					style={{ left: selection.x, top: selection.y, width: selection.width, height: selection.height }}
 				>
 					{/*
@@ -549,7 +549,7 @@ export function ScreenshotOverlay() {
 					 * and the one time the number matters most is while the edge is being dragged.
 					 */}
 					<div
-						className="absolute left-0 rounded bg-black/75 px-2 py-0.5 text-xs text-white tabular-nums"
+						className="absolute left-0 rounded bg-black/80 px-2 py-0.5 text-xs text-white tabular-nums border border-white/10 shadow-sm"
 						style={{ top: selection.y >= 28 ? -28 : 4 }}
 					>
 						{Math.round(selection.width * scaleFactor)} × {Math.round(selection.height * scaleFactor)}
@@ -573,8 +573,8 @@ export function ScreenshotOverlay() {
 						return (
 							<div
 								key={handle}
-								className="pointer-events-none absolute h-2 w-2 rounded-[1px] border border-white bg-blue-500 shadow"
-								style={{ left: at.x - 4, top: at.y - 4 }}
+								className="pointer-events-none absolute h-2.5 w-2.5 rounded-full border-2 border-white bg-[var(--ly-accent,#339cff)] shadow"
+								style={{ left: at.x - 5, top: at.y - 5 }}
 							/>
 						);
 					})}
@@ -614,7 +614,7 @@ export function ScreenshotOverlay() {
 			 */}
 			{selection && toolbar && selection.width > 20 && selection.height > 20 && gesture.kind === "idle" && !drawing && (
 				<div
-					className="pointer-events-auto absolute z-50 flex items-center gap-1 rounded-xl border border-white/15 bg-neutral-900/90 p-1.5 shadow-2xl backdrop-blur-md"
+					className="pointer-events-auto absolute z-50 flex items-center gap-1 rounded-xl border border-white/10 bg-[#1c1c1e]/90 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
 					style={{ left: toolbar.x, top: toolbar.y }}
 					onMouseDown={(e) => e.stopPropagation()}
 					onMouseMove={(e) => e.stopPropagation()}
@@ -645,8 +645,11 @@ export function ScreenshotOverlay() {
 								type="button"
 								onClick={() => setWeight(value)}
 								data-ly-tip={label}
+								data-ly-tip-side="top"
+								aria-label={label}
+								aria-pressed={weight === value}
 								className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-									weight === value ? "bg-blue-500" : "hover:bg-white/15"
+									weight === value ? "bg-white/20" : "hover:bg-white/10"
 								}`}
 							>
 								<span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
@@ -656,15 +659,18 @@ export function ScreenshotOverlay() {
 
 					<Divider />
 
-					<div className="flex items-center gap-1">
+					<div className="flex items-center gap-2">
 						{COLOURS.map((c) => (
 							<button
 								key={c}
 								type="button"
 								onClick={() => setColour(c)}
 								data-ly-tip={COLOUR_NAMES[c] ?? c}
-								className={`h-4 w-4 rounded-full border border-black/40 transition-transform ${
-									colour === c ? "scale-125 ring-2 ring-white" : "hover:scale-110"
+								data-ly-tip-side="top"
+								aria-label={COLOUR_NAMES[c] ?? c}
+								aria-pressed={colour === c}
+								className={`h-[18px] w-[18px] shrink-0 rounded-full transition-transform duration-[var(--ly-t-quick)] ${
+									colour === c ? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]" : "opacity-80 hover:scale-110 hover:opacity-100"
 								}`}
 								style={{ backgroundColor: c }}
 							/>
@@ -692,7 +698,8 @@ export function ScreenshotOverlay() {
 					<button
 						type="button"
 						onClick={() => void handleFinish()}
-						className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-1 text-xs font-semibold text-white shadow transition-colors hover:bg-blue-600"
+						aria-label="完成截图"
+						className="flex items-center gap-1 rounded-lg bg-[var(--ly-accent,#339cff)] px-3 py-1 text-xs font-semibold text-white shadow transition-colors hover:brightness-110 active:brightness-95"
 					>
 						<Check size={14} strokeWidth={2.5} />
 						完成
@@ -724,8 +731,11 @@ function ToolButton({
 			disabled={disabled}
 			onClick={onClick}
 			data-ly-tip={tip}
+			data-ly-tip-side="top"
+			aria-label={tip}
+			aria-pressed={active}
 			className={`flex h-7 w-7 items-center justify-center rounded-lg text-white/80 transition-colors disabled:opacity-30 ${
-				active ? "bg-blue-500 text-white" : "hover:bg-white/15 hover:text-white"
+				active ? "bg-white/20 text-white" : "hover:bg-white/10 hover:text-white"
 			}`}
 		>
 			{icon}

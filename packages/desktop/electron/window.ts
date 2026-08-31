@@ -32,7 +32,10 @@ export function appIconPath(): string | undefined {
 	const candidates = [
 		join(base, "build", "icon.png"),
 		join(base, "..", "build", "icon.png"),
+		join(base, "packages", "desktop", "build", "icon.png"),
+		join(import.meta.dirname, "../build", "icon.png"),
 		join(process.resourcesPath ?? "", "build", "icon.png"),
+		join(process.resourcesPath ?? "", "icon.png"),
 	];
 	return candidates.find((path) => existsSync(path));
 }
