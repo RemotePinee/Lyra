@@ -7,6 +7,7 @@
 
 import { Camera, FolderOpen, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { openViewer } from "../image/viewer-store.ts";
 import { useApp } from "../../store.ts";
 import {
 	Card,
@@ -71,6 +72,32 @@ export function ScreenshotSettings() {
 		}
 	};
 
+	const triggerTestCapture = async () => {
+		const res = await window.lyra.screenshot.capture(config);
+		if (!res.ok) {
+			if (res.error) useApp.getState().notify(res.error, "warn");
+			return;
+		}
+		if (res.canceled || !res.dataUrl) return;
+
+		if (config.openEditor !== false) {
+			openViewer(
+				[
+					{
+						src: res.dataUrl,
+						alt: "测试截屏",
+					},
+				],
+				0,
+				null,
+				null,
+				true,
+			);
+		} else {
+			useApp.getState().notify("截图成功并已复制到剪贴板", "info");
+		}
+	};
+
 	return (
 		<div className="pt-8">
 			<h1 className="pb-7 text-display leading-tight font-semibold tracking-tight text-ink">
@@ -127,7 +154,7 @@ export function ScreenshotSettings() {
 					title="测试截图"
 					detail="立即触发一次屏幕区域截图"
 					control={
-						<GhostButton icon={<Camera size={14} />} onClick={() => void window.lyra.screenshot.capture()}>
+						<GhostButton icon={<Camera size={14} />} onClick={() => void triggerTestCapture()}>
 							立即截屏
 						</GhostButton>
 					}

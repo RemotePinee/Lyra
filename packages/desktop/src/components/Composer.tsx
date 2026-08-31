@@ -539,7 +539,6 @@ export function Composer() {
 	}, [settings?.screenshot]);
 
 	useEffect(() => {
-		if (window.lyra?.platform !== "darwin") return;
 		return window.lyra.screenshot.onTrigger(() => {
 			void takeScreenshot();
 		});

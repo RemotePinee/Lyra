@@ -183,6 +183,17 @@ export function ShortcutRecorder({
 
 	const formatDisplay = (acc: string) => {
 		if (!acc) return placeholder;
+		if (window.lyra?.platform === "win32") {
+			return acc
+				.replace(/CommandOrControl/gi, "Ctrl")
+				.replace(/Control/gi, "Ctrl")
+				.replace(/Meta/gi, "Win")
+				.replace(/Cmd/gi, "Win")
+				.replace(/Alt/gi, "Alt")
+				.replace(/Option/gi, "Alt")
+				.replace(/Shift/gi, "Shift")
+				.replace(/\+/g, " + ");
+		}
 		return acc
 			.replace(/CommandOrControl/gi, "⌘")
 			.replace(/Control/gi, "⌃")
@@ -198,6 +209,7 @@ export function ShortcutRecorder({
 		if (!recording) return;
 		e.preventDefault();
 		e.stopPropagation();
+		e.nativeEvent?.stopImmediatePropagation?.();
 
 		if (e.key === "Escape") {
 			setRecording(false);
@@ -227,8 +239,9 @@ export function ShortcutRecorder({
 		else if (key === "ARROWDOWN") key = "Down";
 		else if (key === "ARROWLEFT") key = "Left";
 		else if (key === "ARROWRIGHT") key = "Right";
+		else if (key.length === 1 && key >= "a" && key <= "z") key = key.toUpperCase();
 
-		// Form canonical Electron accelerator: "CommandOrControl+Alt+A"
+		// Electron accelerator requires at least a modifier when single letter/char to avoid capturing standard typing
 		const result = [...modifiers, key].join("+");
 
 		// Validate availability
