@@ -19,10 +19,5 @@ pre-commit:
       # Trailing whitespace and conflict markers, straight from git.
       run: git diff --cached --check
 
-pre-push:
-  jobs:
-    - name: typecheck
-      run: pnpm typecheck
-
-    - name: test
-      run: pnpm test
+# Pre-push hook disabled locally per workflow requirement;
+# All full verification, typecheck, and 380+ tests will run automatically in CI on pull requests / branch push.
