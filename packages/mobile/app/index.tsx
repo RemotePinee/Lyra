@@ -1,6 +1,6 @@
 import { Link, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import type { SessionMeta } from "../src/protocol";
 import { useMobile } from "../src/store";
 
@@ -164,9 +164,16 @@ export default function SessionListScreen() {
 	);
 }
 
+const appLogo = require("../assets/logo.png");
+
 function NotPaired() {
 	return (
 		<View className="flex-1 items-center justify-center bg-shell px-8">
+			<Image
+				source={appLogo}
+				style={{ width: 80, height: 80, marginBottom: 20 }}
+				resizeMode="contain"
+			/>
 			<Text className="text-center text-[22px] font-semibold text-ink">连接你的桌面端</Text>
 			<Text className="mt-3 text-center text-[13.5px] leading-6 text-ink-muted">
 				Lyra 的文件、终端和 MCP 都跑在电脑上。{"\n"}

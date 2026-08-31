@@ -10,7 +10,7 @@
     "backgroundColor": "#171717",
     "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#171717"
     },
@@ -40,7 +40,7 @@
         "CAMERA"
       ],
       "splash": {
-        "image": "./assets/icon.png",
+        "image": "./assets/logo.png",
         "resizeMode": "contain",
         "backgroundColor": "#171717"
       },
@@ -55,11 +55,11 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/icon.png",
+          "image": "./assets/logo.png",
           "resizeMode": "contain",
           "backgroundColor": "#171717",
           "dark": {
-            "image": "./assets/icon.png",
+            "image": "./assets/logo.png",
             "resizeMode": "contain",
             "backgroundColor": "#171717"
           }
