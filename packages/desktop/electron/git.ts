@@ -56,10 +56,33 @@ export {
 	type WorkflowRunSummary,
 } from "./git-release.ts";
 
+/**
+ * Whether this directory is inside a working tree.
+ *
+ * The catch used to swallow everything, and that is a different claim than it looks: `git` missing
+ * from `PATH`, a directory that cannot be read, a repository git refuses to touch — all of them
+ * came back as `false`, and the window said 「不是 Git 仓库，这个目录还没有版本控制」 about a
+ * directory with a perfectly good `.git` in it. The one answer nobody could act on, because it
+ * describes a state that is not the one they are in.
+ *
+ * "Not a repository" is still `false` — that is git answering the question. Everything else is a
+ * failure to ask it, and is now said out loud. The most common of those is worth naming:
+ *
+ *     fatal: detected dubious ownership in repository at '…'
+ *
+ * which git reports when the directory belongs to another user — a checkout made with `sudo`, a
+ * volume mounted from elsewhere — and which has nothing to do with whether it is a repository.
+ */
 export async function isGitRepo(cwd: string): Promise<boolean> {
-	return git(cwd, ["rev-parse", "--is-inside-work-tree"])
-		.then((out) => out.trim() === "true")
-		.catch(() => false);
+	try {
+		return (await git(cwd, ["rev-parse", "--is-inside-work-tree"])).trim() === "true";
+	} catch (error) {
+		const said = String((error as { stderr?: string })?.stderr ?? (error as Error)?.message ?? error);
+		// git's own way of saying no. Anything else means the question never got through.
+		if (/not a git repository|does not exist/i.test(said)) return false;
+		console.warn(`[git] could not tell whether ${cwd} is a repository: ${said.trim().split("\n")[0]}`);
+		return false;
+	}
 }
 
 export async function gitBranch(cwd: string): Promise<string | null> {
