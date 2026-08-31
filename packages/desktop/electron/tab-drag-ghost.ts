@@ -27,42 +27,44 @@ const GHOST_HTML = `<!DOCTYPE html>
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding-left: 8px;
+    padding-left: 6px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   .ghost-pill {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    height: 28px;
+    gap: 8px;
+    height: 30px;
     padding: 0 12px;
     font-size: 12px;
     font-weight: 500;
     color: #ffffff;
-    border-radius: 7px;
+    border-radius: 8px;
     white-space: nowrap;
     pointer-events: none;
-    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .ghost-pill.detach {
     background: #0284c7;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(2, 132, 199, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(2, 132, 199, 0.5);
+    transform: scale(1);
   }
   .ghost-pill.merge {
     background: #059669;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(5, 150, 105, 0.5);
-    transform: scale(1.03);
+    border: 1.5px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(5, 150, 105, 0.6);
+    transform: scale(1.06);
   }
   .ghost-pill.back {
     background: #475569;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    transform: scale(0.98);
   }
   .icon {
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
     flex-shrink: 0;
   }
   .title {
@@ -72,18 +74,18 @@ const GHOST_HTML = `<!DOCTYPE html>
     white-space: nowrap;
   }
   .badge {
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 1.5px 6px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.22);
-    letter-spacing: 0.2px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.25);
+    letter-spacing: 0.3px;
   }
 </style>
 </head>
 <body>
   <div class="ghost-pill detach" id="pill">
-    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
       <polyline points="15 3 21 3 21 9"></polyline>
       <line x1="10" y1="14" x2="21" y2="3"></line>
@@ -96,30 +98,26 @@ const GHOST_HTML = `<!DOCTYPE html>
     const MERGE_ICON = '<path d="M12 5v14M5 12h14"></path>';
     const BACK_ICON = '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>';
 
-    window.addEventListener("message", (e) => {
-      if (!e.data) return;
-      if (typeof e.data.title === "string") {
-        document.getElementById("title").textContent = e.data.title;
+    window.updateGhost = function(title, mode) {
+      const pill = document.getElementById("pill");
+      const titleEl = document.getElementById("title");
+      const badge = document.getElementById("badge");
+      const icon = document.getElementById("icon");
+      if (title && titleEl) titleEl.textContent = title;
+      if (mode === "merge") {
+        pill.className = "ghost-pill merge";
+        badge.textContent = "释放以合并到此窗口";
+        icon.innerHTML = MERGE_ICON;
+      } else if (mode === "back") {
+        pill.className = "ghost-pill back";
+        badge.textContent = "放回原窗口";
+        icon.innerHTML = BACK_ICON;
+      } else if (mode === "detach") {
+        pill.className = "ghost-pill detach";
+        badge.textContent = "释放以独立分屏";
+        icon.innerHTML = DETACH_ICON;
       }
-      if (typeof e.data.mode === "string") {
-        const pill = document.getElementById("pill");
-        const badge = document.getElementById("badge");
-        const icon = document.getElementById("icon");
-        if (e.data.mode === "merge") {
-          pill.className = "ghost-pill merge";
-          badge.textContent = "释放以合并到此窗口";
-          icon.innerHTML = MERGE_ICON;
-        } else if (e.data.mode === "back") {
-          pill.className = "ghost-pill back";
-          badge.textContent = "放回原窗口";
-          icon.innerHTML = BACK_ICON;
-        } else {
-          pill.className = "ghost-pill detach";
-          badge.textContent = "释放以独立分屏";
-          icon.innerHTML = DETACH_ICON;
-        }
-      }
-    });
+    };
   </script>
 </body>
 </html>`;
@@ -172,8 +170,8 @@ function checkTargetWindow(cursor: { x: number; y: number }, sourceWebContentsId
 
 export function showDragGhost(title: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
-	const width = 280;
-	const height = 44;
+	const width = 290;
+	const height = 46;
 	const rawX = Math.round(cursor.x - 24);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
@@ -205,12 +203,16 @@ export function showDragGhost(title: string, sourceWebContentsId?: number): void
 		void ghostWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(GHOST_HTML)}`);
 		ghostWindow.webContents.once("did-finish-load", () => {
 			if (!ghostWindow || ghostWindow.isDestroyed()) return;
-			ghostWindow.webContents.postMessage("", { title, mode: currentMode });
+			void ghostWindow.webContents.executeJavaScript(
+				`window.updateGhost(${JSON.stringify(title)}, ${JSON.stringify(currentMode)})`,
+			);
 			ghostWindow.showInactive();
 		});
 	} else {
 		ghostWindow.setBounds({ x, y, width, height });
-		ghostWindow.webContents.postMessage("", { title, mode: currentMode });
+		void ghostWindow.webContents.executeJavaScript(
+			`window.updateGhost(${JSON.stringify(title)}, ${JSON.stringify(currentMode)})`,
+		);
 		if (!ghostWindow.isVisible()) {
 			ghostWindow.showInactive();
 		}
@@ -219,8 +221,8 @@ export function showDragGhost(title: string, sourceWebContentsId?: number): void
 
 export function moveDragGhost(title?: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
-	const width = 280;
-	const height = 44;
+	const width = 290;
+	const height = 46;
 	const rawX = Math.round(cursor.x - 24);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
@@ -248,7 +250,9 @@ export function moveDragGhost(title?: string, sourceWebContentsId?: number): voi
 		ghostWindow.setBounds({ x, y, width, height });
 		if (nextMode !== currentMode) {
 			currentMode = nextMode;
-			ghostWindow.webContents.postMessage("", { mode: currentMode });
+			void ghostWindow.webContents.executeJavaScript(
+				`window.updateGhost(${JSON.stringify(title ?? "")}, ${JSON.stringify(currentMode)})`,
+			);
 		}
 	}
 }
