@@ -34,7 +34,15 @@
 
 set -euo pipefail
 
-OUT="${1:-$(cd "$(dirname "$0")/../.." && pwd)/signing}"
+#
+# Outside the repository by default, not merely git-ignored inside it.
+#
+# An ignore rule is a promise that holds until someone checks out a branch written before the rule
+# existed, or runs `git add -f`, or copies the tree somewhere. This is the private key every
+# release is signed with and that every granted permission is tied to; "probably not committed" is
+# the wrong guarantee for it. Somewhere git has no opinion about is the right one.
+#
+OUT="${1:-$HOME/.lyra-signing}"
 NAME="Lyra Code Signing"
 
 # Twenty years. The certificate's fingerprint *is* the app's identity, so replacing it resets every
