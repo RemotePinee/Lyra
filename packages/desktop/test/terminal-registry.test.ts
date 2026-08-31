@@ -454,3 +454,33 @@ test("data and exit events are silently ignored when window or webContents is de
 	});
 	assert.equal(sendCount, 1);
 });
+
+test("starts in home when outside a project, and starts in the normalized project path when inside", () => {
+	let spawnedCwd = "";
+	const appPath = "/work/app";
+	const outsidePath = "/other/dir";
+
+	const projectRegistry = createTerminalRegistry({
+		terminals: new Map(),
+		spawnPty: (_file, _args, options) => {
+			spawnedCwd = options.cwd as string;
+			return {
+				pid: 1234,
+				onData: () => {},
+				onExit: () => {},
+				resize: () => {},
+				write: () => {},
+				kill: () => {},
+			} as never;
+		},
+		projectPath: (target: string) => (target.startsWith(appPath) ? appPath : null),
+		insideAProject: (target: string) => target.startsWith(appPath),
+		window: () => null,
+	});
+
+	projectRegistry.open("/work/app/src", 80, 24);
+	assert.equal(spawnedCwd, appPath);
+
+	projectRegistry.open(outsidePath, 80, 24);
+	assert.notEqual(spawnedCwd, outsidePath);
+});

@@ -182,3 +182,48 @@ test("an ordinary reply with no plan is still left alone", async () => {
 	const { result } = await run([narrates("好的，已经完成了")], []);
 	assert.equal(nudgeCount(result.messages), 0, "saying something is answering");
 });
+
+/*
+ * The three below are a fence around wording, put up after a pass at catching plan-only stalls
+ * by matching phrases — 「随时告诉我」, 「准备就绪」, 「请问是否」 — in the reply. Each of those is
+ * ordinary at the end of a finished answer, so each turned into a nudge telling a model with
+ * nothing left to do to go and call a tool. What a reply says is not evidence about what it owed.
+ */
+test("a finished answer that signs off politely is not mistaken for a stall", async () => {
+	const { result, turns } = await run([narrates("这个函数把 SID 规范化。还有别的问题随时告诉我。")], []);
+	assert.equal(nudgeCount(result.messages), 0, "answering and then being polite is still answering");
+	assert.equal(turns, 1);
+});
+
+test("a completion report is not mistaken for a stall", async () => {
+	const { result } = await run(
+		[narrates("修改完成，测试已通过，构建环境准备就绪。")],
+		todos("completed", "completed"),
+	);
+	assert.equal(nudgeCount(result.messages), 0, "reporting that it is done is not stopping short");
+});
+
+test("a question the user has to answer is left standing", async () => {
+	// Two files could be meant and the answer changes the edit, so asking *is* the work this turn.
+	const { result } = await run([narrates("有两个同名配置文件，请问是否两个都要改？")], []);
+	assert.equal(nudgeCount(result.messages), 0, "a question worth asking is not a pause to push past");
+});
+
+test("a plan recorded with todo_write is what brings the follow-up", async () => {
+	/*
+	 * The way out of the gap this loop cannot close on its own. Steps named only in prose are
+	 * invisible here; the same steps on the list are the first test in the condition, so the pause
+	 * after them is already covered. That is what the prompt sends the model to `todo_write` for.
+	 */
+	const { result, turns } = await run(
+		[callsTool(), narrates("清单已经记下，接下来逐项处理"), narrates("全部完成")],
+		[],
+		(turn, state) => {
+			if (turn === 1) state.set(TODOS_KEY, todos("in_progress", "pending"));
+			if (turn === 2) state.set(TODOS_KEY, todos("completed", "completed"));
+		},
+	);
+	assert.equal(nudgeCount(result.messages), 1, "the recorded plan is the thing the loop can act on");
+	assert.equal(turns, 3);
+	assert.equal(result.reason, "done");
+});

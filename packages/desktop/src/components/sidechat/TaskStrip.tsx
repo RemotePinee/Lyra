@@ -9,9 +9,10 @@
  */
 
 import type { QueuedTask } from "@lyra/core";
-import { Ban, Check, ChevronDown, CircleDashed, Clock, TriangleAlert } from "lucide-react";
+import { Ban, Check, ChevronDown, CircleDashed, Clock, Play, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSide } from "../../sideStore.ts";
+import { useApp } from "../../store.ts";
 import { summarise } from "./summary.ts";
 
 const TASK_ICON: Record<QueuedTask["status"], typeof Clock> = {
@@ -88,6 +89,7 @@ export function TaskStrip() {
 
 function TaskRow({ task }: { task: QueuedTask }) {
 	const cancelTask = useSide((s) => s.cancelTask);
+	const send = useApp((s) => s.send);
 	const Icon = TASK_ICON[task.status];
 
 	return (
@@ -113,14 +115,29 @@ function TaskRow({ task }: { task: QueuedTask }) {
 				</p>
 			</div>
 			{task.status === "queued" && (
-				<button
-					type="button"
-					data-ly-tip="撤回这个任务"
-					onClick={() => void cancelTask(task.id)}
-					className="shrink-0 rounded-md px-1.5 py-0.5 text-detail text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
-				>
-					撤回
-				</button>
+				<div className="flex shrink-0 items-center gap-1">
+					<button
+						type="button"
+						data-ly-tip="立即执行"
+						onClick={() => {
+							void cancelTask(task.id);
+							void send([{ type: "text", text: task.text }]);
+						}}
+						className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+						aria-label="立即执行"
+					>
+						<Play size={12} strokeWidth={2} />
+					</button>
+					<button
+						type="button"
+						data-ly-tip="撤回这个任务"
+						onClick={() => void cancelTask(task.id)}
+						className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
+						aria-label="撤回这个任务"
+					>
+						<RotateCcw size={12} strokeWidth={2} />
+					</button>
+				</div>
 			)}
 		</div>
 	);

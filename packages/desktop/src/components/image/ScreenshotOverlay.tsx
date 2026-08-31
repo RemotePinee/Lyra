@@ -1,49 +1,27 @@
 /**
- * Fullscreen in-place screenshot overlay and annotator.
+ * Fullscreen in-place screenshot overlay, drawn with the app's own annotator.
  *
- * Rendered when `window.location.hash` is `#/screenshot-overlay`. Shows the frozen screen, lets the
- * selection be drawn, moved and resized, and hands the annotation tools the same painter the image
- * annotator uses — see `paint.ts` for why that is shared rather than reimplemented here.
+ * Two coordinate spaces meet here and it is worth being explicit about which is which. The
+ * selection and every pointer event are in CSS pixels, because that is what the overlay window is
+ * measured in. The annotator works in the snapshot's own pixels, which on a Retina screen are twice
+ * as many. `AnnotateCanvas` is therefore given an explicit CSS size — the display it is standing
+ * on, at 1:1 — rather than being allowed to lay out at its bitmap's size, which would cover twice
+ * the area it is meant to.
  *
- * Two coordinate spaces meet in this file and it is worth being explicit about which is which.
- * Pointer events and the selection are in CSS pixels, because that is what the overlay window is
- * measured in. Marks are in the snapshot's own pixels, because that is what `paint` and the export
- * expect, and because a mark stored that way stays anchored to the thing it was drawn on when the
- * selection is later moved. `toImage` is the only crossing point.
+ * The annotator is handed the *whole* snapshot, not a crop of the selection, and the selected
+ * region is a window onto it: an absolutely positioned frame with the full-size canvas shifted
+ * underneath it by the selection's own offset. That is what keeps marks anchored to the thing they
+ * were drawn on when the selection is moved or resized afterwards — a crop would have to be
+ * retaken on every drag, and every mark on it would slide.
  */
 
-import {
-	ArrowUpRight,
-	Check,
-	Circle,
-	Grid2x2,
-	ListOrdered,
-	Minus,
-	Pencil,
-	Redo2,
-	Square,
-	Type,
-	Undo2,
-	X,
-} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScreenshotSettings } from "@lyra/core";
 import {
-	canRedo,
-	canUndo,
-	commit,
-	current,
-	emptyHistory,
-	mosaicBlock,
-	mosaicBrush,
-	redo as redoStep,
-	undo as undoStep,
-	type History,
-	type Point,
-	type Shape,
-	type Tool,
-} from "./annotate.ts";
-import { fontOf, paintAll, strokeFor, LINE, PAD, TEXT_SCALE } from "./paint.ts";
+	AnnotateCanvas,
+	AnnotateToolbar,
+	useAnnotator,
+} from "./Annotator.tsx";
 import {
 	clampRect,
 	handlePoint,
@@ -56,689 +34,347 @@ import {
 	HANDLES,
 	HANDLE_CURSOR,
 	type Handle,
+	type Point,
 	type Rect,
 } from "./screenshot-geometry.ts";
 
-const COLOURS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#ffffff", "#111827"];
-/** How far from a handle still counts as grabbing it — see `hitHandle`. */
 const HANDLE_GRAB = 10;
-/** Roughly what the toolbar measures, only ever used to keep it on screen. Erring wide is safe. */
-const TOOLBAR_SIZE = { width: 660, height: 40 };
-/** The smallest drag that is a selection rather than a stray click, in CSS pixels. */
+const TOOLBAR_SIZE = { width: 660, height: 48 };
 const MIN_SELECTION = 10;
-
-/** The cursor each tool draws with; everything else uses the crosshair. */
-const TOOL_CURSOR: Partial<Record<Tool, string>> = { text: "text", mosaic: "cell" };
-
-const TOOLS: [Tool, typeof Pencil, string][] = [
-	["rect", Square, "矩形 (R)"],
-	["ellipse", Circle, "椭圆 (O)"],
-	["arrow", ArrowUpRight, "箭头 (A)"],
-	["line", Minus, "直线 (L)"],
-	["pen", Pencil, "画笔 (P)"],
-	["step", ListOrdered, "步骤 (S)"],
-	["mosaic", Grid2x2, "马赛克 (M)"],
-	["text", Type, "文字 (T)"],
-];
-
-/** The key that picks each tool, from the letters promised in the tooltips above. */
-const TOOL_KEYS: Record<string, Tool> = {
-	r: "rect",
-	o: "ellipse",
-	a: "arrow",
-	l: "line",
-	p: "pen",
-	s: "step",
-	m: "mosaic",
-	t: "text",
-};
-
 /**
- * The three weights, as multipliers with the dot that stands for each.
+ * How wide the band around the selection's edge is that picks the whole region up.
  *
- * Light is the default, not medium. What shipped was the equivalent of the heaviest of these and
- * had no control at all — a mosaic brush over a hundred pixels wide and captions to match — so the
- * one that needs to be one press away is the one that annotates rather than obliterates.
+ * While annotating, the inside of the selection belongs to the pen: a press there draws. The
+ * region still has to be movable, so the grab is the border itself — the same place the eye
+ * already reads as the edge of the shot, and the same convention every other capture tool uses.
  */
-const WEIGHTS: [number, string, number][] = [
-	[0.6, "细", 4],
-	[1, "中", 6],
-	[1.8, "粗", 9],
-];
+const EDGE_GRAB = 8;
 
-const COLOUR_NAMES: Record<string, string> = {
-	"#ef4444": "红色",
-	"#3b82f6": "蓝色",
-	"#22c55e": "绿色",
-	"#eab308": "黄色",
-	"#ffffff": "白色",
-	"#111827": "黑色",
-};
+interface ScreenshotInit {
+	snapshot: string;
+	bounds: { x: number; y: number; width: number; height: number };
+	scaleFactor: number;
+	settings?: ScreenshotSettings;
+}
 
-/** Tools that are placed with one click rather than dragged out. */
-const ONE_CLICK = new Set<Tool>(["step"]);
-/** Tools that keep every point the pointer passed through. */
-const FREEHAND = new Set<Tool>(["pen", "mosaic"]);
-
-/**
- * What the pointer is currently doing.
- *
- * The overlay used to track only the first of these, which is why a selection could be drawn and
- * then never touched again: with no state for "the selection exists and the pointer is on it",
- * there was nowhere for moving or resizing to live.
- */
-type Gesture =
-	| { kind: "idle" }
-	| { kind: "drawing"; from: Point }
+type DragMode =
+	| { kind: "none" }
+	| { kind: "creating"; from: Point }
 	| { kind: "moving"; from: Point; origin: Rect }
-	| { kind: "resizing"; handle: Handle };
+	| { kind: "resizing"; handle: Handle; origin: Rect };
 
-/** A caption being typed, before it becomes a shape. Positions are in image pixels. */
-interface Typing {
-	at: Point;
-	value: string;
-	width: number;
+/** Whether a point is on the selection's border rather than out in the middle of it. */
+function onEdge(rect: Rect, at: Point, tolerance: number): boolean {
+	if (!insideRect(rect, at)) return false;
+	return (
+		at.x - rect.x <= tolerance ||
+		rect.x + rect.width - at.x <= tolerance ||
+		at.y - rect.y <= tolerance ||
+		rect.y + rect.height - at.y <= tolerance
+	);
 }
 
 export function ScreenshotOverlay() {
-	const [snapshot, setSnapshot] = useState<string | null>(null);
-	/** The snapshot has decoded and can be drawn. See where it is set for why this is state. */
-	const [imageReady, setImageReady] = useState(false);
-	const [scaleFactor, setScaleFactor] = useState(2);
-	const [settings, setSettings] = useState<ScreenshotSettings | undefined>(undefined);
-
-	// The selection, in CSS pixels of this window.
+	const [initData, setInitData] = useState<ScreenshotInit | null>(null);
 	const [selection, setSelection] = useState<Rect | null>(null);
-	const [gesture, setGesture] = useState<Gesture>({ kind: "idle" });
+	const [dragMode, setDragMode] = useState<DragMode>({ kind: "none" });
+	const [cursor, setCursor] = useState("crosshair");
+	const [isAnnotating, setIsAnnotating] = useState(false);
 
-	const [tool, setTool] = useState<Tool | null>(null);
-	const [colour, setColour] = useState(COLOURS[0]!);
-	const [history, setHistory] = useState<History>(emptyHistory);
-	/** The mark under the pointer right now, committed on release. */
-	const [drawing, setDrawing] = useState<Shape | null>(null);
-	const [typing, setTyping] = useState<Typing | null>(null);
+	const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-	const rootRef = useRef<HTMLDivElement>(null);
-	const bgCanvasRef = useRef<HTMLCanvasElement>(null);
-	const markCanvasRef = useRef<HTMLCanvasElement>(null);
-	const fieldRef = useRef<HTMLTextAreaElement>(null);
-	const imageRef = useRef<HTMLImageElement | null>(null);
-	/** The snapshot averaged down to one pixel per mosaic block, and the block size it was built at. */
-	const mosaicRef = useRef<{ pixels: HTMLCanvasElement; block: number; brush: number } | null>(null);
-
-	/**
-	 * How heavy the marks are, as a multiplier on everything that has a size.
+	/*
+	 * The whole screen, decoded once.
 	 *
-	 * There was no control at all: stroke, type and the mosaic brush were all derived from the
-	 * screen's pixel width and that was that. On a Retina display that put the brush at over a
-	 * hundred pixels — a redaction that covers half a paragraph to hide one word — and set captions
-	 * at a size nothing could be said about. One number moves all three together, so a heavy mark
-	 * and heavy text stay in proportion to each other.
+	 * The frozen backdrop below and the annotator both need this bitmap, and `useAnnotator` already
+	 * loads it — so the backdrop is painted from *its* image rather than decoding the same data URL
+	 * a second time. On a 5K display that is several megabytes and a visible fraction of the delay
+	 * before the overlay can be shown at all.
 	 */
-	const [weight, setWeight] = useState(0.6);
+	const annotator = useAnnotator(initData?.snapshot ?? "");
+	const { ready: snapshotReady, image: snapshotImage } = annotator;
 
-	/** Stroke and type size, scaled to the snapshot like every other mark, times the chosen weight. */
-	const base = strokeFor(imageRef.current?.naturalWidth ?? 1920);
-	const stroke = Math.max(1, base * weight);
-	const typeSize = stroke * TEXT_SCALE;
-	const brush = Math.max(4, (mosaicRef.current?.brush ?? 16) * weight);
-
-	// 1. The main process hands over the frozen screen.
+	// Receive initialization data from main process
 	useEffect(() => {
-		return window.lyra.screenshot.onInit((data) => {
-			setSnapshot(data.snapshot);
-			setScaleFactor(data.scaleFactor || 2);
-			setSettings(data.settings);
-
-			const img = new Image();
-			img.onload = () => {
-				imageRef.current = img;
-
-				/*
-				 * The mosaic source, averaged down and back up at paint time.
-				 *
-				 * Built at exactly `mosaicBlock`'s size rather than a number of its own: `paintMosaic`
-				 * indexes this canvas as `x / block`, so a source built at a different block reads the
-				 * wrong pixel for every cell. They were different, which is one of the reasons the
-				 * mosaic tool did nothing recognisable.
-				 */
-				const block = mosaicBlock(img.naturalWidth);
-				const pixels = document.createElement("canvas");
-				pixels.width = Math.max(1, Math.ceil(img.naturalWidth / block));
-				pixels.height = Math.max(1, Math.ceil(img.naturalHeight / block));
-				const ctx = pixels.getContext("2d", { willReadFrequently: true });
-				if (ctx) {
-					ctx.imageSmoothingEnabled = true;
-					ctx.drawImage(img, 0, 0, pixels.width, pixels.height);
-				}
-				mosaicRef.current = { pixels, block, brush: mosaicBrush(img.naturalWidth) };
-
-				/*
-				 * A ref does not schedule a render, and the effect that paints the snapshot reads
-				 * this one. Without saying so in state, the image arrived and nothing drew it: the
-				 * background stayed empty until some unrelated state changed — which is to say
-				 * until the pointer moved. This makes the paint a consequence of the image landing.
-				 */
-				setImageReady(true);
-			};
-			img.src = data.snapshot;
+		const cleanup = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
+			setInitData(data);
 		});
+		return cleanup;
 	}, []);
 
-	// 2. The frozen screen, dimmed outside the selection.
+	/*
+	 * The frozen screen, at the resolution it was captured at.
+	 *
+	 * The backing store is the snapshot's own pixel count, not the display's logical size: sized
+	 * logically, a Retina capture is squeezed to half resolution and then stretched back over the
+	 * screen, and the first thing the user sees on pressing the shortcut is their desktop going
+	 * blurry.
+	 */
 	useEffect(() => {
+		if (!initData || !snapshotReady) return;
+		const img = snapshotImage.current;
 		const canvas = bgCanvasRef.current;
-		if (!canvas || !imageRef.current) return;
+		if (!img || !canvas) return;
 		const ctx = canvas.getContext("2d");
 		if (!ctx) return;
 
-		const width = window.innerWidth;
-		const height = window.innerHeight;
-		canvas.width = width * scaleFactor;
-		canvas.height = height * scaleFactor;
-
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		ctx.drawImage(imageRef.current, 0, 0, canvas.width, canvas.height);
-
-		ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-		if (!selection || selection.width === 0 || selection.height === 0) {
-			ctx.fillRect(0, 0, canvas.width, canvas.height);
-		} else {
-			ctx.beginPath();
-			ctx.rect(0, 0, canvas.width, canvas.height);
-			ctx.rect(
-				selection.x * scaleFactor,
-				selection.y * scaleFactor,
-				selection.width * scaleFactor,
-				selection.height * scaleFactor,
-			);
-			ctx.fill("evenodd");
-		}
+		canvas.width = img.naturalWidth;
+		canvas.height = img.naturalHeight;
+		ctx.drawImage(img, 0, 0);
 
 		/*
-		 * The window is still hidden until this. See `startScreenshotSession`: showing it when the
-		 * document loaded put an empty overlay over the screen for the few frames it took the
-		 * snapshot to arrive, decode and reach this canvas — which read as the screen blinking
-		 * before it froze. Sent every paint; the main process only acts on the first.
+		 * Said straight away, and deliberately not after a `requestAnimationFrame`.
+		 *
+		 * Waiting for a frame would be the more careful-looking thing to do and it deadlocks: the
+		 * window this runs in is hidden until this very message arrives, a hidden page is not
+		 * composited, and a rAF callback in one never runs. The overlay would appear 1.5 seconds
+		 * later off the failsafe timer, every time. It is also unnecessary — `drawImage` has already
+		 * written the snapshot into the canvas's bitmap, so the first frame after `show()` has it.
 		 */
-		window.lyra.screenshot.ready();
-	}, [snapshot, imageReady, selection, scaleFactor]);
+		window.lyra?.screenshot?.ready?.();
+	}, [initData, snapshotReady, snapshotImage]);
 
-	// 3. The marks, including the one still under the pointer.
+	// Cancel / close screenshot
+	const handleCancel = useCallback(() => {
+		window.lyra?.screenshot?.cancel?.();
+	}, []);
+
+	// Escape shortcut
 	useEffect(() => {
-		const canvas = markCanvasRef.current;
-		if (!canvas || !selection) return;
-		const ctx = canvas.getContext("2d");
-		if (!ctx) return;
-
-		canvas.width = Math.max(1, Math.round(selection.width * scaleFactor));
-		canvas.height = Math.max(1, Math.round(selection.height * scaleFactor));
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-		/*
-		 * Marks are in the snapshot's coordinates and this canvas covers only the selection, so the
-		 * whole difference between the two is one translate. Doing it here rather than offsetting
-		 * every point is what lets `paint` be shared with the annotator unchanged.
-		 */
-		ctx.save();
-		ctx.translate(-selection.x * scaleFactor, -selection.y * scaleFactor);
-		const mosaic = mosaicRef.current;
-		paintAll(ctx, drawing ? [...current(history), drawing] : current(history), {
-			stroke,
-			pixels: mosaic?.pixels ?? null,
-			block: mosaic?.block ?? 8,
-			brush,
-		});
-		ctx.restore();
-	}, [history, drawing, selection, scaleFactor, stroke, brush]);
-
-	// The caption field takes focus as it appears, and grows to fit what is typed into it.
-	useEffect(() => {
-		const el = fieldRef.current;
-		if (!el || !typing) return;
-		if (document.activeElement !== el) el.focus();
-		el.style.height = "auto";
-		el.style.height = `${el.scrollHeight}px`;
-	}, [typing]);
-
-	/** Pointer position → the snapshot's own pixels, which is where marks live. */
-	const toImage = useCallback(
-		(at: Point): Point => ({ x: at.x * scaleFactor, y: at.y * scaleFactor }),
-		[scaleFactor],
-	);
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				handleCancel();
+			}
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [handleCancel]);
 
 	/**
-	 * Turn the open caption into a mark.
+	 * The selection and the marks on it, cut out of the annotated canvas at its own resolution.
 	 *
-	 * Two plain calls rather than one nested in a state updater: React runs an updater more than
-	 * once per commit, so committing from inside `setTyping` lands the caption twice.
+	 * Read straight off the live canvas rather than through `render()` and a second decode: the
+	 * canvas is already exactly the picture that is wanted, minus everything outside the frame.
 	 */
-	const commitText = useCallback(() => {
-		if (!typing) return;
-		const { at, value, width } = typing;
-		const height = fieldRef.current ? (fieldRef.current.offsetHeight * scaleFactor) : typeSize * LINE;
-		setTyping(null);
-		if (!value.trim()) return;
-		setHistory((h) =>
-			commit(h, [
-				...current(h),
-				{ tool: "text", colour, points: [at], text: value, size: typeSize, width, height },
-			]),
-		);
-	}, [typing, colour, typeSize, scaleFactor]);
+	const handleFinish = useCallback(() => {
+		const source = annotator.canvas.current;
+		if (!source || !selection || !initData) return;
 
-	/** What the pointer would do if it were pressed here — kept off React, it changes every frame. */
-	const showCursor = useCallback(
-		(at: Point) => {
-			const el = rootRef.current;
-			if (!el) return;
-			let cursor = "crosshair";
-			if (selection) {
-				const handle = hitHandle(selection, at, HANDLE_GRAB);
-				if (handle) cursor = HANDLE_CURSOR[handle];
-				else if (insideRect(selection, at)) cursor = tool ? (TOOL_CURSOR[tool] ?? "crosshair") : "move";
-			}
-			if (el.style.cursor !== cursor) el.style.cursor = cursor;
-		},
-		[selection, tool],
-	);
-
-	const onMouseDown = (e: React.MouseEvent) => {
-		if (e.button !== 0) return;
-		const at = { x: e.clientX, y: e.clientY };
-
-		/*
-		 * A caption in progress is finished by pressing anywhere else, and that press does nothing
-		 * else.
-		 *
-		 * Letting it fall through meant the click that ended one caption immediately opened another
-		 * empty one under the pointer, so finishing a caption always left a stray box behind. One
-		 * click, one thing.
-		 */
-		if (typing) {
-			commitText();
-			return;
-		}
-
-		if (selection) {
-			// Handles first, so a selection can always be resized even with a tool in hand.
-			const handle = hitHandle(selection, at, HANDLE_GRAB);
-			if (handle) {
-				setGesture({ kind: "resizing", handle });
-				return;
-			}
-
-			if (insideRect(selection, at)) {
-				/*
-				 * A tool takes precedence inside the selection, and only there.
-				 *
-				 * This used to be `if (tool) return` at the top of the handler, which is why
-				 * annotating never worked at all: the press was swallowed and no code path anywhere
-				 * created a shape. Outside the selection a tool is not what the click means.
-				 */
-				if (tool === "text") {
-					const image = toImage(at);
-					setTyping({ at: image, value: "", width: Math.max(typeSize * 8, selection.width * scaleFactor * 0.4) });
-					return;
-				}
-				if (tool) {
-					const image = toImage(at);
-					setDrawing({ tool, colour, points: [image] });
-					return;
-				}
-				setGesture({ kind: "moving", from: at, origin: selection });
-				return;
-			}
-		}
-
-		// Anywhere else starts over.
-		setGesture({ kind: "drawing", from: at });
-		setSelection({ x: at.x, y: at.y, width: 0, height: 0 });
-	};
-
-	const onMouseMove = (e: React.MouseEvent) => {
-		const at = { x: e.clientX, y: e.clientY };
-		const viewport = { width: window.innerWidth, height: window.innerHeight };
-
-		if (drawing) {
-			const point = toImage(at);
-			setDrawing((shape) => {
-				if (!shape) return shape;
-				/*
-				 * A pen keeps every point it passed through; everything else is defined by where the
-				 * drag started and where it is now, so the second point is replaced rather than
-				 * appended — a rectangle otherwise accumulates a thousand corners.
-				 */
-				const points = FREEHAND.has(shape.tool)
-					? [...shape.points, point]
-					: [shape.points[0]!, point];
-				return { ...shape, points };
-			});
-			return;
-		}
-
-		switch (gesture.kind) {
-			case "drawing":
-				setSelection(clampRect(rectFromPoints(gesture.from, at), viewport));
-				return;
-			case "moving":
-				setSelection(moveRect(gesture.origin, at.x - gesture.from.x, at.y - gesture.from.y, viewport));
-				return;
-			case "resizing":
-				setSelection((rect) => (rect ? clampRect(resizeRect(rect, gesture.handle, at), viewport) : rect));
-				return;
-			default:
-				showCursor(at);
-		}
-	};
-
-	const onMouseUp = () => {
-		if (drawing) {
-			// A tap with no drag draws nothing, except for the tools that are placed with one click.
-			if (drawing.points.length > 1 || ONE_CLICK.has(drawing.tool)) {
-				const shape = drawing;
-				setHistory((h) => commit(h, [...current(h), shape]));
-			}
-			setDrawing(null);
-			return;
-		}
-
-		// A stray click is not a selection: it is how someone cancels the one they had.
-		if (gesture.kind === "drawing" && selection) {
-			if (selection.width < MIN_SELECTION || selection.height < MIN_SELECTION) setSelection(null);
-		}
-		setGesture({ kind: "idle" });
-	};
-
-	/** The selection and its marks, at the snapshot's own resolution. */
-	const handleFinish = useCallback(async () => {
-		if (!selection || !imageRef.current) return;
-
+		const scale = source.width / initData.bounds.width;
 		const out = document.createElement("canvas");
-		const sx = selection.x * scaleFactor;
-		const sy = selection.y * scaleFactor;
-		out.width = Math.max(1, Math.round(selection.width * scaleFactor));
-		out.height = Math.max(1, Math.round(selection.height * scaleFactor));
+		out.width = Math.max(1, Math.round(selection.width * scale));
+		out.height = Math.max(1, Math.round(selection.height * scale));
 		const ctx = out.getContext("2d");
 		if (!ctx) return;
 
-		ctx.drawImage(imageRef.current, sx, sy, out.width, out.height, 0, 0, out.width, out.height);
+		ctx.drawImage(
+			source,
+			Math.round(selection.x * scale),
+			Math.round(selection.y * scale),
+			out.width,
+			out.height,
+			0,
+			0,
+			out.width,
+			out.height,
+		);
 
-		ctx.translate(-sx, -sy);
-		const mosaic = mosaicRef.current;
-		paintAll(ctx, current(history), {
-			stroke,
-			pixels: mosaic?.pixels ?? null,
-			block: mosaic?.block ?? 8,
-			brush,
-		});
+		window.lyra?.screenshot?.finish?.(out.toDataURL("image/png"), initData.settings);
+	}, [annotator, selection, initData]);
 
-		await window.lyra.screenshot.finish(out.toDataURL("image/png"), settings);
-	}, [selection, scaleFactor, history, settings, stroke, brush]);
+	// Selection pointer events
+	const handlePointerDown = (e: React.PointerEvent) => {
+		if (!initData) return;
+		const pt: Point = { x: e.clientX, y: e.clientY };
 
-	useEffect(() => {
-		const onKeyDown = (e: KeyboardEvent) => {
-			// While a caption is open the keyboard belongs to it — Escape closes the field rather
-			// than throwing away the screenshot, and every letter is a letter.
-			if (typing) {
-				if (e.key === "Escape") {
-					e.preventDefault();
-					setTyping(null);
-				} else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-					e.preventDefault();
-					commitText();
+		if (selection) {
+			const handle = hitHandle(selection, pt, HANDLE_GRAB);
+			if (handle) {
+				setDragMode({ kind: "resizing", handle, origin: selection });
+				(e.target as HTMLElement).setPointerCapture(e.pointerId);
+				return;
+			}
+			if (insideRect(selection, pt)) {
+				// Before there is anything to annotate the whole region is a grab; afterwards only its
+				// edge is, because the middle is the canvas.
+				if (!isAnnotating || onEdge(selection, pt, EDGE_GRAB)) {
+					setDragMode({ kind: "moving", from: pt, origin: selection });
+					(e.target as HTMLElement).setPointerCapture(e.pointerId);
 				}
+				// Otherwise the press belongs to `AnnotateCanvas`, which has already had it.
 				return;
 			}
+		}
 
-			if (e.key === "Escape") {
-				e.preventDefault();
-				void window.lyra.screenshot.cancel();
+		// Anywhere outside starts a new region, and abandons the marks made on the old one.
+		setIsAnnotating(false);
+		setDragMode({ kind: "creating", from: pt });
+		setSelection({ x: pt.x, y: pt.y, width: 0, height: 0 });
+		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+	};
+
+	const handlePointerMove = (e: React.PointerEvent) => {
+		if (!initData) return;
+		const pt: Point = { x: e.clientX, y: e.clientY };
+
+		if (dragMode.kind === "creating") {
+			const rect = clampRect(rectFromPoints(dragMode.from, pt), initData.bounds);
+			setSelection(rect);
+		} else if (dragMode.kind === "moving") {
+			const dx = pt.x - dragMode.from.x;
+			const dy = pt.y - dragMode.from.y;
+			const rect = moveRect(dragMode.origin, dx, dy, initData.bounds);
+			setSelection(rect);
+		} else if (dragMode.kind === "resizing") {
+			const rect = clampRect(
+				resizeRect(dragMode.origin, dragMode.handle, pt),
+				initData.bounds,
+			);
+			setSelection(rect);
+		} else if (selection) {
+			// Update hover cursor
+			const handle = hitHandle(selection, pt, HANDLE_GRAB);
+			if (handle) {
+				setCursor(HANDLE_CURSOR[handle]);
 				return;
 			}
-			if (e.key === "Enter" && selection && selection.width > MIN_SELECTION && selection.height > MIN_SELECTION) {
-				e.preventDefault();
-				void handleFinish();
+			if (insideRect(selection, pt)) {
+				// The canvas sets its own cursor for the tool in hand; this is only about the frame.
+				setCursor(!isAnnotating || onEdge(selection, pt, EDGE_GRAB) ? "move" : "default");
 				return;
 			}
-			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-				e.preventDefault();
-				setHistory((h) => (e.shiftKey ? redoStep(h) : undoStep(h)));
-				return;
+			setCursor("crosshair");
+		} else {
+			setCursor("crosshair");
+		}
+	};
+
+	const handlePointerUp = () => {
+		if (dragMode.kind === "creating" && selection) {
+			// A stray click is not a selection: it is how someone clears the one they had.
+			if (selection.width < MIN_SELECTION || selection.height < MIN_SELECTION) {
+				setSelection(null);
+			} else {
+				setIsAnnotating(true);
 			}
-			if (e.metaKey || e.ctrlKey || e.altKey) return;
+		}
+		setDragMode({ kind: "none" });
+	};
 
-			// The letters the tooltips have always promised. They did nothing until now: the toolbar
-			// said "矩形 (R)" and R was not bound to anything.
-			const picked = TOOL_KEYS[e.key.toLowerCase()];
-			if (picked && selection) {
-				e.preventDefault();
-				setTool((active) => (active === picked ? null : picked));
-			}
-		};
-		window.addEventListener("keydown", onKeyDown);
-		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [selection, handleFinish, typing, commitText]);
+	if (!initData) {
+		return <div className="fixed inset-0 bg-transparent" />;
+	}
 
-	if (!snapshot) return null;
-
-	const toolbar = selection
-		? toolbarPosition(selection, { width: window.innerWidth, height: window.innerHeight }, TOOLBAR_SIZE)
-		: null;
+	const { bounds } = initData;
+	// Snapshot pixels → screen pixels, which is the scale the annotator's hit tolerances are in.
+	const zoom = annotator.width > 0 ? bounds.width / annotator.width : 1;
+	const toolbarAt = selection ? toolbarPosition(selection, bounds, TOOLBAR_SIZE) : null;
 
 	return (
 		<div
-			ref={rootRef}
-			className="relative h-screen w-screen overflow-hidden select-none cursor-crosshair"
-			onMouseDown={onMouseDown}
-			onMouseMove={onMouseMove}
-			onMouseUp={onMouseUp}
+			className="fixed inset-0 select-none overflow-hidden"
+			style={{ cursor }}
+			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerUp}
 		>
-			<canvas ref={bgCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+			{/* Frozen snapshot canvas */}
+			<canvas ref={bgCanvasRef} className="absolute inset-0 block h-full w-full pointer-events-none" />
 
+			{/* Dim mask around selection */}
 			{selection && (
-				<div
-					className="absolute border border-[var(--ly-accent,#339cff)] pointer-events-none shadow-[0_0_0_1px_rgba(255,255,255,0.2)]"
-					style={{ left: selection.x, top: selection.y, width: selection.width, height: selection.height }}
-				>
-					{/*
-					 * The size in real pixels, which is what the saved file will be.
-					 *
-					 * Above the selection, or just inside it when there is no room above — a
-					 * selection started at the top of the screen otherwise pushes the badge off it,
-					 * and the one time the number matters most is while the edge is being dragged.
-					 */}
-					<div
-						className="absolute left-0 rounded bg-black/80 px-2 py-0.5 text-xs text-white tabular-nums border border-white/10 shadow-sm"
-						style={{ top: selection.y >= 28 ? -28 : 4 }}
-					>
-						{Math.round(selection.width * scaleFactor)} × {Math.round(selection.height * scaleFactor)}
-					</div>
+				<svg className="pointer-events-none absolute inset-0 h-full w-full">
+					<defs>
+						<mask id="cutout">
+							<rect width="100%" height="100%" fill="white" />
+							<rect
+								x={selection.x}
+								y={selection.y}
+								width={selection.width}
+								height={selection.height}
+								fill="black"
+							/>
+						</mask>
+					</defs>
+					<rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.42)" mask="url(#cutout)" />
+				</svg>
+			)}
 
-					<canvas ref={markCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+			{!selection && (
+				<div className="pointer-events-none absolute inset-0 bg-black/25 flex items-center justify-center">
+					<div className="rounded-xl border border-white/20 bg-black/60 px-4 py-2 text-label text-white shadow-2xl backdrop-blur-md">
+						拖拽鼠标框选截图区域 · 按 Esc 退出
+					</div>
 				</div>
 			)}
 
 			{/*
-			 * The grips, drawn only when the selection is settled.
+			 * The annotator, seen through the selection.
 			 *
-			 * Outside the selection's own element so they are not clipped by it — half of each one
-			 * sits outside the edge it belongs to, which is what makes it look like a grip rather
-			 * than a decoration inside the crop.
+			 * The outer frame is the region and clips to it; the inner one carries the full-screen
+			 * canvas back up and left by the region's offset, so the part showing through is exactly
+			 * the part that will be saved. Clipping also takes the canvas out of hit testing outside
+			 * the frame, which is what leaves a press out there free to start a new selection.
 			 */}
-			{selection && gesture.kind === "idle" && !drawing && selection.width > 0 && selection.height > 0 && (
-				<>
-					{HANDLES.map((handle) => {
-						const at = handlePoint(selection, handle);
+			{isAnnotating && selection && (
+				<div
+					className="absolute overflow-hidden"
+					style={{
+						left: selection.x,
+						top: selection.y,
+						width: selection.width,
+						height: selection.height,
+					}}
+				>
+					<div className="absolute" style={{ left: -selection.x, top: -selection.y }}>
+						<AnnotateCanvas
+							annotator={annotator}
+							zoom={zoom}
+							className="bg-transparent"
+							style={{ width: bounds.width, height: bounds.height }}
+						/>
+					</div>
+				</div>
+			)}
+
+			{/* Selected region borders & resize handles */}
+			{selection && (
+				<div
+					className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+					style={{
+						left: selection.x,
+						top: selection.y,
+						width: selection.width,
+						height: selection.height,
+					}}
+				>
+					{HANDLES.map((h) => {
+						const pt = handlePoint({ x: 0, y: 0, width: selection.width, height: selection.height }, h);
 						return (
 							<div
-								key={handle}
-								className="pointer-events-none absolute h-2.5 w-2.5 rounded-full border-2 border-white bg-[var(--ly-accent,#339cff)] shadow"
-								style={{ left: at.x - 5, top: at.y - 5 }}
+								key={h}
+								className="pointer-events-auto absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/30 bg-white shadow-sm"
+								style={{ left: pt.x, top: pt.y, cursor: HANDLE_CURSOR[h] }}
 							/>
 						);
 					})}
-				</>
-			)}
-
-			{/* A caption being typed, in place and at the size it will be painted. */}
-			{typing && (
-				<textarea
-					ref={fieldRef}
-					value={typing.value}
-					onChange={(e) => setTyping((entry) => (entry ? { ...entry, value: e.target.value } : entry))}
-					onMouseDown={(e) => e.stopPropagation()}
-					placeholder="输入文字…"
-					spellCheck={false}
-					className="pointer-events-auto absolute z-40 resize-none overflow-hidden rounded border border-blue-400/80 bg-black/25 outline-none select-text"
-					style={{
-						left: typing.at.x / scaleFactor,
-						top: typing.at.y / scaleFactor,
-						width: typing.width / scaleFactor,
-						color: colour,
-						font: fontOf(typeSize / scaleFactor),
-						lineHeight: LINE,
-						padding: `${(typeSize * PAD) / scaleFactor}px`,
-					}}
-				/>
-			)}
-
-			{/*
-			 * The toolbar, under the selection and aligned to its left edge.
-			 *
-			 * Hidden while the pointer is shaping the selection or drawing — during a drag it would
-			 * be chasing the cursor, and it is not what anyone is looking at. Placement comes from
-			 * `toolbarPosition`, which keeps it on screen from any corner and is tested rather than
-			 * eyeballed; it used to be a hard-coded right-alignment that ran off the left edge for
-			 * any selection narrower than the toolbar.
-			 */}
-			{selection && toolbar && selection.width > 20 && selection.height > 20 && gesture.kind === "idle" && !drawing && (
-				<div
-					className="pointer-events-auto absolute z-50 flex items-center gap-1 rounded-xl border border-white/10 bg-[#1c1c1e]/90 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
-					style={{ left: toolbar.x, top: toolbar.y }}
-					onMouseDown={(e) => e.stopPropagation()}
-					onMouseMove={(e) => e.stopPropagation()}
-				>
-					{TOOLS.map(([name, Icon, tip]) => (
-						<ToolButton
-							key={name}
-							icon={<Icon size={16} />}
-							active={tool === name}
-							tip={tip}
-							onClick={() => setTool(tool === name ? null : name)}
-						/>
-					))}
-
-					<Divider />
-
-					{/*
-					 * Weight, shown as what it does rather than named.
-					 *
-					 * Three dots at the sizes they produce: the control is a preview of the mark. A
-					 * caption, a stroke and a mosaic brush all move together, because a heavy mark
-					 * beside hairline text reads as two different annotations of the same picture.
-					 */}
-					<div className="flex items-center gap-0.5" data-ly-tip="粗细">
-						{WEIGHTS.map(([value, label, dot]) => (
-							<button
-								key={label}
-								type="button"
-								onClick={() => setWeight(value)}
-								data-ly-tip={label}
-								data-ly-tip-side="top"
-								aria-label={label}
-								aria-pressed={weight === value}
-								className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-									weight === value ? "bg-white/20" : "hover:bg-white/10"
-								}`}
-							>
-								<span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
-							</button>
-						))}
-					</div>
-
-					<Divider />
-
-					<div className="flex items-center gap-2">
-						{COLOURS.map((c) => (
-							<button
-								key={c}
-								type="button"
-								onClick={() => setColour(c)}
-								data-ly-tip={COLOUR_NAMES[c] ?? c}
-								data-ly-tip-side="top"
-								aria-label={COLOUR_NAMES[c] ?? c}
-								aria-pressed={colour === c}
-								className={`h-[18px] w-[18px] shrink-0 rounded-full transition-transform duration-[var(--ly-t-quick)] ${
-									colour === c ? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]" : "opacity-80 hover:scale-110 hover:opacity-100"
-								}`}
-								style={{ backgroundColor: c }}
-							/>
-						))}
-					</div>
-
-					<Divider />
-
-					<ToolButton
-						icon={<Undo2 size={16} />}
-						disabled={!canUndo(history)}
-						tip="撤销 (⌘Z)"
-						onClick={() => setHistory((h) => undoStep(h))}
-					/>
-					<ToolButton
-						icon={<Redo2 size={16} />}
-						disabled={!canRedo(history)}
-						tip="重做 (⇧⌘Z)"
-						onClick={() => setHistory((h) => redoStep(h))}
-					/>
-
-					<Divider />
-
-					<ToolButton icon={<X size={16} />} tip="取消 (ESC)" onClick={() => void window.lyra.screenshot.cancel()} />
-					<button
-						type="button"
-						onClick={() => void handleFinish()}
-						aria-label="完成截图"
-						className="flex items-center gap-1 rounded-lg bg-[var(--ly-accent,#339cff)] px-3 py-1 text-xs font-semibold text-white shadow transition-colors hover:brightness-110 active:brightness-95"
-					>
-						<Check size={14} strokeWidth={2.5} />
-						完成
-					</button>
 				</div>
 			)}
+
+			{isAnnotating && toolbarAt && (
+				<AnnotateToolbar
+					annotator={annotator}
+					onCancel={handleCancel}
+					onSave={handleFinish}
+					canReplace={false}
+					saveLabel="完成"
+					cancelLabel="取消"
+					requireDirty={false}
+					className="pointer-events-auto absolute z-[120] flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
+					style={{ left: toolbarAt.x, top: toolbarAt.y }}
+				/>
+			)}
 		</div>
-	);
-}
-
-const Divider = () => <span className="mx-1 h-4 w-px shrink-0 bg-white/20" />;
-
-function ToolButton({
-	icon,
-	active,
-	disabled,
-	tip,
-	onClick,
-}: {
-	icon: React.ReactNode;
-	active?: boolean;
-	disabled?: boolean;
-	tip: string;
-	onClick: () => void;
-}) {
-	return (
-		<button
-			type="button"
-			disabled={disabled}
-			onClick={onClick}
-			data-ly-tip={tip}
-			data-ly-tip-side="top"
-			aria-label={tip}
-			aria-pressed={active}
-			className={`flex h-7 w-7 items-center justify-center rounded-lg text-white/80 transition-colors disabled:opacity-30 ${
-				active ? "bg-white/20 text-white" : "hover:bg-white/10 hover:text-white"
-			}`}
-		>
-			{icon}
-		</button>
 	);
 }

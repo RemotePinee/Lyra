@@ -86,6 +86,7 @@ export interface Attached {
 export interface TerminalDeps {
 	terminals: Map<string, LiveTerminal>;
 	spawnPty: (file: string, args: string[], options: Record<string, unknown>) => IPty;
+	projectPath?(target: string): string | null;
 	insideAProject(target: string): boolean;
 	window(): BrowserWindow | null;
 }
@@ -119,11 +120,19 @@ let clock = 0;
  * on, what a detach leaves running and which one gets retired are the whole point of this file,
  * and they are decided here rather than in a message handler.
  */
-export function createTerminalRegistry({ terminals, spawnPty, insideAProject, window }: TerminalDeps) {
+export function createTerminalRegistry({ terminals, spawnPty, projectPath, insideAProject, window }: TerminalDeps) {
 	/** Where a terminal for this path actually starts: the project, or home if it is not one. */
 	// `homedir()`, not `process.env.HOME`: Windows spells it `USERPROFILE` and leaves `HOME` unset,
 	// so reading the variable there fell through to the process's own directory.
-	const resolve = (cwd: string): string => (insideAProject(cwd) ? cwd : homedir());
+	const resolve = (cwd: string): string => {
+		if (projectPath) {
+			const resolved = projectPath(cwd);
+			if (resolved) return resolved;
+		} else if (insideAProject(cwd)) {
+			return cwd;
+		}
+		return homedir();
+	};
 
 	/** Every shell this directory has, in the order they were opened. */
 	const list = (cwd: string): TerminalTab[] =>

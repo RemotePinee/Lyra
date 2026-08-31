@@ -568,7 +568,7 @@ function registerIpc(): void {
 	registerFilesIpc({ projectPath });
 	registerFileOpsIpc({ projectPath });
 
-	registerTerminalIpc({ terminals, spawnPty, insideAProject, window: () => getWindow() });
+	registerTerminalIpc({ terminals, spawnPty, projectPath, insideAProject, window: () => getWindow() });
 	registerUpdateIpc();
 
 	registerServicesIpc({

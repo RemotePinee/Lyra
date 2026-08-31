@@ -114,6 +114,8 @@ export function buildTurnConfig(
 						// Where the run registers itself so it can be watched and steered. Absent for
 						// hosts that only want the answer — see `SubAgentOptions.registry`.
 						registry: deps.subAgents,
+						// So a delegated run compacts through the same model call this session does.
+						summaryStream: deps.summaryStream(deps.provider),
 					},
 					input,
 					deps.provider,

@@ -309,7 +309,24 @@ const CURSOR: Partial<Record<Tool, string>> = {
 	mosaic: "cursor-cell",
 };
 
-export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom: number }) {
+/**
+ * @param className Replaces the canvas's own sizing and framing, for a caller that has to place it
+ *   exactly. The viewer wants `STAGE_FIT` — a picture sized by its own pixels, capped at the
+ *   window; the screenshot overlay wants the opposite, a canvas pinned to a rectangle it has
+ *   already chosen. Left alone the canvas lays out at its bitmap's size in CSS pixels, which on a
+ *   Retina screen is twice the region it is supposed to cover.
+ */
+export function AnnotateCanvas({
+	annotator,
+	zoom,
+	className,
+	style,
+}: {
+	annotator: Annotator;
+	zoom: number;
+	className?: string;
+	style?: React.CSSProperties;
+}) {
 	const { canvas, image, pixels, ready, width, tool, colour, backdrop, weight, shapes, setHistory, selected, setSelected } =
 		annotator;
 	const [drawing, setDrawing] = useState<Shape | null>(null);
@@ -761,8 +778,8 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 					 */
 					event.stopPropagation();
 				}}
-				className={`${STAGE_FIT} block rounded-xl bg-white ${cursor}`}
-				style={{ touchAction: "none" }}
+				className={`${className ?? `${STAGE_FIT} rounded-xl bg-white`} block ${cursor}`}
+				style={{ touchAction: "none", ...style }}
 			/>
 
 			{box && (
@@ -967,12 +984,31 @@ export function AnnotateToolbar({
 	onCancel,
 	onSave,
 	canReplace,
+	saveLabel,
+	cancelLabel = "退出标注",
+	requireDirty = true,
+	className,
+	style,
 }: {
 	annotator: Annotator;
 	onCancel: () => void;
 	onSave: () => void;
 	/** Whether saving can replace the original, or only produce a copy. */
 	canReplace: boolean;
+	/** Overrides what the save button says. Left off, it says what `canReplace` implies. */
+	saveLabel?: string;
+	cancelLabel?: string;
+	/**
+	 * Whether saving requires a mark to have been made.
+	 *
+	 * True for a picture that already exists — saving an untouched copy of it produces a second
+	 * identical file, which is why the button is dead until there is something to save. False for
+	 * the screenshot overlay, where the button is how the capture itself is confirmed and an
+	 * unannotated region is the commonest thing anyone wants.
+	 */
+	requireDirty?: boolean;
+	className?: string;
+	style?: React.CSSProperties;
 }) {
 	const [shown, setShown] = useState(false);
 	useEffect(() => {
@@ -1018,8 +1054,15 @@ export function AnnotateToolbar({
 			 * against whatever is behind it through its own background rather than by pushing things
 			 * out of the way.
 			 */
-			className="pointer-events-auto fixed bottom-6 left-1/2 z-[120] flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
-			style={{ opacity: shown ? 1 : 0, transform: `translateX(-50%) translateY(${shown ? 0 : 10}px)` }}
+			className={
+				className ??
+				"pointer-events-auto fixed bottom-6 left-1/2 z-[120] flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
+			}
+			style={{
+				opacity: shown ? 1 : 0,
+				transform: className ? undefined : `translateX(-50%) translateY(${shown ? 0 : 10}px)`,
+				...style,
+			}}
 		>
 			{TOOLS.map(([id, Icon, label]) => (
 				<ToolButton key={id} label={label} active={annotator.tool === id} onClick={() => annotator.setTool(id)}>
@@ -1144,9 +1187,9 @@ export function AnnotateToolbar({
 
 			<button
 				type="button"
-				data-ly-tip="退出标注"
+				data-ly-tip={cancelLabel}
 				data-ly-tip-side="top"
-				aria-label="退出标注"
+				aria-label={cancelLabel}
 				onClick={onCancel}
 				className="flex h-7 items-center rounded-lg px-2.5 text-white/65 transition-colors duration-[var(--ly-t-quick)] hover:text-white"
 			>
@@ -1154,16 +1197,16 @@ export function AnnotateToolbar({
 			</button>
 			<button
 				type="button"
-				data-ly-tip={canReplace ? "保存并替换原图" : "导出一份带标注的副本"}
+				data-ly-tip={saveLabel ?? (canReplace ? "保存并替换原图" : "导出一份带标注的副本")}
 				data-ly-tip-side="top"
-				disabled={!annotator.dirty}
+				disabled={requireDirty && !annotator.dirty}
 				onClick={onSave}
 				// `whitespace-nowrap` because the label is four characters and the button is sized by
 				// its padding: without it "保存副本" wrapped to two lines and took the whole bar's
 				// height with it.
 				className="flex h-7 items-center whitespace-nowrap rounded-lg bg-white px-3 text-detail font-medium text-[#1c1c1e] transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-35"
 			>
-				{canReplace ? "保存" : "保存副本"}
+				{saveLabel ?? (canReplace ? "保存" : "保存副本")}
 			</button>
 		</div>
 	);

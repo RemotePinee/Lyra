@@ -85,6 +85,13 @@ export function sessionSlice(set: Set, get: Get) {
     });
 
     /*
+     * Delegated work belongs to the conversation that dispatched it.
+     *
+     * A blank new conversation has dispatched nothing yet; clear any leftover roster.
+     */
+    useSubAgents.getState().clear();
+
+    /*
      * Out of the last conversation's directory, back to the shared one — after the window has
      * already cleared, not before.
      *
@@ -332,6 +339,7 @@ export function sessionSlice(set: Set, get: Get) {
         loadingSession: false,
         pendingUserMessage: null,
       });
+      useSubAgents.getState().clear();
     }
   },
 
@@ -358,6 +366,7 @@ export function sessionSlice(set: Set, get: Get) {
         loadingSession: false,
         pendingUserMessage: null,
       });
+      useSubAgents.getState().clear();
     }
     set({
       sessions: await window.lyra.sessions.setArchived(

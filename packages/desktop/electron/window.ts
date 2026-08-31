@@ -19,7 +19,14 @@ import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electro
  * Returns undefined rather than a wrong path, because Electron falls back to its own logo on a
  * missing file without saying so — and a silently wrong icon is harder to notice than none.
  */
+let iconPath: { found: string | undefined } | null = null;
+
 export function appIconPath(): string | undefined {
+	/*
+	 * Answered once. The file cannot move while the app runs, and this is now on the screenshot
+	 * path — twice per capture, six `existsSync` calls each, for an answer that never changes.
+	 */
+	if (iconPath) return iconPath.found;
 	/*
 	 * `app.getAppPath()`, not `__dirname`.
 	 *
@@ -37,7 +44,8 @@ export function appIconPath(): string | undefined {
 		join(process.resourcesPath ?? "", "build", "icon.png"),
 		join(process.resourcesPath ?? "", "icon.png"),
 	];
-	return candidates.find((path) => existsSync(path));
+	iconPath = { found: candidates.find((path) => existsSync(path)) };
+	return iconPath.found;
 }
 
 /**

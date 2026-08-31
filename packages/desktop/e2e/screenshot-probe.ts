@@ -161,17 +161,29 @@ try {
 		console.error = (...a) => { window.__probeErrors.push(a.map(String).join(" ")); err(...a); };
 	})()`);
 
-	const painted = await run<{ w: number; h: number; blank: boolean }>(`(() => {
+	const painted = await run<{ w: number; h: number; blank: boolean; css: number; dpr: number }>(`(() => {
 		const c = document.querySelector("canvas");
-		if (!c) return { w: 0, h: 0, blank: true };
+		if (!c) return { w: 0, h: 0, blank: true, css: 0, dpr: 0 };
 		const ctx = c.getContext("2d");
 		const d = ctx.getImageData(0, 0, Math.min(200, c.width), Math.min(200, c.height)).data;
 		let blank = true;
 		for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) { blank = false; break; }
-		return { w: c.width, h: c.height, blank };
+		return { w: c.width, h: c.height, blank, css: window.innerWidth, dpr: window.devicePixelRatio };
 	})()`);
 	note(`  背景画布 ${painted.w}×${painted.h}，${painted.blank ? "空白" : "已绘制屏幕快照"}`);
 	if (painted.blank) problems.push("背景快照没有画出来");
+	/*
+	 * The backdrop's bitmap has to be the capture's own pixel count, not the display's logical size.
+	 *
+	 * Sized logically, a Retina snapshot is squeezed to half resolution and stretched back over the
+	 * screen — the frozen desktop goes visibly soft the moment the overlay appears, which reads as
+	 * the capture itself being low quality.
+	 */
+	const wantBacking = Math.round(painted.css * painted.dpr);
+	note(`     位图 ${painted.w} vs 物理像素 ${wantBacking}（dpr ${painted.dpr}）`);
+	if (Math.abs(painted.w - wantBacking) > 1) {
+		problems.push(`背景画布不是物理分辨率：位图 ${painted.w}，屏幕 ${wantBacking}`);
+	}
 
 	// ---- 1. 拉出一个选区 -------------------------------------------------
 	/*
@@ -193,7 +205,7 @@ try {
 	await drag(socket, [300, 220], [900, 620]);
 	await pause(150);
 	const drawn = await run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
-		const box = document.querySelector("div.border-blue-500");
+		const box = document.querySelector('[class*="border-white/90"]');
 		if (!box) return null;
 		const r = box.getBoundingClientRect();
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
@@ -202,13 +214,13 @@ try {
 	if (!drawn || drawn.w < 500 || drawn.h < 300) problems.push("拖拽没有拉出预期大小的选区");
 
 	// ---- 2. 八个手柄 -----------------------------------------------------
-	const handles = await run<number>(`document.querySelectorAll("div.bg-blue-500.rounded-\\\\[1px\\\\]").length`);
+	const handles = await run<number>(`document.querySelectorAll('[class*="border-white/90"] > div').length`);
 	note(`  2. 手柄 → ${handles} 个`);
 	if (handles !== 8) problems.push(`应该有 8 个缩放手柄，实际 ${handles} 个`);
 
 	// ---- 3. 工具条在选区左下方 -------------------------------------------
 	const bar = await run<{ x: number; y: number; w: number } | null>(`(() => {
-		const el = document.querySelector("div.bg-neutral-900\\\\/90");
+		const el = document.querySelector('[class*="1c1c1e"]');
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) };
@@ -220,17 +232,61 @@ try {
 		if (bar.y < (drawn?.y ?? 0) + (drawn?.h ?? 0)) problems.push("工具条没有落在选区下方");
 	}
 
-	// ---- 4. 拖动选区内部整体移动 -----------------------------------------
-	await drag(socket, [600, 400], [660, 450]);
+	// ---- 3b. 标注画布正好盖住选区 ----------------------------------------
+	/*
+	 * The one thing a screenshot annotator cannot get wrong.
+	 *
+	 * The canvas is the whole screen, shifted up and left by the selection's offset and clipped to
+	 * it, so in viewport terms it should sit at the origin at exactly window size. Left to lay out
+	 * at its own bitmap's size it is `devicePixelRatio` times too big — on a Retina screen the marks
+	 * land at twice the distance from the corner that the pointer was, and three quarters of the
+	 * region being annotated is outside the frame. That is invisible to a typecheck and to every
+	 * other assertion in this file.
+	 */
+	const canvasFit = await run<{ x: number; y: number; w: number; h: number; bitmap: number; win: number; dpr: number } | null>(`(() => {
+		const cs = document.querySelectorAll("canvas");
+		const c = cs[cs.length - 1];
+		if (!c || cs.length < 2) return null;
+		const r = c.getBoundingClientRect();
+		return {
+			x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height),
+			bitmap: c.width, win: window.innerWidth, dpr: window.devicePixelRatio,
+		};
+	})()`);
+	note(`  3b. 标注画布 → ${canvasFit ? `${canvasFit.x},${canvasFit.y} ${canvasFit.w}×${canvasFit.h}（位图 ${canvasFit.bitmap}，窗口 ${canvasFit.win}，dpr ${canvasFit.dpr}）` : "没有出现"}`);
+	if (!canvasFit) problems.push("框选之后标注画布没有挂上");
+	else {
+		if (Math.abs(canvasFit.x) > 1 || Math.abs(canvasFit.y) > 1) {
+			problems.push(`标注画布没有和屏幕对齐：落在 ${canvasFit.x},${canvasFit.y}`);
+		}
+		if (Math.abs(canvasFit.w - canvasFit.win) > 1) {
+			problems.push(`标注画布的显示尺寸不等于屏幕：${canvasFit.w} vs ${canvasFit.win}（dpr ${canvasFit.dpr}）`);
+		}
+		if (Math.abs(canvasFit.bitmap - canvasFit.win * canvasFit.dpr) > 1) {
+			problems.push(`标注画布的位图不是物理分辨率：${canvasFit.bitmap}`);
+		}
+	}
+
+	// ---- 4. 拖动选区边缘整体移动 -----------------------------------------
+	/*
+	 * The edge, not the middle.
+	 *
+	 * Once there is something to annotate the inside of the selection belongs to the pen — a press
+	 * there draws, which is the whole point of it. The region is picked up by its border instead.
+	 *
+	 * A quarter of the way along, not the middle: the middle of each edge is a resize handle, and
+	 * grabbing one of those resizes rather than moves — which is correct, and not what this checks.
+	 */
+	await drag(socket, [drawn!.x + drawn!.w * 0.25, drawn!.y + 2], [drawn!.x + drawn!.w * 0.25 + 60, drawn!.y + 52]);
 	await pause(150);
 	const moved = await run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
-		const box = document.querySelector("div.border-blue-500");
+		const box = document.querySelector('[class*="border-white/90"]');
 		if (!box) return null;
 		const r = box.getBoundingClientRect();
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
 	})()`);
-	note(`  4. 内部拖动 → ${moved ? `${moved.x},${moved.y} ${moved.w}×${moved.h}` : "选区没了"}`);
-	if (!moved) problems.push("拖动选区内部把选区弄丢了");
+	note(`  4. 拖边缘移动 → ${moved ? `${moved.x},${moved.y} ${moved.w}×${moved.h}` : "选区没了"}`);
+	if (!moved) problems.push("拖动选区边缘把选区弄丢了");
 	else {
 		if (Math.abs(moved.x - (drawn!.x + 60)) > 3 || Math.abs(moved.y - (drawn!.y + 50)) > 3) {
 			problems.push(`选区没有跟着指针移动（期望 ${drawn!.x + 60},${drawn!.y + 50}，实际 ${moved.x},${moved.y}）`);
@@ -243,7 +299,7 @@ try {
 	await drag(socket, corner, [corner[0] + 80, corner[1] + 60]);
 	await pause(150);
 	const resized = await run<{ w: number; h: number } | null>(`(() => {
-		const box = document.querySelector("div.border-blue-500");
+		const box = document.querySelector('[class*="border-white/90"]');
 		if (!box) return null;
 		const r = box.getBoundingClientRect();
 		return { w: Math.round(r.width), h: Math.round(r.height) };
@@ -255,7 +311,7 @@ try {
 
 	// ---- 6. 每一种工具都真的画出东西 -------------------------------------
 	const inside = { x: moved!.x + 60, y: moved!.y + 60 };
-	const marks = await run<number>(`document.querySelectorAll("div.bg-neutral-900\\\\/90 button[data-ly-tip]").length`);
+	const marks = await run<number>(`document.querySelectorAll('[class*="1c1c1e"] button[data-ly-tip]').length`);
 	note(`  6. 工具条按钮 → ${marks} 个`);
 
 	/**
@@ -270,8 +326,19 @@ try {
 		run<{ ink: number; sum: number }>(`(() => {
 			const cs = document.querySelectorAll("canvas");
 			const c = cs[cs.length - 1];
-			if (!c || !c.width) return { ink: -1, sum: -1 };
-			const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+			const box = document.querySelector('[class*="border-white/90"]');
+			if (!c || !c.width || !box) return { ink: -1, sum: -1 };
+			/*
+			 * Only the region, not the whole screen the canvas covers. Reading every pixel of a 5K
+			 * display back into JavaScript takes seconds per call, and the part outside the frame is
+			 * not exported anyway.
+			 */
+			const r = box.getBoundingClientRect();
+			const s = c.width / window.innerWidth;
+			const d = c.getContext("2d").getImageData(
+				Math.round(r.x * s), Math.round(r.y * s),
+				Math.max(1, Math.round(r.width * s)), Math.max(1, Math.round(r.height * s)),
+			).data;
 			let ink = 0, sum = 0;
 			for (let i = 0; i < d.length; i += 4) {
 				if (d[i + 3] > 8) ink++;
@@ -282,11 +349,11 @@ try {
 
 	const tools: [string, string][] = [
 		["矩形", "R"],
-		["椭圆", "O"],
+		["圆形", "O"],
 		["箭头", "A"],
 		["直线", "L"],
 		["画笔", "P"],
-		["步骤", "S"],
+		["步骤标号", "S"],
 		["马赛克", "M"],
 	];
 	let before = await inkOf();
@@ -313,7 +380,7 @@ try {
 		await pause(60);
 		const lane = inside.y + index * 32;
 		// A short drag for the ones that are dragged; a click is enough for the step badge.
-		if (name === "步骤") await click(socket, inside.x + 400, lane);
+		if (name === "步骤标号") await click(socket, inside.x + 400, lane);
 		else await drag(socket, [inside.x, lane], [inside.x + 120, lane + 18], 6);
 		await pause(120);
 		const after = await inkOf();
@@ -323,12 +390,111 @@ try {
 	}
 
 	// ---- 7. 文字工具 -----------------------------------------------------
-	/** What the canvas looked like before the caption, so undo can be checked against it. */
-	let beforeText: { ink: number; sum: number } | null = null;
+	/** How many pixels the caption itself changed, which is the yardstick undo is measured against. */
+	let captionInk = 0;
+
+	/*
+	 * The region as it is now, kept in the page so a later moment can be compared against it.
+	 *
+	 * A checksum can say two pictures differ; it cannot say where, and every question worth asking
+	 * about undo is a question about a particular part of the picture.
+	 */
+	const readFrame = `(() => {
+		const cs = document.querySelectorAll("canvas");
+		const c = cs[cs.length - 1];
+		const box = document.querySelector('[class*="border-white/90"]');
+		if (!c || !box) return null;
+		const r = box.getBoundingClientRect();
+		const s = c.width / window.innerWidth;
+		return { r, s, data: c.getContext("2d").getImageData(
+			Math.round(r.x * s), Math.round(r.y * s),
+			Math.max(1, Math.round(r.width * s)), Math.max(1, Math.round(r.height * s)),
+		) };
+	})()`;
+	const keepFrame = `(() => {
+		const f = ${readFrame};
+		if (!f) return false;
+		window.__frame = f.data;
+		return true;
+	})()`;
+	const frameDiff = `(() => {
+		const a = window.__frame;
+		const f = ${readFrame};
+		if (!a || !f) return null;
+		const b = f.data;
+		if (a.width !== b.width || a.height !== b.height) return { count: -1, resized: true };
+		let count = 0;
+		for (let i = 0; i < b.data.length; i += 4) {
+			const d = Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i+1] - b.data[i+1]), Math.abs(a.data[i+2] - b.data[i+2]));
+			if (d > 4) count++;
+		}
+		return { count };
+	})()`;
+	/*
+	 * How much the canvas changes when nothing about it changes.
+	 *
+	 * Switching tools repaints the whole canvas from the same shapes, so any pixels that differ
+	 * afterwards are the renderer's own noise — antialiased edges are not reproduced bit for bit
+	 * across repaints. Measured rather than assumed, because the undo check below compares two
+	 * repaints and would otherwise read that noise as a fault in undo.
+	 */
+	await run(keepFrame);
+	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("画笔")).click()`);
+	await pause(200);
+	const noise = await run<{ count: number } | null>(frameDiff);
+	note(`     重绘噪声基线 → ${noise?.count ?? "?"} 像素`);
+	if ((noise?.count ?? 0) > 0) problems.push(`同样的内容重绘了一次就有 ${noise?.count} 个像素对不上`);
+
+	await run(keepFrame);
+	/** Which step of the caption flow moved pixels that were not the caption. */
+	const diffCount = async (what: string) => {
+		const d = await run<{ count: number } | null>(frameDiff);
+		note(`     ${what} → 差 ${d?.count ?? "?"} 像素`);
+	};
+
+	/*
+	 * How much of the caption's own corner differs from before it was written.
+	 *
+	 * Undo is checked here rather than across the whole region, and the reason is that the whole
+	 * region is not a stable measurement: the overlay is a fullscreen window sitting under a live
+	 * desktop, and comparing every pixel of it turns any stray input during the run into a failure
+	 * about undo. What undo actually promises is local — the caption is gone and what was under it
+	 * is back — and that is what this reads.
+	 */
+	const caption = { x: inside.x + 250, y: inside.y + 20, w: 320, h: 90 };
+	const captionDiff = `(() => {
+		const a = window.__frame;
+		const f = ${readFrame};
+		if (!a || !f) return null;
+		const { r, s, data: b } = f;
+		if (a.width !== b.width || a.height !== b.height) return null;
+		const x0 = Math.max(0, Math.round((${caption.x} - r.x) * s));
+		const y0 = Math.max(0, Math.round((${caption.y} - r.y) * s));
+		const x1 = Math.min(b.width, x0 + Math.round(${caption.w} * s));
+		const y1 = Math.min(b.height, y0 + Math.round(${caption.h} * s));
+		let count = 0;
+		for (let y = y0; y < y1; y++) {
+			for (let x = x0; x < x1; x++) {
+				const i = (y * b.width + x) * 4;
+				const d = Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i+1] - b.data[i+1]), Math.abs(a.data[i+2] - b.data[i+2]));
+				if (d > 4) count++;
+			}
+		}
+		return { count, area: (x1 - x0) * (y1 - y0) };
+	})()`;
 	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("文字")).click()`);
-	await pause(60);
-	await click(socket, inside.x + 20, inside.y + 200);
+	await pause(120);
+	await diffCount("选中文字工具后");
+	/*
+	 * Clear of the lanes the tools above drew in.
+	 *
+	 * Pressing on an existing mark selects it — correctly — instead of starting a caption, so a
+	 * caption has to be started somewhere nothing has been drawn. The lanes run down the left of the
+	 * region, so this goes to the right of them.
+	 */
+	await click(socket, inside.x + 250, inside.y + 20);
 	await pause(150);
+	await diffCount("点开输入框后");
 	const field = await run<boolean>(`Boolean(document.querySelector("textarea"))`);
 	note(`  7. 文字 → 输入框${field ? "已出现" : "没有出现"}`);
 	if (!field) problems.push("选了文字工具后没有出现输入框");
@@ -343,15 +509,17 @@ try {
 		const typed = await run<string>(`document.querySelector("textarea")?.value ?? "(没有输入框)"`);
 		note(`     输入框内容 → ${JSON.stringify(typed)}`);
 		if (typed !== "彻底修复") problems.push(`输入的文字没有进到输入框：${JSON.stringify(typed)}`);
-		// Pressing elsewhere is what commits it.
-		await click(socket, inside.x + 300, inside.y + 300);
+		// Pressing elsewhere is what commits it — somewhere else empty, for the same reason.
+		await click(socket, inside.x + 250, inside.y + 300);
 		await pause(200);
 		const still = await run<string | null>(`document.querySelector("textarea")?.value ?? null`);
 		note(`     点击别处后 → ${still === null ? "输入框已关闭" : `又开了一个新的（${JSON.stringify(still)}）`}`);
 		const afterText = await inkOf();
 		note(`     提交后墨迹 ${afterText.ink}（此前 ${before.ink}），校验和 ${afterText.sum !== before.sum ? "已变" : "没变"}`);
 		if (afterText.sum === before.sum) problems.push("文字没有画到画布上");
-		beforeText = before;
+		captionInk = (await run<{ count: number; area: number } | null>(captionDiff))?.count ?? 0;
+		note(`     文字落在自己那块区域的 ${captionInk} 个像素上`);
+		if (captionInk < 100) problems.push(`文字没有画在预期位置（只有 ${captionInk} 个像素变化）`);
 		before = afterText;
 	}
 
@@ -361,7 +529,21 @@ try {
 	const undone = await inkOf();
 	note(`  8. 撤销 → ${undone.ink} 像素（此前 ${before.ink}）`);
 	if (undone.sum === before.sum) problems.push("撤销没有让画面回退");
-	else if (beforeText && undone.sum !== beforeText.sum) problems.push("撤销回退到的画面和写文字之前不一致");
+	if (captionInk > 0) {
+		const back = await run<{ count: number; area: number } | null>(captionDiff);
+		note(`     文字那块区域还剩 ${back?.count ?? "?"} 个像素和写文字前不同（写上去时是 ${captionInk} 个）`);
+		/*
+		 * A tenth of what the caption drew — room for an antialiased edge, nowhere near enough for
+		 * the caption still to be there.
+		 *
+		 * Local, not the whole region, and that is deliberate. Comparing every pixel of the overlay
+		 * across two moments makes any stray input during the run — this is a fullscreen window over
+		 * a live desktop — come out as a failure about undo, which is not what it would mean.
+		 */
+		if ((back?.count ?? 0) > captionInk / 10) {
+			problems.push(`撤销之后文字没有从画布上消失（还差 ${back?.count} 个像素）`);
+		}
+	}
 	await run(`[...document.querySelectorAll("button[data-ly-tip]")].find(b => b.dataset.lyTip.startsWith("重做")).click()`);
 	await pause(200);
 	const redone = await inkOf();

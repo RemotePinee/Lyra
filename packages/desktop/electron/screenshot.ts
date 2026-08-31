@@ -217,6 +217,16 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		height: bounds.height,
 		frame: false,
 		transparent: true,
+		/*
+		 * Hidden until the renderer has the snapshot on screen — see `reveal` below.
+		 *
+		 * Without this the whole handshake is dead code: `show` defaults to true, so the window is
+		 * already visible by the time anything can ask for it to be revealed, and `reveal` returns
+		 * at its own `isVisible()` guard having done nothing. What the user sees in the meantime is
+		 * a transparent full-screen window over everything — the flicker the handshake exists to
+		 * remove.
+		 */
+		show: false,
 		alwaysOnTop: true,
 		skipTaskbar: process.platform !== "darwin",
 		resizable: false,
@@ -276,18 +286,14 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		win.show();
 		win.focus();
 	};
-	revealers.set(win.webContents.id, reveal);
+	// Read now and kept, because `win.webContents` is not reachable from the `closed` handler that
+	// has to clean this up.
+	const webContentsId = win.webContents.id;
+	revealers.set(webContentsId, reveal);
 	const failsafe = setTimeout(reveal, 1500);
 	win.on("closed", () => {
 		clearTimeout(failsafe);
-		// Clean up revealer mapping. The webContents may already be destroyed when window is closed,
-		// so safely iterate and remove the callback or prune dead entries.
-		for (const [id, cb] of revealers.entries()) {
-			if (cb === reveal) {
-				revealers.delete(id);
-				break;
-			}
-		}
+		revealers.delete(webContentsId);
 	});
 
 	win.webContents.once("did-finish-load", () => {

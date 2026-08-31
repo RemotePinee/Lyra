@@ -8,6 +8,7 @@
 
 import type { SessionMeta } from "@lyra/core";
 import type { AppState } from "../store.ts";
+import { useSubAgents } from "./subAgents.ts";
 
 type Get = () => AppState;
 type Set = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
@@ -45,6 +46,7 @@ export function workspaceSlice(set: Set, get: Get) {
       loadingSession: false,
       pendingUserMessage: null,
     });
+    useSubAgents.getState().clear();
 
     const settings = get().settings;
     if (!settings) return;
@@ -138,6 +140,7 @@ export function workspaceSlice(set: Set, get: Get) {
       loadingSession: false,
       pendingUserMessage: null,
     });
+    useSubAgents.getState().clear();
   },
 
   async renameProject(path: string, name: string) {
@@ -258,6 +261,7 @@ export function workspaceSlice(set: Set, get: Get) {
         loadingSession: false,
         pendingUserMessage: null,
       });
+      useSubAgents.getState().clear();
     }
     // Sequential rather than parallel: each call rewrites the shared session index.
     let latest = get().sessions;

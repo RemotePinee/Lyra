@@ -108,6 +108,14 @@ test("changing conversation drops the roster with it", () => {
 	assert.equal(after.focused, null);
 });
 
+test("dismissFinished and newSession clear subagents roster and transcripts", () => {
+	useSubAgents.getState().sync([summary({ id: "s1", status: "done" })]);
+	assert.equal(useSubAgents.getState().agents.length, 1);
+
+	useSubAgents.getState().clear();
+	assert.equal(useSubAgents.getState().agents.length, 0);
+});
+
 test("running sub-agents sort first, oldest first within each group", () => {
 	// The tab strip's order. Running is what you are here to watch; among equals, the order they
 	// were dispatched in is the order the parent asked for them.
