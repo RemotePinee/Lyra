@@ -6,16 +6,11 @@
  * directly on top of the frozen screen.
  */
 
-import { execFile } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import { app, BrowserWindow, clipboard, globalShortcut, nativeImage, screen } from "electron";
+import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 import { resolveSaveDirectory } from "./screenshot-path.ts";
 
-const execFileAsync = promisify(execFile);
 
 let overlayWindows: BrowserWindow[] = [];
 
@@ -43,39 +38,66 @@ function generateScreenshotFilename(): string {
 }
 
 /**
- * Capture full screen snapshot quietly to a base64 data URL.
+ * A picture of one display, as a data URL.
+ *
+ * `desktopCapturer` rather than shelling out to `/usr/sbin/screencapture`. The CLI was macOS-only,
+ * and the guard that said so — `if (process.platform !== "darwin") return null` — made screenshots
+ * silently do nothing on Windows and Linux: the shortcut fired, no overlay appeared, no error was
+ * reported. Electron's own capture works on all three.
+ *
+ * It also removes a round trip through the filesystem. The old path wrote a PNG to the temp
+ * directory, read it back and deleted it, which is three chances to fail on a full disk and a file
+ * of the user's screen sitting in `/tmp` in between.
+ *
+ * `thumbnailSize` is the display in *physical* pixels — `desktopCapturer` scales its thumbnail down
+ * to fit whatever it is given, and a Retina screen asked for its logical size comes back at half
+ * resolution. The name is misleading: this is the capture size, not a preview.
  */
 async function captureFullDisplaySnapshot(displayId?: number): Promise<{ dataUrl: string; width: number; height: number; scaleFactor: number } | null> {
-	if (process.platform !== "darwin") return null;
-
 	const targetDisplay = displayId !== undefined
 		? screen.getAllDisplays().find((d) => d.id === displayId) ?? screen.getPrimaryDisplay()
 		: screen.getPrimaryDisplay();
-
-	const tempPath = join(tmpdir(), `lyra_screen_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`);
+	const scaleFactor = targetDisplay.scaleFactor || 1;
 
 	try {
-		// -x: do not play sound
-		// -C: do not capture cursor
-		const args = ["-x", "-C", tempPath];
-		await execFileAsync("/usr/sbin/screencapture", args);
+		const sources = await desktopCapturer.getSources({
+			types: ["screen"],
+			thumbnailSize: {
+				width: Math.round(targetDisplay.bounds.width * scaleFactor),
+				height: Math.round(targetDisplay.bounds.height * scaleFactor),
+			},
+			fetchWindowIcons: false,
+		});
 
-		const buffer = await readFile(tempPath).catch(() => null);
-		await rm(tempPath, { force: true }).catch(() => {});
+		if (sources.length === 0) {
+			/*
+			 * No sources at all is what a refused permission looks like from here.
+			 *
+			 * macOS does not fail the call; it returns nothing. Said plainly because the symptom
+			 * otherwise is a shortcut that appears to do nothing at all.
+			 */
+			console.error("[screenshot] no screen sources — screen recording permission is most likely not granted");
+			return null;
+		}
 
-		if (!buffer || buffer.length === 0) return null;
+		// `display_id` is a string on every platform, and absent on some Linux setups — falling back
+		// to the first source is right there, where there is only one screen to capture.
+		const source = sources.find((candidate) => candidate.display_id === String(targetDisplay.id)) ?? sources[0];
+		const image = source.thumbnail;
+		if (image.isEmpty()) {
+			console.error("[screenshot] the captured image was empty");
+			return null;
+		}
 
-		const img = nativeImage.createFromBuffer(buffer);
-		const size = img.getSize();
-
+		const size = image.getSize();
 		return {
-			dataUrl: `data:image/png;base64,${buffer.toString("base64")}`,
+			dataUrl: image.toDataURL(),
 			width: size.width,
 			height: size.height,
-			scaleFactor: targetDisplay.scaleFactor || 2,
+			scaleFactor,
 		};
 	} catch (err) {
-		console.error("[screenshot] failed to capture full display:", err);
+		console.error("[screenshot] failed to capture the display:", err);
 		return null;
 	}
 }
@@ -274,8 +296,9 @@ export function registerScreenshotShortcut(
 	getSettings: () => Settings | undefined,
 	onTrigger: () => void,
 ): void {
-	if (process.platform !== "darwin") return;
-
+	// No platform gate: `globalShortcut` and the capture behind it work on all three. This used to
+	// return early anywhere but macOS, which left the shortcut unregistered and the setting for it
+	// on screen — a key combination the settings page offered to change and nothing would answer.
 	currentSettingsProvider = getSettings;
 	onCaptureTriggered = onTrigger;
 
