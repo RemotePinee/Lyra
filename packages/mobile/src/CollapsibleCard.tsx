@@ -22,8 +22,10 @@ export function MobileCollapsibleCodeCard({ title, content }: { title: string; c
 				className="flex-row items-center justify-between border-b border-line-soft bg-card-hover px-3 py-2 active:opacity-80"
 			>
 				<View className="flex-row items-center gap-2">
-					<View className="h-5 w-5 items-center justify-center rounded bg-accent/20">
-						<Text className="text-[9px] font-bold text-accent">TXT</Text>
+					<View className="h-5 px-1 items-center justify-center rounded bg-accent/20">
+						<Text style={{ fontSize: 9, fontWeight: "700", color: "#f97316", lineHeight: 11, textAlign: "center" }}>
+							TXT
+						</Text>
 					</View>
 					<Text className="text-[12px] font-medium text-ink">{title}</Text>
 					<Text className="text-[10px] text-ink-faint">
