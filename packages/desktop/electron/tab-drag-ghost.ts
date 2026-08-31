@@ -10,7 +10,7 @@
 import { BrowserWindow, screen } from "electron";
 
 let ghostWindow: BrowserWindow | null = null;
-let currentMode: "detach" | "merge" = "detach";
+let currentMode: "detach" | "merge" | "back" = "detach";
 let lastHoveredWindowId: number | null = null;
 
 const GHOST_HTML = `<!DOCTYPE html>
@@ -33,59 +33,68 @@ const GHOST_HTML = `<!DOCTYPE html>
   .ghost-pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    font-size: 11.5px;
+    gap: 7px;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 12px;
     font-weight: 500;
     color: #ffffff;
-    border-radius: 6px;
+    border-radius: 7px;
     white-space: nowrap;
     pointer-events: none;
-    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
   }
   .ghost-pill.detach {
     background: #0284c7;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(2, 132, 199, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(2, 132, 199, 0.4);
   }
   .ghost-pill.merge {
-    background: #10b981;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(16, 185, 129, 0.4);
+    background: #059669;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(5, 150, 105, 0.5);
+    transform: scale(1.03);
+  }
+  .ghost-pill.back {
+    background: #475569;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   }
   .icon {
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
     flex-shrink: 0;
   }
   .title {
-    max-width: 140px;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .hint {
-    font-size: 10px;
-    opacity: 0.9;
-    font-weight: 400;
-    padding-left: 2px;
+  .badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 1.5px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.22);
+    letter-spacing: 0.2px;
   }
 </style>
 </head>
 <body>
   <div class="ghost-pill detach" id="pill">
-    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="icon" id="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
       <polyline points="15 3 21 3 21 9"></polyline>
       <line x1="10" y1="14" x2="21" y2="3"></line>
     </svg>
     <span class="title" id="title">新会话</span>
-    <span class="hint" id="hint">释放以分离</span>
+    <span class="badge" id="badge">释放以独立分屏</span>
   </div>
   <script>
     const DETACH_ICON = '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line>';
     const MERGE_ICON = '<path d="M12 5v14M5 12h14"></path>';
+    const BACK_ICON = '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>';
 
     window.addEventListener("message", (e) => {
       if (!e.data) return;
@@ -94,15 +103,19 @@ const GHOST_HTML = `<!DOCTYPE html>
       }
       if (typeof e.data.mode === "string") {
         const pill = document.getElementById("pill");
-        const hint = document.getElementById("hint");
+        const badge = document.getElementById("badge");
         const icon = document.getElementById("icon");
         if (e.data.mode === "merge") {
           pill.className = "ghost-pill merge";
-          hint.textContent = "释放以合并";
+          badge.textContent = "释放以合并到此窗口";
           icon.innerHTML = MERGE_ICON;
+        } else if (e.data.mode === "back") {
+          pill.className = "ghost-pill back";
+          badge.textContent = "放回原窗口";
+          icon.innerHTML = BACK_ICON;
         } else {
           pill.className = "ghost-pill detach";
-          hint.textContent = "释放以分离";
+          badge.textContent = "释放以独立分屏";
           icon.innerHTML = DETACH_ICON;
         }
       }
@@ -129,39 +142,44 @@ function clampToDisplay(x: number, y: number, width: number, height: number): { 
 }
 
 /**
- * Check if the cursor is hovering over any other window (main window or secondary session window).
- * If hovering over any part of an existing window, we are in "Merge" mode!
+ * Check if the cursor is hovering over any other window (main window or secondary session window),
+ * or returning to the source window itself.
  */
 function checkTargetWindow(cursor: { x: number; y: number }, sourceWebContentsId?: number): {
 	targetWin: BrowserWindow | null;
+	isSourceWin: boolean;
 	isOverTabBar: boolean;
 } {
 	const allWindows = BrowserWindow.getAllWindows();
+	let isSourceWin = false;
+
 	for (const win of allWindows) {
 		if (win.isDestroyed() || !win.isVisible()) continue;
 		if (ghostWindow && win.id === ghostWindow.id) continue;
-		if (sourceWebContentsId && win.webContents.id === sourceWebContentsId) continue;
 
 		const b = win.getBounds();
 		if (cursor.x >= b.x && cursor.x <= b.x + b.width && cursor.y >= b.y && cursor.y <= b.y + b.height) {
-			// Tab bar is located in the top region (top 50px)
 			const isOverTabBar = cursor.y <= b.y + 50;
-			return { targetWin: win, isOverTabBar };
+			if (sourceWebContentsId && win.webContents.id === sourceWebContentsId) {
+				isSourceWin = true;
+				return { targetWin: win, isSourceWin: true, isOverTabBar };
+			}
+			return { targetWin: win, isSourceWin: false, isOverTabBar };
 		}
 	}
-	return { targetWin: null, isOverTabBar: false };
+	return { targetWin: null, isSourceWin, isOverTabBar: false };
 }
 
 export function showDragGhost(title: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
-	const width = 240;
-	const height = 40;
+	const width = 280;
+	const height = 44;
 	const rawX = Math.round(cursor.x - 24);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
 	const hit = checkTargetWindow(cursor, sourceWebContentsId);
-	currentMode = hit.targetWin ? "merge" : "detach";
+	currentMode = hit.isSourceWin ? "back" : (hit.targetWin ? "merge" : "detach");
 
 	if (!ghostWindow || ghostWindow.isDestroyed()) {
 		ghostWindow = new BrowserWindow({
@@ -201,17 +219,17 @@ export function showDragGhost(title: string, sourceWebContentsId?: number): void
 
 export function moveDragGhost(title?: string, sourceWebContentsId?: number): void {
 	const cursor = getPhysicalCursor();
-	const width = 240;
-	const height = 40;
+	const width = 280;
+	const height = 44;
 	const rawX = Math.round(cursor.x - 24);
 	const rawY = Math.round(cursor.y - 12);
 	const { x, y } = clampToDisplay(rawX, rawY, width, height);
 
 	const hit = checkTargetWindow(cursor, sourceWebContentsId);
-	const nextMode: "detach" | "merge" = hit.targetWin ? "merge" : "detach";
+	const nextMode: "detach" | "merge" | "back" = hit.isSourceWin ? "back" : (hit.targetWin ? "merge" : "detach");
 
 	// Broadcast drag-over or drag-leave to target window if hovering state changes
-	if (hit.targetWin) {
+	if (hit.targetWin && !hit.isSourceWin) {
 		const winBounds = hit.targetWin.getBounds();
 		const relativeX = cursor.x - winBounds.x;
 		hit.targetWin.webContents.send("sessions:tabDragOver", { x: relativeX, title });

@@ -163,14 +163,14 @@ export function SessionTabBar() {
 
 			const isDragging = current.isDragging || dist > 4;
 
-			// Chrome tear-off threshold:
-			// Dragging downwards past the top bar (> 45px down) or outside window boundaries
+			// Check if dragged outside the tab bar area:
+			// Tab bar height is ~38px. If dragged downwards past 40px, or dragged horizontally/vertically out of window
 			const isOutsideWindow =
-				moveEvt.clientX < -10 ||
-				moveEvt.clientX > window.innerWidth + 10 ||
-				moveEvt.clientY < -10 ||
-				moveEvt.clientY > window.innerHeight + 10;
-			const isTornOff = isDragging && (moveEvt.clientY > 45 || isOutsideWindow);
+				moveEvt.clientX < 0 ||
+				moveEvt.clientX > window.innerWidth ||
+				moveEvt.clientY < 0 ||
+				moveEvt.clientY > window.innerHeight;
+			const isTornOff = isDragging && (moveEvt.clientY > 40 || isOutsideWindow);
 
 			if (isTornOff) {
 				const session = sessionMap.get(id);
@@ -178,7 +178,7 @@ export function SessionTabBar() {
 				// Move native OS ghost across screens
 				void window.lyra.system.dragGhost("move", { title });
 			} else if (isDragging) {
-				// Internal reorder logic (Chrome horizontal tab reordering)
+				// Dragging horizontally within the tab bar area -> Internal tab reorder
 				void window.lyra.system.dragGhost("hide");
 
 				const latestTabs = useApp.getState().openTabs;
@@ -230,9 +230,17 @@ export function SessionTabBar() {
 
 			if (!final) return;
 
-			if (final.isTornOff) {
+			// If torn off: check if the release position is inside current window's tab bar.
+			// If user dragged it away and then moved back to top bar and released, cancel tear-off!
+			const isDroppedBackToTabBar =
+				upEvt.clientX >= 0 &&
+				upEvt.clientX <= window.innerWidth &&
+				upEvt.clientY >= 0 &&
+				upEvt.clientY <= 42;
+
+			if (final.isTornOff && !isDroppedBackToTabBar) {
 				handleTearOff(final.id, upEvt.screenX, upEvt.screenY);
-			} else if (!final.isDragging) {
+			} else if (!final.isDragging || isDroppedBackToTabBar) {
 				void switchTab(final.id);
 			}
 		};
