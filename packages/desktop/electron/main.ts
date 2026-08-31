@@ -392,9 +392,10 @@ app.whenReady().then(async () => {
 		registerScreenshotShortcut(
 			() => settings,
 			() => {
-				const win = getWindow();
-				if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-					win.webContents.send("screenshot:trigger");
+				const focused = BrowserWindow.getFocusedWindow();
+				const target = focused && !focused.isDestroyed() ? focused : getWindow();
+				if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
+					target.webContents.send("screenshot:trigger");
 				}
 			},
 		);
@@ -451,9 +452,10 @@ app.whenReady().then(async () => {
 	registerScreenshotShortcut(
 		() => settings,
 		() => {
-			const win = getWindow();
-			if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-				win.webContents.send("screenshot:trigger");
+			const focused = BrowserWindow.getFocusedWindow();
+			const target = focused && !focused.isDestroyed() ? focused : getWindow();
+			if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
+				target.webContents.send("screenshot:trigger");
 			}
 		},
 	);

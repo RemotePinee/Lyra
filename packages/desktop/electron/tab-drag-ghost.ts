@@ -246,6 +246,12 @@ export function moveDragGhost(title?: string, sourceWebContentsId?: number): voi
 
 	// Broadcast drag-over or drag-leave to target window if hovering state changes
 	if (hit.targetWin && !hit.isSourceWin) {
+		// Focus and bring target window to front so drop target is clearly visible and ready
+		if (lastHoveredWindowId !== hit.targetWin.id) {
+			if (hit.targetWin.isMinimized()) hit.targetWin.restore();
+			hit.targetWin.show();
+			hit.targetWin.focus();
+		}
 		const winBounds = hit.targetWin.getBounds();
 		const relativeX = cursor.x - winBounds.x;
 		hit.targetWin.webContents.send("sessions:tabDragOver", { x: relativeX, title });
