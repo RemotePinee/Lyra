@@ -82,6 +82,10 @@ jobs:
       # rather than to let a missing secret decide it quietly.
       - name: Prepare the signing identity
         if: matrix.os == 'macos-latest'
+        # Every command here is seconds' work. A limit exists because one of them can hang instead
+        # of failing — a trust setting in the user domain waits on a dialog no runner will ever
+        # show — and a step that hangs burns the job's whole allowance without saying anything.
+        timeout-minutes: 5
         run: |
           if [ -z "$MAC_CERTIFICATE_P12" ]; then
             echo "::error::MAC_CERTIFICATE_P12 is not set. An ad-hoc signed release resets every permission on every machine that installs it, and cannot be withdrawn. Set MAC_CERTIFICATE_P12 and MAC_CERTIFICATE_PASSWORD in the repository secrets — see packages/desktop/scripts/make-signing-cert.sh."
@@ -106,7 +110,16 @@ jobs:
           # trusted explicitly, which takes the certificate on its own rather than the .p12.
           openssl pkcs12 -legacy -in "$RUNNER_TEMP/certificate.p12" -passin "pass:$MAC_CERTIFICATE_PASSWORD" \
             -clcerts -nokeys -out "$RUNNER_TEMP/certificate.pem"
-          security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$RUNNER_TEMP/certificate.pem"
+          #
+          # `sudo` and the system keychain, not the user domain.
+          #
+          # Writing a trust setting into the *user* domain asks for authorisation through the
+          # window server — a dialog nobody is there to click, so the step does not fail, it hangs
+          # until the job's time limit. Observed: 15 minutes and still spinning. The admin domain
+          # takes the same decision through sudo, which a runner has without a password.
+          #
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/certificate.pem"
           # `codesign:` in the partition list, or reaching the private key waits on a GUI prompt
           # that no one will ever click.
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
