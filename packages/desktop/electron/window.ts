@@ -94,7 +94,7 @@ function bootTheme(): { dark: boolean; background: string; foreground: string; a
 	};
 }
 
-export function createSessionWindow(sessionId: string): void {
+export function createSessionWindow(sessionId: string, initialPosition?: { x: number; y: number }): void {
 	const existing = sessionWindows.get(sessionId);
 	if (existing && !existing.isDestroyed()) {
 		if (existing.isMinimized()) existing.restore();
@@ -104,11 +104,22 @@ export function createSessionWindow(sessionId: string): void {
 	}
 
 	const mainBounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined;
+	const winWidth = mainBounds?.width ?? 980;
+	const winHeight = mainBounds?.height ?? 680;
+
+	// Position around drop coordinates or cascade from main window
+	let x = mainBounds ? mainBounds.x + 32 : undefined;
+	let y = mainBounds ? mainBounds.y + 32 : undefined;
+	if (initialPosition) {
+		x = Math.max(0, Math.round(initialPosition.x - winWidth / 2));
+		y = Math.max(0, Math.round(initialPosition.y - 30));
+	}
+
 	const win = new BrowserWindow({
 		icon: appIconPath(),
-		width: mainBounds?.width ?? 980,
-		height: mainBounds?.height ?? 680,
-		...(mainBounds ? { x: mainBounds.x + 32, y: mainBounds.y + 32 } : {}),
+		width: winWidth,
+		height: winHeight,
+		...(x !== undefined && y !== undefined ? { x, y } : {}),
 		minWidth: 380,
 		minHeight: 440,
 		show: false,

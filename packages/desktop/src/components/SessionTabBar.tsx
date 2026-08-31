@@ -94,8 +94,12 @@ export function SessionTabBar() {
 		sessionMap.set(s.id, s);
 	}
 
-	const handleTearOff = (sessionId: string) => {
-		void window.lyra.system.openExternal(`lyra://session/${sessionId}`);
+	const handleTearOff = (sessionId: string, screenX?: number, screenY?: number) => {
+		const coords =
+			screenX !== undefined && screenY !== undefined
+				? `?x=${Math.round(screenX)}&y=${Math.round(screenY)}`
+				: "";
+		void window.lyra.system.openExternal(`lyra://session/${sessionId}${coords}`);
 		void closeTab(sessionId);
 	};
 
@@ -163,7 +167,7 @@ export function SessionTabBar() {
 			if (!final) return;
 
 			if (final.isTornOff) {
-				handleTearOff(final.id);
+				handleTearOff(final.id, upEvt.screenX, upEvt.screenY);
 			} else if (!final.isDragging) {
 				void switchTab(final.id);
 			}
@@ -268,8 +272,8 @@ export function SessionTabBar() {
 				<div
 					style={{
 						position: "fixed",
-						left: Math.max(10, Math.min(window.innerWidth - 180, dragState.currentX - 50)),
-						top: Math.max(8, dragState.currentY - 14),
+						left: dragState.currentX - 50,
+						top: dragState.currentY - 14,
 						pointerEvents: "none",
 						zIndex: 9999,
 					}}
