@@ -17,13 +17,79 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { startApp, type RunningApp } from "./app.ts";
 
 let app: RunningApp;
 
+/**
+ * Two conversations, so a layout can be arranged in one and adopted back into it.
+ *
+ * The last test needs a pane to be *inserted* by an adoption, and that only happens when the
+ * conversation being opened has a saved layout the current one does not — which takes somewhere
+ * to switch away to and back from.
+ */
+async function seed(home: string): Promise<void> {
+	const project = join(home, "project");
+	await mkdir(project, { recursive: true });
+	await writeFile(join(project, "one.ts"), "export const one = 1\n");
+	await writeFile(join(home, "window.json"), JSON.stringify({ width: 1280, height: 900, x: 0, y: 0 }));
+	await writeFile(
+		join(home, "settings.json"),
+		JSON.stringify({
+			version: 1,
+			providers: [],
+			mcpServers: [],
+			projects: [{ id: "e2e", name: "project", path: project, pinned: true, lastOpenedAt: 1 }],
+			defaultModelId: null,
+			permissionMode: "auto",
+			thinking: "off",
+			retryAttempts: 1,
+			hooks: [],
+			scheduledTasks: [],
+			disabledPlugins: [],
+			alwaysAllow: [],
+			sync: { enabled: false, port: 4527, token: null },
+		}),
+	);
+
+	const projectId = createHash("sha256").update(project).digest("hex").slice(0, 16);
+	await mkdir(join(home, "sessions", projectId), { recursive: true });
+	const metas = [];
+	for (const id of ["settle-a", "settle-b"]) {
+		const meta = {
+			id,
+			title: id === "settle-a" ? "第一个会话" : "第二个会话",
+			cwd: project,
+			projectId,
+			projectName: "project",
+			createdAt: 1,
+			updatedAt: 2,
+			modelId: "none",
+			messageCount: 1,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			seq: 2,
+		};
+		metas.push(meta);
+		const lines = [
+			JSON.stringify({ seq: 1, ts: 1, type: "meta", meta }),
+			JSON.stringify({
+				seq: 2,
+				ts: 2,
+				type: "message",
+				message: { role: "user", content: [{ type: "text", text: `${id} 的第一条消息` }], timestamp: 2 },
+			}),
+		];
+		await writeFile(join(home, "sessions", projectId, `${id}.jsonl`), `${lines.join("\n")}\n`);
+	}
+	await writeFile(join(home, "sessions", "index.json"), JSON.stringify(metas, null, 2));
+}
+
 before(async () => {
-	app = await startApp({ port: 9448 });
+	app = await startApp({ port: 9448, seed });
 });
 
 after(async () => {
@@ -84,28 +150,160 @@ test("a pane that is genuinely new still arrives rather than appearing", async (
 	assert.ok(samples[samples.length - 1] > 0.9, `a new pane never finished arriving: ${samples.join(" ")}`);
 });
 
-test("and lands instantly while the dock is settling, which is what the flag is for", async () => {
-	const samples = await app.evaluate<number[]>(`(async () => {
+/**
+ * And the case the flag exists for: a pane the *adoption itself* brings in.
+ *
+ * Driven through the app rather than by planting a div and setting the flag by hand. The suppression
+ * used to be a rule keyed on `data-dock-settling`, which a synthetic pane would pick up wherever it
+ * was inserted; it is now a class applied to the panes a settle covers — including the ones that
+ * arrive during it, which is the harder half and the one worth a test. Reaching in to set the flag
+ * would now assert on a mechanism instead of on what the eye sees, and would have gone on passing
+ * while every conversation switch faded its panes back in.
+ *
+ * So: arrange a layout in one conversation, leave, and come back to it. The panel is inserted by
+ * the adoption, and it must be there rather than arrive.
+ */
+test("a pane the adoption brings in lands rather than fading, on every switch back", async () => {
+	// Open the first conversation and give it a second pane, which saves that layout under its id.
+	await app.evaluate(`(async () => {
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		document.querySelector('[data-ly-row="settle-a"] button').click();
+		await wait(900);
+		document.querySelector('button[aria-label="面板"]').click();
+		await wait(250);
+		[...document.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent.trim().startsWith("终端"))?.click();
+		await wait(900);
+		if (document.querySelectorAll("[data-dock-pane]").length < 2) throw new Error("the panel never opened");
+		// Away to the other conversation, whose own layout is a single pane.
+		document.querySelector('[data-ly-row="settle-b"] button').click();
+		await wait(900);
+		return true;
+	})()`);
+
+	/*
+	 * Back to the first, sampling from the frame the switch is asked for.
+	 *
+	 * The pane is inserted part-way through these frames, so the sampler watches for it to appear
+	 * and records what it was drawn at — `null` until it exists, a number from then on.
+	 */
+	const samples = await app.evaluate<(number | null)[]>(`(async () => {
 		const frame = () => new Promise((r) => requestAnimationFrame(r));
-		const host = document.querySelector(".ly-dock") ?? document.body;
-		document.documentElement.dataset.dockSettling = "";
-		const el = document.createElement("div");
-		el.className = "ly-dock-pane";
-		el.style.cssText = "position:absolute;left:0;top:0;width:10px;height:10px;pointer-events:none";
-		host.appendChild(el);
+		const paneOf = () => document.querySelector('[data-dock-pane="terminal"]');
+		document.querySelector('[data-ly-row="settle-a"] button').click();
 		const out = [];
-		for (let i = 0; i < 6; i++) {
-			out.push(Number(getComputedStyle(el).opacity));
+		for (let i = 0; i < 30; i++) {
+			const pane = paneOf();
+			out.push(pane ? Number(getComputedStyle(pane).opacity) : null);
 			await frame();
 		}
-		el.remove();
-		delete document.documentElement.dataset.dockSettling;
 		return out;
 	})()`);
 
+	const drawn = samples.filter((value): value is number => value !== null);
+	assert.ok(drawn.length > 0, `the panel never came back: ${samples.join(" ")}`);
 	assert.deepEqual(
-		samples.filter((value) => value < 0.99),
+		drawn.filter((value) => value < 0.99),
 		[],
-		`a pane animated in while the dock was settling: ${samples.join(" ")}`,
+		`a pane faded itself in while the dock was settling: ${samples.join(" ")}`,
+	);
+});
+
+/**
+ * A pane that has landed stays landed.
+ *
+ * Carried, a pane is `fixed` and placed in pixels against the window; docked, it is `absolute` and
+ * placed in percentages against the dock. The two describe the same place in different numbers, so
+ * the frame that hands it back must not be allowed to interpolate between them — it would ease
+ * from the place the pane already is to the same place expressed differently, which is one clean
+ * flight home followed by a second, wrong drift.
+ *
+ * Suppressing that is the job of the freeze in `motion-freeze.ts`, and the freeze is applied as an
+ * *attribute* for one specific reason this test exists to hold: React owns `className` on the pane
+ * and rewrites the whole attribute when `carried` goes null, which silently wiped a class added by
+ * hand. Everything still looked correct — the layout was right, the tests were green — and the
+ * pane visibly flickered as it was put down, which is only visible over consecutive frames.
+ *
+ * So it is measured over consecutive frames, from `getBoundingClientRect`.
+ */
+test("a pane put down does not drift after it arrives", async () => {
+	// One panel beside the conversation, then carry it to the bottom of the dock and let go.
+	const positions = await app.evaluate<{ left: number; top: number; width: number }[]>(`(async () => {
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		const frame = () => new Promise((r) => requestAnimationFrame(r));
+
+		if (!document.querySelector('[data-dock-pane="terminal"]')) {
+			document.querySelector('button[aria-label="面板"]').click();
+			await wait(250);
+			[...document.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent.trim().startsWith("终端"))?.click();
+			await wait(900);
+		}
+
+		const grip = document.querySelector('[data-dock-grip="terminal"]');
+		if (!grip) throw new Error("no grip for the terminal pane");
+		const box = grip.getBoundingClientRect();
+		const from = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+		/*
+		 * To the right-hand edge, which is where the two coordinate systems disagree most.
+		 *
+		 * Carried, the pane is placed against the window; docked, against the dock — and the dock
+		 * starts where the sidebar ends. The same number therefore means two places a sidebar's
+		 * width apart, so a landing that re-reads it lands wrong by exactly that much. Dropping
+		 * near the left of the dock would hide the bug behind a small difference.
+		 */
+		const dock = document.querySelector("[data-dock-panes]").getBoundingClientRect();
+		const to = { x: dock.right - dock.width * 0.12, y: dock.top + dock.height / 2 };
+		const at = (type, x, y, buttons) => new PointerEvent(type, {
+			pointerId: 1, isPrimary: true, bubbles: true, cancelable: true, clientX: x, clientY: y, buttons,
+		});
+
+		grip.dispatchEvent(at("pointerdown", from.x, from.y, 1));
+		await frame();
+		for (let i = 1; i <= 10; i++) {
+			window.dispatchEvent(at("pointermove", from.x + (to.x - from.x) * (i / 10), from.y + (to.y - from.y) * (i / 10), 1));
+			await frame();
+		}
+		window.dispatchEvent(at("pointerup", to.x, to.y, 0));
+
+		/*
+		 * Sample every frame from the release until well past the flight.
+		 *
+		 * The flight home is a real movement and is expected here; what must not happen is a second
+		 * one after it has settled. So the whole tail is recorded and the assertion looks at the end
+		 * of it, where the pane is supposed to have stopped.
+		 */
+		const out = [];
+		for (let i = 0; i < 60; i++) {
+			const pane = document.querySelector('[data-dock-pane="terminal"]');
+			const b = pane.getBoundingClientRect();
+			out.push({ left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width) });
+			await frame();
+		}
+		return out;
+	})()`);
+
+	/*
+	 * "Arrived, then left again" — not "is it still moving at the end".
+	 *
+	 * Checking only the tail would pass with the bug present, and did: the wrong second movement is
+	 * over within a dozen frames, long before the samples run out. What identifies it is the shape.
+	 * The pane reaches its final position, holds it for a frame or two, and then jumps away and
+	 * eases back — so the test finds the first frame at the final position and asserts nothing
+	 * after it disagrees.
+	 */
+	const final = positions[positions.length - 1];
+	const same = (p: { left: number; top: number; width: number }) =>
+		Math.abs(p.left - final.left) <= 1 && Math.abs(p.top - final.top) <= 1 && Math.abs(p.width - final.width) <= 1;
+
+	const arrived = positions.findIndex(same);
+	assert.ok(arrived >= 0, "the pane never reached a resting position");
+
+	const after = positions.slice(arrived);
+	const left = after.findIndex((p) => !same(p));
+	assert.equal(
+		left,
+		-1,
+		`the pane arrived at ${final.left},${final.top} on frame ${arrived} and then moved again` +
+			(left >= 0 ? ` to ${after[left].left},${after[left].top}` : "") +
+			`.\nleft edge per frame: ${positions.map((p) => p.left).join(" ")}`,
 	);
 });

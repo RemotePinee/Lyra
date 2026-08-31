@@ -17,6 +17,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout-widths.ts";
+import { freezeMotion } from "./motion-freeze.ts";
 import { overlayReserved, titlebarInsets, type TitlebarInsets } from "./titlebar.ts";
 
 /** Below this the sidebar and a readable content column no longer fit side by side. */
@@ -134,16 +135,26 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 	 */
 	useEffect(() => {
 		let idle: number | undefined;
+		let thaw: (() => void) | null = null;
 		const onResize = () => {
 			setWidth(window.innerWidth);
+			// One freeze for the whole stream of resize events, released when they stop arriving.
+			// See `motion-freeze.ts` — this is a class on a handful of elements, not a flag on the
+			// root, because the root is above the transcript.
+			thaw ??= freezeMotion();
 			document.documentElement.dataset.resizing = "";
 			window.clearTimeout(idle);
-			idle = window.setTimeout(() => delete document.documentElement.dataset.resizing, 140);
+			idle = window.setTimeout(() => {
+				thaw?.();
+				thaw = null;
+				delete document.documentElement.dataset.resizing;
+			}, 140);
 		};
 		window.addEventListener("resize", onResize);
 		return () => {
 			window.removeEventListener("resize", onResize);
 			window.clearTimeout(idle);
+			thaw?.();
 			delete document.documentElement.dataset.resizing;
 		};
 	}, []);

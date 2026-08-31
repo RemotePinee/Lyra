@@ -54,12 +54,102 @@ jobs:
       - name: Verify before building
         run: pnpm lint && pnpm typecheck && pnpm test
 
+      # A keychain holding the signing identity, for the packaging step to find.
+      #
+      # Without it the macOS build is ad-hoc signed, which ties the app's identity to a hash of its
+      # own executable — so every release looks like a different application to macOS and every
+      # permission the previous one held is revoked. See `packages/desktop/electron-builder.yml`.
+      #
+      # Built here rather than handed to electron-builder as `CSC_LINK`.
+      #
+      # That path is broken in electron-builder 26.15.3: it creates the temporary keychain with a
+      # random password and then unlocks it with the certificate's password, which fails with "The
+      # user name or passphrase you entered is not correct" about a password that is correct. Doing
+      # it here is also the only way to `add-trusted-cert`, which a self-signed certificate needs
+      # before `codesign` will touch it at all.
+      #
+      # The absence of the secret is handled inside the script, not in `if:` — the `secrets` context
+      # is not available to a step's condition, so `secrets.X != ''` there is not false when the
+      # secret is missing, it is a workflow that does not do what it reads as doing.
+      #
+      # Missing is not fatal: a fork, or this repository before the secret is set, still builds —
+      # ad-hoc, with the downside above, but it builds. Losing a release to a missing secret would
+      # be worse than shipping one that asks for permissions again.
+      - name: Prepare the signing identity
+        if: matrix.os == 'macos-latest'
+        run: |
+          if [ -z "$MAC_CERTIFICATE_P12" ]; then
+            echo "::warning::MAC_CERTIFICATE_P12 is not set — this build will be ad-hoc signed, and installing it will reset every permission granted to the previous version"
+            exit 0
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/lyra-signing.keychain"
+          # Local to this runner and thrown away with it, so its password protects nothing that
+          # outlives the job.
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+
+          echo "$MAC_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Without this the keychain relocks on a timer and a long build signs nothing.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+
+          # A self-signed certificate is listed by `find-identity` but reported
+          # CSSMERR_TP_NOT_TRUSTED, and codesign then answers "no identity found" — so it has to be
+          # trusted explicitly, which takes the certificate on its own rather than the .p12.
+          openssl pkcs12 -legacy -in "$RUNNER_TEMP/certificate.p12" -passin "pass:$MAC_CERTIFICATE_PASSWORD" \
+            -clcerts -nokeys -out "$RUNNER_TEMP/certificate.pem"
+          security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$RUNNER_TEMP/certificate.pem"
+          # `codesign:` in the partition list, or reaching the private key waits on a GUI prompt
+          # that no one will ever click.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          # codesign searches the user's keychain list, not a keychain it has never been told about.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+
       - name: Build and package
         run: pnpm package
         env:
           # electron-builder publishes by itself when it sees a token; we want the artifacts
           # collected here and released once, at the end, from one place.
           GH_TOKEN: ""
+
+      # What the artifact will actually claim to be, read back off the bundle.
+      #
+      # The failure this catches is silent by nature: a certificate that did not import, or an
+      # identity that did not match, leaves a perfectly working ad-hoc build — and nobody finds out
+      # until the release is installed and the permissions are gone. `cdhash` in the requirement is
+      # the tell.
+      - name: Check the macOS build signed durably
+        if: matrix.os == 'macos-latest'
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+        run: |
+          APP=$(find packages/desktop/release -maxdepth 2 -name 'Lyra.app' -print -quit)
+          if [ -z "$APP" ]; then echo "::error::no Lyra.app in the release output"; exit 1; fi
+          REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 | tail -1)
+          echo "$REQUIREMENT"
+          case "$REQUIREMENT" in
+            *"certificate leaf"*)
+              echo "signed with a durable identity: updates keep their permissions" ;;
+            *cdhash*)
+              if [ -z "$MAC_CERTIFICATE_P12" ]; then
+                echo "::warning::ad-hoc signed, as expected without a certificate"
+              else
+                echo "::error::ad-hoc signed despite a certificate being present — the import or the identity name is wrong, and this build would reset every permission"
+                exit 1
+              fi ;;
+            *)
+              echo "::error::unrecognised designated requirement — refusing to ship a build whose identity cannot be read"
+              exit 1 ;;
+          esac
 
       - uses: actions/upload-artifact@v4
         with:

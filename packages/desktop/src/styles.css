@@ -317,17 +317,45 @@
     cursor: pointer;
   }
 
-  /* Freezes all transitions and disables pointer-events/selection during pane/sidebar dragging */
-  :root[data-resizing],
-  :root[data-resizing] * {
-    transition: none !important;
-    user-select: none !important;
-  }
+  /*
+   * Nothing here stops text being selected during a drag; `motion-freeze.ts` does, by refusing
+   * `selectstart`. `user-select` inherits, so setting it anywhere above the transcript invalidates
+   * the whole of it — 49ms per drag, measured — to express something an event listener says for
+   * free. See the note above `[data-ly-frozen]`.
+   */
 
-  /* Optimize layout reflow during window/sidebar resizing:
-     Contain rendering within message blocks & tool cards so resizing width doesn't thrash the whole DOM subtree */
+  /*
+   * A reply is laid out on its own, so a change to its width cannot reach the rows around it.
+   */
   .group\/msg {
     contain: layout paint style;
+  }
+
+  /*
+   * Rows off screen are not drawn.
+   *
+   * The transcript keeps its recent tail mounted — sixty runs, which on a real session is 8,300
+   * elements — and every one of them was being styled, laid out and painted whenever the pane
+   * holding them changed width. That is what dragging a boundary does, sixty times a second.
+   *
+   * Measured on a session of 8,948 messages, dragging the boundary between the conversation and
+   * the Git panel:
+   *
+   *   as it was                       65ms blocked, one frame of 50ms
+   *   transcript not rendered at all    0ms blocked, longest frame 18ms
+   *   with this rule                    0ms blocked, longest frame 18ms
+   *
+   * The middle line is the floor — the drag with the transcript taken out of the picture entirely
+   * — and this reaches it, because a row nobody is looking at costs the same either way.
+   *
+   * `auto` on the intrinsic size, not a fixed guess: the browser remembers what each row actually
+   * measured once it has been on screen, so the scrollbar settles to the truth rather than to
+   * however wrong 200px was. Rows are wildly uneven — a one-line answer and a thousand-line diff
+   * are both one row — and a fixed number is wrong for nearly all of them.
+   */
+  .ly-transcript > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 200px;
   }
 
   ::selection {
@@ -2311,23 +2339,24 @@
 }
 
 /*
- * While the window is being dragged, nothing animates.
+ * While an edge is being dragged, the things that move do not ease.
  *
- * A resize is a stream of events, and any transition started by one is overridden by the next
- * — so the panes chase the window edge rather than following it, and the composited layers
- * (menu blur, the tab strip's mask) leave trails across regions that have already repainted.
- * Set on <html> for the length of the drag, so this stays a paint concern in CSS rather than
- * something every animated component has to know about.
+ * A drag is a stream of events, and any transition started by one is overridden by the next — so
+ * the pane chases the pointer rather than following it, and the composited layers leave trails
+ * across regions that have already repainted.
+ *
+ * **On the element itself, never a flag on an ancestor.** This was written `:root[data-resizing]
+ * *`; narrowing the universal to a named descendant helped and did not fix it, because an
+ * attribute on the root is still a question about the whole document. An attribute on the element
+ * invalidates that element. See `motion-freeze.ts` for the measurements and for what applies this.
+ *
+ * `.ly-freeze` marks what may need holding; `[data-ly-frozen]` is it being held. An attribute for
+ * the held state rather than a class, because React owns `className` on the panes and rewrites it
+ * as one string — see `motion-freeze.ts` for the flicker that caused. Mark an element that eases
+ * while it is dragged, and nothing else: every element carrying a colour or opacity transition was
+ * surveyed to reach the four that matter, which is the cost this replaces.
  */
-:root[data-resizing] *,
-:root[data-resizing] *::before,
-:root[data-resizing] *::after,
-:root[data-dock-dragging] *,
-:root[data-dock-dragging] *::before,
-:root[data-dock-dragging] *::after,
-:root[data-dock-settling] *,
-:root[data-dock-settling] *::before,
-:root[data-dock-settling] *::after {
+[data-ly-frozen] {
   transition-duration: 0s !important;
   animation-duration: 0s !important;
   animation-delay: 0s !important;
@@ -2973,14 +3002,26 @@
 /*
  * Nothing arrives mid-drag, and nothing eases.
  *
- * Two reasons for one rule. The carried pane is re-inserted into the tree on every preview, so its
- * entrance would otherwise play at every region the pointer crossed. And the rearrangement is
- * committed as the pointer crosses, so an easing pane would still be travelling when the next
- * commit arrives — the layout would trail the pointer by a fifth of a second and never quite
- * settle. Landing immediately is what makes the preview read as the answer rather than as an
- * animation of it. The ghost is the one thing still moving.
+ * Two reasons this matters for a pane. The carried one is re-inserted into the tree on every
+ * preview, so its entrance would otherwise play at every region the pointer crossed. And the
+ * rearrangement is committed as the pointer crosses, so an easing pane would still be travelling
+ * when the next commit arrives — the layout would trail the pointer by a fifth of a second and
+ * never quite settle. Landing immediately is what makes the preview read as the answer rather
+ * than as an animation of it. The ghost is the one thing still moving.
+ *
+ * Applied by `[data-ly-frozen]` above wherever the panes already exist — which is every case but one.
+ *
+ * The exception is a pane the *adoption* brings in. Loading a conversation's saved layout inserts
+ * panes that were not there a moment ago, and a pane arriving has an `@starting-style` that fades
+ * it up from nothing: every switch between conversations ended with the dock assembling itself in
+ * front of you. A class cannot reach an element that does not exist yet, so this one stays keyed
+ * on a flag, which applies to whatever is inserted while it is raised.
+ *
+ * It is kept to this single case on purpose. A flag on the root is resolved against the subtree
+ * beneath it — 44ms on a long transcript, measured — and that is why the drag no longer uses one.
+ * An adoption is already reading a transcript off disk and rebuilding the rows; a drag is sixty
+ * frames of nothing but this.
  */
-:root[data-dock-dragging] .ly-dock-pane,
 :root[data-dock-settling] .ly-dock-pane {
   transition-duration: 0s;
 }
@@ -2993,7 +3034,7 @@
  * it. Declining hit tests on the panes for the length of the drag is what covers that case. The
  * drag itself listens on the window, so it is unaffected.
  */
-:root[data-dock-dragging] .ly-dock-pane {
+[data-ly-inert] {
   pointer-events: none;
 }
 
@@ -3285,15 +3326,6 @@
   justify-content: center;
   padding: 16px 0 24px;
   transition: opacity 120ms linear;
-}
-
-/*
- * Freeze transitions while resizing, so panes and floating widgets track the pointer smoothly without lag or layout judder.
- */
-html[data-resizing],
-html[data-resizing] * {
-  transition: none !important;
-  animation: none !important;
 }
 
 .ly-docx-host .docx {

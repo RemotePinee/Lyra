@@ -165,6 +165,91 @@ function Dropdown<T extends string>({
 	);
 }
 
+/**
+ * A shortcut recorder control that listens for key combinations.
+ */
+export function ShortcutRecorder({
+	value,
+	onChange,
+	placeholder = "按下快捷键",
+}: {
+	value?: string;
+	onChange: (shortcut: string) => void;
+	placeholder?: string;
+}) {
+	const [recording, setRecording] = useState(false);
+
+	const formatDisplay = (acc: string) => {
+		if (!acc) return placeholder;
+		return acc
+			.replace(/CommandOrControl/gi, "⌘")
+			.replace(/Control/gi, "⌃")
+			.replace(/Meta/gi, "⌘")
+			.replace(/Cmd/gi, "⌘")
+			.replace(/Alt/gi, "⌥")
+			.replace(/Option/gi, "⌥")
+			.replace(/Shift/gi, "⇧")
+			.replace(/\+/g, " ");
+	};
+
+	const handleKeyDown = (e: React.KeyboardEvent) => {
+		if (!recording) return;
+		e.preventDefault();
+		e.stopPropagation();
+
+		if (e.key === "Escape") {
+			setRecording(false);
+			return;
+		}
+
+		if (e.key === "Backspace" || e.key === "Delete") {
+			onChange("");
+			setRecording(false);
+			return;
+		}
+
+		// Ignore standalone modifier presses
+		if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) {
+			return;
+		}
+
+		const modifiers: string[] = [];
+		if (e.metaKey || e.ctrlKey) modifiers.push("CommandOrControl");
+		if (e.altKey) modifiers.push("Alt");
+		if (e.shiftKey) modifiers.push("Shift");
+
+		let key = e.key.toUpperCase();
+		if (key === " ") key = "Space";
+		else if (key === "ARROWUP") key = "Up";
+		else if (key === "ARROWDOWN") key = "Down";
+		else if (key === "ARROWLEFT") key = "Left";
+		else if (key === "ARROWRIGHT") key = "Right";
+
+		// Form canonical Electron accelerator: "CommandOrControl+Alt+A"
+		const result = [...modifiers, key].join("+");
+		onChange(result);
+		setRecording(false);
+	};
+
+	return (
+		<button
+			type="button"
+			onClick={() => setRecording(true)}
+			onBlur={() => setRecording(false)}
+			onKeyDown={handleKeyDown}
+			className={`flex h-[32px] min-w-[140px] items-center justify-center gap-1.5 rounded-lg border px-3 text-label font-mono transition-colors duration-[var(--ly-t-quick)] ${
+				recording
+					? "border-accent bg-accent/10 text-accent ring-2 ring-accent/20 animate-pulse"
+					: value
+						? "border-line bg-card text-ink hover:border-ink-faint"
+						: "border-dashed border-line bg-card/50 text-ink-muted hover:border-ink-faint"
+			}`}
+		>
+			<span>{recording ? "请在键盘上按下快捷键..." : formatDisplay(value ?? "")}</span>
+		</button>
+	);
+}
+
 export function Select<T extends string>(props: {
 	value: T;
 	onChange: (value: T) => void;

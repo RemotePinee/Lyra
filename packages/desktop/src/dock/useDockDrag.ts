@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { freezeMotion, inertPanes } from "../motion-freeze.ts";
 import { dropAt, sameDrop, type Rect } from "./drop.ts";
 import { DRAG_THRESHOLD, paneFloor } from "./geometry.ts";
 import { fitTree, layoutPanes } from "./layout.ts";
@@ -86,11 +87,42 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 	const offset = useRef({ x: 0, y: 0 });
 	/** Which pane is in the air, for the two things that end a flight and know nothing else. */
 	const flying = useRef<PaneKind | null>(null);
+	/**
+	 * Releases what the carry froze, held for exactly as long as the pointer has the pane.
+	 *
+	 * Not through the flight home. The landing *is* an animation — the pane travels to where the
+	 * tree puts it — so the freeze has to be lifted before `landAt` asks for it, in the same place
+	 * the old `data-dock-dragging` flag was removed. See `motion-freeze.ts`.
+	 */
+	const thaw = useRef<(() => void) | null>(null);
+	const release = useCallback(() => {
+		thaw.current?.();
+		thaw.current = null;
+	}, []);
+
+	/**
+	 * The dock's own box, measured when the pointer went down and reused for the whole drag.
+	 *
+	 * Measured *once*, and before anything is changed, because the first `getBoundingClientRect`
+	 * after the DOM has been touched is not a read — it is the browser laying the document out
+	 * again, synchronously, to be able to answer. On a session with 8,585 elements on screen that
+	 * one call took 61ms while every later one in the same drag took under two: by then the layout
+	 * was clean and the answer was already known.
+	 *
+	 * That is the whole of the stall when you grab a pane. The drag lifts a pane, freezes the
+	 * panes' transitions and marks the root — and then asked the browser a question it could only
+	 * answer by redoing all the work those three had just invalidated.
+	 *
+	 * Reusing it is not an approximation. The dock's box is fixed by the window and the sidebar,
+	 * neither of which a drag inside the dock moves — every one of those later reads returned the
+	 * same rectangle the press did.
+	 */
+	const dockBox = useRef<Rect | null>(null);
 
 	/** Where a pane is right now, in client coordinates, according to the tree. */
 	const rectOf = useCallback(
 		(kind: PaneKind): Rect | null => {
-			const container = containerRef.current?.getBoundingClientRect();
+			const container = dockBox.current ?? containerRef.current?.getBoundingClientRect();
 			if (!container) return null;
 			// Fitted, because that is where the pane actually is on screen — see `fitTree`.
 			const box = layoutPanes(fitTree(useDock.getState().tree, container, paneFloor)).find((pane) => pane.kind === kind);
@@ -164,12 +196,18 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 		 * right, so the pane animated in from somewhere it had never been: one clean flight home
 		 * followed by a second, wrong, drift.
 		 */
-		document.documentElement.dataset.dockSettling = "";
+		/*
+		 * By name, not by the settling flag.
+		 *
+		 * The pane being handed back is one that has been on screen throughout — it was carried, not
+		 * created — so there is nothing here that a class cannot reach, and the flag would put a
+		 * 44ms style invalidation of the whole transcript at the end of every drag. The flag is kept
+		 * for adoption, where panes genuinely arrive; see `styles.css`.
+		 */
+		const settled = freezeMotion();
 		setCarried(null);
 		requestAnimationFrame(() => {
-			requestAnimationFrame(() => {
-				delete document.documentElement.dataset.dockSettling;
-			});
+			requestAnimationFrame(() => settled());
 		});
 	}, []);
 
@@ -185,20 +223,30 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 			}
 			if (!moving.current) return;
 			moving.current = false;
-			delete document.documentElement.dataset.dockDragging;
+			// Before `landAt`: the flight home is the one movement in a drag that should animate.
+			release();
 			useDock.getState().endDrag(cancelled);
 			// Cancelling restores the tree, so home is where the pane started; otherwise it is
 			// wherever the live rearrangement has already put it. Read after `endDrag` either way.
 			landAt(grabbed.kind, grabbed.from, cancelled ? grabbed.from : rectOf(grabbed.kind));
 		},
-		[landAt, rectOf],
+		[landAt, rectOf, release],
 	);
 
 	const start = useCallback((kind: PaneKind, event: React.PointerEvent<HTMLElement>) => {
 		if (event.button !== 0) return;
 		const pane = (event.target as HTMLElement).closest?.("[data-dock-pane]") as HTMLElement | null;
 		if (!pane) return;
-		const box = pane.getBoundingClientRect();
+		const box: DOMRect = pane.getBoundingClientRect();
+		/*
+		 * And the dock's box, here, while the layout is still clean.
+		 *
+		 * Nothing has been changed yet on a press, so this costs whatever the line above already
+		 * paid — one layout for both. Asking for it later, after the lift has moved a pane and
+		 * marked the root, is what made grabbing a pane stall; see `dockBox`.
+		 */
+		const dock = containerRef.current?.getBoundingClientRect();
+		dockBox.current = dock ? { left: dock.left, top: dock.top, width: dock.width, height: dock.height } : null;
 		const target = event.currentTarget;
 		held.current = {
 			kind,
@@ -214,15 +262,15 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 		 * A pane can hold a <webview> or an <iframe>, which is a separate document that swallows
 		 * the pointer the instant it crosses into one — and a drag that dies halfway across the
 		 * window leaves the ghost stranded. Capture routes every move back here regardless of
-		 * what is underneath. `data-dock-dragging` additionally turns off hit testing inside the
-		 * panes, which is what covers the out-of-process case capture cannot reach.
+		 * what is underneath. `inertPanes` additionally turns off hit testing inside the panes,
+		 * which is what covers the out-of-process case capture cannot reach.
 		 */
 		try {
 			target.setPointerCapture(event.pointerId);
 		} catch {
 			// Not fatal: the window listeners below still see the drag.
 		}
-	}, []);
+	}, [containerRef]);
 
 	useEffect(() => {
 		const onMove = (event: PointerEvent) => {
@@ -240,6 +288,13 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 					return;
 				}
 				moving.current = true;
+				// Nothing eases and no pane takes the pointer until the carried one is put down.
+				const thawMotion = freezeMotion();
+				const reanimate = inertPanes();
+				thaw.current = () => {
+					thawMotion();
+					reanimate();
+				};
 				/*
 				 * Leave full screen first.
 				 *
@@ -249,8 +304,6 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 				 * anything.
 				 */
 				useDock.getState().restore();
-				// Freezes the panes' box transitions and stops the pointer reaching pane contents.
-				document.documentElement.dataset.dockDragging = "";
 				useDock.getState().beginDrag({
 					kind: grabbed.kind,
 					from: grabbed.from,
@@ -290,7 +343,8 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 			const flying = paneOf(grabbed.kind);
 			if (flying) flying.style.transform = `translate3d(${offset.current.x}px, ${offset.current.y}px, 0)`;
 
-			const container = containerRef.current?.getBoundingClientRect();
+			// Measured at the press, not here — see `dockBox`.
+			const container = dockBox.current;
 			const drag = useDock.getState().drag;
 			if (!container || !drag) return;
 			const root: Rect = { left: container.left, top: container.top, width: container.width, height: container.height };
@@ -345,9 +399,10 @@ export function useDockDrag(containerRef: React.RefObject<HTMLElement | null>): 
 			window.removeEventListener("pointercancel", onCancel);
 			window.removeEventListener("keydown", onKey, true);
 			window.clearTimeout(landingTimer.current);
-			delete document.documentElement.dataset.dockDragging;
+			// A drag torn down mid-flight would otherwise leave the panes frozen and untouchable.
+			release();
 		};
-	}, [containerRef, finish]);
+	}, [containerRef, finish, release]);
 
 	settle.current = landed;
 

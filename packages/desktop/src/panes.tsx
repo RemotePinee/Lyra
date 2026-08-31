@@ -102,8 +102,14 @@ export function NavPane({
 		 * Only the invisible hit area stepped aside.
 		 */
 		<div
-			className={`relative shrink-0 ${
-				snap ? "transition-none" : "transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out [[data-resizing]_&]:transition-none"
+			/*
+			 * `ly-freeze`: this frame's margin is what makes the sidebar push the content aside, so
+			 * dragging its edge changes the margin every frame — and an eased margin trails the
+			 * pointer. Named here rather than keyed on `[data-resizing]`, which is a flag on the
+			 * root and therefore a question asked about the whole document; see `motion-freeze.ts`.
+			 */
+			className={`ly-freeze relative shrink-0 ${
+				snap ? "transition-none" : "transition-[margin-left,opacity] duration-[var(--ly-t-base)] ease-out"
 			}`}
 			style={{ width, marginLeft: navOpen ? 0 : -width, opacity: navOpen ? 1 : 0 }}
 		>

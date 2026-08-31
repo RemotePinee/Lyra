@@ -42,6 +42,8 @@ export interface ViewerState {
 	 * open, and restored by the viewer on its way out.
 	 */
 	source: HTMLElement | null;
+	/** Whether the viewer should start directly in annotation mode. */
+	startEditing?: boolean;
 }
 
 let state: ViewerState | null = null;
@@ -56,9 +58,10 @@ export function openViewer(
 	index: number,
 	origin: DOMRect | null,
 	source: HTMLElement | null = null,
+	startEditing = false,
 ) {
 	if (images.length === 0) return;
-	state = { images, index: Math.max(0, Math.min(index, images.length - 1)), origin, source };
+	state = { images, index: Math.max(0, Math.min(index, images.length - 1)), origin, source, startEditing };
 	emit();
 }
 

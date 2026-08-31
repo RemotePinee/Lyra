@@ -133,7 +133,7 @@ function columnBounds(
 	width: number,
 ): { left: number; right: number } | null {
 	if (!(anchor instanceof HTMLElement)) return null;
-	const column = anchor.closest("main, aside, .ly-panel");
+	const column = anchor.closest("main, .ly-panel");
 	if (!column) return null;
 	const rect = column.getBoundingClientRect();
 	return rect.width - 8 < width
@@ -346,20 +346,34 @@ export function Popover({
 				anchorEdge = { top };
 				origin = `${fitsRight ? "0px" : "100%"} ${clamp(a.top + a.height / 2 - top, 0, box.height)}px`;
 			} else {
+				// For point anchors (contextmenu / right-click) or element anchors, prefer top/bottom
+				// based on whichever side has more room if neither side completely fits.
+				const spaceAbove = a.top - MARGIN;
+				const spaceBelow = window.innerHeight - a.bottom - MARGIN;
 				resolved =
 					placement === "top"
-						? fitsAbove || !fitsBelow
+						? fitsAbove
 							? "top"
-							: "bottom"
-						: fitsBelow || !fitsAbove
+							: fitsBelow
+								? "bottom"
+								: spaceAbove >= spaceBelow
+									? "top"
+									: "bottom"
+						: fitsBelow
 							? "bottom"
-							: "top";
+							: fitsAbove
+								? "top"
+								: spaceBelow >= spaceAbove
+									? "bottom"
+									: "top";
 				left = clampX(
 					align === "start"
 						? a.left
 						: align === "center"
 							? a.left + a.width / 2 - w / 2
-							: a.right - w,
+							: a.width === 0
+								? a.left
+								: a.right - w,
 				);
 				/*
 				 * Neither side has room: slide it into the window rather than scroll inside it.
@@ -408,10 +422,10 @@ export function Popover({
 					shifted
 						? window.innerHeight - MARGIN * 2
 						: resolved === "top"
-							? a.top - GAP - MARGIN
+							? Math.max(0, a.top - GAP - MARGIN)
 							: resolved === "bottom"
-								? window.innerHeight - a.bottom - GAP - MARGIN
-								: window.innerHeight - MARGIN * 2,
+								? Math.max(0, window.innerHeight - a.bottom - GAP - MARGIN)
+								: Math.max(0, window.innerHeight - MARGIN * 2),
 					maxHeight ?? Infinity,
 				),
 				opacity: 1,

@@ -67,28 +67,45 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Ad-hoc signed, which is not the same as unsigned and is the difference between an app that
-  # opens and one that cannot.
+  # Ad-hoc here, overridden with a real identity when one is available.
   #
-  # This was `null` — "skip signing" — and the result was worse than it sounds. Electron's own
-  # binary arrives carrying a linker-signed ad-hoc signature that declares sealed resources;
-  # electron-builder then renames it, rewrites Info.plist and packs our own resources beside it,
-  # and with signing skipped nothing re-seals any of that. `codesign --verify` says it plainly:
+  # This value is the floor, not the intent: `scripts/package.mjs` replaces it with the signing
+  # identity whenever `CSC_LINK` is set, which is what the release workflow does. It stays written
+  # down as `-` so that *every* path through electron-builder signs something — left unset,
+  # electron-builder skips signing when it cannot discover an identity, and an unsigned bundle is
+  # the "已损坏" dead end described below.
+  #
+  # **Why signing with any certificate matters, even a self-signed one.** macOS decides whether
+  # two builds are the same application by their designated requirement. Ad-hoc, it is a hash of
+  # the executable:
+  #
+  #     designated => cdhash H"ff1c876598ea614d4bc7fead3bb1c0d9c2c710a7"
+  #
+  # Every release changes the binary, so every release is a stranger: screen recording permission
+  # revoked, keychain entries unreadable, everything authorised again. With a certificate the
+  # requirement names the certificate instead —
+  #
+  #     designated => identifier "dev.lyra.app" and certificate leaf = H"…"
+  #
+  # — and says nothing about the executable, so an update is the same app. Confirmed by signing two
+  # unrelated binaries with one certificate: byte-identical requirements. See
+  # `scripts/make-signing-cert.sh`, which generates one without an Apple Developer account.
+  #
+  # What a self-signed certificate does not buy is notarization, which needs the paid account. A
+  # download from a browser still meets 「未识别的开发者」 on first install; updates do not, because
+  # they replace the bundle in place and never carry a quarantine flag.
+  #
+  # Ad-hoc remains the fallback rather than `null` — "skip signing" — because skipping is worse
+  # than it sounds. Electron's binary arrives linker-signed with sealed resources declared;
+  # electron-builder renames it, rewrites Info.plist and packs our resources beside it, and with
+  # signing skipped nothing re-seals any of that. `codesign --verify` says it plainly:
   #
   #     code has no resources but signature indicates they must be present
   #
-  # Downloaded through a browser the bundle is quarantined, Gatekeeper checks it, finds a broken
-  # signature, and reports the one thing users saw: 「Lyra.app 已损坏，无法打开。你应该将它移到废纸篓。」
-  # A dead end — that dialog has no 「仍要打开」.
-  #
-  # `-` signs the whole bundle for real, with no certificate. `spctl` then rejects it as
-  # unidentified rather than damaged, which is the dialog offering 「打开」 from the context menu and
-  # 「仍要打开」 in 系统设置 → 隐私与安全性. The entitlements already include
-  # `disable-library-validation`, which ad-hoc signing needs to launch at all.
-  #
-  # With a Developer ID certificate, override this at the command line rather than editing it here
-  # — `electron-builder -c.mac.identity="Developer ID Application: …"` alongside `CSC_LINK` and
-  # `CSC_KEY_PASSWORD` — and add notarization to get rid of the prompt entirely.
+  # Quarantined, Gatekeeper finds a broken signature and reports 「Lyra.app 已损坏，无法打开。」 — a
+  # dead end, that dialog has no 「仍要打开」. Ad-hoc is rejected as merely unidentified instead,
+  # which does offer a way through. The entitlements already carry `disable-library-validation`,
+  # which ad-hoc signing needs to launch at all.
   identity: "-"
 
 win:

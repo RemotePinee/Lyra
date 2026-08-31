@@ -60,6 +60,7 @@ import type {
 	RegistryEntry,
 	Plugin,
 	QueuedTask,
+	ScreenshotSettings,
 	SessionMeta,
 	Settings,
 	Skill,
@@ -547,6 +548,17 @@ export interface LyraApi {
 		 */
 		remoteImage(url: string): Promise<string | null>;
 	};
+	screenshot: {
+		capture(settings?: ScreenshotSettings): Promise<{
+			ok: boolean;
+			canceled?: boolean;
+			dataUrl?: string;
+			filePath?: string;
+			error?: string;
+		}>;
+		pickDirectory(): Promise<string | null>;
+		onTrigger(handler: () => void): () => void;
+	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
 		rebuild(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
@@ -565,7 +577,7 @@ export interface LyraApi {
 	 */
 	forge: {
 		/** The hosts that can be added, and whether this machine can encrypt what it stores. */
-		kinds(): Promise<{ kinds: ForgeKindInfo[]; encrypted: boolean }>;
+		kinds(): Promise<{ kinds: ForgeKindInfo[] }>;
 		accounts(): Promise<ForgeAccount[]>;
 		/**
 		 * Check a token against its host, and keep it if it works.

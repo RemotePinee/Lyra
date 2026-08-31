@@ -104,7 +104,12 @@ export function ToolGroup({
 				/>
 			</button>
 
-			<div style={{ height: open ? height : 0 }} className="overflow-hidden transition-[height] duration-[var(--ly-t-base)] ease-out">
+			{/* `ly-freeze`: an open group's height follows what fits, so a boundary being dragged
+			    keeps changing it — and an eased height would trail the pointer. See `styles.css`. */}
+			<div
+				style={{ height: open ? height : 0 }}
+				className="ly-freeze overflow-hidden transition-[height] duration-[var(--ly-t-base)] ease-out"
+			>
 				<div ref={body} className="pt-1">
 					{children}
 				</div>

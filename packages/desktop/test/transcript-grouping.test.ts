@@ -226,3 +226,80 @@ test("computeTurnStats returns zeros if no assistant messages or out of bounds",
 	assert.equal(stats.outputTokens, 0);
 	assert.equal(stats.requestCount, 0);
 });
+
+/*
+ * The totals now ride on the rows, computed in the one pass that builds them.
+ *
+ * They used to be worked out where the row is drawn, which meant a backward scan per visible reply
+ * on every render *and* a fresh object each time — so the row's memo compared unequal and every
+ * message on screen was rebuilt whenever anything re-rendered the transcript. Both go away by
+ * deriving them here, and this is what says the answer did not change on the way.
+ */
+test("a row carries the same totals computeTurnStats would give for it", () => {
+	const first = assistant([text("第一轮回答")], "stop");
+	first.durationMs = 500;
+	first.sseDurationMs = 400;
+	first.usage = { input: 10, output: 20, cacheRead: 0, cacheWrite: 0, total: 30 };
+
+	const msg1 = assistant([call("a")], "toolUse");
+	msg1.durationMs = 1200;
+	msg1.sseDurationMs = 900;
+	msg1.usage = { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150 };
+
+	const msg2 = assistant([call("b")], "toolUse");
+	msg2.durationMs = 800;
+	msg2.sseDurationMs = 600;
+	msg2.usage = { input: 200, output: 30, cacheRead: 0, cacheWrite: 0, total: 230 };
+
+	const msg3 = assistant([text("完成了")], "stop");
+	msg3.durationMs = 2000;
+	msg3.sseDurationMs = 1500;
+	msg3.usage = { input: 300, output: 120, cacheRead: 0, cacheWrite: 0, total: 420 };
+
+	const messages: Message[] = [
+		user("第一轮问题"),
+		first,
+		user("第二轮问题"),
+		msg1,
+		answered("a"),
+		nudge(),
+		msg2,
+		answered("b"),
+		msg3,
+	];
+
+	const rows = runs(messages).filter((run) => run.kind === "message" && run.message.role === "assistant");
+	assert.ok(rows.length > 0, "expected assistant rows");
+	for (const row of rows) {
+		if (row.kind !== "message") continue;
+		assert.deepEqual(row.turnStats, computeTurnStats(messages, row.index), `row at ${row.index}`);
+	}
+
+	// And specifically: a nudge does not start a new turn, so the last row has all three replies.
+	const last = rows[rows.length - 1];
+	assert.equal(last.kind === "message" && last.turnStats?.requestCount, 3);
+	assert.equal(last.kind === "message" && last.turnStats?.durationMs, 4000);
+});
+
+test("a person speaking starts the count over; the first turn's cost stays with the first turn", () => {
+	const one = assistant([text("一")], "stop");
+	one.durationMs = 500;
+	one.usage = { input: 0, output: 20, cacheRead: 0, cacheWrite: 0, total: 20 };
+	const two = assistant([text("二")], "stop");
+	two.durationMs = 700;
+	two.usage = { input: 0, output: 30, cacheRead: 0, cacheWrite: 0, total: 30 };
+
+	const rows = runs([user("甲"), one, user("乙"), two]).filter((run) => run.kind === "message");
+	const totals = rows
+		.filter((run) => run.kind === "message" && run.message.role === "assistant")
+		.map((run) => (run.kind === "message" ? run.turnStats : undefined));
+
+	assert.deepEqual(
+		totals.map((t) => t?.durationMs),
+		[500, 700],
+	);
+	assert.deepEqual(
+		totals.map((t) => t?.outputTokens),
+		[20, 30],
+	);
+});

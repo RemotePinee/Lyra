@@ -121,12 +121,12 @@ export function GhostButton({
 			 * enough to look like a mistake rather than a distinction. A row of buttons that do not
 			 * share a baseline reads as two different toolbars pushed together.
 			 */
-			className={`flex h-[32px] shrink-0 items-center rounded-lg border border-line text-label transition-colors duration-[var(--ly-t-quick)] disabled:opacity-45 ${
-				bare ? "w-[32px] justify-center" : "gap-1.5 px-3"
+			className={`flex h-[32px] shrink-0 items-center rounded-lg border border-line text-label transition-colors duration-[var(--ly-t-quick)] disabled:opacity-45 cursor-pointer ${
+				bare ? "w-[32px] justify-center" : "gap-1.5 px-3 font-medium"
 			} ${
 				tone === "danger"
 					? "text-danger hover:border-danger/50 hover:bg-danger/10"
-					: "text-ink-muted hover:border-ink-faint hover:text-ink"
+					: "text-ink hover:border-ink-faint hover:bg-card-hover"
 			}`}
 		>
 			{icon}

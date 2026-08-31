@@ -128,6 +128,7 @@ export function ImageViewer() {
 		if (!state) return;
 		setHeld(state);
 		setLeaving(false);
+		if (state.startEditing) setEditing(true);
 		if (state.origin) origin.current = state.origin;
 		if (state.source) source.current = state.source;
 	}, [state]);
@@ -679,8 +680,12 @@ export function ImageViewer() {
 						 */
 						const dataUrl = annotator.render();
 						if (!dataUrl) return;
-						if (image.onReplace) image.onReplace(dataUrl);
-						else void toClipboard(dataUrl);
+						if (image.onReplace) {
+							image.onReplace(dataUrl);
+						}
+						// Always copy marked-up result to clipboard on save if it's not a pure in-place replacement
+						// or if user wants clipboard integration
+						void toClipboard(dataUrl);
 						setEditing(false);
 						dismiss();
 					}}

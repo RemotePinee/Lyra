@@ -124,7 +124,9 @@ export function SidebarTabs({
 				 */}
 				<span
 					aria-hidden
-					className="ly-tabs-knob absolute inset-y-[3px] left-[3px] rounded-md transition-transform duration-[var(--ly-t-base)] ease-[var(--ly-e-out)]"
+					// `ly-freeze`: the knob's offset is a fraction of the sidebar's width, so dragging
+					// that edge moves it every frame — see the freeze rule in `styles.css`.
+					className="ly-tabs-knob ly-freeze absolute inset-y-[3px] left-[3px] rounded-md transition-transform duration-[var(--ly-t-base)] ease-[var(--ly-e-out)]"
 					style={{ width: "calc(50% - 3px)", transform: `translateX(${index * 100}%)` }}
 				/>
 				{SIDEBAR_TABS.map(({ value, label, Icon }) => {

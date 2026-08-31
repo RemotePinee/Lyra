@@ -11,7 +11,7 @@
  * do; this decides when.
  */
 
-import { loadSettings, saveSettings as persist, type Settings } from "@lyra/core";
+import { loadSettings, migrateSecrets, saveSettings as persist, type Settings } from "@lyra/core";
 
 type Listener = (next: Settings) => void | Promise<void>;
 
@@ -19,6 +19,18 @@ let current: Settings | undefined;
 const listeners: Listener[] = [];
 
 export async function loadAppSettings(): Promise<Settings> {
+	/*
+	 * Move any API key still written into `settings.json` out of it, before anything reads it.
+	 *
+	 * `saveSettings` does this on every write, so a key would move the next time anything was
+	 * changed — but somebody who never opens the settings page would keep theirs in a plaintext,
+	 * world-readable file forever. Here it happens once, on the first launch after updating, and is
+	 * a no-op on every launch after that.
+	 *
+	 * Failures are swallowed on purpose: a profile on a read-only volume, or a home directory
+	 * somebody has made undeletable, must not stop the app from starting over a hygiene task.
+	 */
+	await migrateSecrets().catch(() => 0);
 	current = await loadSettings();
 	return current;
 }

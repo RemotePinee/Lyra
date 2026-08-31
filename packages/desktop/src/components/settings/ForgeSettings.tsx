@@ -13,7 +13,7 @@
  * otherwise would be the one thing here worth being angry about.
  */
 
-import { Pencil, Plus, ShieldCheck, ShieldAlert, Trash2 } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ForgeAccount, ForgeKindInfo } from "../../../electron/ipc-types.ts";
 import { Avatar } from "../pr/Avatar.tsx";
@@ -25,17 +25,13 @@ export function ForgeSettings() {
 	const { accounts } = useForgeAccounts();
 	const { setEnabled, signOut, rename } = useAccountActions();
 	const [kinds, setKinds] = useState<ForgeKindInfo[]>([]);
-	const [encrypted, setEncrypted] = useState(true);
 	const [adding, setAdding] = useState(false);
 	const [editing, setEditing] = useState<string | null>(null);
 
 	useEffect(() => {
 		void window.lyra.forge
 			.kinds()
-			.then((answer) => {
-				setKinds(answer.kinds ?? []);
-				setEncrypted(answer.encrypted !== false);
-			})
+			.then((answer) => setKinds(answer.kinds ?? []))
 			.catch(() => {});
 	}, []);
 
@@ -136,19 +132,17 @@ export function ForgeSettings() {
 			{/*
 			 * Where the token lives, stated rather than assumed.
 			 *
-			 * Two versions of the truth, because there are two truths. With a keyring the token is
-			 * encrypted by the operating system; without one — a bare Linux box with no keyring
-			 * running — the alternative to plain text is refusing to work, so it says so.
+			 * One version, and it states the limit rather than implying there is none. The token was
+			 * sealed by the OS keychain until the keychain turned out not to survive an update on
+			 * macOS — every release is a different code identity to an ad-hoc signed app, so signing
+			 * in again was part of updating. It is now sealed with a key kept beside it, which is a
+			 * smaller claim: it keeps the token out of the files that travel, and it does not defend
+			 * against something already reading your home directory. Saying so is the point.
 			 */}
 			<p className="mt-8 flex max-w-[600px] items-start gap-2 pb-8 text-detail leading-relaxed text-ink-faint">
-				{encrypted ? (
-					<ShieldCheck size={13} strokeWidth={1.8} className="mt-0.5 shrink-0" />
-				) : (
-					<ShieldAlert size={13} strokeWidth={1.8} className="mt-0.5 shrink-0 text-danger" />
-				)}
-				{encrypted
-					? "令牌由系统钥匙串加密后存在 ~/.lyra/forges.json，不会写进 settings.json，也不会同步到移动端。界面永远不会把它读回来。"
-					: "这台机器没有可用的系统钥匙串，令牌以明文存在 ~/.lyra/forges.json（权限 0600）。介意的话，给令牌设一个短一点的有效期。"}
+				<ShieldCheck size={13} strokeWidth={1.8} className="mt-0.5 shrink-0" />
+				令牌加密后存在 ~/.lyra/forges.json（权限
+				0600），密钥在同目录的 vault.key，不会写进 settings.json，也不会同步到移动端。界面永远不会把它读回来。能读到你主目录的程序也能解开它——介意的话，给令牌设一个短一点的有效期。
 			</p>
 		</div>
 	);

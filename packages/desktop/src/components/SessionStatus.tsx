@@ -25,7 +25,7 @@ const LABEL: Record<SessionActivity, string> = {
 export function SessionStatus({ activity }: { activity: SessionActivity | null }) {
 	return (
 		<span
-			className="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+			className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center overflow-visible"
 			data-ly-tip={activity ? LABEL[activity] : undefined}
 			data-ly-tip-side="right"
 			aria-label={activity ? LABEL[activity] : undefined}

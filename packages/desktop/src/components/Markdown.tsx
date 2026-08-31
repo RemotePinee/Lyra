@@ -10,7 +10,7 @@
  */
 
 import { ChevronRight, ExternalLink } from "lucide-react";
-import { createContext, Fragment, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, Fragment, memo, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { CodeBlock } from "./CodeBlock.tsx";
 import type { Block, ListItem } from "./markdown-blocks.ts";
 import { parseMarkdown } from "./markdown-blocks.ts";
@@ -40,7 +40,16 @@ interface DocumentContext {
 
 const Doc = createContext<DocumentContext>({ remoteImages: false });
 
-export function Markdown({
+/**
+ * Memoised on the four values it is given, all of them primitives.
+ *
+ * Parsing is the expensive half of drawing a transcript, and it was being redone for reasons that
+ * have nothing to do with the text: dragging the sidebar's edge re-renders every component that
+ * reads the layout, which reaches the transcript, which reached here — so one drag re-parsed
+ * several hundred kilobytes of markdown, forty-five times over. Nothing about a message changes
+ * because a pane got wider, and a boundary that says so costs one shallow comparison.
+ */
+export const Markdown = memo(function Markdown({
 	text,
 	className = "",
 	baseDir,
@@ -97,7 +106,7 @@ export function Markdown({
 			<div className={`prose-dw min-w-0 ${className}`}>{renderBlocks(clean)}</div>
 		</Doc.Provider>
 	);
-}
+});
 
 function renderBlocks(source: string): ReactNode {
 	return parseMarkdown(source).map((block, index) => <Fragment key={index}>{renderBlock(block)}</Fragment>);

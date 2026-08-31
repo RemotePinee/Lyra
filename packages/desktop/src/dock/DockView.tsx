@@ -17,6 +17,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { useLayout, useSidebarFit } from "../layout.tsx";
+import { freezeMotion } from "../motion-freeze.ts";
 import { toolbarReserved } from "../components/WindowControls.tsx";
 import { useApp } from "../store.ts";
 import { renderPanel, renderPanelActions, renderPanelHeader, usePanelDefinitions } from "../panels/definitions.tsx";
@@ -114,14 +115,19 @@ export function DockView({
 		 * between conversations slid from the last one's arrangement into this one's, as though the
 		 * panes had travelled between two unrelated places.
 		 */
+		const settled = freezeMotion();
 		document.documentElement.dataset.dockSettling = "";
 		useDock.getState().adopt(session, allowed.current);
 		const frame = requestAnimationFrame(() => {
 			requestAnimationFrame(() => {
+				settled();
 				delete document.documentElement.dataset.dockSettling;
 			});
 		});
-		return () => cancelAnimationFrame(frame);
+		return () => {
+			cancelAnimationFrame(frame);
+			settled();
+		};
 	}, [session]);
 
 	/*
