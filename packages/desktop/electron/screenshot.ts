@@ -147,6 +147,38 @@ export async function captureScreen(settings?: ScreenshotSettings): Promise<Capt
 }
 
 /**
+ * Check whether a shortcut accelerator is available and valid in the current OS.
+ */
+export function checkShortcutAvailable(shortcut: string): { ok: boolean; error?: string } {
+	let normalized = shortcut?.trim();
+	if (!normalized) return { ok: true };
+
+	normalized = normalized.replace(/Option/gi, "Alt");
+	normalized = normalized.replace(/Command\+/gi, "CommandOrControl+");
+
+	if (activeShortcut && activeShortcut.toLowerCase() === normalized.toLowerCase()) {
+		return { ok: true };
+	}
+
+	try {
+		const isRegistered = globalShortcut.isRegistered(normalized);
+		if (isRegistered) {
+			return { ok: false, error: "该快捷键已被系统或其他正在运行的应用程序占用" };
+		}
+		// Attempt temporary test registration
+		const success = globalShortcut.register(normalized, () => {});
+		if (!success) {
+			return { ok: false, error: "系统拒绝注册该快捷键（已被占用或受系统保护）" };
+		}
+		// Unregister probe immediately
+		globalShortcut.unregister(normalized);
+		return { ok: true };
+	} catch (err) {
+		return { ok: false, error: err instanceof Error ? err.message : "快捷键格式不合法" };
+	}
+}
+
+/**
  * Register or update global shortcut for screenshot.
  */
 export function registerScreenshotShortcut(
@@ -160,6 +192,10 @@ export function registerScreenshotShortcut(
 		shortcut = shortcut.replace(/Option/gi, "Alt");
 		// Normalize "Command+" to "CommandOrControl+" if specified
 		shortcut = shortcut.replace(/Command\+/gi, "CommandOrControl+");
+		// Windows specific: map "Control" or standard syntax
+		if (process.platform === "win32") {
+			// e.g. If Alt+A is occupied by other apps (like WeChat/QQ), allow clean retry
+		}
 	}
 
 	if (activeShortcut) {

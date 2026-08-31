@@ -250,6 +250,7 @@ const api: LyraApi = {
 	screenshot: {
 		capture: (settings) => ipcRenderer.invoke("screenshot:capture", settings),
 		pickDirectory: () => ipcRenderer.invoke("screenshot:pickDirectory"),
+		validateShortcut: (shortcut) => ipcRenderer.invoke("screenshot:validateShortcut", shortcut),
 		onTrigger: (handler) => {
 			const listener = () => handler();
 			ipcRenderer.on("screenshot:trigger", listener);

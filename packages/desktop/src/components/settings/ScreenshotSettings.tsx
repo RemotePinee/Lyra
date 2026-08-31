@@ -1,11 +1,12 @@
 /**
- * Screenshot settings page (macOS only).
+ * Screenshot settings page.
  *
  * Allows customizing screen capture shortcut, default save directory,
  * clipboard copy preference, and whether to open the annotator immediately.
  */
 
-import { Camera, FolderOpen } from "lucide-react";
+import { Camera, FolderOpen, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useApp } from "../../store.ts";
 import {
 	Card,
@@ -19,10 +20,9 @@ import {
 export function ScreenshotSettings() {
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
+	const [shortcutError, setShortcutError] = useState<string | null>(null);
 
-	if (!settings) return null;
-
-	const config = settings.screenshot ?? {
+	const config = settings?.screenshot ?? {
 		shortcut: "Alt+A",
 		saveLocation: "",
 		showInComposer: false,
@@ -30,6 +30,29 @@ export function ScreenshotSettings() {
 		insertIntoComposer: false,
 		openEditor: true,
 	};
+
+	// Check if the current configured shortcut has conflict in the OS
+	useEffect(() => {
+		let active = true;
+		if (config.shortcut && window.lyra?.screenshot?.validateShortcut) {
+			void window.lyra.screenshot.validateShortcut(config.shortcut).then((res) => {
+				if (active) {
+					if (!res.ok) {
+						setShortcutError(res.error || "快捷键冲突或已被占用");
+					} else {
+						setShortcutError(null);
+					}
+				}
+			});
+		} else {
+			setShortcutError(null);
+		}
+		return () => {
+			active = false;
+		};
+	}, [config.shortcut]);
+
+	if (!settings) return null;
 
 	const patch = (patchObj: Partial<typeof config>) => {
 		void saveSettings({
@@ -58,15 +81,32 @@ export function ScreenshotSettings() {
 			<Card className="mb-9">
 				<Row
 					title="截图全局快捷键"
-					detail="在任意界面按下该快捷键即可触发系统交互式区域截图（点击后直接按键盘设置）"
+					detail={
+						<div className="flex flex-col gap-1.5">
+							<span>在任意界面按下该快捷键即可触发系统交互式区域截图（点击后直接按键盘设置）</span>
+							{shortcutError && (
+								<div className="flex items-center gap-1.5 text-xs text-danger">
+									<AlertCircle size={13} className="shrink-0" />
+									<span>{shortcutError}，请更换其他快捷键组合（如 Ctrl+Shift+S / Alt+Shift+A）</span>
+								</div>
+							)}
+						</div>
+					}
 					control={
 						<div className="flex items-center gap-2">
 							<ShortcutRecorder
 								value={config.shortcut ?? "Alt+A"}
-								onChange={(val) => patch({ shortcut: val })}
+								onChange={(val) => {
+									setShortcutError(null);
+									patch({ shortcut: val });
+								}}
+								onError={(err) => setShortcutError(err)}
 							/>
 							{config.shortcut && (
-								<GhostButton onClick={() => patch({ shortcut: "" })}>
+								<GhostButton onClick={() => {
+									setShortcutError(null);
+									patch({ shortcut: "" });
+								}}>
 									清除
 								</GhostButton>
 							)}

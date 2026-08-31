@@ -3,7 +3,11 @@ import { join } from "node:path";
 let spawnPty: typeof import("node-pty").spawn = ((() => {
 	try {
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		return require("node-pty").spawn;
+		const pty = require("node-pty");
+		if (typeof pty?.spawn === "function") {
+			return pty.spawn;
+		}
+		throw new Error("node-pty does not export spawn function");
 	} catch (e) {
 		console.warn("node-pty native addon is not available; terminal features will be disabled:", e);
 		return () => {

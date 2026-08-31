@@ -737,7 +737,7 @@ export function Composer() {
 							>
 								<Plus size={16} strokeWidth={1.9} />
 							</button>
-							{window.lyra?.platform === "darwin" && settings?.screenshot?.showInComposer && (
+							{settings?.screenshot?.showInComposer && (
 								<button
 									type="button"
 									data-ly-tip={`屏幕截图 ${settings?.screenshot?.shortcut ? `(${settings.screenshot.shortcut.replace("CommandOrControl", "⌘").replace("Shift", "⇧").replace("Alt", "⌥").replace(/\+/g, "")})` : ""}`}

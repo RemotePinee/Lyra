@@ -21,7 +21,7 @@ import {
 	Sparkles,
 	SquareTerminal,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { NavPane, useLayout } from "../../layout.tsx";
 import type { SettingsSection } from "../../store.ts";
 import { Scroller } from "../Scroller.tsx";
@@ -108,19 +108,12 @@ export function SettingsShell() {
 	const setSection = useApp((s) => s.setSettingsSection);
 	const setView = useApp((s) => s.setView);
 	const { compact, navOpen, toggleNav, dismissNav, sidebarWidth, titlebar } = useLayout();
-	const [platform, setPlatform] = useState("darwin");
-
-	useEffect(() => {
-		void window.lyra.system.platform().then(setPlatform);
-	}, []);
 
 	const groups = GROUPS.map((group) => {
 		if (group.label === "基础设置") {
 			const items = [...group.items];
-			if (platform === "darwin") {
-				// Insert screenshot settings into 基础设置
-				items.splice(items.length - 1, 0, { id: "screenshot", label: "屏幕截图", icon: Camera });
-			}
+			// Insert screenshot settings into 基础设置
+			items.splice(items.length - 1, 0, { id: "screenshot", label: "屏幕截图", icon: Camera });
 			return { ...group, items };
 		}
 		return group;

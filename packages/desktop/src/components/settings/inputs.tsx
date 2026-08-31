@@ -171,10 +171,12 @@ function Dropdown<T extends string>({
 export function ShortcutRecorder({
 	value,
 	onChange,
+	onError,
 	placeholder = "按下快捷键",
 }: {
 	value?: string;
 	onChange: (shortcut: string) => void;
+	onError?: (error: string | null) => void;
 	placeholder?: string;
 }) {
 	const [recording, setRecording] = useState(false);
@@ -192,7 +194,7 @@ export function ShortcutRecorder({
 			.replace(/\+/g, " ");
 	};
 
-	const handleKeyDown = (e: React.KeyboardEvent) => {
+	const handleKeyDown = async (e: React.KeyboardEvent) => {
 		if (!recording) return;
 		e.preventDefault();
 		e.stopPropagation();
@@ -204,6 +206,7 @@ export function ShortcutRecorder({
 
 		if (e.key === "Backspace" || e.key === "Delete") {
 			onChange("");
+			onError?.(null);
 			setRecording(false);
 			return;
 		}
@@ -227,6 +230,18 @@ export function ShortcutRecorder({
 
 		// Form canonical Electron accelerator: "CommandOrControl+Alt+A"
 		const result = [...modifiers, key].join("+");
+
+		// Validate availability
+		if (window.lyra?.screenshot?.validateShortcut) {
+			const check = await window.lyra.screenshot.validateShortcut(result);
+			if (!check.ok) {
+				onError?.(check.error || "快捷键冲突");
+				setRecording(false);
+				return;
+			}
+		}
+
+		onError?.(null);
 		onChange(result);
 		setRecording(false);
 	};

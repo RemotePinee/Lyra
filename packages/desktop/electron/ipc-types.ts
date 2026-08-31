@@ -557,6 +557,7 @@ export interface LyraApi {
 			error?: string;
 		}>;
 		pickDirectory(): Promise<string | null>;
+		validateShortcut(shortcut: string): Promise<{ ok: boolean; error?: string }>;
 		onTrigger(handler: () => void): () => void;
 	};
 	index: {
