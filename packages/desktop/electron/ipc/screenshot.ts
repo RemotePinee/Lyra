@@ -7,6 +7,7 @@ import type { ScreenshotSettings, Settings } from "@lyra/core";
 import {
 	closeScreenshotOverlay,
 	finishScreenshot,
+	revealScreenshotOverlay,
 	startScreenshotSession,
 } from "../screenshot.ts";
 
@@ -28,6 +29,16 @@ export function registerScreenshotIpc(deps: ScreenshotIpcDeps): void {
 
 	ipcMain.handle("screenshot:cancel", async (): Promise<void> => {
 		closeScreenshotOverlay();
+	});
+
+	/*
+	 * The overlay reporting that its snapshot is drawn.
+	 *
+	 * `on`, not `handle`: the renderer is telling, not asking, and it must not be made to wait for
+	 * the window to be shown before it can carry on drawing. The sender identifies which overlay.
+	 */
+	ipcMain.on("screenshot:ready", (event) => {
+		revealScreenshotOverlay(event.sender.id);
 	});
 
 	ipcMain.handle("screenshot:pickDirectory", async (): Promise<string | null> => {

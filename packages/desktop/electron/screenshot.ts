@@ -18,6 +18,14 @@ import { resolveSaveDirectory } from "./screenshot-path.ts";
 const execFileAsync = promisify(execFile);
 
 let overlayWindows: BrowserWindow[] = [];
+
+/**
+ * How to show each overlay, by the id of the page that will ask for it.
+ *
+ * Keyed on `webContents.id` so the renderer needs to send nothing but the fact that it is ready —
+ * the sender identifies the window. See `revealScreenshotOverlay`.
+ */
+const revealers = new Map<number, () => void>();
 let activeShortcut: string | null = null;
 let onCaptureTriggered: (() => void) | null = null;
 let currentSettingsProvider: (() => Settings | undefined) | null = null;
@@ -73,22 +81,66 @@ async function captureFullDisplaySnapshot(displayId?: number): Promise<{ dataUrl
 }
 
 /**
- * Close and destroy all active overlay windows.
+ * Show the overlay that has just finished painting its snapshot.
+ *
+ * Ignores anything that is not an overlay awaiting reveal, so a stray message cannot raise a
+ * window; and ignores a second one, because the failsafe timer may already have shown it.
  */
-export function closeScreenshotOverlay(): void {
+export function revealScreenshotOverlay(webContentsId: number): void {
+	const reveal = revealers.get(webContentsId);
+	if (!reveal) return;
+	revealers.delete(webContentsId);
+	reveal();
+}
+
+/**
+ * Close and destroy all active overlay windows, and give the app back the foreground.
+ *
+ * The overlay is `alwaysOnTop` at `screen-saver` level and visible on every workspace — it has to
+ * be, or it cannot cover a fullscreen app to take a picture of it. What that costs is where the
+ * foreground goes when it is destroyed: macOS hands it to whatever is underneath, which is
+ * whatever the user happened to have open before Lyra. The main window is not hidden and not
+ * closed; it is simply behind two other applications, which reads as the app having vanished —
+ * the dock icon is there and clicking it does nothing, because nothing is minimised.
+ *
+ * So the return is made explicit. `app.focus({ steal: true })` is the part that matters on macOS:
+ * showing and focusing a window belonging to an application that is not frontmost raises it within
+ * that application, and leaves the application itself behind.
+ */
+export function closeScreenshotOverlay(options?: { restoreFocus?: boolean }): void {
+	const overlays = new Set(overlayWindows);
 	for (const win of overlayWindows) {
 		if (!win.isDestroyed()) {
 			win.destroy();
 		}
 	}
 	overlayWindows = [];
+
+	// Not when another overlay is about to take its place — see the call in
+	// `startScreenshotSession`. Raising the app for one frame between two overlays is a flicker.
+	if (options?.restoreFocus === false) return;
+
+	/*
+	 * Whatever window is not an overlay. Found rather than injected: this module is reached from
+	 * a global shortcut, from IPC and from the overlay's own completion, and threading the main
+	 * window through all three to be used in one place is bookkeeping in three files.
+	 */
+	const main = BrowserWindow.getAllWindows().find((win) => !overlays.has(win) && !win.isDestroyed());
+	if (!main) return;
+	if (main.isMinimized()) main.restore();
+	main.show();
+	main.focus();
+	// The application, not just the window — see above.
+	app.focus({ steal: true });
 }
 
 /**
  * Open the interactive fullscreen overlay window on the display where the cursor currently is.
  */
 export async function startScreenshotSession(customSettings?: ScreenshotSettings): Promise<void> {
-	closeScreenshotOverlay();
+	// A leftover overlay from a previous session, cleared without handing the foreground back —
+	// this one is about to take it.
+	closeScreenshotOverlay({ restoreFocus: false });
 
 	const cursorPoint = screen.getCursorScreenPoint();
 	const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
@@ -138,6 +190,31 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		? `${devServer}#/screenshot-overlay`
 		: `file://${join(import.meta.dirname, "../renderer/index.html")}#/screenshot-overlay`;
 
+	/*
+	 * Shown when the snapshot is on screen, not when the document has loaded.
+	 *
+	 * `did-finish-load` only means the page exists. What follows it is an IPC hop, an `Image`
+	 * decoding a base64 data URL, and a React effect drawing that image to a canvas — all
+	 * asynchronous. Showing the window at the start of that sequence puts an empty transparent
+	 * overlay over the screen for a few frames, which is the flicker: the screen appears to blink
+	 * before freezing.
+	 *
+	 * The renderer says when it has painted. The timeout is not a fallback for slowness — it is
+	 * for a renderer that fails before it gets there, where the alternative is an invisible window
+	 * swallowing every click on the screen with nothing to show for it.
+	 */
+	const reveal = () => {
+		if (win.isDestroyed() || win.isVisible()) return;
+		win.show();
+		win.focus();
+	};
+	revealers.set(win.webContents.id, reveal);
+	const failsafe = setTimeout(reveal, 1500);
+	win.on("closed", () => {
+		clearTimeout(failsafe);
+		revealers.delete(win.webContents.id);
+	});
+
 	win.webContents.once("did-finish-load", () => {
 		win.webContents.send("screenshot:init", {
 			snapshot: snapshot.dataUrl,
@@ -145,8 +222,6 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 			scaleFactor: snapshot.scaleFactor,
 			settings: customSettings ?? currentSettingsProvider?.()?.screenshot,
 		});
-		win.show();
-		win.focus();
 	});
 
 	if (devServer) {

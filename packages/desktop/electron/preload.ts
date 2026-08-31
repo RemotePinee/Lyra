@@ -256,6 +256,9 @@ const api: LyraApi = {
 			ipcRenderer.on("screenshot:init", listener);
 			return () => ipcRenderer.removeListener("screenshot:init", listener);
 		},
+		// "The snapshot is on the canvas" — the overlay stays hidden until this arrives, so that
+		// what appears is the frozen screen rather than an empty window catching up to it.
+		ready: () => ipcRenderer.send("screenshot:ready"),
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),

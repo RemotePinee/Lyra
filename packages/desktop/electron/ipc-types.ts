@@ -552,6 +552,8 @@ export interface LyraApi {
 		cancel(): Promise<void>;
 		pickDirectory(): Promise<string | null>;
 		onInit(handler: (payload: { snapshot: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number; settings?: ScreenshotSettings }) => void): () => void;
+		/** Say the snapshot has been drawn, so the overlay can be shown without a blank frame. */
+		ready(): void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

@@ -46,6 +46,8 @@ interface Rect {
 
 export function ScreenshotOverlay() {
 	const [snapshot, setSnapshot] = useState<string | null>(null);
+	/** The snapshot has decoded and can be drawn. See where it is set for why this is state. */
+	const [imageReady, setImageReady] = useState(false);
 	const [scaleFactor, setScaleFactor] = useState(2);
 	const [settings, setSettings] = useState<ScreenshotSettings | undefined>(undefined);
 
@@ -86,6 +88,13 @@ export function ScreenshotOverlay() {
 					ctx.drawImage(img, 0, 0, pxCanvas.width, pxCanvas.height);
 				}
 				pixelsRef.current = pxCanvas;
+				/*
+				 * A ref does not schedule a render, and the effect that paints the snapshot reads
+				 * this one. Without saying so in state, the image arrived and nothing drew it: the
+				 * background stayed empty until some unrelated state changed — which is to say
+				 * until the pointer moved. This makes the paint a consequence of the image landing.
+				 */
+				setImageReady(true);
 			};
 			img.src = data.snapshot;
 		});
@@ -123,7 +132,15 @@ export function ScreenshotOverlay() {
 			ctx.rect(sx, sy, sw, sh);
 			ctx.fill("evenodd");
 		}
-	}, [snapshot, selection, scaleFactor]);
+
+		/*
+		 * The window is still hidden until this. See `startScreenshotSession`: showing it when the
+		 * document loaded put an empty overlay over the screen for the few frames it took the
+		 * snapshot to arrive, decode and reach this canvas — which read as the screen blinking
+		 * before it froze. Sent every paint; the main process only acts on the first.
+		 */
+		window.lyra.screenshot.ready();
+	}, [snapshot, imageReady, selection, scaleFactor]);
 
 	// Repaint marks
 	useEffect(() => {
