@@ -280,7 +280,8 @@ export function hideDragGhost(): void {
 		lastHoveredWindowId = null;
 	}
 	if (ghostWindow && !ghostWindow.isDestroyed()) {
-		ghostWindow.hide();
+		ghostWindow.destroy();
+		ghostWindow = null;
 	}
 }
 
