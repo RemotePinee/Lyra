@@ -108,6 +108,15 @@ export function SessionTabBar() {
 		const target = e.target as HTMLElement;
 		if (target.closest("button")) return; // Don't drag when clicking buttons
 
+		// If current window is an auxiliary/detached window with only 1 tab (or main window with only 1 tab),
+		// dragging the tab is disabled (standard browser behavior: a sole tab cannot be torn off from itself).
+		const isSoleTab = openTabs.length <= 1;
+
+		if (isSoleTab) {
+			void switchTab(id);
+			return;
+		}
+
 		// Capture all pointer events even outside window/bounds
 		target.setPointerCapture(e.pointerId);
 
@@ -230,12 +239,12 @@ export function SessionTabBar() {
 									void closeTab(id);
 								}
 							}}
-							className={`group relative flex h-7 shrink-0 max-w-[220px] min-w-[90px] cursor-pointer select-none items-center justify-between gap-1.5 rounded-md px-2.5 text-xs transition-all ${
-								isThisDragging
-									? "opacity-30 scale-95 border border-dashed border-accent"
-									: isActive
-										? "bg-elevated text-ink font-medium shadow-xs"
-										: "text-ink-muted hover:bg-card-hover hover:text-ink"
+							className={`group relative flex h-7 shrink-0 max-w-[220px] min-w-[90px] select-none items-center justify-between gap-1.5 rounded-md px-2.5 text-xs transition-all ${
+								openTabs.length > 1 ? (isThisDragging ? "cursor-grabbing opacity-30 scale-95 border border-dashed border-accent" : "cursor-grab") : "cursor-pointer"
+							} ${
+								isActive
+									? "bg-elevated text-ink font-medium shadow-xs"
+									: "text-ink-muted hover:bg-card-hover hover:text-ink"
 							}`}
 						>
 							<div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden pointer-events-none">
