@@ -403,9 +403,10 @@ app.whenReady().then(async () => {
 		for (const chat of sideChats.values()) chat.updateSettings(next);
 		if (next.sync.enabled && !syncStatusSource()?.running) await startSync();
 		else if (!next.sync.enabled && syncStatusSource()?.running) await stopSync();
-		const win = getWindow();
-		if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-			win.webContents.send("settings:changed", next);
+		for (const win of BrowserWindow.getAllWindows()) {
+			if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("settings:changed", next);
+			}
 		}
 	});
 	useSettingsSource(() => settings);
