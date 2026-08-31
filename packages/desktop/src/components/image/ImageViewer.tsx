@@ -128,6 +128,7 @@ export function ImageViewer() {
 		if (!state) return;
 		setHeld(state);
 		setLeaving(false);
+		if (state.startEditing) setEditing(true);
 		if (state.origin) origin.current = state.origin;
 		if (state.source) source.current = state.source;
 	}, [state]);

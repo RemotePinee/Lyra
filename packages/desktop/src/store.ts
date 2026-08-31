@@ -39,6 +39,7 @@ export type SettingsSection =
   | "personalization"
   | "models"
   | "browser"
+  | "screenshot"
   | "plugins"
   | "skills"
   | "agents"

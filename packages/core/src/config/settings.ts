@@ -93,6 +93,27 @@ export interface ScheduledTask {
 	lastError?: string;
 }
 
+export interface ScreenshotSettings {
+	/** Global shortcut to trigger screen capture. e.g. "CommandOrControl+Shift+S" or "Alt+A". */
+	shortcut?: string;
+	/** Directory where screenshots are saved. If empty, saves to ~/Desktop or scratch directory. */
+	saveLocation?: string;
+	/** Whether to automatically copy the screenshot image to clipboard after capture. */
+	copyToClipboard?: boolean;
+	/** Whether to automatically insert the captured screenshot into the active composer. */
+	insertIntoComposer?: boolean;
+	/** Action after capture: open the annotator/editor, or just save/copy quietly. */
+	openEditor?: boolean;
+}
+
+export const DEFAULT_SCREENSHOT_SETTINGS: ScreenshotSettings = {
+	shortcut: "Alt+A",
+	saveLocation: "",
+	copyToClipboard: true,
+	insertIntoComposer: true,
+	openEditor: true,
+};
+
 export interface Settings {
 	/**
 	 * Keys for the search services that want one.
@@ -191,6 +212,7 @@ export interface Settings {
 		defaultOpenTarget: string;
 		showBottomPanel: boolean;
 	};
+	screenshot?: ScreenshotSettings;
 	/**
 	 * Personalization & custom instructions settings across all sessions.
 	 */
@@ -281,6 +303,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	alwaysAllow: [],
 	sync: { enabled: false, port: 4517, token: null },
 	editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
+	screenshot: DEFAULT_SCREENSHOT_SETTINGS,
 	searchApiKeys: {},
 	allowedHosts: [],
 	personalization: {
@@ -306,6 +329,7 @@ export async function loadSettings(): Promise<Settings> {
 			...parsed,
 			sync: { ...DEFAULT_SETTINGS.sync, ...parsed.sync },
 			editor: { ...DEFAULT_SETTINGS.editor, ...parsed.editor },
+			screenshot: { ...DEFAULT_SCREENSHOT_SETTINGS, ...parsed.screenshot },
 			personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization },
 			appearance: migrateAppearance({ ...DEFAULT_APPEARANCE, ...parsed.appearance }),
 			hooks: parsed.hooks ?? [],

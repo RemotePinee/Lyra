@@ -5,6 +5,7 @@ import {
 	BarChart3,
 	Blocks,
 	Bot,
+	Camera,
 	Database,
 	FolderGit2,
 	GitPullRequest,
@@ -20,7 +21,7 @@ import {
 	Sparkles,
 	SquareTerminal,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavPane, useLayout } from "../../layout.tsx";
 import type { SettingsSection } from "../../store.ts";
 import { Scroller } from "../Scroller.tsx";
@@ -39,6 +40,7 @@ import { ExtensionsSettings } from "./ExtensionsSettings.tsx";
 import { HooksSettings } from "./HooksSettings.tsx";
 import { IndexSettings } from "./IndexSettings.tsx";
 import { BrowserSettings } from "./BrowserSettings.tsx";
+import { ScreenshotSettings } from "./ScreenshotSettings.tsx";
 import { SkillsSettings } from "./SkillsSettings.tsx";
 import { AccessSettings } from "./AccessSettings.tsx";
 import { ForgeSettings } from "./ForgeSettings.tsx";
@@ -106,6 +108,23 @@ export function SettingsShell() {
 	const setSection = useApp((s) => s.setSettingsSection);
 	const setView = useApp((s) => s.setView);
 	const { compact, navOpen, toggleNav, dismissNav, sidebarWidth, titlebar } = useLayout();
+	const [platform, setPlatform] = useState("darwin");
+
+	useEffect(() => {
+		void window.lyra.system.platform().then(setPlatform);
+	}, []);
+
+	const groups = GROUPS.map((group) => {
+		if (group.label === "基础设置") {
+			const items = [...group.items];
+			if (platform === "darwin") {
+				// Insert screenshot settings into 基础设置
+				items.splice(items.length - 1, 0, { id: "screenshot", label: "屏幕截图", icon: Camera });
+			}
+			return { ...group, items };
+		}
+		return group;
+	});
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -157,7 +176,7 @@ export function SettingsShell() {
 
 					{/* Same as the workspace sidebar: both ends soften. */}
 					<Scroller className="flex-1" contentClassName={`pb-3 ${compact ? "px-3" : "px-2.5"}`}>
-						{GROUPS.map((group) => (
+						{groups.map((group) => (
 							// Spaced for the same reason as the session list: adjacent filled rows
 							// would otherwise merge into one block on hover.
 							<div key={group.label} className="flex flex-col gap-[2px]">
@@ -285,6 +304,8 @@ function SectionBody({ section }: { section: SettingsSection }) {
 			return <IndexSettings />;
 		case "browser":
 			return <BrowserSettings />;
+		case "screenshot":
+			return <ScreenshotSettings />;
 		case "commands":
 			return <CommandsSettings />;
 		case "search":

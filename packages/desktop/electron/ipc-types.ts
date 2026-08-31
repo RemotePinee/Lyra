@@ -60,6 +60,7 @@ import type {
 	RegistryEntry,
 	Plugin,
 	QueuedTask,
+	ScreenshotSettings,
 	SessionMeta,
 	Settings,
 	Skill,
@@ -544,6 +545,17 @@ export interface LyraApi {
 		 * `img-src` is `self data: blob:` and stays that way — see `system:remoteImage`.
 		 */
 		remoteImage(url: string): Promise<string | null>;
+	};
+	screenshot: {
+		capture(settings?: ScreenshotSettings): Promise<{
+			ok: boolean;
+			canceled?: boolean;
+			dataUrl?: string;
+			filePath?: string;
+			error?: string;
+		}>;
+		pickDirectory(): Promise<string | null>;
+		onTrigger(handler: () => void): () => void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

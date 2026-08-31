@@ -1,9 +1,9 @@
 import type { UserContent } from "@lyra/core";
 // Through the browser-safe door: the main barrel reaches the filesystem, and this runs in a page.
 import { expandCommand, parseInvocation, rankCommands, type SlashCommand } from "@lyra/core/commands-view";
-import { CircleAlert, FileText, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
-import { openFromEvent } from "./image/viewer-store.ts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera, CircleAlert, FileText, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
+import { openFromEvent, openViewer } from "./image/viewer-store.ts";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
 import { CommandMenu } from "./CommandMenu.tsx";
 import type { SkillEntry } from "../../electron/ipc-types.ts";
@@ -465,6 +465,67 @@ export function Composer() {
 		if (next.length > 0) setAttachments((prev) => [...prev, ...next]);
 	}
 
+	const takeScreenshot = useCallback(async () => {
+		const res = await window.lyra.screenshot.capture();
+		if (!res.ok) {
+			if (res.error) useApp.getState().notify(res.error, "warn");
+			return;
+		}
+		if (res.canceled || !res.dataUrl) return;
+
+		const screenshotSettings = settings?.screenshot;
+		const shouldInsert = screenshotSettings?.insertIntoComposer !== false;
+		const shouldOpenEditor = screenshotSettings?.openEditor !== false;
+
+		const attachmentId = `screenshot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const match = /^data:([^;]+);base64,(.*)$/s.exec(res.dataUrl);
+		const mimeType = match ? match[1] : "image/png";
+		const data = match ? match[2] : "";
+
+		const newAttachment: Attachment = {
+			id: attachmentId,
+			name: "截屏.png",
+			mimeType,
+			data,
+			isText: false,
+		};
+
+		if (shouldInsert) {
+			setAttachments((prev) => [...prev, newAttachment]);
+		}
+
+		if (shouldOpenEditor) {
+			openViewer(
+				[
+					{
+						src: res.dataUrl,
+						alt: "截屏",
+						onReplace: (updatedDataUrl: string) => {
+							if (shouldInsert) {
+								setAttachments((prev) =>
+									prev.map((item) =>
+										item.id === attachmentId ? { ...item, ...fromDataUrl(updatedDataUrl, item) } : item,
+									),
+								);
+							}
+						},
+					},
+				],
+				0,
+				null,
+				null,
+				true,
+			);
+		}
+	}, [settings?.screenshot]);
+
+	useEffect(() => {
+		if (window.lyra?.platform !== "darwin") return;
+		return window.lyra.screenshot.onTrigger(() => {
+			void takeScreenshot();
+		});
+	}, [takeScreenshot]);
+
 	return (
 		<div className={`shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
 			<div className="mx-auto w-full max-w-[var(--ly-content)]">
@@ -656,6 +717,17 @@ export function Composer() {
 							>
 								<Plus size={16} strokeWidth={1.9} />
 							</button>
+							{window.lyra?.platform === "darwin" && (
+								<button
+									type="button"
+									data-ly-tip={`屏幕截图 ${settings?.screenshot?.shortcut ? `(${settings.screenshot.shortcut.replace("CommandOrControl", "⌘").replace("Shift", "⇧").replace("Alt", "⌥").replace(/\+/g, "")})` : ""}`}
+									aria-label="屏幕截图"
+									onClick={() => void takeScreenshot()}
+									className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-card-hover hover:text-ink"
+								>
+									<Camera size={15} strokeWidth={1.9} />
+								</button>
+							)}
 							<input
 								ref={fileRef}
 								type="file"

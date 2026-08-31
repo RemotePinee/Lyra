@@ -87,6 +87,8 @@ import { registerUpdateIpc } from "./ipc/updates.ts";
 import { registerTerminalIpc, type LiveTerminal } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
 import { createTray, destroyTray, hasTray, refreshMenu, type TrayCommand } from "./tray.ts";
+import { registerScreenshotIpc } from "./ipc/screenshot.ts";
+import { registerScreenshotShortcut, unregisterScreenshotShortcut } from "./screenshot.ts";
 
 /*
  * A profile is a whole app, Chromium's half included.
@@ -373,6 +375,15 @@ app.whenReady().then(async () => {
 	onSettingsChanged(async (next) => {
 		settings = next;
 		applyNativeAppearance();
+		registerScreenshotShortcut(
+			() => settings,
+			() => {
+				const win = getWindow();
+				if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+					win.webContents.send("screenshot:trigger");
+				}
+			},
+		);
 		for (const session of sessions.values()) session.updateSettings(next);
 		for (const chat of sideChats.values()) chat.updateSettings(next);
 		if (next.sync.enabled && !syncStatusSource()?.running) await startSync();
@@ -423,6 +434,15 @@ app.whenReady().then(async () => {
 
 	registerIpc();
 	createWindow();
+	registerScreenshotShortcut(
+		() => settings,
+		() => {
+			const win = getWindow();
+			if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("screenshot:trigger");
+			}
+		},
+	);
 	if (settings.sync.enabled) await startSync();
 
 	scheduler = new Scheduler({
@@ -508,6 +528,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", async () => {
+	unregisterScreenshotShortcut();
 	destroyTray();
 	scheduler?.stop();
 	for (const dispose of browsers.values()) dispose();
@@ -557,6 +578,11 @@ function registerIpc(): void {
 		startSync,
 		idleSyncStatus,
 		scheduler: () => scheduler,
+	});
+
+	registerScreenshotIpc({
+		settings: () => settings,
+		saveSettings: async (next) => void (await applySettings(next)),
 	});
 
 	registerGitIpc({ insideAProject });

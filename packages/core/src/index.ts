@@ -75,6 +75,7 @@ export { runTool, useToolPipeline, type ToolCall, type ToolMiddleware } from "./
 export {
 	availableModels,
 	DEFAULT_APPEARANCE,
+	DEFAULT_SCREENSHOT_SETTINGS,
 	DEFAULT_SETTINGS,
 	loadSettings,
 	resolveModel,
@@ -85,6 +86,7 @@ export {
 	type PermissionMode,
 	type ScheduledTask,
 	type ProjectEntry,
+	type ScreenshotSettings,
 	type Settings,
 } from "./config/settings.ts";
 export {

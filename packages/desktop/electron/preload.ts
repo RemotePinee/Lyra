@@ -246,6 +246,15 @@ const api: LyraApi = {
 		platform: () => ipcRenderer.invoke("system:platform"),
 		remoteImage: (url) => ipcRenderer.invoke("system:remoteImage", url),
 	},
+	screenshot: {
+		capture: (settings) => ipcRenderer.invoke("screenshot:capture", settings),
+		pickDirectory: () => ipcRenderer.invoke("screenshot:pickDirectory"),
+		onTrigger: (handler) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:trigger", listener);
+			return () => ipcRenderer.removeListener("screenshot:trigger", listener);
+		},
+	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),
 		rebuild: (cwd) => ipcRenderer.invoke("index:rebuild", cwd),
