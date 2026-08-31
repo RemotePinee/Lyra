@@ -46,7 +46,6 @@ import {
 	hitShapes,
 	mosaicBlock,
 	mosaicBrush,
-	mosaicCells,
 	moveShape,
 	pickTolerance,
 	redo,
@@ -55,18 +54,22 @@ import {
 	stepNumber,
 	undo,
 	WIDTH_HANDLE,
-	wrapText,
 	type History,
 	type Point,
 	type Shape,
 	type Tool,
 } from "./annotate.ts";
+import {
+	fontOf,
+	paint,
+	paintMosaic,
+	strokeFor,
+	LINE,
+	PAD,
+	TEXT_SCALE,
+} from "./paint.ts";
 
 const COLOURS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#111827"];
-/** Scaled with the image, so a mark on a 3000px screenshot is not a hairline. */
-const STROKE_BASE = 3;
-/** Type size relative to the stroke, which is itself relative to the image. */
-const TEXT_SCALE = 7;
 
 /** Where a piece of text is being typed, in natural pixels, before it becomes a shape. */
 interface Typing {
@@ -114,10 +117,6 @@ interface Dragging {
  */
 const SELECT_ON_DRAW = new Set<Tool>(["rect", "ellipse", "line", "arrow", "step"]);
 
-/** Line spacing and padding, shared by the field and the paint so the two agree exactly. */
-const LINE = 1.35;
-const PAD = 0.28;
-
 /** What can sit behind a caption. Transparent first, because most captions want nothing. */
 const BACKDROPS: [string | undefined, string][] = [
 	[undefined, "透明"],
@@ -125,10 +124,6 @@ const BACKDROPS: [string | undefined, string][] = [
 	["#111827e6", "黑色"],
 	["#fde68ae6", "浅黄"],
 ];
-
-const FONT = `-apple-system, system-ui, "PingFang SC", sans-serif`;
-/** One string, so the field and the canvas cannot drift apart. */
-const fontOf = (size: number) => `${Math.max(12, size)}px ${FONT}`;
 
 export interface Annotator {
 	tool: Tool;
@@ -305,7 +300,7 @@ export function AnnotateCanvas({ annotator, zoom }: { annotator: Annotator; zoom
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
 	const carrying = useRef<{ x: number; y: number; from: Point; scale: number } | null>(null);
 
-	const stroke = Math.max(STROKE_BASE, Math.round(width / 500));
+	const stroke = strokeFor(width);
 	const typeSize = stroke * TEXT_SCALE;
 
 	/*
@@ -1162,148 +1157,4 @@ function ToolButton({
 			{children}
 		</button>
 	);
-}
-
-// ---------------------------------------------------------------------------
-// Painting
-// ---------------------------------------------------------------------------
-
-/** Blit one averaged pixel per covered cell, at block size, with smoothing off. */
-function paintMosaic(
-	ctx: CanvasRenderingContext2D,
-	shape: Shape,
-	source: HTMLCanvasElement | null,
-	block: number,
-	brush: number,
-) {
-	if (!source) return;
-	const smoothing = ctx.imageSmoothingEnabled;
-	ctx.imageSmoothingEnabled = false;
-	for (const cell of mosaicCells(shape.points, brush, block)) {
-		const [x, y] = cell.split(",").map(Number) as [number, number];
-		if (x < 0 || y < 0) continue;
-		ctx.drawImage(source, x / block, y / block, 1, 1, x, y, block, block);
-	}
-	ctx.imageSmoothingEnabled = smoothing;
-}
-
-/**
- * The top of line `i`'s glyphs.
- *
- * Half the leading sits above the text and half below, which is what a line box does and therefore
- * what the field does. Getting this wrong shifts the painted caption a few pixels off the one that
- * was typed — small, and visible the moment the field disappears.
- */
-const baseline = (top: number, pad: number, i: number, step: number, size: number) =>
-	top + pad + i * step + (step - size) / 2;
-
-function paint(ctx: CanvasRenderingContext2D, shape: Shape, stroke: number, step: number) {
-	ctx.strokeStyle = shape.colour;
-	ctx.fillStyle = shape.colour;
-	ctx.lineWidth = stroke;
-	ctx.lineCap = "round";
-	ctx.lineJoin = "round";
-
-	const first = shape.points[0];
-	const last = shape.points[shape.points.length - 1];
-	if (!first || !last) return;
-
-	if (shape.tool === "text") {
-		const size = shape.size ?? stroke * TEXT_SCALE;
-		const pad = size * PAD;
-		ctx.font = fontOf(size);
-		ctx.textBaseline = "top";
-
-		// The same column the field wrapped at, so the lines break in the same places.
-		const column = (shape.width ?? Number.POSITIVE_INFINITY) - pad * 2;
-		const lines = wrapText((line) => ctx.measureText(line).width, shape.text ?? "", column);
-		const step = size * LINE;
-
-		if (shape.background) {
-			ctx.fillStyle = shape.background;
-			const box = shape.width ?? Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2;
-			const height = lines.length * step + pad * 2;
-			ctx.beginPath();
-			ctx.roundRect(first.x, first.y, box, height, size * 0.2);
-			ctx.fill();
-		} else {
-			// Nothing behind it, so the text carries its own contrast: a light outline under the fill
-			// keeps a red caption readable over a red screenshot.
-			ctx.strokeStyle = "rgba(255,255,255,0.92)";
-			ctx.lineWidth = Math.max(2, size / 9);
-			ctx.lineJoin = "round";
-			lines.forEach((line, i) => ctx.strokeText(line, first.x + pad, baseline(first.y, pad, i, step, size)));
-		}
-
-		ctx.fillStyle = shape.colour;
-		lines.forEach((line, i) => ctx.fillText(line, first.x + pad, baseline(first.y, pad, i, step, size)));
-		return;
-	}
-
-	if (shape.tool === "step") {
-		// A filled disc with the number in it, sized off the stroke like everything else. Centred on
-		// the click rather than starting there: a badge marks a spot, it does not begin at one.
-		const radius = Math.max(12, stroke * 4.5);
-		ctx.beginPath();
-		ctx.arc(first.x, first.y, radius, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.strokeStyle = "rgba(255,255,255,0.95)";
-		ctx.lineWidth = Math.max(2, radius / 7);
-		ctx.stroke();
-
-		ctx.fillStyle = "#ffffff";
-		ctx.font = `600 ${Math.round(radius * 1.15)}px -apple-system, system-ui, sans-serif`;
-		ctx.textAlign = "center";
-		ctx.textBaseline = "middle";
-		ctx.fillText(String(step), first.x, first.y + radius * 0.04);
-		ctx.textAlign = "start";
-		ctx.textBaseline = "alphabetic";
-		return;
-	}
-
-	if (shape.tool === "arrow") {
-		const head = Math.max(10, stroke * 4);
-		const angle = Math.atan2(last.y - first.y, last.x - first.x);
-		// The shaft stops short of the tip, so the line does not show through the notch of the head.
-		const shaft = Math.max(0, Math.hypot(last.x - first.x, last.y - first.y) - head * 0.72);
-		ctx.beginPath();
-		ctx.moveTo(first.x, first.y);
-		ctx.lineTo(first.x + Math.cos(angle) * shaft, first.y + Math.sin(angle) * shaft);
-		ctx.stroke();
-
-		// A solid triangle rather than two strokes: at any size it reads as one arrowhead.
-		const wing = Math.PI / 7;
-		ctx.beginPath();
-		ctx.moveTo(last.x, last.y);
-		ctx.lineTo(last.x - Math.cos(angle - wing) * head, last.y - Math.sin(angle - wing) * head);
-		ctx.lineTo(last.x - Math.cos(angle + wing) * head, last.y - Math.sin(angle + wing) * head);
-		ctx.closePath();
-		ctx.fill();
-		return;
-	}
-
-	ctx.beginPath();
-	if (shape.tool === "pen") {
-		ctx.moveTo(first.x, first.y);
-		for (const point of shape.points.slice(1)) ctx.lineTo(point.x, point.y);
-		// A single click leaves a dot rather than nothing.
-		if (shape.points.length === 1) ctx.lineTo(first.x + 0.01, first.y);
-	} else if (shape.tool === "line") {
-		ctx.moveTo(first.x, first.y);
-		ctx.lineTo(last.x, last.y);
-	} else if (shape.tool === "rect") {
-		ctx.rect(first.x, first.y, last.x - first.x, last.y - first.y);
-	} else {
-		// An ellipse inscribed in the drag, which is what a drag from corner to corner means.
-		ctx.ellipse(
-			(first.x + last.x) / 2,
-			(first.y + last.y) / 2,
-			Math.abs(last.x - first.x) / 2,
-			Math.abs(last.y - first.y) / 2,
-			0,
-			0,
-			Math.PI * 2,
-		);
-	}
-	ctx.stroke();
 }
