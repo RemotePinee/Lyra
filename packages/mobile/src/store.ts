@@ -105,7 +105,7 @@ export const useMobile = create<MobileState>((set, get) => ({
 			const connection = JSON.parse(raw) as Connection;
 			attach(connection, set, get);
 			set({ connection, hydrated: true });
-			await get().refreshSessions();
+			void get().refreshSessions();
 		} catch {
 			set({ hydrated: true });
 		}

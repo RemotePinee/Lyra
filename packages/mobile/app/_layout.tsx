@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Image, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -28,25 +28,18 @@ void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
 	const hydrate = useMobile((s) => s.hydrate);
-	const [ready, setReady] = useState(false);
+	const hydrated = useMobile((s) => s.hydrated);
 
 	useEffect(() => {
-		async function prepare() {
-			try {
-				await hydrate();
-			} finally {
-				setReady(true);
-			}
-		}
-		void prepare();
+		void hydrate();
 	}, [hydrate]);
 
 	useEffect(() => {
-		if (ready) {
-			// Smoothly fade out splash screen once initial layout is ready
+		if (hydrated) {
+			// Hide the native splash screen once store hydration completes
 			void SplashScreen.hideAsync().catch(() => {});
 		}
-	}, [ready]);
+	}, [hydrated]);
 
 	return (
 		<GestureHandlerRootView style={{ flex: 1, backgroundColor: "#171717" }}>
