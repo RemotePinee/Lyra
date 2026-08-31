@@ -81,7 +81,7 @@ export function applyNativeAppearance(): void {
 	nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
 }
 
-function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string } {
+export function bootTheme(): { dark: boolean; background: string; foreground: string; accent: string } {
 	const appearance = readSettings()?.appearance;
 	const dark = appearance
 		? appearance.theme === "dark" || (appearance.theme === "system" && nativeTheme.shouldUseDarkColors)

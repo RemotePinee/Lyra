@@ -268,7 +268,7 @@ export function SessionTabBar() {
 				{externalDropX !== null && (
 					<div
 						style={{ left: Math.max(8, externalDropX) }}
-						className="pointer-events-none absolute top-0.5 bottom-0.5 w-[3px] rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)] z-50 transition-all duration-75 animate-pulse"
+						className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2.5px] rounded-full bg-ok shadow-[0_0_10px_var(--color-ok)] z-50 transition-all duration-75 animate-pulse"
 					/>
 				)}
 

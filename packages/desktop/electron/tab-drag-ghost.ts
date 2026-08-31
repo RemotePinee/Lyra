@@ -8,12 +8,21 @@
  */
 
 import { BrowserWindow, screen } from "electron";
+import { bootTheme } from "./window.ts";
 
 let ghostWindow: BrowserWindow | null = null;
 let currentMode: "detach" | "merge" | "back" = "detach";
 let lastHoveredWindowId: number | null = null;
 
-const GHOST_HTML = `<!DOCTYPE html>
+function buildGhostHtml(): string {
+	const theme = bootTheme();
+	const accentColor = theme.accent || "#339cff";
+	const okColor = "#3ecf8e";
+	const elevatedBg = theme.dark ? "#2c2c2c" : "#e5e5e5";
+	const textColor = theme.dark ? "#ededed" : "#1a1a1a";
+	const lineRule = theme.dark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.12)";
+
+	return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -45,18 +54,20 @@ const GHOST_HTML = `<!DOCTYPE html>
     transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
   }
   .ghost-pill.detach {
-    background: #0284c7;
+    background: ${accentColor};
     border: 1px solid rgba(255, 255, 255, 0.35);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(2, 132, 199, 0.4);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.4);
   }
   .ghost-pill.merge {
-    background: #059669;
+    background: ${okColor};
+    color: #0f172a;
     border: 1px solid rgba(255, 255, 255, 0.45);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(5, 150, 105, 0.5);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.5);
   }
   .ghost-pill.back {
-    background: #475569;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: ${elevatedBg};
+    color: ${textColor};
+    border: 1px solid ${lineRule};
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   }
   .icon {
@@ -72,10 +83,16 @@ const GHOST_HTML = `<!DOCTYPE html>
   }
   .badge {
     font-size: 10px;
-    font-weight: 500;
+    font-weight: 600;
     padding: 1px 5px;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.22);
+  }
+  .ghost-pill.merge .badge {
+    background: rgba(0, 0, 0, 0.15);
+  }
+  .ghost-pill.back .badge {
+    background: rgba(128, 128, 128, 0.2);
   }
 </style>
 </head>
@@ -117,6 +134,7 @@ const GHOST_HTML = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
+}
 
 function getPhysicalCursor(): { x: number; y: number } {
 	return screen.getCursorScreenPoint();
@@ -196,7 +214,7 @@ export function showDragGhost(title: string, sourceWebContentsId?: number): void
 		});
 
 		ghostWindow.setIgnoreMouseEvents(true);
-		void ghostWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(GHOST_HTML)}`);
+		void ghostWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildGhostHtml())}`);
 		ghostWindow.webContents.once("did-finish-load", () => {
 			if (!ghostWindow || ghostWindow.isDestroyed()) return;
 			void ghostWindow.webContents.executeJavaScript(
