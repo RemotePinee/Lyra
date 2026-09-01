@@ -9,11 +9,14 @@
  * `sidechat/TaskStrip`, and the field is `sidechat/SideComposer`.
  */
 
-import { CircleDashed, MessageCirclePlus } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { MessageCirclePlus } from "lucide-react";
+import type { Message } from "@lyra/core";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSide } from "../sideStore.ts";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { ThinkingLine } from "./message/ThinkingLine.tsx";
+import { moodFor, phraseFor } from "./thinking-words.ts";
 import { lastIsSettled, MessageRow, rowKey } from "./sidechat/MessageRow.tsx";
 import { SideComposer } from "./sidechat/SideComposer.tsx";
 import { TaskStrip } from "./sidechat/TaskStrip.tsx";
@@ -48,7 +51,7 @@ export function SideChat() {
 				</PanelEmpty>
 			) : messages.length === 0 ? (
 				<PanelEmpty icon={MessageCirclePlus} title="侧边聊天">
-					临时对话，关闭应用后消失。它看得见主会话聊了什么，但说的话不会写进去；需要动手的事，它会交给主会话排队执行。
+					它看得见主会话聊了什么，但说的话不会写进主会话；需要动手的事，它会交给主会话排队执行。这里的对话会保留，随时回来接着聊。
 				</PanelEmpty>
 			) : (
 				<Scroller
@@ -69,14 +72,17 @@ export function SideChat() {
 					 */}
 					<div className="mx-auto w-full max-w-[var(--ly-content)] py-3">
 						{messages.map((message, index) => (
-							<MessageRow key={rowKey(message, index)} message={message} />
+							<MessageRow key={rowKey(message, index)} message={message} index={index} />
 						))}
-						{running && lastIsSettled(messages) && (
-							<div className="flex items-center gap-2 py-1 text-detail text-ink-faint">
-								<CircleDashed size={13} strokeWidth={1.8} className="ly-spin" />
-								思考中…
-							</div>
-						)}
+						{/*
+						 * The same line the main transcript shows while it waits, minus the meter.
+						 *
+						 * Both conversations are waiting on a model and should say so the same way; a
+						 * spinner and the words 「思考中…」 next to the main transcript's orb and phrase
+						 * made the panel read as a different application. Elapsed time and tokens are
+						 * the main session's to report — this one has nothing to count.
+						 */}
+						{running && lastIsSettled(messages) && <SideThinking messages={messages} />}
 					</div>
 				</Scroller>
 			)}
@@ -92,4 +98,28 @@ export function SideChat() {
 			/>
 		</div>
 	);
+}
+
+/**
+ * The side chat's own "working" line.
+ *
+ * Its own component so the phrase can advance on a timer without re-rendering the whole panel on
+ * every tick — the transcript above it can be long, and a list that repaints four times a second
+ * while the model thinks is the kind of thing that makes a window feel heavy.
+ *
+ * The mood is read off what is actually on screen, the same way `RunningIndicator` reads it: a
+ * `text` block still arriving means composing, anything else means thinking.
+ */
+function SideThinking({ messages }: { messages: Message[] }) {
+	const [tick, setTick] = useState(0);
+	useEffect(() => {
+		const id = setInterval(() => setTick((t) => t + 1), 2600);
+		return () => clearInterval(id);
+	}, []);
+
+	const last = messages[messages.length - 1];
+	const writing =
+		last?.role === "assistant" && last.content.some((block) => block.type === "text" && block.text.length > 0);
+	const mood = moodFor(undefined, undefined, false, writing);
+	return <ThinkingLine mood={mood} phrase={phraseFor(mood, tick, 0)} />;
 }

@@ -233,6 +233,8 @@ export interface LyraApi {
 		/** Null when this session has never had one opened. */
 		state(sessionId: string): Promise<SideChatSnapshot | null>;
 		ask(sessionId: string, content: UserContent[]): Promise<void>;
+		/** Replace one question, discard the tail and answer it again. */
+		editAndResend(sessionId: string, index: number, content: UserContent[]): Promise<void>;
 		abort(sessionId: string): Promise<void>;
 		/** Throw the conversation away and start fresh. The main session is untouched. */
 		reset(sessionId: string): Promise<void>;
@@ -243,6 +245,10 @@ export interface LyraApi {
 		list(sessionId: string): Promise<QueuedTask[]>;
 		/** Only a task that has not started can be withdrawn; stopping a running one is `abort`. */
 		cancel(sessionId: string, taskId: string): Promise<boolean>;
+		/** Remove a finished task from the receipt list. */
+		dismiss(sessionId: string, taskId: string): Promise<boolean>;
+		/** Put an interrupted task back on the queue. */
+		resume(sessionId: string, taskId: string): Promise<boolean>;
 	};
 	/**
 	 * Reading the project's files, for the panel's file browser.

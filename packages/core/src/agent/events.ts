@@ -149,6 +149,18 @@ export interface QueuedTask {
 	finishedAt?: number;
 	/** Why it failed, when it did. */
 	error?: string;
+	/**
+	 * Who cancelled it, because the two cases mean opposite things to the person watching.
+	 *
+	 * `user` is the withdraw button: you took it back, you know what happened, and the row saying
+	 * 「已取消」 afterwards is a receipt for a decision you just made.
+	 *
+	 * `stop` is the task going down with the main session — pressing pause there cancels whatever it
+	 * was running, this included. That one has to be said. A task dispatched from the side chat,
+	 * shown as running, and then simply gone from the list because the main conversation was paused
+	 * reads as the work having been lost.
+	 */
+	cancelledBy?: "user" | "stop";
 }
 
 export type AgentEventSink = (event: AgentEvent) => void | Promise<void>;

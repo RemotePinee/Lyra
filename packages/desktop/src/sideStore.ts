@@ -51,6 +51,8 @@ interface SideState {
 	/** Painted before the round trip, replaced by the stored copy when it arrives. */
 	pending: Message | null;
 	tasks: QueuedTask[];
+	/** Text waiting to be put back into the composer, and a counter so repeats still register. */
+	draftSeed: { text: string; nonce: number } | null;
 	/** Client-side cache of in-memory side chats per session for seamless switching without flicker. */
 	sessionCache: Record<string, { messages: Message[]; toolRuns: Record<string, ToolRun>; running: boolean; tasks: QueuedTask[] }>;
 
@@ -80,7 +82,16 @@ interface SideState {
 	ask(content: UserContent[]): Promise<void>;
 	abort(): Promise<void>;
 	reset(): Promise<void>;
+	/** Change a question already asked and answer from there. Everything after it is dropped. */
+	editAndResend(index: number, content: UserContent[]): Promise<void>;
 	cancelTask(taskId: string): Promise<void>;
+	/** Take a finished row off the list. What it did, if anything, stays in the transcript. */
+	dismissTask(taskId: string): Promise<void>;
+	/** Put a stopped task back on the queue — interrupted by a pause, or failed. */
+	resumeTask(taskId: string): Promise<void>;
+	/** Hand text back to the composer — see the note on the implementation. */
+	seedDraft(text: string): void;
+	clearDraftSeed(): void;
 	applyEvent(sessionId: string, event: AgentEvent): void;
 	setTasks(tasks: QueuedTask[]): void;
 }
@@ -97,6 +108,9 @@ export const useSide = create<SideState>((set, get) => ({
 	browserTarget: null,
 	sessionId: null,
 	sessionCache: {},
+	// Not in `EMPTY`: switching conversations should not throw away half-typed text, and the seed
+	// is consumed by the composer within a tick of being set anyway.
+	draftSeed: null,
 	...EMPTY,
 
 	openPreview: (preview) => set({ browserTarget: { kind: "preview", preview } }),
@@ -183,6 +197,22 @@ export const useSide = create<SideState>((set, get) => ({
 		await window.lyra.sideChat.ask(sessionId, content);
 	},
 
+	/**
+	 * Change a question already asked, and answer from there.
+	 *
+	 * Everything after it goes, because it was a reply to wording that no longer exists — the same
+	 * rule the main conversation follows. Painted immediately for the same reason `ask` is: the
+	 * round trip is long enough that a composer clearing to nothing reads as a lost message.
+	 */
+	async editAndResend(index, content) {
+		const sessionId = get().sessionId;
+		if (!sessionId || get().running) return;
+		const kept = get().messages.slice(0, index);
+		const pending: Message = { role: "user", content, timestamp: Date.now() };
+		set({ messages: [...kept, pending], pending, running: true });
+		await window.lyra.sideChat.editAndResend(sessionId, index, content);
+	},
+
 	async abort() {
 		const sessionId = get().sessionId;
 		if (sessionId) await window.lyra.sideChat.abort(sessionId);
@@ -204,6 +234,38 @@ export const useSide = create<SideState>((set, get) => ({
 		});
 		await window.lyra.tasks.cancel(sessionId, taskId);
 	},
+
+	async resumeTask(taskId) {
+		const sessionId = get().sessionId;
+		if (!sessionId) return;
+		// Optimistic: the row should stop saying "interrupted" on the click.
+		set({
+			tasks: get().tasks.map((t) => (t.id === taskId ? { ...t, status: "queued" as const, cancelledBy: undefined } : t)),
+		});
+		await window.lyra.tasks.resume(sessionId, taskId);
+	},
+
+	async dismissTask(taskId) {
+		const sessionId = get().sessionId;
+		if (!sessionId) return;
+		// Optimistic, same as cancelling: the row goes on the click.
+		set({ tasks: get().tasks.filter((t) => t.id !== taskId) });
+		await window.lyra.tasks.dismiss(sessionId, taskId);
+	},
+
+	/**
+	 * Put a task's text back where it was written, so it can be changed and sent again.
+	 *
+	 * Withdrawing a task should not throw away what it said — that is the whole reason to withdraw
+	 * one rather than let it run. The composer holds its own text, so this is a seed it picks up
+	 * rather than a value it is given; the counter is what makes withdrawing the same text twice
+	 * register as two separate events.
+	 */
+	seedDraft(text) {
+		set({ draftSeed: { text, nonce: get().draftSeed ? get().draftSeed!.nonce + 1 : 1 } });
+	},
+
+	clearDraftSeed: () => set({ draftSeed: null }),
 
 	setTasks: (tasks) => set({ tasks }),
 

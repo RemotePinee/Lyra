@@ -137,6 +137,7 @@ const api: LyraApi = {
 	sideChat: {
 		state: (sessionId) => ipcRenderer.invoke("sidechat:state", sessionId),
 		ask: (sessionId, content) => ipcRenderer.invoke("sidechat:ask", sessionId, content),
+		editAndResend: (sessionId, index, content) => ipcRenderer.invoke("sidechat:editAndResend", sessionId, index, content),
 		abort: (sessionId) => ipcRenderer.invoke("sidechat:abort", sessionId),
 		reset: (sessionId) => ipcRenderer.invoke("sidechat:reset", sessionId),
 		onEvent: (handler) => {
@@ -148,6 +149,8 @@ const api: LyraApi = {
 	tasks: {
 		list: (sessionId) => ipcRenderer.invoke("tasks:list", sessionId),
 		cancel: (sessionId, taskId) => ipcRenderer.invoke("tasks:cancel", sessionId, taskId),
+		dismiss: (sessionId, taskId) => ipcRenderer.invoke("tasks:dismiss", sessionId, taskId),
+		resume: (sessionId, taskId) => ipcRenderer.invoke("tasks:resume", sessionId, taskId),
 	},
 	files: {
 		list: (dir) => ipcRenderer.invoke("files:list", dir),
