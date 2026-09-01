@@ -427,12 +427,14 @@ export function PipelinesView({ cwd, onOpenRelease }: PipelinesViewProps) {
 				<div className="flex items-center gap-2">
 					<Activity size={15} className="text-ink-muted" />
 					<span className="text-detail font-medium text-ink">CI / CD 流水线</span>
-					{runs.some((r) => r.status === "in_progress") && (
-						<span className="flex items-center gap-1 text-micro font-medium text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full">
-							<span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-							运行中
-						</span>
-					)}
+					{/*
+					 * No 「运行中」 badge here.
+					 *
+					 * Every run in the list below already carries its own state — a spinner, a cross, a
+					 * warning — so a badge at the top said the same thing a second time, in the loudest
+					 * treatment on the panel. It was drawing the eye to a summary of what was directly
+					 * underneath it, and away from the rows that actually differ from one another.
+					 */}
 				</div>
 				<div className="flex items-center gap-1">
 					<IconButton

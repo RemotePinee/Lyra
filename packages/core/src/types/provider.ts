@@ -18,7 +18,14 @@ import type { ToolSpec } from "./tool.ts";
  */
 export type ApiFormat = "openai-responses" | "anthropic-messages" | "openai-chat-completions";
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "max";
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | (string & {});
+
+export interface ThinkingOption {
+	id: ThinkingLevel;
+	label: string;
+	detail: string;
+	isDefault?: boolean;
+}
 
 export interface ModelPricing {
 	/** USD per million tokens. */
@@ -42,6 +49,8 @@ export interface ModelConfig {
 	supportsImages: boolean;
 	supportsTools: boolean;
 	pricing?: ModelPricing;
+	/** Custom thinking options supported by this specific model. */
+	thinkingOptions?: ThinkingOption[];
 	/** Extra sampling parameters merged verbatim into the request body. */
 	samplingParams?: Record<string, unknown>;
 }

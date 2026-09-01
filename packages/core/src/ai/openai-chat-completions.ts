@@ -11,7 +11,6 @@ import type {
 	ProviderConfig,
 	RequestOptions,
 	StreamEvent,
-	ThinkingLevel,
 	ToolCallContent,
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
@@ -19,14 +18,7 @@ import { computeCost } from "../utils/pricing.ts";
 import { fetchWithRetry, isRetryableError, retryStream, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 import { describeFetchError, joinUrl, truncate } from "./anthropic-messages.ts";
-
-const REASONING_EFFORT: Record<Exclude<ThinkingLevel, "off">, string> = {
-	minimal: "low",
-	low: "low",
-	medium: "medium",
-	high: "high",
-	max: "high",
-};
+import { resolveReasoningEffort } from "./thinking-options.ts";
 
 export const openaiChatCompletionsProvider: Provider = {
 	api: "openai-chat-completions",
@@ -52,6 +44,7 @@ async function* streamChatCompletions(
 	};
 
 	const thinkingEnabled = model.supportsThinking && options.thinking && options.thinking !== "off";
+	const reasoningEffort = thinkingEnabled ? resolveReasoningEffort(options.thinking, model) : undefined;
 
 	const body: Record<string, unknown> = {
 		model: model.modelId,
@@ -60,9 +53,9 @@ async function* streamChatCompletions(
 		stream_options: { include_usage: true },
 		max_tokens: options.maxTokens ?? model.maxOutputTokens,
 		...(context.tools.length > 0 ? { tools: toChatCompletionsTools(context.tools), tool_choice: "auto" } : {}),
-		...(model.supportsThinking && thinkingEnabled
+		...(model.supportsThinking && thinkingEnabled && reasoningEffort
 			? {
-					reasoning_effort: REASONING_EFFORT[options.thinking as Exclude<ThinkingLevel, "off">],
+					reasoning_effort: reasoningEffort,
 				}
 			: {}),
 		...(options.temperature !== undefined && !thinkingEnabled ? { temperature: options.temperature } : {}),

@@ -338,15 +338,6 @@ export function Composer() {
 	// The mark rolls with the name it belongs to, on the same terms — never on the first paint.
 	const modelRolls = useRolled(modelId ?? "");
 	const permissionMode = settings?.permissionMode ?? "auto";
-	/**
-	 * Settled by the first message.
-	 *
-	 * The transcript holds provider-specific handles — response ids, thinking signatures,
-	 * encrypted reasoning — that another model cannot replay. Once there is history to carry
-	 * forward, this stops being a control and becomes a label saying what this conversation
-	 * runs on.
-	 */
-	const modelLocked = messages.length > 0;
 
 	async function submit() {
 		const trimmed = text.trim();
@@ -800,49 +791,37 @@ export function Composer() {
 								<ContextMeter messages={messages} settings={settings} modelId={modelId} sessionId={activeSessionId} />
 							</div>
 
-							{modelLocked ? (
-								// A label, not a disabled button: nothing here is going to become
-								// clickable, so it should not look like something that might.
-								<span
-									data-ly-tip={`${modelName ?? "模型"} · 对话开始后不能更换，新建对话可选`}
-									className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-label text-ink-faint"
-								>
-									<ModelIcon model={model?.modelId} name={modelName} />
-									<span className="min-w-0 truncate">{modelName ?? "未配置模型"}</span>
-								</span>
-							) : (
-								<button
-									type="button"
-									onClick={modelMenu.toggle}
-									data-ly-tip={modelName ?? "选择模型"}
-									aria-haspopup="menu"
-									aria-expanded={modelMenu.open}
-									className={`flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
-										modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
-									}`}
-								>
-									{/* Keyed on the model, so picking a different house turns the mark over with
-									    the label beside it rather than swapping under it. */}
-									<ModelIcon
-										key={modelId}
-										model={model?.modelId}
-										name={modelName}
-										className={modelRolls ? "ly-roll" : ""}
-									/>
-									<RollingText className="min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
-								</button>
-							)}
+							<button
+								type="button"
+								onClick={modelMenu.toggle}
+								data-ly-tip={modelName ?? "选择模型"}
+								aria-haspopup="menu"
+								aria-expanded={modelMenu.open}
+								className={`flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
+									modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
+								}`}
+							>
+								{/* Keyed on the model, so picking a different house turns the mark over with
+								    the label beside it rather than swapping under it. */}
+								<ModelIcon
+									key={modelId}
+									model={model?.modelId}
+									name={modelName}
+									className={modelRolls ? "ly-roll" : ""}
+								/>
+								<RollingText className="min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
+							</button>
 							<button
 								type="button"
 								onClick={effortMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
-								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium")}`}
+								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium", model)}`}
 								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>
-								<RollingText>{effortLabel(settings?.thinking ?? "medium")}</RollingText>
+								<RollingText>{effortLabel(settings?.thinking ?? "medium", model)}</RollingText>
 							</button>
 
 							<ComposerSend

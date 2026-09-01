@@ -50,7 +50,23 @@ const MIN_SELECTION = 10;
  * region still has to be movable, so the grab is the border itself — the same place the eye
  * already reads as the edge of the shot, and the same convention every other capture tool uses.
  */
-const EDGE_GRAB = 8;
+/**
+ * How wide the frame's edge is to grab, in display pixels.
+ *
+ * Was 8, which is narrower than the border it sits on looks and had to be aimed at. Fourteen is
+ * about the width of a window's resize edge on this platform, and the mark it decorates is only
+ * 1px — the grab area is meant to be generous where the drawing is precise.
+ */
+const EDGE_GRAB = 14;
+
+/**
+ * How tall the size-and-colour bubble is, including the gap above it.
+ *
+ * A constant rather than a measurement: it is only needed to decide which side of the region the
+ * toolbar goes on, that decision has to be made before the bubble exists, and the bubble is one
+ * row of 22px controls in a 4px-padded box — a number that changes only if that row is redesigned.
+ */
+const PROPERTIES_HEIGHT = 34;
 /**
  * How long the dimming takes to arrive, and to leave.
  *
@@ -673,7 +689,17 @@ export function ScreenshotOverlay() {
 	 * the screen with no way to reach it. Measured after the first paint and remembered, so this
 	 * cannot drift again as controls are added.
 	 */
-	const toolbarAt = selection ? toolbarPosition(selection, bounds, { ...TOOLBAR_SIZE, ...toolbarSize }) : null;
+	/*
+	 * The bubble counts towards the placement, whether or not one is open right now.
+	 *
+	 * Measuring only the open one would make the bar jump the moment a tool with properties was
+	 * chosen — the placement would change under the pointer that just chose it. Reserving the room
+	 * unconditionally costs a few pixels of gap in the rare case nothing opens, and keeps the bar
+	 * still.
+	 */
+	const toolbarAt = selection
+		? toolbarPosition(selection, bounds, { ...TOOLBAR_SIZE, ...toolbarSize }, { height: PROPERTIES_HEIGHT })
+		: null;
 
 	return (
 		<div
@@ -852,6 +878,31 @@ export function ScreenshotOverlay() {
 						height: selection.height,
 					}}
 				>
+					{/*
+					 * Four strips along the edge, whose only job is to carry the cursor.
+					 *
+					 * Setting `cursor: move` on this container did nothing once there was anything to
+					 * annotate: the annotation canvas covers the whole region and carries its own
+					 * cursor (`cursor-crosshair`, or the tool's), and CSS takes the cursor from the
+					 * element under the pointer — a child always wins. So the edge said "crosshair"
+					 * while behaving as a grab handle, on every capture, not just when the aim was off.
+					 *
+					 * Real elements above the canvas fix both halves at once: the cursor is theirs, and
+					 * the press lands on them instead of starting a stroke. They do not stop the event,
+					 * so it still reaches the overlay's own handler, which reads it as a move exactly
+					 * as before.
+					 */}
+					{(
+						[
+							["top", { left: 0, right: 0, top: -EDGE_GRAB / 2, height: EDGE_GRAB }],
+							["bottom", { left: 0, right: 0, bottom: -EDGE_GRAB / 2, height: EDGE_GRAB }],
+							["left", { top: 0, bottom: 0, left: -EDGE_GRAB / 2, width: EDGE_GRAB }],
+							["right", { top: 0, bottom: 0, right: -EDGE_GRAB / 2, width: EDGE_GRAB }],
+						] as const
+					).map(([side, box]) => (
+						<div key={side} className="pointer-events-auto absolute cursor-move" style={box} />
+					))}
+
 					{HANDLES.map((h) => {
 						const pt = handlePoint({ x: 0, y: 0, width: selection.width, height: selection.height }, h);
 						return (

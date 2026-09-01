@@ -23,12 +23,14 @@ import { computeCost } from "../utils/pricing.ts";
 import { fetchWithRetry, isRetryableError, retryStream, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 
-const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
+const THINKING_BUDGET: Record<string, number> = {
 	minimal: 1024,
 	low: 4096,
 	medium: 12288,
 	high: 24576,
+	xhigh: 49152,
 	max: 63999,
+	ultra: 63999,
 };
 
 export const anthropicMessagesProvider: Provider = {

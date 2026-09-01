@@ -806,6 +806,8 @@ export interface LyraApi {
 		log(cwd: string, limit?: number, ref?: string): Promise<GitCommit[]>;
 		/** What one commit changed, against its parent. */
 		commitDiff(cwd: string, sha: string): Promise<RefDiff>;
+		/** A commit's file list without its contents, for showing the list before the diffs arrive. */
+		commitDiffSummary(cwd: string, sha: string): Promise<{ files: WorkspaceDiffFile[] }>;
 		/** Any two points in history; `head` of null diffs the index against `base`. */
 		diffRefs(cwd: string, base: string, head: string | null): Promise<RefDiff>;
 

@@ -246,15 +246,14 @@ test("the model can still be chosen while the conversation is empty", async () =
 	}
 });
 
-test("changing the model is refused once there is history to replay", async () => {
+test("changing the model is allowed even after conversation has started", async () => {
 	const h = await harness();
 	try {
 		await h.session.prompt([{ type: "text", text: "开始" }]);
-		const before = h.session.meta.modelId;
 
 		const changed = await h.session.setModel("fake/other");
-		assert.equal(changed, false, "stored messages carry handles another model cannot replay");
-		assert.equal(h.session.meta.modelId, before, "and the refusal must leave the model as it was");
+		assert.equal(changed, true, "model can be updated mid-session");
+		assert.equal(h.session.meta.modelId, "fake/other", "session meta modelId is updated");
 	} finally {
 		await h.cleanup();
 	}

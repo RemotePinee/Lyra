@@ -7,18 +7,42 @@ import { useEffect, useMemo, useState } from "react";
 import type { GitCommit, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 
 import { PanelEmpty } from "../PanelEmpty.tsx";
+import { SkeletonBar } from "../Skeleton.tsx";
 
 import { Scroller } from "../Scroller.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import { Text } from "../Text.tsx";
 
-import { CommitGraph, LANE_WIDTH } from "./CommitGraph.tsx";
+import { CommitGraph, CommitThroughGraph, LANE_WIDTH } from "./CommitGraph.tsx";
+import { withContents } from "./diff-merge.ts";
 import { FileDiffList } from "./FileDiffList.tsx";
 import { buildGraph, graphWidth } from "./graph.ts";
 import { relativeTime } from "./relative-time.ts";
 
 /** Fixed, because the graph has to know it to line its strokes up across rows. */
 const ROW_HEIGHT = 46;
+
+/**
+ * How long a read may take before it is worth showing a placeholder for.
+ *
+ * Roughly the point where a delay stops reading as the click itself and starts reading as a
+ * wait. Under it, saying nothing and then showing the answer is smoother than showing a
+ * placeholder of the wrong height and then correcting it.
+ */
+const SLOW_ENOUGH_MS = 120;
+
+/** The open commit and everything known about it so far. */
+interface Expansion {
+	sha: string;
+	/** What changed. Empty until the listing arrives; contents fill in after. */
+	files: WorkspaceDiffFile[];
+	/** The list of files has not arrived yet, so there is nothing to lay out. */
+	listing: boolean;
+	/** The list is up, the diffs behind it are still being read. */
+	reading: boolean;
+	/** The wait passed `SLOW_ENOUGH_MS` and is worth acknowledging. */
+	slow: boolean;
+}
 
 /**
  * The log, drawn as the graph it is.
@@ -30,23 +54,80 @@ const ROW_HEIGHT = 46;
  */
 export function HistoryView({ cwd }: { cwd: string }) {
   const [commits, setCommits] = useState<GitCommit[]>([]);
-  const [open, setOpen] = useState<string | null>(null);
-  const [diff, setDiff] = useState<WorkspaceDiffFile[]>([]);
+  /*
+   * One piece of state for the open commit, carrying which commit it is about.
+   *
+   * These were five separate values, and the loading flags were reset inside the effect — which
+   * runs after the render that opened the row. So the first frame of every expansion was drawn with
+   * the *previous* expansion's flags: the placeholder appeared for one frame before the code that
+   * suppresses it had run, measurably, at 74px before dropping to nothing.
+   *
+   * Tying them together and stamping them with the sha makes that unrepresentable. A frame either
+   * has this commit's state or it has none, and the reducer below can ignore anything arriving for
+   * a commit that is no longer open without a separate guard for each request.
+   */
+  const [expansion, setExpansion] = useState<Expansion | null>(null);
 
   useEffect(() => {
     void window.lyra.git.log(cwd, 80).then(setCommits);
   }, [cwd]);
 
+  /*
+   * The file list first, the diffs after.
+   *
+   * Asking for both at once is what made expanding feel like a jolt. `commitDiff` reads every
+   * changed file's two blobs and diffs each of them, which on this repository's largest commit is
+   * 125 files and 557ms — so the block was laid out at the placeholder's 74px, held there for half
+   * a second, and then jumped to 3974px. Nothing dropped a frame; the height simply arrived in two
+   * instalments, and the second was fifty times the first.
+   *
+   * `commitDiffSummary` answers the part that decides the layout — which files, how many lines —
+   * from `--name-status` and `--numstat` alone, measured at ~40ms. The rows are then real from the
+   * start, at their final height, and the contents fill in underneath without moving anything.
+   */
+  const openSha = expansion?.sha ?? null;
   useEffect(() => {
-    if (!open) return setDiff([]);
+    if (!openSha) return;
     let live = true;
+    let contentArrived = false;
+    /** Applied only if this commit is still the open one, which is the whole point of the stamp. */
+    const update = (change: (current: Expansion) => Expansion) =>
+      setExpansion((current) => (current && current.sha === openSha ? change(current) : current));
+
+    const announce = setTimeout(() => {
+      if (live) update((current) => ({ ...current, slow: true }));
+    }, SLOW_ENOUGH_MS);
+
     void window.lyra.git
-      .commitDiff(cwd, open)
-      .then((result) => live && setDiff(result.files));
+      .commitDiffSummary(cwd, openSha)
+      .then((summary) => {
+        // A small commit can have its diffs back first; the list must not overwrite them.
+        if (!live || contentArrived) return;
+        update((current) => ({ ...current, files: summary.files, listing: false }));
+      })
+      .catch(() => {});
+
+    void window.lyra.git
+      .commitDiff(cwd, openSha)
+      .then((result) => {
+        if (!live) return;
+        contentArrived = true;
+        update((current) => ({
+          ...current,
+          files: withContents(current.files, result.files),
+          listing: false,
+          reading: false,
+        }));
+      })
+      .catch(() => {
+        if (live) update((current) => ({ ...current, listing: false, reading: false }));
+      });
+
     return () => {
       live = false;
+      clearTimeout(announce);
     };
-  }, [cwd, open]);
+  }, [cwd, openSha]);
 
   const rows = useMemo(() => buildGraph(commits), [commits]);
   const width = useMemo(() => graphWidth(rows, LANE_WIDTH), [rows]);
@@ -63,7 +144,8 @@ export function HistoryView({ cwd }: { cwd: string }) {
     <Scroller className="flex-1" contentClassName="px-1.5 pb-2" top="none" bottom="none">
       {rows.map((row) => {
         const commit = row.commit;
-        const expanded = open === commit.sha;
+        const state = expansion && expansion.sha === commit.sha ? expansion : null;
+        const expanded = state !== null;
         return (
           <div key={commit.sha}>
             {/*
@@ -74,7 +156,13 @@ export function HistoryView({ cwd }: { cwd: string }) {
               <CommitGraph row={row} height={ROW_HEIGHT} width={width} />
               <button
                 type="button"
-                onClick={() => setOpen(expanded ? null : commit.sha)}
+                onClick={() =>
+                  setExpansion(
+                    expanded
+                      ? null
+                      : { sha: commit.sha, files: [], listing: true, reading: true, slow: false },
+                  )
+                }
                 aria-expanded={expanded}
                 style={{ height: ROW_HEIGHT }}
                 /* `ly-scroll` is what lets the subject scroll on hover — the marquee keys off an
@@ -124,12 +212,42 @@ export function HistoryView({ cwd }: { cwd: string }) {
                 )}
               </button>
             </div>
-            {expanded && (
-              <div className="ly-enter mb-1.5" style={{ marginLeft: width }}>
-                <FileDiffList
-                  files={diff}
-                  emptyLabel="正在读取这次提交的改动…"
-                />
+            {/*
+             * The breathing room below an expansion is padding on the text side, not a margin on
+             * the row.
+             *
+             * As a margin it sat outside the box the graph column stretches to, so the lane stopped
+             * six pixels short of the next commit's line and left a visible break in what is meant
+             * to read as one continuous branch. Same gap on screen either way; this way the graph
+             * spans it.
+             */}
+            {state && (state.slow || !state.listing) && (
+              <div className="ly-enter flex items-stretch">
+                <CommitThroughGraph row={row} width={width} />
+                <div className="min-w-0 flex-1 pb-1.5 pl-2 pr-1">
+                  {state.listing ? (
+                    <div className="space-y-2 py-2.5 pr-2" aria-hidden>
+                      <div className="flex items-center gap-2">
+                        <SkeletonBar width="12px" height={12} className="shrink-0 !rounded-xs" />
+                        <SkeletonBar width="65%" height={10} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <SkeletonBar width="12px" height={12} className="shrink-0 !rounded-xs" />
+                        <SkeletonBar width="82%" height={10} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <SkeletonBar width="12px" height={12} className="shrink-0 !rounded-xs" />
+                        <SkeletonBar width="48%" height={10} />
+                      </div>
+                    </div>
+                  ) : (
+                    <FileDiffList
+                      files={state.files}
+                      loadingContent={state.reading}
+                      emptyLabel="这次提交没有文件改动"
+                    />
+                  )}
+                </div>
               </div>
             )}
           </div>

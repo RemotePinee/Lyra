@@ -100,6 +100,28 @@ export const Conversation = memo(function Conversation() {
   /** Something arrived while scrolled up, which is the difference between "go down" and "new". */
   const [missed, setMissed] = useState(false);
 
+  const updateScrollState = useCallback(
+    (el: HTMLDivElement) => {
+      // Every frame of `glideToBottom` fires this; letting it decide anything mid-flight is
+      // what made the button flicker and the pin land early.
+      if (gliding.current) return;
+      const atBottom = el.scrollHeight - el.clientHeight <= 1 || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      pinnedToBottom.current = atBottom;
+      setAway(!atBottom);
+      if (atBottom) setMissed(false);
+
+      if (activeSessionId) {
+        const cache = useApp.getState().sessionCache;
+        const currentEntry = cache[activeSessionId];
+        if (currentEntry) {
+          currentEntry.scrollTop = el.scrollTop;
+          currentEntry.pinnedToBottom = atBottom;
+        }
+      }
+    },
+    [activeSessionId],
+  );
+
 	/*
 	 * Before paint, not after.
 	 *
@@ -114,6 +136,8 @@ export const Conversation = memo(function Conversation() {
 		if (pinnedToBottom.current) {
 			el.scrollTop = el.scrollHeight;
 		}
+		// Synchronize scroll & pinned state in case message/tool changes altered content height
+		updateScrollState(el);
 		/*
 		 * A cheap stand-in for "output arrived".
 		 *
@@ -122,7 +146,7 @@ export const Conversation = memo(function Conversation() {
 		 * appears or completes — the moments that actually change the page height.
 		 */
 		setMissed(false);
-	}, [messages, toolRunCount]);
+	}, [messages, toolRunCount, updateScrollState]);
 
   /**
    * Ride down to the newest message, on a curve, without being interrupted on the way.
@@ -259,24 +283,8 @@ export const Conversation = memo(function Conversation() {
         className="flex-1"
         scrollRef={scrollRef}
         contentClassName={compact ? "px-4" : "px-8"}
-        onScroll={(el) => {
-          // Every frame of `glideToBottom` fires this; letting it decide anything mid-flight is
-          // what made the button flicker and the pin land early.
-          if (gliding.current) return;
-          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-          pinnedToBottom.current = atBottom;
-          setAway(!atBottom);
-          if (atBottom) setMissed(false);
-
-          if (activeSessionId) {
-            const cache = useApp.getState().sessionCache;
-            const currentEntry = cache[activeSessionId];
-            if (currentEntry) {
-              currentEntry.scrollTop = el.scrollTop;
-              currentEntry.pinnedToBottom = atBottom;
-            }
-          }
-        }}
+        onScroll={updateScrollState}
+        onResize={updateScrollState}
       >
         {/*
          * Keyed on the session so switching plays a short fade rather than swapping one

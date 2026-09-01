@@ -1,6 +1,6 @@
 {
 	"name": "@lyra/core",
-	"version": "0.8.33",
+	"version": "0.8.34",
 	"private": true,
 	"type": "module",
 	"description": "Lyra agent kernel: providers, agent loop, tools, skills, MCP, sessions",
@@ -8,6 +8,7 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
+		"./thinking-options": "./src/ai/thinking-options.ts",
 		"./node": "./src/node.ts",
 		"./tokens": "./src/tokens.ts",
 		"./activity": "./src/activity.ts",

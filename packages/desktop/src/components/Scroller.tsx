@@ -30,6 +30,7 @@ export function Scroller({
 	top = "fade",
 	bottom = "fade",
 	onScroll,
+	onResize,
 	scrollRef,
 }: {
 	children: React.ReactNode;
@@ -53,6 +54,8 @@ export function Scroller({
 	/** Same question at the bottom, minus the hairline: nothing is ever pinned below the content. */
 	bottom?: "fade" | "none";
 	onScroll?: (element: HTMLDivElement) => void;
+	/** Called whenever content or viewport dimensions change. */
+	onResize?: (element: HTMLDivElement) => void;
 	/** Exposed for callers that drive the scroll position themselves, like the transcript. */
 	scrollRef?: React.RefObject<HTMLDivElement | null>;
 }) {
@@ -101,6 +104,7 @@ export function Scroller({
 		const el = viewport.current;
 		if (!el) return;
 		measure();
+		onResize?.(el);
 
 		let frame = 0;
 		const scheduleMeasure = () => {
@@ -108,15 +112,38 @@ export function Scroller({
 			frame = requestAnimationFrame(() => {
 				frame = 0;
 				measure();
+				if (viewport.current) onResize?.(viewport.current);
 			});
 		};
 
-		// Both are needed: the box changes when the window resizes, and the content changes
-		// when messages stream in or a list is filtered.
+		/*
+		 * The content is watched, not just the box — they are different measurements.
+		 *
+		 * `observe(el)` alone reports the *viewport's* size, and the viewport is a flex item: its
+		 * height is decided by the layout above it and does not move when what is inside grows or
+		 * shrinks. So collapsing a tool group — which animates an inner height to zero without
+		 * touching a single node — changed `scrollHeight` by hundreds of pixels and fired nothing.
+		 * Measured: shrinking a child from 900px to 200px produced zero callbacks.
+		 *
+		 * Watching the direct children fixes it, because height propagates outward through ordinary
+		 * block flow: a group three levels down collapses, its ancestors shorten, and the child of
+		 * the viewport shortens with them.
+		 *
+		 * The mutation observer stays, and now has a second job: children come and go as messages
+		 * arrive, and a new one has to be picked up by the size observer too.
+		 */
 		const observer = new ResizeObserver(scheduleMeasure);
-		observer.observe(el);
+		const watch = () => {
+			observer.disconnect();
+			observer.observe(el);
+			for (const child of el.children) observer.observe(child);
+		};
+		watch();
 
-		const mutations = new MutationObserver(scheduleMeasure);
+		const mutations = new MutationObserver(() => {
+			watch();
+			scheduleMeasure();
+		});
 		mutations.observe(el, { childList: true, subtree: false });
 
 		return () => {
@@ -124,7 +151,7 @@ export function Scroller({
 			observer.disconnect();
 			mutations.disconnect();
 		};
-	}, [measure, viewport]);
+	}, [measure, onResize, viewport]);
 
 	// Dragging continues outside the thumb, so the listeners live on the window.
 	useEffect(() => {

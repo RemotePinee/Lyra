@@ -31,6 +31,7 @@ export {
 } from "./git-status.ts";
 export {
 	commitDiff,
+	commitDiffSummary,
 	commitStaged,
 	createBranch,
 	deleteBranch,

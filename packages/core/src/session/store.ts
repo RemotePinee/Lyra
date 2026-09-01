@@ -30,6 +30,18 @@ export interface SessionMeta {
 	messageCount: number;
 	usage: Usage;
 	archived?: boolean;
+	/**
+	 * How many messages were already written when the model was last changed mid-conversation.
+	 *
+	 * Everything before this index was produced by a different model, and carries that provider's
+	 * opaque handles — an Anthropic thinking signature, a Responses reasoning item id, an encrypted
+	 * payload. They are only meaningful to the provider that issued them; replayed to another they
+	 * are rejected, not ignored. See `stripStaleHandles`.
+	 *
+	 * Absent on a session whose model never changed, which is the ordinary case and behaves exactly
+	 * as before.
+	 */
+	modelSwitchedAt?: number;
 	/** Highest sequence number written. Sync clients compare against this. */
 	seq: number;
 }

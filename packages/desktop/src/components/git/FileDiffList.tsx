@@ -5,6 +5,7 @@ import type { WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
 import { BinaryDiff } from "./BinaryDiff.tsx";
 import { DiffView } from "../DiffView.tsx";
 import { iconColour, lookFor } from "../fileIcon.tsx";
+import { SkeletonBar } from "../Skeleton.tsx";
 import { Text } from "../Text.tsx";
 
 /**
@@ -42,6 +43,7 @@ export function FileDiffList({
   emptyLabel = "没有匹配的文件",
   initiallyOpen,
   cwd = null,
+  loadingContent = false,
 }: {
   files: WorkspaceDiffFile[];
   /**
@@ -56,6 +58,15 @@ export function FileDiffList({
   emptyLabel?: string;
   /** Open every file on first render. Used where the list is short by construction. */
   initiallyOpen?: boolean;
+  /**
+   * The rows are real but their diffs are still being read.
+   *
+   * The history view lists a commit's files before it has read any of them, so that the block
+   * reaches its final height at once instead of jumping when the contents land. Until they do, an
+   * opened file has no hunks — which is indistinguishable, from here, from a file that genuinely
+   * has nothing to compare. Saying so wrongly is worse than saying nothing, hence the flag.
+   */
+  loadingContent?: boolean;
 }) {
   const [open, setOpen] = useState<Set<string>>(() =>
     initiallyOpen ? new Set(files.map((file) => file.path)) : new Set(),
@@ -165,6 +176,12 @@ export function FileDiffList({
                 ) : file.binary ? (
                   // An image is shown, not described — see `BinaryDiff`.
                   <BinaryDiff cwd={cwd} file={file} />
+                ) : file.hunks.length === 0 && loadingContent ? (
+                  <div className="space-y-2 px-3 py-3" aria-hidden>
+                    <SkeletonBar width="88%" height={10} />
+                    <SkeletonBar width="64%" height={10} />
+                    <SkeletonBar width="76%" height={10} />
+                  </div>
                 ) : file.hunks.length === 0 ? (
                   <Text
                     as="p"

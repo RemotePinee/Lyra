@@ -44,6 +44,7 @@ import {
 	handlesOf,
 	hitShape,
 	hitShapes,
+	insideBounds,
 	mosaicBlock,
 	mosaicBrush,
 	moveShape,
@@ -68,6 +69,17 @@ import {
 } from "./paint.ts";
 
 const COLOURS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#111827"];
+
+/**
+ * What an empty caption says, and therefore what an empty caption has to be wide enough for.
+ *
+ * A constant because two places need it and they must not drift: the field renders it, and
+ * `fitWidth` measures it to decide how wide an empty box is. Written out in either place
+ * separately, changing the wording would silently reintroduce a box its own placeholder does not
+ * fit in — which is exactly how it broke: the floor was a guess in character counts, the
+ * placeholder is four characters, and the guess was 1.6.
+ */
+const PLACEHOLDER = "输入文字";
 
 /** Where a piece of text is being typed, in natural pixels, before it becomes a shape. */
 interface Typing {
@@ -265,6 +277,21 @@ export function useAnnotator(src: string | RawPixels | null, options?: Annotator
 		image.current = null;
 		if (previous?.source instanceof ImageBitmap) previous.source.close();
 
+		/*
+		 * The mosaic's averaged copies belong to the picture that is going away.
+		 *
+		 * They were kept in a ref and only ever written to, so a second capture found the *first*
+		 * capture's averages still cached under the same grid size and blitted those. The blocks
+		 * came out in colours from nowhere on this screen — the desktop behind the previous
+		 * screenshot, in the case that made this visible.
+		 *
+		 * Which makes it worse than a rendering fault: a mosaic is what people reach for to cover
+		 * something they do not want seen, and this one was painting pixels from an *earlier*
+		 * screenshot over it. Not only was the thing underneath not redacted, the blocks on top
+		 * were showing a different capture's content.
+		 */
+		sources.current.clear();
+
 		// The viewer passes "" while it is only showing the picture. Setting an empty `src` on an
 		// Image resolves against the document URL and fetches the page itself, so it is not a
 		// harmless no-op — it has to be skipped rather than allowed to fail.
@@ -352,6 +379,73 @@ export function useAnnotator(src: string | RawPixels | null, options?: Annotator
 
 	const shapes = current(history);
 
+	/**
+	 * Restyle the selected mark, if there is one.
+	 *
+	 * The toolbar used to be purely about *what happens next*: picking red set the colour the next
+	 * mark would be drawn in and left the arrow you had just drawn — still selected, still showing
+	 * its handles — exactly as it was. Every editor works the other way round, and for good reason:
+	 * a selection is the thing you are talking about, so the control you reach for next is about
+	 * that thing. The only way to change a mark's colour was to delete it and draw it again.
+	 *
+	 * Committed to history, so it can be undone like any other edit.
+	 */
+	const restyle = useCallback(
+		(change: (shape: Shape) => Shape) => {
+			setHistory((h) => {
+				const list = current(h);
+				if (selected === null || selected >= list.length) return h;
+				return commit(
+					h,
+					list.map((shape, index) => (index === selected ? change(shape) : shape)),
+				);
+			});
+		},
+		[selected],
+	);
+
+	const applyColour = useCallback(
+		(next: string) => {
+			setColour(next);
+			restyle((shape) => ({ ...shape, colour: next }));
+		},
+		[restyle],
+	);
+
+	/**
+	 * The size control, applied to the selected mark as well.
+	 *
+	 * Each tool measures "size" in its own units — a line has a stroke, text has a point size, a
+	 * mosaic has a grid and a brush — so this recomputes whichever ones that mark actually carries
+	 * rather than writing a stroke onto everything. Text keeps its column and its height in step
+	 * with the new size, or the box that was measured for 15pt would clip 22pt.
+	 */
+	const applyWeight = useCallback(
+		(next: number) => {
+			setWeight(next);
+			if (width <= 0) return;
+			const stroke = Math.max(1, strokeFor(width) * next);
+			restyle((shape) => {
+				if (shape.tool === "text") {
+					const size = stroke * TEXT_SCALE;
+					const ratio = shape.size ? size / shape.size : 1;
+					return {
+						...shape,
+						size,
+						width: shape.width ? shape.width * ratio : shape.width,
+						height: shape.height ? shape.height * ratio : shape.height,
+					};
+				}
+				if (shape.tool === "mosaic") {
+					return { ...shape, block: mosaicBlock(width, next), brush: mosaicBrush(width) * next };
+				}
+				return { ...shape, stroke };
+			});
+		},
+		[restyle, width],
+	);
+
+
 	/*
 	 * Anything that changes the list clears the selection.
 	 *
@@ -375,11 +469,11 @@ export function useAnnotator(src: string | RawPixels | null, options?: Annotator
 			setTool(next);
 		}, []),
 		colour,
-		setColour,
+		setColour: applyColour,
 		backdrop,
 		setBackdrop,
 		weight,
-		setWeight,
+		setWeight: applyWeight,
 		undo: useCallback(() => step(undo), [step]),
 		redo: useCallback(() => step(redo), [step]),
 		clear: useCallback(() => step((h) => (current(h).length === 0 ? h : commit(h, []))), [step]),
@@ -566,8 +660,26 @@ export function AnnotateCanvas({
 			if (!ctx) return typeSize * 8;
 			ctx.font = fontOf(typeSize);
 			const longest = text.split("\n").reduce((n, line) => Math.max(n, ctx.measureText(line).width), 0);
-			// A little slack past the last glyph, so the caret is never sitting on the edge.
-			return Math.min(Math.max(longest + pad + typeSize * 0.8, typeSize * 6), Math.max(width * 0.9, typeSize * 6));
+			/*
+			 * Two separate questions, which were being answered by one number.
+			 *
+			 * How much room sits past the last glyph, and how wide a box with nothing in it is, are
+			 * not the same thing — and treating them as one is what produced both complaints in
+			 * turn. A floor of six characters kept the placeholder readable and left a caption
+			 * sitting in a box far wider than its text; dropping the floor to 1.6 tightened the
+			 * caption and squeezed a four-character placeholder into a column one character wide.
+			 *
+			 * So: the padding is what `PAD` says and is already symmetric — the field puts the same
+			 * amount on all four sides. What was making the right side look loose is the allowance
+			 * added *after* it, which lands entirely on the right because text is left-aligned. A
+			 * caret is one or two pixels; it does not need a third of a character.
+			 *
+			 * And the floor is measured rather than guessed: whatever the placeholder happens to
+			 * say, an empty box is wide enough to show it on one line.
+			 */
+			const caret = Math.max(2, typeSize * 0.08);
+			const floor = ctx.measureText(PLACEHOLDER).width + pad + caret;
+			return Math.min(Math.max(longest + pad + caret, floor), Math.max(width * 0.9, floor));
 		},
 		[canvas, typeSize, width],
 	);
@@ -737,7 +849,20 @@ export function AnnotateCanvas({
 		const smears = tool === "pen" || tool === "mosaic";
 		let target = -1;
 		let held = false;
-		if (chosen && selected !== null && hitShape([chosen], point, tolerance) === 0) {
+		/*
+		 * The selected mark is grabbed anywhere inside its frame, not only on its stroke.
+		 *
+		 * Everything else still goes by the outline — see `insideBounds` for why that distinction is
+		 * worth keeping. The pen and the mosaic are excluded from even this: their frame is the
+		 * bounding box of a scribble, which can span half the picture.
+		 */
+		const framed = chosen !== null && chosen.tool !== "pen" && chosen.tool !== "mosaic";
+		if (
+			chosen &&
+			selected !== null &&
+			(hitShape([chosen], point, tolerance) === 0 ||
+				(framed && insideBounds(chosen, point, chosen.stroke ?? stroke, tolerance)))
+		) {
 			target = selected;
 			held = true;
 		} else if (!smears) {
@@ -1108,7 +1233,7 @@ export function AnnotateCanvas({
 							 */
 							if (event.key === "Escape") setTyping(null);
 						}}
-						placeholder="输入文字"
+						placeholder={PLACEHOLDER}
 						rows={1}
 						spellCheck={false}
 						className="relative block w-full resize-none overflow-hidden border-0 bg-transparent outline-none placeholder:text-current placeholder:opacity-40"
@@ -1480,7 +1605,23 @@ function ToolProperties({ annotator, index, side }: { annotator: Annotator; inde
 				))}
 
 			{/* The tail, which is what makes it a bubble belonging to a button rather than a second row. */}
-			<span className="-bottom-1 absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-white/12 border-r border-b bg-[#1c1c1e]/95" />
+			{/*
+			 * The little point, on whichever side the toolbar actually is.
+			 *
+			 * It exists to say which button this bubble belongs to, and it was pinned to the bottom
+			 * and pointing down no matter where the bubble opened. The bubble flips: when the
+			 * toolbar sits below the region, the bubble opens *below the toolbar*, and a point on
+			 * its underside was aiming at empty screen — at the dock, in the report — while the
+			 * button it belongs to was above it.
+			 *
+			 * Rotating a square by 45° and keeping two of its borders is what makes the tip; which
+			 * two decides which way it faces.
+			 */}
+			<span
+				className={`absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-white/12 bg-[#1c1c1e]/95 ${
+					side === "below" ? "-top-1 border-t border-l" : "-bottom-1 border-r border-b"
+				}`}
+			/>
 		</div>
 	);
 }

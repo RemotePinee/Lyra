@@ -153,3 +153,34 @@ test("a selection at the left edge is not pushed off the other way", () => {
 	const at = toolbarPosition({ x: 0, y: 100, width: 100, height: 100 }, screen, toolbar);
 	assert.ok(at.x >= 0);
 });
+
+test("the bar leaves room for the bubble it opens, rather than only for itself", () => {
+	/*
+	 * The reported symptom: a region reaching the bottom of the screen put the toolbar in the last
+	 * strip that fitted, and the size-and-colour bubble — which opens *further* from the region —
+	 * landed off the screen. All that showed of it was a row of pixels along the bottom edge.
+	 */
+	const bubble = { height: 34 };
+	// A region whose bottom leaves room for the bar but not for the bar plus the bubble.
+	const tight = { x: 100, y: 100, width: 400, height: screen.height - 100 - toolbar.height - 24 };
+
+	const without = toolbarPosition(tight, screen, toolbar);
+	assert.equal(without.side, "below", "前提：不考虑气泡时它会放在下方");
+
+	const at = toolbarPosition(tight, screen, toolbar, bubble);
+	assert.notEqual(at.side, "below", "下方放不下整摞时不应再选下方");
+	// And wherever it went, the whole stack is on screen.
+	const top = at.side === "below" ? at.y : at.y - bubble.height;
+	const bottom = at.side === "below" ? at.y + toolbar.height + bubble.height : at.y + toolbar.height;
+	assert.ok(top >= 0, `整摞顶部跑出了屏幕：${top}`);
+	assert.ok(bottom <= screen.height, `整摞底部跑出了屏幕：${bottom}`);
+});
+
+test("with room on both sides the bubble does not change where the bar goes", () => {
+	// The reservation must not push the bar around in the ordinary case.
+	const roomy2 = { x: 100, y: 200, width: 400, height: 200 };
+	assert.deepEqual(
+		toolbarPosition(roomy2, screen, toolbar, { height: 34 }),
+		toolbarPosition(roomy2, screen, toolbar),
+	);
+});
