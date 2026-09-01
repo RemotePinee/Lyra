@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 let spawnPty: typeof import("node-pty").spawn = ((() => {
 	try {
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -77,6 +77,7 @@ import {
 import { resolveInside } from "./file-ops.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
 import { registerFileOpsIpc } from "./ipc/file-ops.ts";
+import { registerFormatIpc } from "./ipc/format.ts";
 import { rescueLegacyWorkspaces } from "./scratch.ts";
 import { applySettings, loadAppSettings, onSettingsChanged } from "./app-settings.ts";
 import { registerServicesIpc } from "./ipc/services.ts";
@@ -168,6 +169,21 @@ function projectPath(target: string): string | null {
 	return resolveInside(
 		target,
 		(settings?.projects ?? []).map((project) => project.path),
+	);
+}
+
+/** The innermost open project containing a path, for bounded upward config searches. */
+function projectRoot(target: string): string | null {
+	const resolvedTarget = projectPath(target);
+	if (!resolvedTarget) return null;
+	return (
+		(settings?.projects ?? [])
+			.map((project) => resolve(project.path))
+			.filter((root) => {
+				const rel = relative(root, resolvedTarget);
+				return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
+			})
+			.sort((a, b) => b.length - a.length)[0] ?? null
 	);
 }
 
@@ -569,6 +585,7 @@ function registerIpc(): void {
 
 	registerFilesIpc({ projectPath });
 	registerFileOpsIpc({ projectPath });
+	registerFormatIpc({ projectPath, projectRoot });
 
 	registerTerminalIpc({ terminals, spawnPty, projectPath, insideAProject, window: () => getWindow() });
 	registerUpdateIpc();

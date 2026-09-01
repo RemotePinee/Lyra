@@ -112,13 +112,13 @@ export function FileViewer({
 			{kind === "image" ? (
 				// Zoom and pan, because an icon and a screenshot are both images and neither is
 				// legible at "whatever fits the pane" — see `ImagePane`.
-				<ImagePane src={media} name={name} />
+				<ImagePane key={path} src={media} name={name} />
 			) : kind === "sheet" ? (
-				<SheetView path={path} />
+				<SheetView key={path} path={path} />
 			) : kind === "pdf" ? (
-				<PdfView path={path} name={name} />
+				<PdfView key={path} path={path} name={name} />
 			) : kind === "document" ? (
-				<WordView path={path} />
+				<WordView key={path} path={path} />
 			) : kind === "video" ? (
 				<div className="flex min-h-0 flex-1 items-center justify-center bg-black/85 p-2">
 					{/* biome-ignore lint/a11y/useMediaCaption: a file preview has no caption track. */}

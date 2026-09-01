@@ -152,6 +152,11 @@ const api: LyraApi = {
 		dismiss: (sessionId, taskId) => ipcRenderer.invoke("tasks:dismiss", sessionId, taskId),
 		resume: (sessionId, taskId) => ipcRenderer.invoke("tasks:resume", sessionId, taskId),
 	},
+	format: {
+		external: (extension, source) => ipcRenderer.invoke("format:external", extension, source),
+		available: (extension) => ipcRenderer.invoke("format:available", extension),
+		config: (file) => ipcRenderer.invoke("format:config", file),
+	},
 	files: {
 		list: (dir) => ipcRenderer.invoke("files:list", dir),
 		read: (path) => ipcRenderer.invoke("files:read", path),

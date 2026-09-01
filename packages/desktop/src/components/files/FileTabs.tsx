@@ -17,7 +17,14 @@ import { useOpenFile } from "../../store/openFile.ts";
 
 export function FileTabs() {
 	const tabs = useOpenFile((s) => s.tabs);
-	const open = useOpenFile((s) => s.path);
+	/*
+	 * The tab being opened wins over the one on screen, for the moment they differ.
+	 *
+	 * `path` only moves once the file's contents have arrived — that is what stopped the content
+	 * area flickering — so highlighting `path` alone would leave a click unacknowledged until the
+	 * read landed. The strip answers immediately; the content area answers when it has something.
+	 */
+	const open = useOpenFile((s) => s.opening ?? s.path);
 	const drafts = useOpenFile((s) => s.drafts);
 	const strip = useRef<HTMLDivElement>(null);
 

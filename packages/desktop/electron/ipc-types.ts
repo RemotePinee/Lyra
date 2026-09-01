@@ -103,6 +103,13 @@ import type { SkillEntry } from "./ipc/commands.ts";
  */
 export type { ForgeAccount, ForgeKind, ForgeKindInfo } from "./forge/types.ts";
 
+/** What `format.external` can return. */
+export type ExternalFormatResult =
+	| { ok: true; text: string; tool: string }
+	| { ok: false; reason: "unsupported" }
+	| { ok: false; reason: "failed"; message: string; tool: string }
+	| { ok: false; reason: "missing"; tool: string; install: string };
+
 /** One shell in a directory, as the tab strip lists it. */
 export interface TerminalTab {
 	id: string;
@@ -249,6 +256,12 @@ export interface LyraApi {
 		dismiss(sessionId: string, taskId: string): Promise<boolean>;
 		/** Put an interrupted task back on the queue. */
 		resume(sessionId: string, taskId: string): Promise<boolean>;
+	};
+	/** Operations that require project files or external formatter binaries. */
+	format: {
+		external(extension: string, source: string): Promise<ExternalFormatResult>;
+		available(extension: string): Promise<boolean>;
+		config(file: string): Promise<(Record<string, unknown> & { __source?: string }) | null>;
 	};
 	/**
 	 * Reading the project's files, for the panel's file browser.

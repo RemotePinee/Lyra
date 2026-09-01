@@ -22,10 +22,48 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store.ts";
 import { GRAMMARS, grammarKeyFor, highlightStyle } from "./highlight.ts";
 import { editorTheme } from "./editor/theme.ts";
+import { applyFormat } from "./editor/apply-format.ts";
+import { FORMAT_DEFAULTS } from "./editor/format.ts";
 import { CHEVRON_DOWN, CHEVRON_RIGHT, OPTION_ICONS, SEARCH_ICONS, SEARCH_PHRASES, SEARCH_TIPS } from "./editor/chrome.ts";
 import { EditorMenu } from "./editor/EditorMenu.tsx";
 import { useContextMenu } from "./ContextMenu.tsx";
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
+
+/**
+ * Format the buffer and say what happened, in one line.
+ *
+ * Every outcome gets a word. A shortcut that silently does nothing cannot be told from a broken
+ * one, and the three ways formatting legitimately does nothing — already tidy, no formatter for
+ * this language, the tool is not installed — call for three different answers. Only the first is
+ * routine, which is why `quiet` suppresses that one and nothing else: on 保存时格式化 it would fire
+ * on every ⌘S of an already-formatted file, which is most of them.
+ */
+async function formatNow(view: EditorView, path: string, options?: { quiet?: boolean }): Promise<void> {
+	const { notify, settings } = useApp.getState();
+	const result = await applyFormat(view, path, { ...FORMAT_DEFAULTS, ...settings?.formatting });
+
+	switch (result.kind) {
+		case "formatted":
+			// Named, because which engine ran is the thing people are unsure about — and when a
+			// project config decided the style, that outranked the settings page and should say so.
+			if (!options?.quiet) notify(result.config ? `已按 ${result.config} 格式化（${result.by}）` : `已用 ${result.by} 格式化`, "info");
+			return;
+		case "unchanged":
+			if (!options?.quiet) notify("已经是格式化后的样子", "info");
+			return;
+		case "unsupported":
+			if (!options?.quiet) notify("这种文件还没有对应的格式化工具", "info");
+			return;
+		case "missing":
+			// Always shown, even on save: this is the one the user can act on.
+			notify(`需要 ${result.tool} 才能格式化：${result.install}`, "error");
+			return;
+		case "failed":
+			// Always shown. The message is the formatter's own and names the line that will not parse,
+			// which is the most useful thing formatting does on a broken file.
+			notify(`格式化失败：${result.message.split("\n")[0]}`, "error");
+	}
+}
 
 /**
  * A real editor, not a `<pre>` with colours.
@@ -78,6 +116,14 @@ export function CodeEditor({
 	/** Held in refs so the editor is never rebuilt just because a callback identity changed. */
 	const onChangeRef = useRef(onChange);
 	const onSaveRef = useRef(onSave);
+	/*
+	 * The path, in a ref, because the keymap closes over it once.
+	 *
+	 * The extension decides which formatter runs, so reading a stale one would format a `.go` file
+	 * with the rules for whatever was open when the editor was built.
+	 */
+	const pathRef = useRef(path);
+	pathRef.current = path;
 	onChangeRef.current = onChange;
 	onSaveRef.current = onSave;
 	const menu = useContextMenu();
@@ -154,8 +200,41 @@ export function CodeEditor({
 					{
 						key: "Mod-s",
 						preventDefault: true,
-						run: () => {
-							onSaveRef.current();
+						run: (view) => {
+							/*
+							 * Tidy first, then write — when that has been asked for.
+							 *
+							 * Awaited rather than fired alongside, or the save races the format and which
+							 * of the two versions reaches disk depends on how long Prettier took. Off by
+							 * default: ⌘S should be the cheapest, most predictable key in the app.
+							 */
+							if (!useApp.getState().settings?.formatting?.onSave) {
+								onSaveRef.current();
+								return true;
+							}
+							void formatNow(view, pathRef.current, { quiet: true }).then(() => onSaveRef.current());
+							return true;
+						},
+					},
+				/*
+					 * ⇧⌥F, the way every other editor spells it — except on macOS, where it cannot work.
+					 *
+					 * CodeMirror deliberately refuses to resolve a plain Alt combination there: on a Mac
+					 * ⌥ composes characters, so ⌥F arrives as `ƒ` and ⇧⌥F as `Ï`, and treating those as
+					 * the letter would break typing them. Its keymap skips the physical-key fallback for
+					 * exactly this case (`!(browser.mac && event.altKey && ...)` in `runHandlers`), so
+					 * the binding is unreachable rather than merely inconvenient — measured, not assumed:
+					 * the keydown arrived at `.cm-content` with `keyCode: 70` and came back out with
+					 * `defaultPrevented: false`.
+					 *
+					 * So ⌘⇧F there, which is free — the find bar is ⌘F and replace is ⌥⌘F.
+					 */
+					{
+						key: "Shift-Alt-f",
+						mac: "Mod-Shift-f",
+						preventDefault: true,
+						run: (view) => {
+							void formatNow(view, pathRef.current);
 							return true;
 						},
 					},
@@ -326,6 +405,9 @@ export function CodeEditor({
 					path={path}
 					readOnly={Boolean(readOnly)}
 					onFind={openFind}
+					onFormat={async () => {
+						if (view.current) await formatNow(view.current, path);
+					}}
 				/>
 			)}
 		</div>

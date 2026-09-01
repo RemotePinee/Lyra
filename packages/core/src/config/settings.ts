@@ -39,6 +39,23 @@ export interface AppearanceSettings {
 	codeDarkTheme?: string;
 	uiFontSize: number;
 	codeFontSize: number;
+	/**
+	 * How code is set, beyond which family it is in.
+	 *
+	 * A monospace face is only half of what makes code readable; the rest is how tightly it is
+	 * packed. Weight matters most on a dark theme, where a light face thins out and a 500 reads as
+	 * the 400 does on white. Line height is the difference between a diff you can scan and a wall.
+	 * Tracking is the smallest of the three and the one people with a particular face in mind ask
+	 * for first.
+	 *
+	 * Optional, so an existing settings file keeps the values it never had — the defaults below are
+	 * what the app has been rendering all along.
+	 */
+	codeFontWeight?: number;
+	/** A multiplier, not pixels: it has to hold at every one of the font sizes above. */
+	codeLineHeight?: number;
+	/** In `em`, so it tracks the font size rather than fighting it. */
+	codeLetterSpacing?: number;
 	/** 0–100. Scales the distance between surface layers and text. */
 	contrast: number;
 	pointerCursor: boolean;
@@ -46,6 +63,15 @@ export interface AppearanceSettings {
 	/** Whether diffs are shown by colour or by leading +/- markers. */
 	diffMarkers: "color" | "symbols";
 	fontSmoothing: boolean;
+	/**
+	 * How much of a failed turn is shown in the transcript.
+	 *
+	 * `full` states the error where it happened, alongside the way to undo it. `compact` reduces it
+	 * to a single line that opens on demand. The failures that dominate a long session are dropped
+	 * sockets and provider hiccups — the wording is a stack of JSON nobody reads, and at full weight
+	 * a morning's work reads as a wall of red for something that resolved itself on the retry.
+	 */
+	errorDetail?: "full" | "compact";
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
@@ -57,15 +83,58 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 	darkForeground: "#EDEDED",
 	uiFont: '"Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
 	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
-	codeLightTheme: "solarized-light",
-	codeDarkTheme: "github-dark",
+	// Lyra's own — see `lyra-light` in `code-themes.ts`. It takes the app's background rather than
+	// bringing one, so a fresh install looks like Lyra and picking any other theme is a real choice.
+	codeLightTheme: "lyra-light",
+	codeDarkTheme: "lyra-dark",
 	uiFontSize: 13,
 	codeFontSize: 12,
+	codeFontWeight: 400,
+	codeLineHeight: 1.6,
+	codeLetterSpacing: 0,
 	contrast: 60,
 	pointerCursor: false,
 	reduceMotion: "system",
 	diffMarkers: "color",
+	// Compact by default: the common failure is transient, and its wording is JSON.
+	errorDetail: "compact",
 	fontSmoothing: true,
+};
+
+/**
+ * How code is printed when you ask for it to be tidied.
+ *
+ * Its own section rather than part of 代码外观, because the two look alike and are opposites:
+ * appearance changes how the bytes on disk are drawn, and this changes the bytes. One is a
+ * preference, the other edits your files.
+ *
+ * Every value here is a fallback. A project with a `.prettierrc` or an `.editorconfig` has
+ * settled its own style, and that wins outright — see `electron/ipc/format.ts`. Otherwise a
+ * personal preference set on one machine would rewrite a shared repository on every save.
+ */
+export interface FormattingSettings {
+	/** Format on ⌘S as well as on the explicit shortcut. Off by default: saving should be cheap and predictable. */
+	onSave: boolean;
+	tabWidth: number;
+	useTabs: boolean;
+	printWidth: number;
+	semi: boolean;
+	singleQuote: boolean;
+	trailingComma: "none" | "es5" | "all";
+	bracketSpacing: boolean;
+	arrowParens: "always" | "avoid";
+}
+
+export const DEFAULT_FORMATTING: FormattingSettings = {
+	onSave: false,
+	tabWidth: 2,
+	useTabs: true,
+	printWidth: 120,
+	semi: true,
+	singleQuote: false,
+	trailingComma: "all",
+	bracketSpacing: true,
+	arrowParens: "always",
 };
 
 export interface HookConfig {
@@ -178,6 +247,7 @@ export interface Settings {
 	/** Last level chosen above "off", restored when fast mode is switched back off. */
 	lastThinking?: ThinkingLevel;
 	appearance: AppearanceSettings;
+	formatting: FormattingSettings;
 	hooks: HookConfig[];
 	scheduledTasks: ScheduledTask[];
 	/**
@@ -302,6 +372,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	thinking: "medium",
 	retryAttempts: 5,
 	appearance: DEFAULT_APPEARANCE,
+	formatting: DEFAULT_FORMATTING,
 	hooks: [],
 	scheduledTasks: [],
 	disabledPlugins: [],
@@ -377,6 +448,9 @@ async function readSettingsFile(): Promise<Settings> {
 			screenshot: { ...DEFAULT_SCREENSHOT_SETTINGS, ...parsed.screenshot },
 			personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization },
 			appearance: migrateAppearance({ ...DEFAULT_APPEARANCE, ...parsed.appearance }),
+			// Merged rather than taken whole, so a settings file written before this section existed
+			// gains the new keys instead of arriving with `undefined` where a number is expected.
+			formatting: { ...DEFAULT_FORMATTING, ...parsed.formatting },
 			hooks: parsed.hooks ?? [],
 			scheduledTasks: parsed.scheduledTasks ?? [],
 			disabledPlugins: parsed.disabledPlugins ?? [],

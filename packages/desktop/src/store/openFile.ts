@@ -37,6 +37,20 @@ interface OpenFileState {
 	/** The file's own name, so the pane can be titled before its contents arrive. */
 	name: string | null;
 	contents: FileContents | null;
+	/**
+	 * A file whose read is in flight, which is not the same as the file on screen.
+	 *
+	 * The two used to be one field, and switching tabs flickered because of it: `path` moved to the
+	 * new file immediately while `contents` still held the old one, and the panel — seeing
+	 * `loading` — threw the whole viewer away for a centred 「读取中…」 on a plain white page. A
+	 * local file reads in a few milliseconds, so what that produced was one frame of white between
+	 * two themed ones.
+	 *
+	 * Kept apart so the tab strip can highlight the click instantly while the content area holds
+	 * what it has until the replacement is ready. `path` and `contents` now change together, and
+	 * there is no moment when they describe different files.
+	 */
+	opening: string | null;
 	loading: boolean;
 	/**
 	 * Unsaved edits, by path.
@@ -94,7 +108,7 @@ interface OpenFileState {
 	clear(): void;
 }
 
-const EMPTY = { path: null, name: null, contents: null, loading: false } as const;
+const EMPTY = { path: null, name: null, contents: null, loading: false, opening: null } as const;
 
 export const useOpenFile = create<OpenFileState>((set, get) => ({
 	...EMPTY,
@@ -107,13 +121,23 @@ export const useOpenFile = create<OpenFileState>((set, get) => ({
 	setShowSource: (showSource) => set({ showSource }),
 
 	async open(entry) {
-		set({ path: entry.path, name: entry.name, loading: true, showSource: false, tabs: withTab(get(), entry) });
+		/*
+		 * The strip updates now; the content area updates when there is something to put in it.
+		 *
+		 * Swapping `path` here as well would leave the viewer rendering the previous file's text
+		 * under the new file's name until the read landed — and the panel, told it was loading,
+		 * would instead unmount the viewer entirely and flash a white 「读取中…」 between two
+		 * themed frames. That is the flicker.
+		 */
+		set({ opening: entry.path, loading: true, tabs: withTab(get(), entry) });
 		try {
 			const read = await window.lyra.files.read(entry.path);
 			// A second click while this was in flight wins.
-			if (get().path === entry.path) set({ contents: read });
+			if (get().opening !== entry.path) return;
+			// Together, so the pane never shows one file's name over another file's contents.
+			set({ path: entry.path, name: entry.name, contents: read, showSource: false });
 		} finally {
-			if (get().path === entry.path) set({ loading: false });
+			if (get().opening === entry.path) set({ loading: false, opening: null });
 		}
 	},
 

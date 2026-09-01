@@ -264,7 +264,7 @@ export function PreviewCard({ preview }: { preview: PreviewInfo }) {
 
 			{/* Solid for the same reason as above — and this one sits over an arbitrary rendered page,
 			    where a translucent strip with nothing blurred behind it is the least readable of all. */}
-			<div className="ly-glass-solid absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-[var(--ly-t-quick)] hover:opacity-100 focus-within:opacity-100">
+			<div className="ly-glass-solid absolute top-2 right-2 flex items-center gap-0.5 rounded-lg p-0.5 opacity-45 transition-opacity duration-[var(--ly-t-quick)] hover:opacity-100 has-[:focus-visible]:opacity-100">
 				{/*
 				 * Taller, because the frame cannot ask for a size.
 				 *

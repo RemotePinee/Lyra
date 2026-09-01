@@ -20,6 +20,7 @@ import {
 	Smartphone,
 	Sparkles,
 	SquareTerminal,
+	Wand2,
 } from "lucide-react";
 import { useEffect } from "react";
 import { NavPane, useLayout } from "../../layout.tsx";
@@ -32,6 +33,7 @@ import { AgentsSettings } from "./AgentsSettings.tsx";
 import { ArchivedSettings } from "./ArchivedSettings.tsx";
 import { AboutSettings } from "./AboutSettings.tsx";
 import { AppearanceSettings } from "./AppearanceSettings.tsx";
+import { FormattingSettings } from "./FormattingSettings.tsx";
 import { CommandsSettings } from "./CommandsSettings.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
 import { PersonalizationSettings } from "./PersonalizationSettings.tsx";
@@ -64,6 +66,9 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 		items: [
 			{ id: "general", label: "常规", icon: Settings2 },
 			{ id: "appearance", label: "外观", icon: Palette },
+			// Next to 外观 because they are asked about together, and separate because one changes
+			// how code is drawn and the other changes what is written to disk.
+			{ id: "formatting", label: "代码格式化", icon: Wand2 },
 			{ id: "personalization", label: "个性化", icon: Sparkles },
 			{ id: "models", label: "模型设置", icon: Layers },
 			{ id: "forges", label: "代码托管", icon: GitPullRequest },
@@ -338,6 +343,8 @@ function SectionBody({ section }: { section: SettingsSection }) {
 			return <GeneralSettings />;
 		case "appearance":
 			return <AppearanceSettings />;
+		case "formatting":
+			return <FormattingSettings />;
 		case "personalization":
 			return <PersonalizationSettings />;
 		case "models":
