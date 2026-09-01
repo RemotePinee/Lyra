@@ -58,7 +58,7 @@ export function MessageActions({
 
 	return (
 		<div
-			className={`mt-1 flex h-6 items-center gap-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 focus-within:opacity-100 ${className}`}
+			className={`mt-1 flex h-6 items-center gap-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/msg:opacity-100 has-[:focus-visible]:opacity-100 ${className}`}
 		>
 			<span data-ly-tip={timeTip || undefined} className="inline-flex items-center">
 				<Text size="caption" tone="faint" numeric>

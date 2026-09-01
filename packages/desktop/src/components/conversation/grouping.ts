@@ -11,7 +11,7 @@
  * what has arrived only ever grows.
  */
 
-import type { AssistantContent, AssistantMessage, Message } from "@lyra/core";
+import type { AssistantContent, AssistantMessage, Message, UserContent } from "@lyra/core";
 
 type ToolCallBlock = Extract<AssistantContent, { type: "toolCall" }>;
 
@@ -82,6 +82,55 @@ function accumulate(into: TurnStats, message: AssistantMessage): TurnStats {
 	};
 }
 
+/**
+ * The wordings 「继续」 sends, which are the same act as an automatic nudge.
+ *
+ * Exported and imported by `ResumeRow` rather than written out twice: two copies of a sentence
+ * that has to match exactly is a mismatch waiting for the day somebody improves the wording.
+ */
+export const CARRY_ON_PROMPTS = [
+	"继续，从暂停的地方接着做。",
+	"继续，从中断的地方接着做。",
+	"继续，把清单里没做完的做完。",
+] as const;
+
+/** The text of a user message, joined. */
+function userText(message: Message): string {
+	if (message.role !== "user") return "";
+	return message.content
+		.filter((c): c is Extract<UserContent, { type: "text" }> => c.type === "text")
+		.map((c) => c.text)
+		.join("\n")
+		.trim();
+}
+
+/**
+ * Whether this message is picking up a turn that stopped, rather than beginning one.
+ *
+ * Pressing 继续 after a failure is not a new question — it is the same piece of work, carried on
+ * across the break. Counting it as a new turn is what made the timings meaningless: a task that
+ * took twenty minutes and was interrupted twice reported the length of its last leg, and the tokens
+ * of its last leg, so neither the elapsed time nor the tokens-per-second described anything that
+ * actually happened.
+ *
+ * Only when the reply before it actually stopped. The same sentence typed into a conversation that
+ * ended normally is a new instruction and starts a new turn, which is the honest reading of it.
+ */
+function resumesTurn(messages: Message[], index: number): boolean {
+	const message = messages[index];
+	if (!message || message.role !== "user") return false;
+	if (!CARRY_ON_PROMPTS.includes(userText(message) as (typeof CARRY_ON_PROMPTS)[number])) return false;
+	for (let i = index - 1; i >= 0; i--) {
+		const previous = messages[i];
+		if (previous.role === "toolResult") continue;
+		if (previous.role !== "assistant") return false;
+		// The two ways a reply stops short: it failed, or it was stopped. Both leave work unfinished
+		// and are what 继续 exists to pick up.
+		return previous.stopReason === "error" || previous.stopReason === "aborted";
+	}
+	return false;
+}
+
 /** Whether this message is a person starting a turn, rather than the runtime keeping one going. */
 function opensTurn(message: Message): boolean {
 	return message.role === "user" && !message.synthetic && !isNudge(message);
@@ -91,7 +140,9 @@ export function computeTurnStats(messages: Message[], endMessageIndex: number): 
 	// Walk backwards from endMessageIndex until we hit a real user message or index 0
 	let startIndex = 0;
 	for (let i = endMessageIndex; i >= 0; i--) {
-		if (opensTurn(messages[i])) {
+		// A 继续 after a failure belongs to the turn it is continuing, so the walk goes on past it
+		// to the question that actually started the work.
+		if (opensTurn(messages[i]) && !resumesTurn(messages, i)) {
 			startIndex = i + 1;
 			break;
 		}
@@ -160,7 +211,7 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 		}
 
 		// A person speaking starts a new turn; the runtime's own messages continue the one running.
-		if (opensTurn(message)) turn = noStats();
+		if (opensTurn(message) && !resumesTurn(messages, index)) turn = noStats();
 
 		/*
 		 * Tool results are not entries in the transcript; they are the contents of a card.

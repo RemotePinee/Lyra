@@ -107,6 +107,7 @@ const api: LyraApi = {
 	sideChat: {
 		state: (sessionId) => ipcRenderer.invoke("sidechat:state", sessionId),
 		ask: (sessionId, content) => ipcRenderer.invoke("sidechat:ask", sessionId, content),
+		editAndResend: (sessionId, index, content) => ipcRenderer.invoke("sidechat:editAndResend", sessionId, index, content),
 		abort: (sessionId) => ipcRenderer.invoke("sidechat:abort", sessionId),
 		reset: (sessionId) => ipcRenderer.invoke("sidechat:reset", sessionId),
 		onEvent: (handler) => {
@@ -118,6 +119,13 @@ const api: LyraApi = {
 	tasks: {
 		list: (sessionId) => ipcRenderer.invoke("tasks:list", sessionId),
 		cancel: (sessionId, taskId) => ipcRenderer.invoke("tasks:cancel", sessionId, taskId),
+		dismiss: (sessionId, taskId) => ipcRenderer.invoke("tasks:dismiss", sessionId, taskId),
+		resume: (sessionId, taskId) => ipcRenderer.invoke("tasks:resume", sessionId, taskId),
+	},
+	format: {
+		external: (extension, source) => ipcRenderer.invoke("format:external", extension, source),
+		available: (extension) => ipcRenderer.invoke("format:available", extension),
+		config: (file) => ipcRenderer.invoke("format:config", file),
 	},
 	files: {
 		list: (dir) => ipcRenderer.invoke("files:list", dir),
@@ -259,6 +267,8 @@ const api: LyraApi = {
 		// "The snapshot is on the canvas" — the overlay stays hidden until this arrives, so that
 		// what appears is the frozen screen rather than an empty window catching up to it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
+		// Measurements from inside the overlay, for the capture log.
+		debug: (what: string, detail: Record<string, unknown>) => ipcRenderer.send("screenshot:debug", what, detail),
 		// The other half of that handshake: "you are on screen now", which is when a fade has
 		// frames to run in. A hidden page is not composited and a transition started there jumps
 		// straight to its end.
@@ -266,6 +276,19 @@ const api: LyraApi = {
 			const listener = () => handler();
 			ipcRenderer.on("screenshot:shown", listener);
 			return () => ipcRenderer.removeListener("screenshot:shown", listener);
+		},
+		// "A frame exists" — sent from inside a rAF, which is when the window may safely be made
+		// visible. Until then its surface may still be rebuilding, and a rebuilding surface shows
+		// stretched. See `reveal` in `screenshot.ts`.
+		painted: () => ipcRenderer.send("screenshot:painted"),
+		// "A colour was taken" — the capture is visually over, so let presses through while the
+		// confirmation is still up. See `overlayPassedThrough`.
+		colourPicked: () => ipcRenderer.send("screenshot:colourPicked"),
+		// And the end of one: the window is off screen and the page can let go of the picture.
+		onHidden: (handler: () => void) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:hidden", listener);
+			return () => ipcRenderer.removeListener("screenshot:hidden", listener);
 		},
 	},
 	index: {

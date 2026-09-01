@@ -17,10 +17,38 @@ import { ATOM } from "../highlight.ts";
  */
 export function editorTheme(): Extension {
 	return EditorView.theme({
-		"&": { backgroundColor: "transparent", color: "var(--color-ink)", height: "100%" },
+		/*
+		 * The code theme's own surface, not the app's.
+		 *
+		 * This said `transparent` over `--color-ink`, which meant the editor showed whatever panel
+		 * was behind it in whatever colour the UI used for body text — so choosing Solarized Light
+		 * changed the syntax colours and left the page white underneath them. The theme declares a
+		 * background and a foreground; these are them.
+		 */
+		"&": { backgroundColor: "var(--ly-code-bg)", color: "var(--ly-code-fg)", height: "100%" },
 		".cm-content": {
 			fontFamily: "var(--ly-code-font)",
 			fontSize: "var(--text-code)",
+			/*
+			 * The other two halves of 代码外观, which this rule was missing.
+			 *
+			 * Family, size and line height were here; weight and tracking were not, so two of the
+			 * five controls in the settings panel moved the preview and changed nothing in the
+			 * editor. Same variables the diff viewer and the Markdown blocks read, so all three
+			 * agree — and because CodeMirror emits real CSS, `var()` means a settings change
+			 * repaints rather than rebuilds.
+			 */
+			fontWeight: "var(--text-code--weight)",
+			letterSpacing: "var(--text-code--tracking)",
+			/*
+			 * At least as wide as the pane, so the active line's band reaches the right edge.
+			 *
+			 * Without it the content box is only as wide as its longest line, and the current-line
+			 * highlight stops there — a short file in a wide pane gets a stripe across the first
+			 * third and bare background after it, which reads as a rendering fault rather than as
+			 * a highlight.
+			 */
+			minWidth: "100%",
 			padding: "6px 0 40px",
 			caretColor: "var(--color-ink)",
 		},
@@ -35,18 +63,19 @@ export function editorTheme(): Extension {
 		 * tint, or the seam shows as a stripe down the left of every file.
 		 */
 		".cm-gutters": {
-			backgroundColor: "var(--color-shell)",
-			color: "var(--color-ink-faint)",
+			// One step off the code's surface — see `--ly-code-bg-soft` in `theme.ts`.
+			backgroundColor: "var(--ly-code-bg-soft)",
+			color: "color-mix(in srgb, var(--ly-code-fg) 55%, var(--ly-code-bg))",
 			border: "none",
 			fontFamily: "var(--ly-code-font)",
 			fontSize: "calc(var(--text-code) - 1px)",
 		},
 		// Matches `.cm-activeLine` exactly, so the highlight reads as one band across both.
 		".cm-activeLineGutter": {
-			backgroundColor: "color-mix(in srgb, var(--color-ink) 4%, var(--color-shell))",
-			color: "var(--color-ink-muted)",
+			backgroundColor: "color-mix(in srgb, var(--ly-code-fg) 7%, var(--ly-code-bg-soft))",
+			color: "var(--ly-code-fg)",
 		},
-		".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--color-ink) 4%, transparent)" },
+		".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--ly-code-fg) 5%, transparent)" },
 		".cm-selectionBackground, ::selection": {
 			backgroundColor: "color-mix(in srgb, var(--color-info) 22%, transparent) !important",
 		},

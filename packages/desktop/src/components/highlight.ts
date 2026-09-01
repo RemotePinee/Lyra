@@ -40,7 +40,16 @@ export function highlightStyle(lightThemeId?: string, darkThemeId?: string): Hig
 		 * every key the same weight as its value, with only quoted strings picking up any colour.
 		 */
 		{ tag: [t.definition(t.propertyName)], color: c("function") },
-		{ tag: [t.definition(t.variableName)], color: c("variable") },
+		/*
+		 * A name being *defined* carries the colour; a name being used does not.
+		 *
+		 * These were grouped with plain `variableName`, so `func Greet(...)` and `const answer = 42`
+		 * put their most informative word — the one the line exists to introduce — in body text, while
+		 * `fmt.Sprintf` on the next line was coloured for being a call. Backwards, and it is most of
+		 * why a dark theme looked like white text with occasional accents: in ordinary code, most
+		 * identifiers appear at their definition.
+		 */
+		{ tag: [t.definition(t.variableName)], color: c("function") },
 		/*
 		 * Unquoted scalars, which is most of a YAML file's right-hand side.
 		 *
@@ -51,13 +60,15 @@ export function highlightStyle(lightThemeId?: string, darkThemeId?: string): Hig
 		{ tag: [t.content], color: c("variable") },
 		// Anchors and aliases (&name, *name) — references, so they read like other labels.
 		{ tag: [t.labelName], color: c("keyword") },
-		{ tag: [t.typeName, t.className, t.namespace], color: c("type") },
+		{ tag: [t.typeName, t.className, t.namespace, t.constant(t.variableName), t.standard(t.variableName), t.special(t.variableName)], color: c("type") },
 		{ tag: [t.propertyName], color: c("function") },
 		{ tag: [t.variableName], color: c("variable") },
 		{ tag: [t.operator, t.punctuation, t.separator, t.bracket], color: c("punctuation") },
 		{ tag: [t.tagName], color: c("tag") },
 		{ tag: [t.attributeName], color: c("attribute") },
-		{ tag: [t.attributeValue], color: c("string") },
+		// `quote` is what the properties/ini modes give a value. Unmapped, a config file came
+		// out with its keys coloured and its values plain.
+		{ tag: [t.attributeValue, t.quote], color: c("string") },
 		{ tag: [t.heading], color: c("function"), fontWeight: "600" },
 		{ tag: [t.link, t.url], color: c("function"), textDecoration: "underline" },
 		{ tag: [t.emphasis], fontStyle: "italic" },
@@ -66,6 +77,10 @@ export function highlightStyle(lightThemeId?: string, darkThemeId?: string): Hig
 		{ tag: [t.meta, t.processingInstruction], color: c("comment") },
 		{ tag: [t.invalid], color: c("tag") },
 		{ tag: [t.escape, t.regexp], color: c("attribute") },
+		// A patch opened in the editor: without these the whole file is one colour. See the note
+		// in `preview-highlight.ts` for why they borrow existing token colours.
+		{ tag: [t.inserted], color: c("string") },
+		{ tag: [t.deleted], color: c("number") },
 	]);
 }
 
@@ -131,7 +146,19 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	cjs: async () => (await import("@codemirror/lang-javascript")).javascript(),
 	jsx: async () => (await import("@codemirror/lang-javascript")).javascript({ jsx: true }),
 	json: async () => (await import("@codemirror/lang-json")).json(),
-	jsonc: async () => (await import("@codemirror/lang-json")).json(),
+	/*
+	 * The legacy mode, not `lang-json` — because this one knows what a comment is.
+	 *
+	 * `.jsonc` differs from `.json` in exactly one way, and parsing it with the strict grammar
+	 * rendered every `//` line as body text: the one construct the format exists for, invisible.
+	 * The trade is that keys come out in the string colour rather than their own, which is the
+	 * cheaper loss by a wide margin.
+	 */
+	jsonc: async () => {
+		const { StreamLanguage } = await import("@codemirror/language");
+		const { json } = await import("@codemirror/legacy-modes/mode/javascript");
+		return StreamLanguage.define(json);
+	},
 	md: async () => (await import("@codemirror/lang-markdown")).markdown(),
 	mdx: async () => (await import("@codemirror/lang-markdown")).markdown(),
 	css: async () => (await import("@codemirror/lang-css")).css(),
@@ -139,8 +166,11 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	less: async () => (await import("@codemirror/lang-css")).css(),
 	html: async () => (await import("@codemirror/lang-html")).html(),
 	htm: async () => (await import("@codemirror/lang-html")).html(),
-	vue: async () => (await import("@codemirror/lang-html")).html(),
-	svelte: async () => (await import("@codemirror/lang-html")).html(),
+	vue: async () => vueSupport(),
+	// Svelte's blocks are the same shape — `<style lang="scss">`, `<script lang="ts">` — so the same
+	// nesting applies. Its own template syntax is not covered, which is a smaller gap than the two
+	// hundred lines of style and script that were not covered before.
+	svelte: async () => vueSupport(),
 	xml: async () => (await import("@codemirror/lang-xml")).xml(),
 	svg: async () => (await import("@codemirror/lang-xml")).xml(),
 	py: async () => (await import("@codemirror/lang-python")).python(),
@@ -172,11 +202,38 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	zsh: async () => stream((await import("@codemirror/legacy-modes/mode/shell")).shell),
 	fish: async () => stream((await import("@codemirror/legacy-modes/mode/shell")).shell),
 	toml: async () => stream((await import("@codemirror/legacy-modes/mode/toml")).toml),
+	/*
+	 * Dockerfile has its own grammar, and was reachable only by filename.
+	 *
+	 * `BY_FILENAME` maps the file `Dockerfile` to `sh`, which is a reasonable approximation when all
+	 * you have is a name. A fence that says ```dockerfile is not an approximation — it is a
+	 * declaration — and there was no entry for it here at all, so it fell through to plain text.
+	 */
+	dockerfile: async () => stream((await import("@codemirror/legacy-modes/mode/dockerfile")).dockerFile),
 	ini: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	/*
+	 * Languages that were simply missing, all of them already in `legacy-modes`.
+	 *
+	 * Nothing was broken about these — there was no entry, so a fence saying ```ruby rendered as
+	 * plain text with a label claiming otherwise. Adding them costs no new dependency.
+	 */
+	ruby: async () => stream((await import("@codemirror/legacy-modes/mode/ruby")).ruby),
+	perl: async () => stream((await import("@codemirror/legacy-modes/mode/perl")).perl),
+	haskell: async () => stream((await import("@codemirror/legacy-modes/mode/haskell")).haskell),
+	clojure: async () => stream((await import("@codemirror/legacy-modes/mode/clojure")).clojure),
+	powershell: async () => stream((await import("@codemirror/legacy-modes/mode/powershell")).powerShell),
+	protobuf: async () => stream((await import("@codemirror/legacy-modes/mode/protobuf")).protobuf),
 	cfg: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
 	conf: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
 	properties: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
-	env: async () => stream((await import("@codemirror/legacy-modes/mode/properties")).properties),
+	/*
+	 * Its own grammar, not the properties one.
+	 *
+	 * `.env` is `KEY=value`, and properties marks both halves as definitions — so the name and
+	 * the secret rendered in one colour with an uncoloured `=` between them, on the one file
+	 * whose entire purpose is telling those two apart. See `dotenv-mode.ts`.
+	 */
+	env: async () => (await import("./dotenv-mode.ts")).dotenvLanguage,
 	diff: async () => stream((await import("@codemirror/legacy-modes/mode/diff")).diff),
 	patch: async () => stream((await import("@codemirror/legacy-modes/mode/diff")).diff),
 	lua: async () => stream((await import("@codemirror/legacy-modes/mode/lua")).lua),
@@ -189,7 +246,15 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	jl: async () => stream((await import("@codemirror/legacy-modes/mode/julia")).julia),
 	hs: async () => stream((await import("@codemirror/legacy-modes/mode/haskell")).haskell),
 	clj: async () => stream((await import("@codemirror/legacy-modes/mode/clojure")).clojure),
-	ex: async () => stream((await import("@codemirror/legacy-modes/mode/erlang")).erlang),
+	/*
+	 * Ruby's grammar, not Erlang's — despite the shared runtime.
+	 *
+	 * Elixir borrows its surface syntax from Ruby and almost none of it from Erlang: `#` comments,
+	 * `def ... do ... end`, `@attributes`, and `#{}` interpolation are all Ruby's, while Erlang
+	 * comments with `%` and ends its clauses with periods. Parsed as Erlang, every comment in an
+	 * Elixir file rendered as code — which is what `test/language-coverage.test.ts` caught.
+	 */
+	ex: async () => stream((await import("@codemirror/legacy-modes/mode/ruby")).ruby),
 	erl: async () => stream((await import("@codemirror/legacy-modes/mode/erlang")).erlang),
 	scala: async () => stream((await import("@codemirror/legacy-modes/mode/clike")).scala),
 	cs: async () => stream((await import("@codemirror/legacy-modes/mode/clike")).csharp),
@@ -199,6 +264,8 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 	proto: async () => stream((await import("@codemirror/legacy-modes/mode/protobuf")).protobuf),
 	nginx: async () => stream((await import("@codemirror/legacy-modes/mode/nginx")).nginx),
 	cmake: async () => stream((await import("@codemirror/legacy-modes/mode/cmake")).cmake),
+	php: async () => (await import("@codemirror/lang-php")).php(),
+	graphql: async () => (await import("./graphql-mode.ts")).graphqlLanguage,
 	tex: async () => stream((await import("@codemirror/legacy-modes/mode/stex")).stex),
 	gitignore: async () => (await import("./ignore-mode.ts")).ignoreLanguage,
 };
@@ -206,6 +273,65 @@ export const GRAMMARS: Record<string, () => Promise<Extension>> = {
 /** A legacy stream mode, wrapped as the extension CodeMirror 6 wants. */
 function stream(mode: Parameters<typeof StreamLanguage.define>[0]): Extension {
 	return StreamLanguage.define(mode);
+}
+
+/**
+ * A single-file component, with the languages its blocks actually contain.
+ *
+ * `vue` used to be `html()`, which is right about the shape of the file and wrong about everything
+ * inside it. HTML knows two nested languages, `<script>` as JavaScript and `<style>` as CSS, and a
+ * Vue file almost never uses either: `<style lang="scss">` and `<script setup lang="ts">` are the
+ * norm, and both fell through to no grammar at all. The block was rendered as plain text under a
+ * tag that had been coloured — which is why the outer tags looked right and the two hundred lines
+ * between them did not.
+ *
+ * So the nesting is declared. `attrs` is what decides it: the same `<style>` tag is SCSS, LESS or
+ * plain CSS depending on one attribute, and getting that wrong is worse than not colouring it —
+ * SCSS parsed as CSS stops at the first `$variable`.
+ *
+ * Built once and shared. Each parser here pulls its own grammar module, and a file with four blocks
+ * would otherwise load four copies.
+ */
+let vueCache: Promise<Extension> | null = null;
+function vueSupport(): Promise<Extension> {
+	vueCache ??= (async () => {
+		const [{ html }, { vue }, { sass }, { less }, { css }, { javascript }] = await Promise.all([
+			import("@codemirror/lang-html"),
+			import("@codemirror/lang-vue"),
+			import("@codemirror/lang-sass"),
+			import("@codemirror/lang-less"),
+			import("@codemirror/lang-css"),
+			import("@codemirror/lang-javascript"),
+		]);
+
+		/** `<style>`, in whichever dialect the tag says. */
+		const styleBlocks = [
+			{ tag: "style", attrs: (a: Record<string, string>) => a.lang === "scss", parser: sass().language.parser },
+			{ tag: "style", attrs: (a: Record<string, string>) => a.lang === "sass", parser: sass({ indented: true }).language.parser },
+			{ tag: "style", attrs: (a: Record<string, string>) => a.lang === "less", parser: less().language.parser },
+			// No `lang`, or one nobody handles: CSS is the default and the safest guess.
+			{ tag: "style", attrs: (a: Record<string, string>) => !a.lang, parser: css().language.parser },
+		];
+
+		/** `<script>`, where `setup` and `lang="ts"` are the common case rather than the exception. */
+		const scriptBlocks = [
+			{
+				tag: "script",
+				attrs: (a: Record<string, string>) => a.lang === "ts" || a.lang === "typescript",
+				parser: javascript({ typescript: true }).language.parser,
+			},
+			{
+				tag: "script",
+				attrs: (a: Record<string, string>) => a.lang === "tsx",
+				parser: javascript({ typescript: true, jsx: true }).language.parser,
+			},
+		];
+
+		const base = html({ nestedLanguages: [...styleBlocks, ...scriptBlocks], autoCloseTags: false });
+		// Vue's own grammar for the template — directives, interpolation, shorthands — over that base.
+		return vue({ base });
+	})();
+	return vueCache;
 }
 
 /**
@@ -217,8 +343,10 @@ function stream(mode: Parameters<typeof StreamLanguage.define>[0]): Extension {
  * The ignore files share one grammar because they share one syntax — see `ignore-mode.ts`.
  */
 export const BY_FILENAME: Record<string, string> = {
-	dockerfile: "sh",
-	containerfile: "sh",
+	// A Dockerfile has a grammar of its own; it was pointed at shell because there was no entry for
+	// `dockerfile` in `GRAMMARS` when this table was written. There is now.
+	dockerfile: "dockerfile",
+	containerfile: "dockerfile",
 	makefile: "sh",
 	gnumakefile: "sh",
 	"cmakelists.txt": "cmake",
@@ -237,7 +365,47 @@ export const BY_FILENAME: Record<string, string> = {
 	".npmrc": "ini",
 	".nvmrc": "properties",
 	"nginx.conf": "nginx",
+	// Go's own manifests, which are neither TOML nor free text.
+	"go.mod": "properties",
+	"go.sum": "properties",
+	// Ruby by convention rather than by extension.
+	gemfile: "ruby",
+	rakefile: "ruby",
+	podfile: "ruby",
+	guardfile: "ruby",
+	// Shell startup files, which people open constantly and which had no extension to go on.
+	".bashrc": "sh",
+	".bash_profile": "sh",
+	".zshrc": "sh",
+	".zprofile": "sh",
+	".profile": "sh",
+	".zshenv": "sh",
+	// The rest of the dotfile config crowd.
+	".eslintrc.json": "json",
+	".babelrc.json": "json",
+	".stylelintrc": "json",
+	".swcrc": "json",
+	".yarnrc": "properties",
+	"jsconfig.json": "json",
+	"pnpm-workspace.yaml": "yaml",
+	"docker-compose.yml": "yaml",
+	"docker-compose.yaml": "yaml",
+	procfile: "properties",
 };
+
+/**
+ * Names whose *prefix* decides the grammar.
+ *
+ * `.env.local`, `.env.production`, `Dockerfile.dev` — the same file with a qualifier on the end,
+ * and every one of them was falling through to plain text because the table above matches whole
+ * names. These are the two families where that convention is near-universal; anything rarer is
+ * better served by its extension.
+ */
+const BY_FILENAME_PREFIX: [prefix: string, grammar: string][] = [
+	[".env.", "env"],
+	["dockerfile.", "dockerfile"],
+	["docker-compose.", "yaml"],
+];
 
 /**
  * Which grammar a file's name asks for, or null.
@@ -250,6 +418,11 @@ export function grammarKeyFor(path: string): string | null {
 	const name = path.toLowerCase().split(/[/\\]/).pop() ?? "";
 	const byName = BY_FILENAME[name];
 	if (byName) return GRAMMARS[byName] ? byName : null;
+
+	// `.env.local` and friends — see `BY_FILENAME_PREFIX`.
+	for (const [prefix, grammar] of BY_FILENAME_PREFIX) {
+		if (name.startsWith(prefix) && GRAMMARS[grammar]) return grammar;
+	}
 
 	// A leading dot is the whole name (`.env`), which the table above has already had its say on.
 	const dot = name.lastIndexOf(".");
@@ -274,6 +447,11 @@ const FENCE_ALIASES: Record<string, string> = {
 	kotlin: "kt",
 	"c++": "cpp",
 	"objective-c": "c",
+	// A Makefile is close enough to shell for the purpose of colouring it, and there is no make
+	// grammar to be had. The fence claims a language; this is the nearest true thing.
+	makefile: "sh",
+	make: "sh",
+	mk: "sh",
 	markdown: "md",
 	yml: "yaml",
 };
@@ -295,13 +473,42 @@ export async function loadFenceLanguage(info: string): Promise<Language | null> 
 	const load = GRAMMARS[FENCE_ALIASES[name] ?? name];
 	if (!load) return null;
 	try {
-		const extension = await load();
-		// `LanguageSupport` carries its language plus its extras; only the parser is wanted here.
-		const support = extension as { language?: Language };
-		return support.language ?? null;
+		return asLanguage(await load());
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * The `Language` out of whatever a grammar module hands back, which is one of two shapes.
+ *
+ * `@codemirror/lang-*` exports a `LanguageSupport`: the language plus its extras — completion,
+ * indentation, folding — with the language itself on `.language`. `StreamLanguage.define`, which is
+ * how every `legacy-modes` grammar is wrapped, returns a `Language` directly.
+ *
+ * Reading `.language` and giving up when it was missing therefore rejected every legacy grammar
+ * there is: shell, yaml, dockerfile, nginx, ini, toml, the lot. They loaded, they parsed, and then
+ * this threw them away and the block was rendered as plain text. Nothing said so — the fence still
+ * showed its language label, which is exactly what an unsupported language looks like.
+ *
+ * A third shape turns up too: an array, for the grammars that ship a view plugin alongside the
+ * language — `yaml` pairs one with a decorator for its scalars. The language is whichever member
+ * yields one.
+ *
+ * `parser` is the test rather than `instanceof`: it is what `tokenize` actually needs, and it does
+ * not care which package the object came from.
+ */
+function asLanguage(loaded: unknown): Language | null {
+	if (Array.isArray(loaded)) {
+		for (const member of loaded) {
+			const found = asLanguage(member);
+			if (found) return found;
+		}
+		return null;
+	}
+	const support = loaded as { language?: Language };
+	const candidate = support?.language ?? (loaded as Language | null);
+	return candidate && typeof (candidate as Language).parser === "object" ? candidate : null;
 }
 
 export interface Token {

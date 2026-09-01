@@ -1,7 +1,7 @@
 import type { UserContent } from "@lyra/core";
 // Through the browser-safe door: the main barrel reaches the filesystem, and this runs in a page.
 import { expandCommand, parseInvocation, rankCommands, type SlashCommand } from "@lyra/core/commands-view";
-import { Camera, CircleAlert, FileText, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
+import { Camera, CircleAlert, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
 import { openFromEvent } from "./image/viewer-store.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
@@ -23,6 +23,8 @@ import { PermissionPicker } from "./modals/PermissionPicker.tsx";
 import { ProjectPicker } from "./modals/ProjectPicker.tsx";
 import { useLayout } from "../layout.tsx";
 import { findModel } from "../models.ts";
+import { fileKind, isReadableAsText, KIND_LABEL, looksBinary, type FileKind } from "./attachments/file-kind.ts";
+import { FileKindIcon } from "./attachments/FileKindIcon.tsx";
 import { useApp } from "../store.ts";
 
 const PERMISSION_LABEL: Record<string, string> = {
@@ -35,6 +37,8 @@ interface Attachment {
 	id: string;
 	name: string;
 	mimeType: string;
+	/** What it is, for the icon and for whether its bytes may enter the prompt. */
+	kind?: FileKind;
 	data?: string;
 	text?: string;
 	isText: boolean;
@@ -434,33 +438,77 @@ export function Composer() {
 		await send(content);
 	}
 
+	/**
+	 * Take files on, without pretending every one of them is text.
+	 *
+	 * This used to be two branches: images were read as bytes, and *everything else* went through
+	 * `file.text()`. A `.doc` is a compound binary document, so decoding it as UTF-8 produced a few
+	 * thousand replacement characters — which were then pasted into the message and sent. The person
+	 * saw their contract rendered as noise, and the model received the same noise.
+	 *
+	 * Three outcomes now, and which one applies is decided before anything is read:
+	 *
+	 *   - an image, carried as image content the model can actually look at;
+	 *   - a kind that is known not to be text — a document, a video, an archive — attached by name
+	 *     and type only, with nothing pasted into the prompt;
+	 *   - anything else read as text, and *then* checked: the extension is a first guess, and a file
+	 *     can be named anything.
+	 */
 	async function addFiles(files: FileList | null) {
 		if (!files) return;
 		const next: Attachment[] = [];
+		const refused: string[] = [];
+
 		for (const file of Array.from(files).slice(0, 8)) {
-			if (file.type.startsWith("image/")) {
+			const id = `${file.name}-${Date.now()}-${Math.random()}`;
+			const kind = fileKind(file.name, file.type);
+
+			if (kind === "image") {
 				const buffer = await file.arrayBuffer();
-				next.push({
-					id: `${file.name}-${Date.now()}-${Math.random()}`,
-					name: file.name,
-					mimeType: file.type,
-					data: bytesToBase64(new Uint8Array(buffer)),
-					isText: false,
-				});
-			} else {
-				try {
-					const content = await file.text();
-					next.push({
-						id: `${file.name}-${Date.now()}-${Math.random()}`,
-						name: file.name,
-						mimeType: file.type || "text/plain",
-						text: content,
-						isText: true,
-					});
-				} catch {
-					useApp.getState().notify(`无法读取文件 ${file.name} 的内容`, "warn");
-				}
+				next.push({ id, name: file.name, mimeType: file.type, data: bytesToBase64(new Uint8Array(buffer)), isText: false, kind });
+				continue;
 			}
+
+			if (!isReadableAsText(kind)) {
+				// Known not to be text: attached, but its bytes stay out of the prompt.
+				next.push({ id, name: file.name, mimeType: file.type || "application/octet-stream", isText: false, kind });
+				refused.push(`${file.name}（${KIND_LABEL[kind]}）`);
+				continue;
+			}
+
+			try {
+				const buffer = new Uint8Array(await file.arrayBuffer());
+				if (looksBinary(buffer)) {
+					// Named like text, and is not. Same treatment as the known kinds above.
+					next.push({ id, name: file.name, mimeType: file.type || "application/octet-stream", isText: false, kind: "binary" });
+					refused.push(`${file.name}（二进制文件）`);
+					continue;
+				}
+				next.push({
+					id,
+					name: file.name,
+					mimeType: file.type || "text/plain",
+					text: new TextDecoder().decode(buffer),
+					isText: true,
+					kind,
+				});
+			} catch {
+				useApp.getState().notify(`无法读取文件 ${file.name} 的内容`, "warn");
+			}
+		}
+
+		/*
+		 * Said once, and said plainly.
+		 *
+		 * The file is still attached — the name and type reach the model, which is often all the
+		 * question needs. What must not happen silently is the contents being dropped: someone who
+		 * expects the agent to have read their document should find out here rather than from an
+		 * answer that quietly ignored it.
+		 */
+		if (refused.length > 0) {
+			useApp
+				.getState()
+				.notify(`${refused.join("、")} 的内容无法作为文本读取，只附上了文件名`, "warn");
 		}
 		if (next.length > 0) setAttachments((prev) => [...prev, ...next]);
 	}
@@ -598,13 +646,35 @@ export function Composer() {
 							<div className="flex flex-wrap gap-2 px-4 pt-3.5">
 								{attachments.map((attachment) => (
 									<div key={attachment.id} className="relative">
+										{/*
+										 * Three shapes, not two.
+										 *
+										 * The old split was "text or image", and the image branch drew an `<img>` from
+										 * `attachment.data` — which a Word document, a video or an archive does not have.
+										 * Attaching one produced a broken image where the file should have been.
+										 */}
 										{attachment.isText ? (
 											<div className="flex h-[68px] w-[110px] flex-col justify-between rounded-lg border border-line bg-card p-2.5 text-left shadow-xs">
 												<div className="flex items-center gap-1.5 text-ink-muted">
-													<FileText size={15} className="shrink-0" />
+													<FileKindIcon kind={attachment.kind ?? "text"} size={15} />
 													<span className="truncate text-xs font-medium text-ink">{attachment.name}</span>
 												</div>
 												<span className="text-[10px] text-ink-faint">文本 / 代码附件</span>
+											</div>
+										) : !attachment.data ? (
+											/* Attached by name and type: its bytes are not something a prompt can carry.
+											   See `addFiles`. */
+											<div
+												className="flex h-[68px] w-[110px] flex-col justify-between rounded-lg border border-line bg-card p-2.5 text-left shadow-xs"
+												data-ly-tip={`${attachment.name}\n${KIND_LABEL[attachment.kind ?? "binary"]} · 只附带文件名`}
+											>
+												<div className="flex items-center gap-1.5 text-ink-muted">
+													<FileKindIcon kind={attachment.kind ?? "binary"} size={15} />
+													<span className="truncate text-xs font-medium text-ink">{attachment.name}</span>
+												</div>
+												<span className="text-[10px] text-ink-faint">
+													{KIND_LABEL[attachment.kind ?? "binary"]} · 仅文件名
+												</span>
 											</div>
 										) : (
 											<button
@@ -625,7 +695,8 @@ export function Composer() {
 																		),
 																	),
 															})),
-														attachments.filter((a) => !a.isText).findIndex((a) => a.id === attachment.id),
+														// Indexed among the ones that are actually previewable, or the viewer opens the wrong picture.
+														attachments.filter((a) => !a.isText && a.data).findIndex((a) => a.id === attachment.id),
 													)
 												}
 												className="block overflow-hidden rounded-lg border border-line transition-opacity duration-[var(--ly-t-quick)] hover:opacity-85"

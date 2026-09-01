@@ -151,6 +151,15 @@ export function DockPane({
 			 * are `display: none` and there is nothing to cover; the only thing the extra layer
 			 * achieved was burying the splitter, which made a maximised pair impossible to resize.
 			 */
+			/*
+			 * Which panel this is, so the stylesheet can tell a code surface from a chrome one.
+			 *
+			 * The panes that show code — the editor, its tree, the terminal, a diff — take the code
+			 * theme's background for the *whole card*, header and tab strip included. Colouring only
+			 * the text area is what made the pane read as two things stacked: a white title bar with
+			 * a warm rectangle below it, rather than one editor.
+			 */
+			data-pane={kind}
 			className={`ly-dock-pane group/pane absolute flex min-w-0 flex-col ${
 				carried ? "ly-dock-pane-carried" : floats ? "z-10" : "z-0"
 			} ${landing ? "ly-dock-pane-landing" : ""} ${hidden ? "hidden" : ""}`}

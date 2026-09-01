@@ -101,6 +101,17 @@ async function click(socket: string, x: number, y: number) {
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Whether the capture has ended, asked of the overlay page itself.
+ *
+ * There used to be a simpler answer: the overlay was destroyed when a capture finished, so "is its
+ * debugger target still listed?" was the same question. It is not any more — the window is built
+ * once and shown and hidden after that, because building one per capture took 147ms and the frozen
+ * picture is taken *before* that wait, so the delay was visible as the desktop jumping backwards
+ * when the overlay landed. The page reports which state it is in through `data-capture`.
+ */
+let captureOver: () => Promise<boolean> = async () => false;
+
+/**
  * Press a toolbar button the way a person does: a real pointer press at its real coordinates.
  *
  * Not `element.click()`, and this distinction cost a release. A DOM click dispatches one `click`
@@ -147,10 +158,15 @@ async function frontmostApp(): Promise<string | null> {
 
 /** Where the finished screenshot should land, so the export can be checked as a file on disk. */
 let shots = "";
+/** The app's own directory for this run, so the capture log can be read back at the end. */
+let home = "";
+/** The main process's account of what it did, read out before the directory is deleted. */
+let timeline = "";
 const app = await startApp({
 	port: PORT,
-	seed: async (home) => {
-		shots = join(home, "shots");
+	seed: async (dir) => {
+		home = dir;
+		shots = join(dir, "shots");
 		await mkdir(shots, { recursive: true });
 		await writeFile(
 			join(home, "settings.json"),
@@ -164,7 +180,36 @@ const note = (line: string) => {
 };
 
 try {
+	/*
+	 * Let the warm-up finish before asking for anything.
+	 *
+	 * Both halves of it run three seconds after launch: the overlay window is built, and one
+	 * screenshot is taken and thrown away so macOS has a ScreenCaptureKit stream ready. Measuring
+	 * the very first capture of a cold process measures the warm-up itself, which is not what
+	 * anybody experiences — by the time a person presses the shortcut, the app has been open for
+	 * more than three seconds.
+	 */
+	await pause(4500);
 	note("• 主窗口已启动，请求打开截图浮层…");
+	/*
+	 * Watch the *main* window while the overlay comes up.
+	 *
+	 * The report is that the whole page jumps on entry, and the page in question is this one — the
+	 * overlay covers the screen, so anything moving underneath it is the app being relaid out. On
+	 * macOS that is what switching the process between `regular` and `accessory` does, which is
+	 * exactly what `setVisibleOnAllWorkspaces` used to trigger. Sampled on a timer rather than a
+	 * frame callback: a still page stops producing frames, and this one is meant to be still.
+	 */
+	await app.evaluate(`(() => {
+		window.__mainLayout = [];
+		const tick = () => {
+			if (window.__mainLayout.length >= 60) return;
+			window.__mainLayout.push({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio });
+			setTimeout(tick, 16);
+		};
+		tick();
+		return true;
+	})()`);
 	await app.evaluate(`window.lyra.screenshot.start()`);
 
 	// The overlay only shows itself once its snapshot is painted, so give it a moment to appear.
@@ -177,6 +222,8 @@ try {
 	const socket = overlay.webSocketDebuggerUrl;
 	const run = evaluator(socket);
 	note("• 浮层窗口已出现");
+	captureOver = async () =>
+		await run<boolean>(`document.querySelector('[data-capture="active"]') === null`).catch(() => true);
 
 	// Anything the renderer throws, kept where the probe can read it at the end. A React effect that
 	// throws leaves a half-painted canvas and no other trace.
@@ -200,14 +247,30 @@ try {
 	 * composited, so nothing is recorded until the moment it is shown — which is when the fade
 	 * begins. Sampling over the debugger instead would race the 160ms transition and mostly miss it.
 	 */
+	/*
+	 * Sampled on a timer, not on animation frames.
+	 *
+	 * A page with nothing moving stops producing frames, so `requestAnimationFrame` recorded one
+	 * sample and stopped — which reads as "no fade" and "no jump" whatever is actually happening.
+	 * A timer keeps counting while the window is still hidden too, which is what makes the entry
+	 * transition visible here at all: the first samples are from before it was shown.
+	 */
 	await run(`(() => {
+		window.__layout = [];
 		window.__fade = [];
 		const tick = () => {
+			if (window.__layout.length >= 150) return;
+			const c = document.querySelector("canvas");
+			window.__layout.push({
+				w: window.innerWidth, h: window.innerHeight,
+				cw: c ? Math.round(c.getBoundingClientRect().width) : 0,
+				ch: c ? Math.round(c.getBoundingClientRect().height) : 0,
+			});
 			const el = [...document.querySelectorAll("div")].find(d => d.style.opacity !== "" && String(d.style.transition).includes("opacity"));
-			if (el && window.__fade.length < 40) window.__fade.push(Number(getComputedStyle(el).opacity));
-			if (window.__fade.length < 40) requestAnimationFrame(tick);
+			if (el) window.__fade.push(Number(getComputedStyle(el).opacity));
+			setTimeout(tick, 16);
 		};
-		requestAnimationFrame(tick);
+		tick();
 	})()`);
 
 	await run(`(() => {
@@ -274,10 +337,41 @@ try {
 	 * very first sample never animated: it was already at its end state, which is what happens when
 	 * the transition is started while the page is still hidden and has no frames to run in.
 	 */
-	const fade = await run<number[]>(`window.__fade ?? []`);
-	note(`     进入时的遮罩透明度 → ${fade.length ? fade.map((n) => n.toFixed(2)).join(" → ") : "(没采到)"}`);
-	if (fade.length === 0) problems.push("采不到遮罩的透明度，淡入无法验证");
-	else if (Math.min(...fade) >= 1) problems.push("浮层是直接跳到最终状态的，没有淡入过渡");
+	/*
+	 * Whether anything moves while the overlay is coming up.
+	 *
+	 * The report is that the whole page jumps on entry. Recorded frame by frame from the moment the
+	 * window is shown: the backdrop covers the screen and the window is a fixed size, so every one
+	 * of these should be identical from the first frame. A value that changes is the jump.
+	 */
+	const layout = await run<{ w: number; h: number; cw: number; ch: number }[]>(`window.__layout ?? []`);
+	const shifted = layout.filter((l, i) => i > 0 && (l.w !== layout[0].w || l.h !== layout[0].h || l.cw !== layout[0].cw || l.ch !== layout[0].ch));
+	note(`     浮层自身尺寸 → ${layout.length ? `${layout[0].w}×${layout[0].h}，画布 ${layout[0].cw}×${layout[0].ch}` : "(没采到)"}`);
+	if (shifted.length > 0) {
+		problems.push(`浮层进入时尺寸发生了跳动：例如 ${JSON.stringify(shifted[0])} vs 首帧 ${JSON.stringify(layout[0])}`);
+	}
+	/*
+	 * The window must be the whole display from its very first sample.
+	 *
+	 * A window is created inside the work area — the screen minus the menu bar and the Dock — so a
+	 * capture that has not re-asserted its bounds opens slightly inset and then snaps outwards. On
+	 * screen that is the whole desktop appearing to scale for a moment.
+	 */
+	const display = await run<{ w: number; h: number }>(`({ w: screen.width, h: screen.height })`);
+	if (layout.length && (layout[0].w < display.w || layout[0].h < display.h)) {
+		problems.push(
+			`浮层第一帧没有铺满屏幕：${layout[0].w}×${layout[0].h}，屏幕 ${display.w}×${display.h}——进入时会看到一次缩放`,
+		);
+	}
+
+	const mainLayout = await app.evaluate<{ w: number; h: number; dpr: number }[]>(`window.__mainLayout ?? []`);
+	const relaid = mainLayout.filter((l) => l.w !== mainLayout[0]?.w || l.h !== mainLayout[0]?.h || l.dpr !== mainLayout[0]?.dpr);
+	note(`     主窗口在浮层弹出期间 → 采样 ${mainLayout.length} 次，${relaid.length === 0 ? "尺寸始终不变" : `有 ${relaid.length} 次变了`}`);
+	if (relaid.length > 0) {
+		problems.push(
+			`浮层弹出时主窗口被重新布局了（${JSON.stringify(relaid[0])} vs ${JSON.stringify(mainLayout[0])}）——这就是「整个页面跳动」`,
+		);
+	}
 
 	let stable = 0;
 	let last = 0;
@@ -290,10 +384,252 @@ try {
 	// And let the way-in finish, so nothing below is racing a transition.
 	await pause(250);
 	note(`  0. 窗口已显示，高度稳定在 ${last}`);
+
+	// ---- 0b. 指向一个窗口就提示整窗截图 -----------------------------------
+	/*
+	 * The common case for a screenshot is "this window", and framing one by hand is both slower and
+	 * less accurate than the window's own bounds. Checked by moving the pointer over the middle of
+	 * the screen — where the app under test has its own window — and looking for the offer.
+	 */
+	await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(last * 0.7), y: Math.round(last * 0.45) });
+	await pause(200);
+	const offered = await run<{ w: number; h: number; label: string } | null>(`(() => {
+		const frame = document.querySelector('[data-window-highlight]');
+		if (!frame) return null;
+		const r = frame.getBoundingClientRect();
+		return { w: Math.round(r.width), h: Math.round(r.height), label: (frame.textContent || "").trim() };
+	})()`);
+	/*
+	 * The loupe reports the pixel under the crosshair, and its colour.
+	 *
+	 * Checked before a region exists, which is the only time it is up: afterwards a magnifier
+	 * following the pointer is in the way of the drawing rather than in aid of it.
+	 */
+	const loupe = await run<{ coord: string; hex: string } | null>(`(() => {
+		const el = document.querySelector("[data-loupe]");
+		if (!el) return null;
+		const text = (el.textContent || "").replace(/\\s+/g, " ");
+		return { coord: (/坐标\\s*([0-9]+,\\s*[0-9]+)/.exec(text) || [])[1] || "", hex: (/(#[0-9A-F]{6})/.exec(text) || [])[1] || "" };
+	})()`);
+	note(`  0c. 取色放大镜 → ${loupe ? `坐标 ${loupe.coord || "?"}，色值 ${loupe.hex || "?"}` : "没有出现"}`);
+	if (!loupe) problems.push("移动鼠标时没有出现取色放大镜");
+	else {
+		if (!/^\d+, \d+$/.test(loupe.coord)) problems.push(`放大镜没有报出坐标：「${loupe.coord}」`);
+		if (!/^#[0-9A-F]{6}$/.test(loupe.hex)) problems.push(`放大镜没有报出色值：「${loupe.hex}」`);
+	}
+
+	const windowCount = await run<number>(`Number(document.querySelector("[data-window-count]")?.dataset.windowCount ?? -1)`);
+	note(`  0b. 指向窗口 → ${offered ? `${offered.w}×${offered.h}，标注「${offered.label}」` : "没有提示整窗"}（浮层收到 ${windowCount} 个窗口）`);
+	if (!offered) {
+		problems.push("鼠标指向窗口时没有高亮出整个窗口——进入截图应该默认可以点选窗口");
+	} else {
+		if (offered.w < 100 || offered.h < 100) problems.push(`提示的窗口太小，不像真的窗口：${offered.w}×${offered.h}`);
+		if (!/\d+\s*×\s*\d+/.test(offered.label)) problems.push(`窗口高亮上没有显示尺寸：「${offered.label}」`);
+	}
+
+	/*
+	 * And a press without a drag takes it. The two gestures share a beginning and are told apart by
+	 * what happened next, so this is the half that a drag test can never cover.
+	 */
+	if (offered) {
+		await click(socket, Math.round(last * 0.7), Math.round(last * 0.45));
+		await pause(250);
+		const taken = await run<{ w: number; h: number } | null>(`(() => {
+			const box = document.querySelector('[data-selection]');
+			if (!box) return null;
+			const r = box.getBoundingClientRect();
+			return { w: Math.round(r.width), h: Math.round(r.height) };
+		})()`);
+		note(`      单击之后的选区 → ${taken ? `${taken.w}×${taken.h}` : "没有选区"}`);
+		if (!taken) problems.push("点击窗口没有把它变成选区");
+		else if (Math.abs(taken.w - offered.w) > 4 || Math.abs(taken.h - offered.h) > 4) {
+			problems.push(`点击之后的选区和提示的窗口对不上：${taken.w}×${taken.h} vs ${offered.w}×${offered.h}`);
+		}
+		/*
+		 * Back to a blank slate — by starting over, not by pressing outside.
+		 *
+		 * Pressing outside used to throw the region away and begin a new one, and this probe relied
+		 * on it. That is exactly the behaviour that was removed: a press a few pixels wide of the
+		 * frame, on the way to the toolbar, should not cost a framed region and everything drawn on
+		 * it. Outside is inert now, so the way back to nothing is to cancel and open again — which is
+		 * also the only way a person has.
+		 */
+		await app.evaluate(`window.lyra.screenshot.cancel()`);
+		await pause(700);
+		await app.evaluate(`window.lyra.screenshot.start()`);
+		for (let i = 0; i < 40; i++) {
+			await pause(200);
+			if (!(await captureOver())) break;
+		}
+		await pause(400);
+		await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(last * 0.7), y: Math.round(last * 0.45) });
+		await pause(250);
+	}
+
+	/*
+	 * ⌘C takes the colour, says so, and ends the capture.
+	 *
+	 * Taking a value is the whole errand — there is nothing left to frame afterwards — so staying in
+	 * capture mode would leave the user dismissing something they are already done with.
+	 */
+	await call(socket, "Input.dispatchKeyEvent", {
+		type: "keyDown",
+		key: "c",
+		code: "KeyC",
+		modifiers: 4,
+		windowsVirtualKeyCode: 67,
+		nativeVirtualKeyCode: 67,
+	});
+	await pause(300);
+	const said = await run<string>(`(() => {
+		const el = [...document.querySelectorAll("span")].find(d => (d.textContent || "").trim() === "已复制色值");
+		return el ? "有" : "没有";
+	})()`).catch(() => "读不到");
+	note(`      ⌘C → 提示「已复制色值」${said}`);
+	if (said !== "有") problems.push("按 ⌘C 之后没有出现「已复制色值」的提示");
+
+	/*
+	 * And again, because the second colour pick is where this broke.
+	 *
+	 * `toastLeaving` was added to the toast's fade and to neither reset path, so the first pick set
+	 * it and nothing cleared it — every pick after the first rendered 「已复制色值」 at `opacity: 0`.
+	 * One capture is not enough to catch that class of bug now that the page outlives the capture.
+	 */
+	const secondPick = { checked: false, seen: false };
+
+	/*
+	 * The capture leaves at once; the confirmation does not.
+	 *
+	 * Taking a colour used to hold the whole frozen screen up for 850ms before it even started
+	 * leaving, so the message could be read — nearly a second of an unresponsive-looking desktop
+	 * after the errand was already done. It should go the way Escape goes, and leave the message
+	 * behind over the real screen. Measured 300ms in: by then the frozen picture must be gone and
+	 * the message must still be there.
+	 */
+	const handover = await run<{ frozen: string | null; toast: boolean }>(`(() => {
+		const c = document.querySelector("canvas");
+		return {
+			frozen: c ? getComputedStyle(c).opacity : null,
+			toast: [...document.querySelectorAll("span")].some(d => (d.textContent || "").trim() === "已复制色值"),
+		};
+	})()`).catch(() => ({ frozen: null, toast: false }));
+	note(`      取色 300ms 后 → 冻结画面透明度 ${handover.frozen ?? "?"}，提示${handover.toast ? "还在" : "已经没了"}`);
+	if (handover.frozen !== "0") {
+		problems.push(`取色之后冻结画面还盖着屏幕（透明度 ${handover.frozen ?? "?"}）——截图应该像按 Esc 一样立刻退出`);
+	}
+	if (!handover.toast) problems.push("取色提示消失得太早——它应该在截图退出之后还留一会儿");
+	await pause(1400);
+	/*
+	 * "Is the capture over?", asked of the page rather than of the debugger.
+	 *
+	 * The overlay window is built once and then shown and hidden — it is not destroyed between
+	 * captures any more, because building one cost 147ms that was visible as the desktop jumping.
+	 * So its target is listed whether a capture is running or not, and the old check here reported
+	 * every capture as "still open" no matter what the app did.
+	 */
+	const closedAfterCopy = await captureOver();
+	note(`      ⌘C 之后浮层${closedAfterCopy ? "已退出" : "还开着"}`);
+	if (!closedAfterCopy) problems.push("取完色之后没有自动退出截图");
+
+	/*
+	 * Everything below needs a capture again — in the same window, which is the point.
+	 *
+	 * The socket does not change: one window serves every capture now. What is waited for is the
+	 * page reporting itself back in capture mode, which is the only outward sign that the new
+	 * session's init actually arrived.
+	 */
+	/*
+	 * The sampler goes in *before* the trigger, which it did not have to before.
+	 *
+	 * The fade lasts 160ms and the overlay now appears about 170ms after the shortcut, so installing
+	 * a recorder after asking for the capture arrives at the end of the transition and reads two
+	 * samples of its final value — "no fade", from a probe that was simply too late. The window is
+	 * the same one across captures now, so this can be armed while the last capture is closed.
+	 */
+	await run(`(() => {
+		window.__fade = [];
+		const tick = () => {
+			if (window.__fade.length >= 120) return;
+			const el = [...document.querySelectorAll("div")].find(d => d.style.opacity !== "" && String(d.style.transition).includes("opacity"));
+			if (el) window.__fade.push(Number(getComputedStyle(el).opacity));
+			setTimeout(tick, 16);
+		};
+		tick();
+	})()`);
+	await app.evaluate(`window.lyra.screenshot.start()`);
+	let reopened = false;
+	for (let i = 0; i < 40 && !reopened; i++) {
+		await pause(250);
+		reopened = !(await captureOver());
+	}
+	if (!reopened) throw new Error("取色之后再开截图失败");
+	await pause(400);
+
+	/*
+	 * The way in is a fade, not a cut.
+	 *
+	 * A dimming layer that reads 1 on its very first sample never animated: it was already at its
+	 * end state, which is what happens when the transition is started while the page is still
+	 * hidden and has no frames to run in.
+	 */
+	const fade = await run<number[]>(`window.__fade ?? []`);
+	const spread = fade.length ? `${Math.min(...fade).toFixed(2)} → ${Math.max(...fade).toFixed(2)}` : "(没采到)";
+	note(`  0d. 进入时的遮罩透明度 → ${spread}（${fade.length} 次采样）`);
+	if (fade.length === 0) problems.push("采不到遮罩的透明度，淡入无法验证");
+	else if (Math.min(...fade) >= 1) problems.push("浮层是直接跳到最终状态的，没有淡入过渡");
+	else if (Math.max(...fade) < 0.99) problems.push(`淡入没有走完，遮罩最高只到 ${Math.max(...fade).toFixed(2)}`);
+
+	/*
+	 * The second colour pick, which is the one that broke.
+	 *
+	 * Everything about a capture used to be new because the page was new. It is not any more, and
+	 * the failure that follows is invisible to a probe that only ever does something once:
+	 * `toastLeaving` was added to the toast's fade and to neither reset path, so the first pick set
+	 * it, nothing cleared it, and from the second pick onwards 「已复制色值」 rendered at
+	 * `opacity: 0` — present in the DOM, never seen.
+	 *
+	 * So the *computed* opacity is what is checked, not whether the element exists.
+	 */
+	await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x: 700, y: 420 });
+	await pause(200);
+	await call(socket, "Input.dispatchKeyEvent", {
+		type: "keyDown",
+		key: "c",
+		code: "KeyC",
+		modifiers: 4,
+		windowsVirtualKeyCode: 67,
+		nativeVirtualKeyCode: 67,
+	});
+	await pause(300);
+	const secondToast = await run<{ present: boolean; opacity: string | null }>(`(() => {
+		const el = [...document.querySelectorAll("span")].find(d => (d.textContent || "").trim() === "已复制色值");
+		if (!el) return { present: false, opacity: null };
+		const layer = el.closest("div[style*='opacity']") || el.parentElement?.parentElement;
+		return { present: true, opacity: layer ? getComputedStyle(layer).opacity : null };
+	})()`).catch(() => ({ present: false, opacity: null }));
+	secondPick.checked = true;
+	secondPick.seen = secondToast.present && secondToast.opacity !== "0";
+	note(`      第二次取色 → 提示${secondToast.present ? "在 DOM 里" : "不存在"}，透明度 ${secondToast.opacity ?? "?"}`);
+	if (!secondToast.present) problems.push("第二次取色时没有出现「已复制色值」");
+	else if (secondToast.opacity === "0") {
+		problems.push("第二次取色的提示透明度是 0——它在 DOM 里但完全看不见（上一次取色的淡出状态没有被重置）");
+	}
+
+	// And back into a capture for the annotation checks below.
+	await pause(1400);
+	await app.evaluate(`window.lyra.screenshot.start()`);
+	let thirdOpen = false;
+	for (let i = 0; i < 40 && !thirdOpen; i++) {
+		await pause(250);
+		thirdOpen = !(await captureOver());
+	}
+	if (!thirdOpen) throw new Error("第二次取色之后再开截图失败");
+	await pause(300);
+
 	await drag(socket, [300, 220], [900, 620]);
 	await pause(150);
 	const drawn = await run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
-		const box = document.querySelector('[class*="border-white/90"]');
+		const box = document.querySelector('[data-selection]');
 		if (!box) return null;
 		const r = box.getBoundingClientRect();
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
@@ -302,7 +638,7 @@ try {
 	if (!drawn || drawn.w < 500 || drawn.h < 300) problems.push("拖拽没有拉出预期大小的选区");
 
 	// ---- 2. 八个手柄 -----------------------------------------------------
-	const handles = await run<number>(`document.querySelectorAll('[class*="border-white/90"] > div').length`);
+	const handles = await run<number>(`document.querySelectorAll('[data-selection] > div').length`);
 	note(`  2. 手柄 → ${handles} 个`);
 	if (handles !== 8) problems.push(`应该有 8 个缩放手柄，实际 ${handles} 个`);
 
@@ -314,6 +650,8 @@ try {
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) };
 	})()`);
 	note(`  3. 工具条 → ${bar ? `${bar.x},${bar.y} 宽 ${bar.w}` : "没有出现"}`);
+	// A capture bar is a palette, not a desktop toolbar. 742pt was most of a laptop's screen.
+	if (bar && bar.w > 660) problems.push(`工具条太宽了：${bar.w}pt`);
 	/*
 	 * Every control has to be reachable, which means the whole bar has to be on screen.
 	 *
@@ -339,7 +677,11 @@ try {
 	}
 	if (!bar) problems.push("工具条没有出现");
 	else {
-		if (Math.abs(bar.x - (drawn?.x ?? 0)) > 2) problems.push(`工具条没有和选区左边缘对齐（${bar.x} vs ${drawn?.x}）`);
+		// Right-aligned: cancel and confirm end up under the hand that just finished the drag.
+		const wantRight = (drawn?.x ?? 0) + (drawn?.w ?? 0);
+		if (Math.abs(bar.x + bar.w - wantRight) > 2) {
+			problems.push(`工具条没有和选区右边缘对齐（右边缘 ${bar.x + bar.w} vs 选区 ${wantRight}）`);
+		}
 		if (bar.y < (drawn?.y ?? 0) + (drawn?.h ?? 0)) problems.push("工具条没有落在选区下方");
 	}
 
@@ -391,7 +733,7 @@ try {
 	await drag(socket, [drawn!.x + drawn!.w * 0.25, drawn!.y + 2], [drawn!.x + drawn!.w * 0.25 + 60, drawn!.y + 52]);
 	await pause(150);
 	const moved = await run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
-		const box = document.querySelector('[class*="border-white/90"]');
+		const box = document.querySelector('[data-selection]');
 		if (!box) return null;
 		const r = box.getBoundingClientRect();
 		return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
@@ -410,7 +752,7 @@ try {
 	await drag(socket, corner, [corner[0] + 80, corner[1] + 60]);
 	await pause(150);
 	const resized = await run<{ w: number; h: number } | null>(`(() => {
-		const box = document.querySelector('[class*="border-white/90"]');
+		const box = document.querySelector('[data-selection]');
 		if (!box) return null;
 		const r = box.getBoundingClientRect();
 		return { w: Math.round(r.width), h: Math.round(r.height) };
@@ -418,6 +760,35 @@ try {
 	note(`  5. 拖右下角 → ${resized ? `${resized.w}×${resized.h}` : "选区没了"}`);
 	if (!resized || Math.abs(resized.w - (moved!.w + 80)) > 3 || Math.abs(resized.h - (moved!.h + 60)) > 3) {
 		problems.push(`拖手柄没有把选区放大到预期尺寸（实际 ${resized?.w}×${resized?.h}）`);
+	}
+
+	/*
+	 * Outside a region that already exists is a dead zone.
+	 *
+	 * It used to begin a new region, which threw away the framed one and every mark on it — easy to
+	 * trigger with a press a few pixels wide of the frame while reaching for the toolbar. Checked by
+	 * dragging well outside and confirming the region did not move, and that the cursor out there
+	 * says nothing is on offer.
+	 */
+	const readSel = () =>
+		run<{ x: number; y: number; w: number; h: number } | null>(`(() => {
+			const box = document.querySelector('[data-selection]');
+			if (!box) return null;
+			const r = box.getBoundingClientRect();
+			return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+		})()`);
+	const beforeOutside = await readSel();
+	await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x: 60, y: 60 });
+	await pause(150);
+	const outsideCursor = await run<string>(`getComputedStyle(document.querySelector('[data-capture="active"]')).cursor`).catch(() => "?");
+	await drag(socket, [60, 60], [240, 200]);
+	await pause(250);
+	const afterOutside = await readSel();
+	note(`  5b. 选区外 → 光标 ${outsideCursor}；在外面拖一次后选区 ${afterOutside ? `${afterOutside.w}×${afterOutside.h}` : "没了"}`);
+	if (outsideCursor !== "not-allowed") problems.push(`选区之外的光标是「${outsideCursor}」，应该是 not-allowed——那里不该能做任何事`);
+	if (!afterOutside) problems.push("在选区外拖拽把选区弄没了——外面应该是禁区");
+	else if (beforeOutside && (afterOutside.w !== beforeOutside.w || afterOutside.h !== beforeOutside.h || afterOutside.x !== beforeOutside.x)) {
+		problems.push(`在选区外拖拽改变了选区：${beforeOutside.w}×${beforeOutside.h} @${beforeOutside.x} → ${afterOutside.w}×${afterOutside.h} @${afterOutside.x}`);
 	}
 
 	// ---- 6. 每一种工具都真的画出东西 -------------------------------------
@@ -437,7 +808,7 @@ try {
 		run<{ ink: number; sum: number }>(`(() => {
 			const cs = document.querySelectorAll("canvas");
 			const c = cs[cs.length - 1];
-			const box = document.querySelector('[class*="border-white/90"]');
+			const box = document.querySelector('[data-selection]');
 			if (!c || !c.width || !box) return { ink: -1, sum: -1 };
 			/*
 			 * Only the region, not the whole screen the canvas covers. Reading every pixel of a 5K
@@ -492,7 +863,7 @@ try {
 		 * region" and the selection is gone. On screen that is a capture that resets itself the
 		 * moment you pick a tool.
 		 */
-		const alive = await run<boolean>(`Boolean(document.querySelector('[class*="border-white/90"]'))`);
+		const alive = await run<boolean>(`Boolean(document.querySelector('[data-selection]'))`);
 		if (!alive) {
 			problems.push(`点了「${name}」按钮之后选区没了——工具条的点击穿到浮层上了`);
 			break;
@@ -503,9 +874,37 @@ try {
 		 * A mosaic samples the picture underneath it, so colours shown beside it do nothing to
 		 * anything — a control that cannot affect what is selected is a promise the tool does not keep.
 		 */
-		const swatches = await run<number>(`document.querySelectorAll('[data-ly-tip="红色"], [data-ly-tip="蓝色"]').length`);
+		/*
+		 * The properties live in a bubble above the row now, so they are found by what they are
+		 * rather than by a tooltip the bubble no longer needs.
+		 */
+		const swatches = await run<number>(`document.querySelectorAll('[aria-label="红色"], [aria-label="蓝色"]').length`);
 		if (name === "马赛克" && swatches > 0) problems.push("选中马赛克时还显示着颜色选择——马赛克没有颜色");
 		if (name !== "马赛克" && swatches === 0) problems.push(`选中「${name}」时颜色选择不见了`);
+		// And the size control follows the tool, whatever that tool calls its size.
+		const sizes = await run<number>(`document.querySelectorAll('[aria-label^="字号"], [aria-label^="马赛克大小"], [aria-label^="粗细"], [aria-label^="标号大小"]').length`);
+		if (sizes === 0) problems.push(`选中「${name}」时没有大小档位可调`);
+
+		/*
+		 * The mosaic says how much it will cover, before it covers it.
+		 *
+		 * Checked by moving the pointer over the canvas and looking for a ring: redaction is not
+		 * something anyone wants to discover they did too narrowly, and a system cursor cannot say
+		 * how wide the brush is.
+		 */
+		if (name === "马赛克") {
+			await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inside.x + 60, y: inside.y + 60 });
+			await pause(120);
+			const ring = await run<{ w: number; h: number } | null>(`(() => {
+				const el = [...document.querySelectorAll("span")].find(s => s.className.includes("rounded-full") && s.className.includes("pointer-events-none") && s.getBoundingClientRect().width > 4);
+				if (!el) return null;
+				const r = el.getBoundingClientRect();
+				return { w: Math.round(r.width), h: Math.round(r.height) };
+			})()`);
+			note(`     马赛克光标圈 → ${ring ? `${ring.w}×${ring.h}` : "没有出现"}`);
+			if (!ring) problems.push("选中马赛克后，光标处没有显示涂抹范围的圆圈");
+			else if (Math.abs(ring.w - ring.h) > 2) problems.push(`马赛克光标圈不是正圆：${ring.w}×${ring.h}`);
+		}
 		const lane = inside.y + index * 32;
 		// A short drag for the ones that are dragged; a click is enough for the step badge.
 		if (name === "步骤标号") await click(socket, inside.x + 400, lane);
@@ -530,7 +929,7 @@ try {
 	const readFrame = `(() => {
 		const cs = document.querySelectorAll("canvas");
 		const c = cs[cs.length - 1];
-		const box = document.querySelector('[class*="border-white/90"]');
+		const box = document.querySelector('[data-selection]');
 		if (!c || !box) return null;
 		const r = box.getBoundingClientRect();
 		const s = c.width / window.innerWidth;
@@ -706,7 +1105,7 @@ try {
 	const finished = await pressTool(socket, run, "完成");
 	if (!finished) problems.push("工具条上没有「完成」按钮");
 	await pause(700);
-	const overlayGone = !(await targets()).some((t) => t.type === "page" && t.url.includes("screenshot-overlay"));
+	const overlayGone = await captureOver();
 	note(`      点「完成」之后浮层${overlayGone ? "已关闭" : "还开着"}`);
 	if (!overlayGone) {
 		problems.push("点了完成之后浮层没有关闭——还停在截图状态");
@@ -777,7 +1176,51 @@ try {
 	 * so asserting either answer would make it flaky in one direction or the other.
 	 */
 } finally {
+	// Before `stop`, which deletes the directory this lives in.
+	timeline = await readFile(join(home, "screenshot-debug.log"), "utf8").catch(() => "");
 	await app.stop();
+}
+
+/*
+ * The main process's own account of what it did, which is where the timing lives.
+ *
+ * Everything above is measured from inside the page, and the two things that were worst about this
+ * feature — the desktop appearing to jump on the way in, the app flashing on the way out — are not
+ * visible from there at all. They are gaps between main-process operations: how long from the
+ * shortcut to the window being shown, and whether anything was uncovered before the hide landed.
+ */
+if (timeline) {
+	console.log("\n—— 主进程时序 ——");
+	console.log(timeline.trim());
+	const blocks = timeline.split("===== capture").slice(1);
+	blocks.forEach((block, i) => {
+		const shown = /\[\+ *(\d+)ms\] reveal: after showInactive/.exec(block);
+		const snap = /\[\+ *(\d+)ms\] snapshot \+ windows ready/.exec(block);
+		if (!shown || !snap) return;
+		const total = Number(shown[1]);
+		const own = total - Number(snap[1]);
+		const grab = /"getSources":(\d+)/.exec(block)?.[1] ?? "?";
+		console.log(`\n• 第 ${i + 1} 次：触发→上屏 ${total}ms（系统取画面 ${grab}ms，Lyra 自己 ${own}ms）`);
+		/*
+		 * Judged on Lyra's own share, not the total.
+		 *
+		 * `getSources` is the system taking the picture and varies with what else the machine is
+		 * doing; the part worth defending is everything after it — decoding, painting, showing —
+		 * because that is what used to be 280ms of window-building and PNG encoding, and it is time
+		 * in which the screen can change and then visibly snap back when the frozen copy arrives.
+		 *
+		 * The first capture of a run is exempt: the overlay is built lazily and the warm-up runs
+		 * three seconds after launch, which a probe that captures immediately does not wait for.
+		 */
+		if (i === 0 && Number(grab) > 140) {
+			problems.push(`第一次截图系统取画面花了 ${grab}ms——预热没生效，头一两张截图仍会看到画面跳一下`);
+		}
+		if (i > 0 && own > 90) {
+			problems.push(`浮层上屏前 Lyra 自己花了 ${own}ms——这段时间内屏幕的变化会在浮层落下时被“抹回去”，看起来就是画面跳一下`);
+		}
+	});
+} else {
+	console.log("\n（没有读到主进程时序日志）");
 }
 
 console.log("");

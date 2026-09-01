@@ -57,4 +57,30 @@ if (mac && identityAvailable()) {
 }
 
 const result = spawnSync("electron-builder", args, { stdio: "inherit", shell: process.platform === "win32" });
+
+/*
+ * Put `node_modules` back the way this machine needs it.
+ *
+ * electron-builder rebuilds native modules for whatever architecture it is packaging, in the
+ * project's own `node_modules` — not in a copy. Building a universal or multi-arch release
+ * therefore ends with `node-pty` compiled for whichever architecture went last, and on an Apple
+ * Silicon machine that is x86_64. Nothing says so at the time; the next `npm run dev`, e2e probe or
+ * packaged-app-from-source run dies on launch with
+ *
+ *     dlopen(.../pty.node): incompatible architecture (have 'x86_64', need 'arm64')
+ *
+ * in a main-process crash dialog, which reads as the app being broken rather than as the last
+ * build having left the tree pointed elsewhere. `rebuild:pty` builds for the local Electron, so
+ * this simply undoes it.
+ *
+ * After the build, and regardless of whether it succeeded: a failed package run leaves the modules
+ * just as rebuilt as a successful one.
+ */
+const restore = spawnSync(process.execPath, [new URL("rebuild-pty.mjs", import.meta.url).pathname], {
+	stdio: "inherit",
+});
+if (restore.status !== 0) {
+	console.warn("[package] 原生模块没能恢复成本机架构，开发运行前请手动执行 npm run rebuild:pty");
+}
+
 process.exit(result.status ?? 1);

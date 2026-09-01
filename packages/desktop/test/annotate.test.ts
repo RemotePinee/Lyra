@@ -156,9 +156,9 @@ test("a longer stroke covers more, and its cells are the union of its points", (
 
 test("block and brush scale with the image, and never collapse on a small one", () => {
 	assert.ok(mosaicBlock(3000) > mosaicBlock(600), "a big screenshot gets bigger blocks");
-	assert.ok(mosaicBlock(100) >= 6, "and a tiny one still gets blocks you can see");
+	assert.ok(mosaicBlock(100) >= 4, "and a tiny one still gets blocks you can see");
 	assert.ok(mosaicBrush(3000) > mosaicBrush(600));
-	assert.ok(mosaicBrush(50) >= 16);
+	assert.ok(mosaicBrush(50) >= 12);
 });
 
 test("the grain follows the size control, so a mosaic can be coarse or fine", () => {
@@ -168,7 +168,7 @@ test("the grain follows the size control, so a mosaic can be coarse or fine", ()
 	 */
 	assert.ok(mosaicBlock(2000, 2) > mosaicBlock(2000, 1), "a larger setting gives coarser blocks");
 	assert.ok(mosaicBlock(2000, 0.5) < mosaicBlock(2000, 1), "and a smaller one finer");
-	assert.ok(mosaicBlock(2000, 0.01) >= 6, "never so fine that it stops hiding anything");
+	assert.ok(mosaicBlock(2000, 0.01) >= 4, "never so fine that it stops hiding anything");
 	assert.equal(mosaicBlock(2000), mosaicBlock(2000, 1), "left off, it is the middle setting");
 });
 

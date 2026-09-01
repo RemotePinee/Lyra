@@ -120,6 +120,13 @@ export interface AttachedTerminal {
 	replay: string;
 }
 
+/** What `format.external` can come back with. Mirrors `electron/format-external.ts`. */
+export type ExternalFormatResult =
+	| { ok: true; text: string; tool: string }
+	| { ok: false; reason: "unsupported" }
+	| { ok: false; reason: "failed"; message: string; tool: string }
+	| { ok: false; reason: "missing"; tool: string; install: string };
+
 export interface LyraApi {
 	/**
 	 * Which operating system this is, available before the first paint.
@@ -227,6 +234,13 @@ export interface LyraApi {
 		/** Null when this session has never had one opened. */
 		state(sessionId: string): Promise<SideChatSnapshot | null>;
 		ask(sessionId: string, content: UserContent[]): Promise<void>;
+		/**
+		 * Replace a question already asked and answer from there, dropping everything after it.
+		 *
+		 * The same act as editing a message in the main conversation, and for the same reason: a
+		 * question that came out wrong, re-asked below the old one, leaves the model reading both.
+		 */
+		editAndResend(sessionId: string, index: number, content: UserContent[]): Promise<void>;
 		abort(sessionId: string): Promise<void>;
 		/** Throw the conversation away and start fresh. The main session is untouched. */
 		reset(sessionId: string): Promise<void>;
@@ -237,6 +251,23 @@ export interface LyraApi {
 		list(sessionId: string): Promise<QueuedTask[]>;
 		/** Only a task that has not started can be withdrawn; stopping a running one is `abort`. */
 		cancel(sessionId: string, taskId: string): Promise<boolean>;
+		/**
+		 * Take a finished task off the list without touching what it did.
+		 *
+		 * The list is a receipt for work the side chat handed over. Clearing a row you have already
+		 * read — or one you cancelled yourself, whose outcome you knew when you clicked — leaves the
+		 * transcript alone. Refuses anything still queued or running: that would read as cancelling
+		 * and would not be.
+		 */
+		dismiss(sessionId: string, taskId: string): Promise<boolean>;
+		/**
+		 * Put a task that stopped back on the queue.
+		 *
+		 * For the two ways a task stops without finishing: the main session was paused under it, or
+		 * it failed. Both are work you still want done, and both used to be terminal — the row said
+		 * so and nothing could act on it.
+		 */
+		resume(sessionId: string, taskId: string): Promise<boolean>;
 	};
 	/**
 	 * Reading the project's files, for the panel's file browser.
@@ -245,6 +276,26 @@ export interface LyraApi {
 	 * looking at what you are working on, and a file picker that can wander into the rest of
 	 * the disk is a different, riskier thing than what was asked for.
 	 */
+	/**
+	 * Formatting that the window cannot do alone.
+	 *
+	 * Prettier runs in the renderer — see `src/components/editor/format.ts`. What is here is the
+	 * half that needs the machine: the language-owned binaries (`gofmt` and friends), and the
+	 * project's own committed style, which outranks anything set in this app's settings.
+	 */
+	format: {
+		/** Format via the language's own tool. See `electron/format-external.ts` for the outcomes. */
+		external(extension: string, source: string): Promise<ExternalFormatResult>;
+		/** Whether any external tool is even conceivable for this extension. */
+		available(extension: string): Promise<boolean>;
+		/**
+		 * `.prettierrc` / `.editorconfig` / `package.json#prettier`, nearest first.
+		 *
+		 * Null when the file is outside every open project, or when the project says nothing —
+		 * in both cases the app's own settings apply.
+		 */
+		config(file: string): Promise<(Record<string, unknown> & { __source?: string }) | null>;
+	};
 	files: {
 		list(dir: string): Promise<FileEntry[]>;
 		read(path: string): Promise<FileContents | null>;
@@ -555,11 +606,69 @@ export interface LyraApi {
 		finish(dataUrl: string, settings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }>;
 		cancel(): Promise<void>;
 		pickDirectory(): Promise<string | null>;
-		onInit(handler: (payload: { snapshot: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number; settings?: ScreenshotSettings }) => void): () => void;
+		onInit(
+			handler: (payload: {
+				/**
+				 * The screen, as raw RGBA pixels rather than an encoded image.
+				 *
+				 * Encoding it to PNG so it could be decoded again on the other side of this message
+				 * measured 133ms — the largest single thing Lyra contributed to the wait before a
+				 * capture appears, and the picture is taken before that wait, so it was time in which
+				 * the screen could change and then appear to snap back when the frozen copy landed.
+				 */
+				snapshot: { pixels: Uint8Array; width: number; height: number };
+				/**
+				 * Which capture this is, counted in the main process.
+				 *
+				 * The overlay window is built once and then shown and hidden — building it per capture
+				 * cost 147ms, and the picture it shows is taken before that, so the delay was visible as
+				 * the desktop jumping back a moment when the overlay landed. The page therefore cannot
+				 * tell a new capture from the last one by having just loaded, and cannot tell from the
+				 * picture either: two captures of an unchanged screen are byte-identical.
+				 */
+				session: number;
+				bounds: { x: number; y: number; width: number; height: number };
+				scaleFactor: number;
+				/** On-screen windows, front to back, in the overlay's own coordinates. Empty off macOS. */
+				windows?: { x: number; y: number; width: number; height: number; app: string }[];
+				/** Where the pointer was when the capture began, so the first highlight needs no movement. */
+				cursor?: { x: number; y: number };
+				settings?: ScreenshotSettings;
+			}) => void,
+		): () => void;
 		/** Say the snapshot has been drawn, so the overlay can be shown without a blank frame. */
 		ready(): void;
+		/**
+		 * The overlay has composited a frame, and may now be made visible.
+		 *
+		 * Sent from inside an animation frame. `ready` is not a substitute: it means the snapshot is
+		 * in the canvas's bitmap, which is CPU-side work — the window's GPU surface is released while
+		 * it is hidden, and one that is still being rebuilt is displayed stretched to the window's
+		 * size. That is the "the whole screen scales for an instant" on the first capture and on the
+		 * first one after a pause.
+		 */
+		painted(): void;
+		/**
+		 * A colour has been taken and the capture is leaving, but the confirmation is not.
+		 *
+		 * The overlay stays up for another moment showing nothing but 「已复制色值」 over the real
+		 * desktop; this makes it click-through for that moment, so the screen behaves normally the
+		 * instant it looks normal. `cancel` follows once the message has faded.
+		 */
+		colourPicked(): void;
 		/** The window is on screen — from here a fade has frames to run in. Returns an unsubscribe. */
 		onShown(handler: () => void): () => void;
+		/**
+		 * The capture is over and the window is off screen.
+		 *
+		 * Sent after the hide has landed, never before: the page answers it by dropping the frozen
+		 * screen, which is a white canvas if it is still being looked at. Its other purpose is
+		 * memory — the snapshot is a full-resolution copy of the display, and the window holding it
+		 * now lives as long as the app does.
+		 */
+		onHidden(handler: () => void): () => void;
+		/** Report a measurement into the capture log, for diagnosing what a recording only hints at. */
+		debug(what: string, detail: Record<string, unknown>): void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

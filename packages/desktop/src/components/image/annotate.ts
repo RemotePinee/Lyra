@@ -43,6 +43,19 @@ export interface Shape {
 	height?: number;
 	/** Text only: a CSS colour behind the text, or undefined for none. */
 	background?: string;
+	/**
+	 * The line width this mark was drawn at, in natural pixels.
+	 *
+	 * Recorded on the mark rather than read from the toolbar at paint time, because the toolbar is
+	 * about what happens *next*. Painted from the current setting, every stroke already on the
+	 * picture changed thickness the moment the size was adjusted — draw three arrows, decide the
+	 * fourth should be thinner, and the first three become thinner too. Text has always kept its
+	 * own `size` for exactly this reason; the rest of the tools were the odd ones out.
+	 */
+	stroke?: number;
+	/** Mosaic only: the grid it was painted on, and how wide the brush was. Same reasoning. */
+	block?: number;
+	brush?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -383,12 +396,19 @@ export function stepNumber(shapes: Shape[], index: number): number {
  * where the old fixed value was.
  */
 export function mosaicBlock(width: number, scale = 1): number {
-	return Math.max(6, Math.round((width / 110) * scale));
+	return Math.max(4, Math.round((width / 170) * scale));
 }
 
-/** How wide the mosaic brush paints, in natural pixels. */
+/**
+ * How wide the mosaic brush paints, in natural pixels.
+ *
+ * Was `width / 28`, which on a Retina capture is a 52pt disc — wider than most of the things anyone
+ * redacts, so covering a single line of text meant covering the two lines around it as well. A
+ * brush should start about the height of a line and be widened when the job is bigger, which is
+ * what the size control is for.
+ */
 export function mosaicBrush(width: number): number {
-	return Math.max(16, Math.round(width / 28));
+	return Math.max(12, Math.round(width / 52));
 }
 
 /**

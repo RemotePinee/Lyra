@@ -7,10 +7,25 @@ export interface CodeThemeSpec {
 	id: string;
 	label: string;
 	mode: "light" | "dark";
-	/** Background preview color */
+	/**
+	 * The surface code is drawn on, and the colour of text no rule claimed.
+	 *
+	 * Read by every code surface in the app — the editor, fenced blocks, the terminal, diffs —
+	 * via `--ly-code-bg` / `--ly-code-fg`. They were labelled "preview color" for a long time and
+	 * used by nothing but the settings swatch, which is why choosing a theme changed the token
+	 * colours and left every background on the app's own white.
+	 */
 	background: string;
-	/** Foreground preview color */
 	foreground: string;
+	/**
+	 * Take the surface from the app rather than from these two fields.
+	 *
+	 * For the default theme only. Its whole point is to look like Lyra, and Lyra's background is
+	 * whatever the user set on the appearance page — a fixed `#FFFFFF` here would ignore a tinted
+	 * background and put a hard white rectangle in the middle of it. The fields above are still
+	 * filled in, as the value the settings swatch previews and as a fallback.
+	 */
+	inherit?: boolean;
 	/** Diff added row background */
 	addedBg: string;
 	/** Diff removed row background */
@@ -33,6 +48,41 @@ export interface CodeThemeSpec {
 
 export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 	{
+		/*
+		 * Lyra's own, and the default.
+		 *
+		 * The token colours are the terminal's ANSI palette, not a new invention. That palette is
+		 * already Lyra's answer to "what colour is a string, a number, an error" — it was tuned for
+		 * this background, and reusing it means `git diff`'s green in the terminal and a type name
+		 * in the editor are the same green. A second hand-picked set would drift from it on the
+		 * first tweak to either.
+		 *
+		 * `inherit` keeps the surface the app's own, so this theme adds colour to code without
+		 * repainting the window. Anything else is a choice the user made.
+		 */
+		id: "lyra-light",
+		label: "Lyra 默认",
+		mode: "light",
+		inherit: true,
+		background: "#ffffff",
+		foreground: "#1a1c1f",
+		addedBg: "rgba(51, 128, 63, 0.12)",
+		removedBg: "rgba(200, 64, 47, 0.10)",
+		tokens: {
+			keyword: "#2b62c6",
+			string: "#0f7d78",
+			number: "#9a6a00",
+			comment: "#8a8a8a",
+			function: "#8a45a5",
+			type: "#33803f",
+			variable: "#1a1c1f",
+			operator: "#5f5f5f",
+			punctuation: "#5f5f5f",
+			tag: "#2b62c6",
+			attribute: "#9a6a00",
+		},
+	},
+	{
 		id: "solarized-light",
 		label: "Solarized Light",
 		mode: "light",
@@ -44,7 +94,7 @@ export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 			keyword: "#859900",
 			string: "#2aa198",
 			number: "#d33682",
-			comment: "#93a1a1",
+			comment: "#8a938e",
 			function: "#268bd2",
 			type: "#b58900",
 			variable: "#657b83",
@@ -132,7 +182,7 @@ export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 			keyword: "#a626a4",
 			string: "#50a14f",
 			number: "#986801",
-			comment: "#a0a1a7",
+			comment: "#8b8c93",
 			function: "#4078f2",
 			type: "#c18401",
 			variable: "#383a42",
@@ -154,9 +204,9 @@ export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 			keyword: "#8839ef",
 			string: "#40a02b",
 			number: "#fe640b",
-			comment: "#9ca0b0",
+			comment: "#7c7f93",
 			function: "#1e66f5",
-			type: "#df8e1d",
+			type: "#179299",
 			variable: "#4c4f69",
 			operator: "#04a5e5",
 			punctuation: "#6c6f85",
@@ -176,9 +226,9 @@ export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 			keyword: "#2e8b57",
 			string: "#b56959",
 			number: "#2f6f9f",
-			comment: "#a0ada0",
+			comment: "#8a998a",
 			function: "#598bb5",
-			type: "#2e8b57",
+			type: "#2e808f",
 			variable: "#393a34",
 			operator: "#758575",
 			punctuation: "#889888",
@@ -195,10 +245,10 @@ export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 		addedBg: "rgba(34, 197, 94, 0.15)",
 		removedBg: "rgba(239, 68, 68, 0.14)",
 		tokens: {
-			keyword: "#111827",
+			keyword: "#3730a3",
 			string: "#15803d",
-			number: "#6b7280",
-			comment: "#9ca3af",
+			number: "#61728a",
+			comment: "#9097a3",
 			function: "#1d4ed8",
 			type: "#4b5563",
 			variable: "#111827",
@@ -211,6 +261,30 @@ export const LIGHT_CODE_THEMES: CodeThemeSpec[] = [
 ];
 
 export const DARK_CODE_THEMES: CodeThemeSpec[] = [
+	{
+		// The dark half of the pair above — the same ANSI slots, dark-theme values.
+		id: "lyra-dark",
+		label: "Lyra 默认",
+		mode: "dark",
+		inherit: true,
+		background: "#171717",
+		foreground: "#ededed",
+		addedBg: "rgba(127, 201, 138, 0.14)",
+		removedBg: "rgba(240, 113, 113, 0.13)",
+		tokens: {
+			keyword: "#79b8ff",
+			string: "#6fd2c8",
+			number: "#e3c07b",
+			comment: "#6b6b6b",
+			function: "#c39ac9",
+			type: "#7fc98a",
+			variable: "#d6d6d6",
+			operator: "#a0a0a0",
+			punctuation: "#a0a0a0",
+			tag: "#79b8ff",
+			attribute: "#e3c07b",
+		},
+	},
 	{
 		id: "github-dark",
 		label: "GitHub Dark",
@@ -311,7 +385,7 @@ export const DARK_CODE_THEMES: CodeThemeSpec[] = [
 			keyword: "#c678dd",
 			string: "#98c379",
 			number: "#d19a66",
-			comment: "#5c6370",
+			comment: "#7f848e",
 			function: "#61afef",
 			type: "#e5c07b",
 			variable: "#abb2bf",
@@ -399,7 +473,7 @@ export const DARK_CODE_THEMES: CodeThemeSpec[] = [
 			keyword: "#81a1c1",
 			string: "#a3be8c",
 			number: "#b48ead",
-			comment: "#4c566a",
+			comment: "#6f7c96",
 			function: "#88c0d0",
 			type: "#8fbcbb",
 			variable: "#d8dee9",

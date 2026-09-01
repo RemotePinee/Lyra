@@ -7,14 +7,14 @@
  * person said, and showing it where a person's messages go is a lie about who is talking.
  */
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import type { AssistantMessage, Message } from "@lyra/core";
 import { Markdown } from "../Markdown.tsx";
 import { MessageActions } from "../MessageActions.tsx";
 import { ThinkingBlock } from "../ThinkingBlock.tsx";
 import { UserMessage } from "../UserMessage.tsx";
 import { useApp } from "../../store.ts";
-import { RotateCcw } from "lucide-react";
+import { ChevronDown, RotateCcw, TriangleAlert } from "lucide-react";
 import { Text } from "../Text.tsx";
 import { useConfirmer } from "../Confirm.tsx";
 import { isNudge, type TurnStats } from "./grouping.ts";
@@ -116,6 +116,12 @@ function AssistantRow({
 }) {
   const running = useApp((s) => s.running);
   const retryFrom = useApp((s) => s.retryFrom);
+  /*
+   * Whether a failure states itself in full or waits to be asked. See the error block below and
+   * 外观 → 出错时显示. Undefined counts as compact, which is what a fresh install gets.
+   */
+  const compactErrors = useApp((s) => s.settings?.appearance?.errorDetail !== "full");
+  const [errorOpen, setErrorOpen] = useState(false);
   const confirm = useConfirmer();
 
   const own = message.content.slice(0, upTo);
@@ -172,15 +178,32 @@ function AssistantRow({
          * dropped socket look like the most important thing on the screen. A failure is worth
          * one line — what went wrong, and the word that undoes it — set at the same weight as
          * the timestamp under every other reply.
+         *
+         * Compact goes further, and is the default: the wording of the common failure is a stack
+         * of provider JSON that nobody reads, and a long session where the connection wobbled a
+         * few times reads as a wall of red for something that fixed itself. So it says how many
+         * words it is withholding and opens on a click. Set by 外观 → 出错时显示.
          */
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <Text
-            size="caption"
-            tone="danger"
-            className="break-words whitespace-pre-wrap"
-          >
-            {message.errorMessage}
-          </Text>
+          {compactErrors && !errorOpen ? (
+            <button
+              type="button"
+              onClick={() => setErrorOpen(true)}
+              className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
+            >
+              <TriangleAlert size={10.5} strokeWidth={1.9} className="text-danger" />
+              这一轮出错了
+              <ChevronDown size={10} strokeWidth={2} />
+            </button>
+          ) : (
+            <Text
+              size="caption"
+              tone="danger"
+              className="break-words whitespace-pre-wrap"
+            >
+              {message.errorMessage}
+            </Text>
+          )}
           <button
             type="button"
             disabled={running}

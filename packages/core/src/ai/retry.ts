@@ -30,8 +30,11 @@ const RETRYABLE_CAUSES = new Set([
  * 429 is the server asking to be asked later. The 5xx range here is the set that means "not
  * right now" rather than "not ever" — a 500 from a relay is usually one bad upstream node, and
  * 501 or 505 are excluded because repeating them changes nothing.
+ *
+ * 529 is Anthropic's "overloaded", which is not in any RFC and was therefore falling through to
+ * "report it and stop" — the one status in the list that most literally means "ask again shortly".
  */
-const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524]);
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524, 529]);
 
 export interface RetryOptions {
 	/** Total attempts, including the first. */
@@ -195,6 +198,16 @@ export async function fetchWithRetry(
 		}
 	}
 
+	/*
+	 * How many attempts it took to give up, attached to the error.
+	 *
+	 * Without it a failure after five tries and a failure on the first look identical in the
+	 * transcript, and they call for opposite things: one is a wobble worth continuing through, the
+	 * other is something that is not going to work no matter how long you wait.
+	 */
+	if (lastError instanceof Error && attempts > 1) {
+		lastError.message = `${lastError.message}（已重试 ${attempts} 次）`;
+	}
 	throw lastError ?? new Error("请求已取消");
 }
 

@@ -40,6 +40,66 @@
 }
 
 /*
+ * Three more monospace faces, shipped rather than hoped for.
+ *
+ * The font menu in 外观 lists a dozen; most of them are only there if you happen to have installed
+ * them, and the menu says so. These three are the ones people ask for by name often enough to be
+ * worth the download size — all variable, all latin-only (CJK falls through to "Lyra CJK" exactly
+ * as it does for the default), and all under the SIL Open Font License.
+ *
+ * The same unicode-range as above on purpose: these cover the latin block and nothing else, so a
+ * Chinese comment in a code block is drawn by the CJK face beside them rather than by whatever
+ * fallback each of these happens to carry.
+ */
+@font-face {
+  font-family: "Fira Code";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url("@fontsource-variable/fira-code/files/fira-code-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Source Code Pro";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url("@fontsource-variable/source-code-pro/files/source-code-pro-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * IBM Plex Mono is not variable, so it comes as two weights rather than a range.
+ *
+ * 400 and 600 are what the weight control above actually selects; the browser synthesises 300 and
+ * 500 from the nearer of the two, which for a mono face at these sizes is indistinguishable.
+ */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
  * Chinese, scaled to match the latin beside it.
  *
  * Inter and PingFang draw to different proportions inside the same em: PingFang's glyphs fill
@@ -229,7 +289,18 @@
    * +/- markers share the row.
    */
   --text-code: var(--ly-code-size, 12.5px);
-  --text-code--line-height: 1.6;
+  /*
+   * Set from 外观 → 代码外观, with the long-standing values as the fallback.
+   *
+   * These are variables rather than constants because they are settings now: weight matters most on
+   * a dark theme, where a light face thins out; line height is the difference between a diff you can
+   * scan and a wall; tracking is the one people with a particular face in mind ask for. The
+   * fallbacks are exactly what the app rendered before any of them existed, so a settings file
+   * written earlier looks unchanged.
+   */
+  --text-code--line-height: var(--ly-code-line-height, 1.6);
+  --text-code--weight: var(--ly-code-weight, 400);
+  --text-code--tracking: var(--ly-code-tracking, 0em);
 }
 
 @layer base {
@@ -544,6 +615,24 @@
   .xterm {
     font-variant-ligatures: none;
     font-feature-settings: normal;
+    /* The typography settings reach the editor and the terminal too, not only prose code blocks —
+       they are the same text set the same way, and a weight that applied to one and not the others
+       would look like a rendering bug. */
+    font-weight: var(--text-code--weight);
+    letter-spacing: var(--text-code--tracking);
+    /*
+     * No synthesised italics, which is what made comments look wrong.
+     *
+     * Comments are set in italic, and the bundled mono faces ship upright only — so the browser
+     * slanted the upright glyphs geometrically to fake it. That is passable for latin and bad for
+     * Chinese, which has no italic tradition and no design that survives being sheared: a comment
+     * reading 「// 滚动条默认样式」 came out visibly skewed and slightly broken, right next to
+     * upright code.
+     *
+     * With synthesis off, a face that has real italics uses them and a face that does not stays
+     * upright. Comments are still told apart by colour, which is how most editors do it anyway.
+     */
+    font-synthesis: none;
     /*
      * Tighter than prose.
      *
@@ -556,8 +645,17 @@
   }
 
   .prose-dw pre {
-    background: var(--color-card);
-    border: 1px solid var(--color-line);
+    /*
+     * The code theme's surface, so a fenced block matches the editor.
+     *
+     * `--color-card` is the app's own tint, which meant picking Solarized Light coloured the
+     * tokens inside the block and left the block itself the same grey as every other card —
+     * the one difference people actually look at. Falls back to the card colour for the moment
+     * before the theme is applied, so a block never renders on nothing.
+     */
+    background: var(--ly-code-bg, var(--color-card));
+    color: var(--ly-code-fg, var(--color-ink));
+    border: 1px solid color-mix(in srgb, var(--ly-code-fg, var(--color-ink)) 12%, transparent);
     border-radius: 10px;
     padding: 12px 14px;
     overflow-x: auto;
@@ -567,9 +665,13 @@
 
   .prose-dw pre code {
     background: transparent;
+    /* Inherited from `pre`, which now carries the theme's foreground. */
+    color: inherit;
     padding: 0;
     font-size: var(--text-code);
     line-height: var(--text-code--line-height);
+    font-weight: var(--text-code--weight);
+    letter-spacing: var(--text-code--tracking);
     white-space: pre;
     word-break: normal;
   }
@@ -578,6 +680,8 @@
     /* Same reasoning as `body`: CJK-only range, so it only catches what the mono face gets wrong. */
     font-family: "Lyra CJK", var(--ly-code-font, var(--font-mono));
     font-size: var(--text-code);
+    font-weight: var(--text-code--weight);
+    letter-spacing: var(--text-code--tracking);
     background: var(--color-card-hover);
     color: var(--color-ink);
     border-radius: 5px;
@@ -2435,16 +2539,28 @@
  * already flattened against the surface, which looks identical while giving something to
  * scroll behind.
  */
+/*
+ * The diff sits on the code theme's surface, like every other place code is read.
+ *
+ * These three were mixed against `--color-shell` — the app's own panel colour — so a diff shown
+ * under Solarized Light had warm code on a white gutter with a hard seam down the middle. The
+ * tint stays proportional because only the base changed.
+ */
+.ly-diff-scroll {
+  background: var(--ly-code-bg, var(--color-shell));
+  color: var(--ly-code-fg, var(--color-ink));
+}
+
 .ly-diff-gutter {
-  background: var(--color-shell);
+  background: var(--ly-code-bg, var(--color-shell));
 }
 
 .ly-diff-add .ly-diff-gutter {
-  background: color-mix(in srgb, var(--color-ok) 8%, var(--color-shell));
+  background: color-mix(in srgb, var(--color-ok) 8%, var(--ly-code-bg, var(--color-shell)));
 }
 
 .ly-diff-remove .ly-diff-gutter {
-  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-shell));
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--ly-code-bg, var(--color-shell)));
 }
 
 /* The rail beside it is pinned too, so it needs the same treatment on context lines. */
@@ -2853,10 +2969,19 @@
  * The mask that replaced it is shared with `ly-fade-edge` above; all this does is deepen the
  * right-hand side, which is why the two can now be on the same title at once.
  */
+/*
+ * `:focus-visible`, not `:focus-within`.
+ *
+ * The fade is as wide as the controls that land on the title, so it belongs on exactly the states
+ * that bring those controls out. `:focus-within` is not one of them: clicking a row focuses its
+ * button and the focus stays, so the pointer would leave, the controls would go, and the title
+ * would keep a fade over its last characters with nothing there to justify it. Keyboard focus does
+ * bring the controls out, and `:has(:focus-visible)` is that and only that.
+ */
 .group\/session:hover .ly-fade-tail,
-.group\/session:focus-within .ly-fade-tail,
+.group\/session:has(:focus-visible) .ly-fade-tail,
 .group\/project:hover .ly-fade-tail,
-.group\/project:focus-within .ly-fade-tail {
+.group\/project:has(:focus-visible) .ly-fade-tail {
   /* As wide as the controls that are landing on it — the row says how many it has. */
   --ly-fade-right: var(--ly-row-controls, 30px);
 }
@@ -2946,6 +3071,48 @@
  * and the eye has to trace lines to work out which region is which, where a card says it at a
  * glance. The gap between two of them is where the splitter lives.
  */
+/*
+ * A pane that shows code is themed as one object, not as chrome with code inside it.
+ *
+ * Header, tab strip, tree and content share the code theme's surface, which is what makes an
+ * editor look like an editor rather than a titled box containing one. Every real editor does
+ * this: the file tree, the tab bar and the text are one continuous surface.
+ *
+ * The tree is in the list deliberately. It shows names, not code — but it is the editor's
+ * companion pane, sitting flush against it, and leaving it on the app's white put a hard seam
+ * down the middle of what reads as a single tool.
+ *
+ * The mechanism is the point. Rather than restating a colour for every control inside — the
+ * search box, the hover states, the separators, the muted labels — the pane redefines the *UI
+ * tokens themselves* against the code surface. Everything below inherits: `bg-input`, `text-ink`,
+ * `border-line` and the rest resolve to values mixed from this theme, including controls added
+ * later that nobody thought to add to a list. Listing them one at a time is how the search box
+ * stayed white after the pane around it went warm.
+ *
+ * Semantic colours are deliberately left alone. `--color-accent`, `--color-ok` and
+ * `--color-danger` mean "selected", "added" and "wrong" — they are not part of a palette that a
+ * syntax theme gets to reassign, and a diff whose additions stopped being green would be lying.
+ */
+.ly-dock-pane[data-pane="file"] .ly-dock-card,
+.ly-dock-pane[data-pane="files"] .ly-dock-card,
+.ly-dock-pane[data-pane="terminal"] .ly-dock-card,
+.ly-dock-pane[data-pane="review"] .ly-dock-card {
+  --color-shell: var(--ly-code-bg, var(--color-shell));
+  --color-panel: var(--ly-code-bg, var(--color-shell));
+  --color-card: color-mix(in srgb, var(--ly-code-fg) 4%, var(--ly-code-bg));
+  --color-card-hover: color-mix(in srgb, var(--ly-code-fg) 9%, var(--ly-code-bg));
+  --color-input: color-mix(in srgb, var(--ly-code-fg) 4%, var(--ly-code-bg));
+  --color-elevated: color-mix(in srgb, var(--ly-code-fg) 7%, var(--ly-code-bg));
+  --color-line: color-mix(in srgb, var(--ly-code-fg) 15%, transparent);
+  --color-line-soft: color-mix(in srgb, var(--ly-code-fg) 9%, transparent);
+  --color-ink: var(--ly-code-fg);
+  --color-ink-muted: color-mix(in srgb, var(--ly-code-fg) 72%, var(--ly-code-bg));
+  --color-ink-faint: color-mix(in srgb, var(--ly-code-fg) 48%, var(--ly-code-bg));
+
+  background: var(--ly-code-bg, var(--color-shell));
+  color: var(--ly-code-fg, var(--color-ink));
+}
+
 .ly-dock-card {
   background: var(--color-shell);
   border: 1px solid var(--color-line-soft);

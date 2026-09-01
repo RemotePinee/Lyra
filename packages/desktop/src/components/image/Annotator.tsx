@@ -76,6 +76,16 @@ interface Typing {
 	/** The column it wraps at, dragged by the handle on its edge. */
 	width: number;
 	/**
+	 * Whether that column was set by hand.
+	 *
+	 * Until it is, the box follows the text: it starts small and grows as you type, which is what a
+	 * caption wants — the old behaviour opened every caption at 30% of the picture's width, so a
+	 * two-word note arrived in a box wider than the thing it was pointing at, and the only way to
+	 * make it fit was to drag the handle every single time. Once dragged, that is an instruction,
+	 * and the box stops second-guessing it.
+	 */
+	manual?: boolean;
+	/**
 	 * The caption this one replaces, when an existing mark is being edited rather than a new one
 	 * written. It is hidden from the paint while it is being edited, so it is not drawn twice.
 	 */
@@ -123,6 +133,26 @@ const BACKDROPS: [string | undefined, string][] = [
 	["#fde68ae6", "浅黄"],
 ];
 
+/**
+ * A picture that has been decoded, and its size in pixels.
+ *
+ * Two things arrive here and they are not the same object. The file editor annotates a picture it
+ * has as a data URL, which decodes into an `<img>`. The screenshot overlay is handed the screen as
+ * raw pixels and decodes them into an `ImageBitmap` — because encoding that screen to PNG in the
+ * main process took 133ms of the delay before the capture appeared, and the picture the capture
+ * shows is taken *before* that delay, so it was 133ms in which the screen could change and then
+ * visibly snap back.
+ *
+ * `drawImage` takes either without knowing the difference. What differs is how they report their
+ * size — `naturalWidth` against `width` — so that is read once, here, and everything downstream
+ * uses this shape.
+ */
+export interface Decoded {
+	source: CanvasImageSource;
+	width: number;
+	height: number;
+}
+
 export interface Annotator {
 	tool: Tool;
 	setTool: (tool: Tool) => void;
@@ -149,9 +179,10 @@ export interface Annotator {
 	shapes: Shape[];
 	canvas: React.RefObject<HTMLCanvasElement | null>;
 	setHistory: React.Dispatch<React.SetStateAction<History>>;
-	image: React.RefObject<HTMLImageElement | null>;
+	image: React.RefObject<Decoded | null>;
 	/** The image redrawn at one pixel per mosaic block, which is where the mosaic samples from. */
-	pixels: React.RefObject<HTMLCanvasElement | null>;
+	/** The averaged image a mosaic of this grid size samples from, built on demand and cached. */
+	mosaicSourceFor(block: number): HTMLCanvasElement | null;
 	ready: boolean;
 	/**
 	 * The source's natural width, in state rather than read off the ref.
@@ -161,7 +192,7 @@ export interface Annotator {
 	 * `ready` flag standing in for it is a lie the linter is right to reject.
 	 */
 	width: number;
-	/** The mosaic grid, which `pixels` was averaged for. The two are one decision, never two. */
+	/** The grid a mosaic drawn now would use. Marks already placed carry their own. */
 	block: number;
 }
 
@@ -180,12 +211,32 @@ export interface AnnotatorOptions {
 	initialTool?: Tool;
 	initialColour?: string;
 	initialWeight?: number;
+	/**
+	 * A value that changes when the picture does, even if the bytes do not.
+	 *
+	 * The screenshot overlay is one long-lived page now — it is shown and hidden rather than built
+	 * and destroyed — so `src` is the only thing telling it a *new* capture has begun. Two captures
+	 * of a screen that did not change in between encode to byte-identical PNGs, so `src` is
+	 * identical too, and the marks drawn on the first one would still be there on the second.
+	 */
+	session?: number | string;
 }
 
-export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator {
+/**
+ * The screen as raw pixels, straight from the main process.
+ *
+ * RGBA already: the swap out of the platform's BGRA is five milliseconds in the main process and
+ * would be a 22MB loop in the renderer, on the thread that has to paint the result.
+ */
+export interface RawPixels {
+	pixels: Uint8Array;
+	width: number;
+	height: number;
+}
+
+export function useAnnotator(src: string | RawPixels | null, options?: AnnotatorOptions): Annotator {
 	const canvas = useRef<HTMLCanvasElement>(null);
-	const image = useRef<HTMLImageElement | null>(null);
-	const pixels = useRef<HTMLCanvasElement | null>(null);
+	const image = useRef<Decoded | null>(null);
 	const [tool, setTool] = useState<Tool>(options?.initialTool ?? "pen");
 	const [colour, setColour] = useState(options?.initialColour ?? COLOURS[0]!);
 	const [backdrop, setBackdrop] = useState<string | undefined>(undefined);
@@ -196,57 +247,108 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 	const [weight, setWeight] = useState(options?.initialWeight ?? 1);
 
 	// Load once; every repaint draws this same decoded bitmap rather than re-decoding the data URL.
+	const session = options?.session;
 	useEffect(() => {
 		setReady(false);
 		setHistory(emptyHistory());
 		setSelected(null);
+
+		/*
+		 * Let go of the picture before taking another.
+		 *
+		 * An `ImageBitmap` holds its pixels outside the JavaScript heap — on this screen, 22MB of
+		 * them — and the collector has no idea how much it is sitting on, so it is in no hurry. The
+		 * screenshot overlay reaches here on every capture *and* when a capture ends, and the window
+		 * it lives in is never destroyed any more, so nothing else would ever free them.
+		 */
+		const previous = image.current;
+		image.current = null;
+		if (previous?.source instanceof ImageBitmap) previous.source.close();
+
 		// The viewer passes "" while it is only showing the picture. Setting an empty `src` on an
 		// Image resolves against the document URL and fetches the page itself, so it is not a
 		// harmless no-op — it has to be skipped rather than allowed to fail.
 		if (!src) return;
-		const img = new Image();
-		img.onload = () => {
-			image.current = img;
+
+		/** Whatever decoded — hand it over, size the canvas to it, and repaint. */
+		const accept = (decoded: Decoded) => {
+			image.current = decoded;
 			const el = canvas.current;
 			if (el) {
-				el.width = img.naturalWidth;
-				el.height = img.naturalHeight;
+				el.width = decoded.width;
+				el.height = decoded.height;
 			}
-
-			setWidth(img.naturalWidth);
+			setWidth(decoded.width);
 			setReady(true);
 		};
+
+		/*
+		 * Raw pixels take the short way in.
+		 *
+		 * `createImageBitmap` on an `ImageData` is a copy, not a decode — there is no PNG to parse,
+		 * because the main process never encoded one. That is where the 133ms went that used to sit
+		 * between taking the picture and being able to show it.
+		 */
+		if (typeof src !== "string") {
+			let live = true;
+			const data = new ImageData(new Uint8ClampedArray(src.pixels), src.width, src.height);
+			void createImageBitmap(data).then(
+				(bitmap) => {
+					if (live) accept({ source: bitmap, width: bitmap.width, height: bitmap.height });
+					else bitmap.close();
+				},
+				() => {},
+			);
+			return () => {
+				live = false;
+			};
+		}
+
+		const img = new Image();
+		img.onload = () => accept({ source: img, width: img.naturalWidth, height: img.naturalHeight });
 		img.src = src;
 		return () => {
 			img.onload = null;
 		};
-	}, [src]);
+		// `session` carries no data — it is here so a second capture of an unchanged screen, whose
+		// pixels are byte-for-byte the ones before, still clears the marks. See `AnnotatorOptions`.
+	}, [src, session]);
+
+	/** The grain a mosaic drawn *now* would use. Marks already on the picture carry their own. */
+	const block = width > 0 ? mosaicBlock(width, weight) : 0;
 
 	/**
-	 * The mosaic grid, and the averaged image it is blitted from.
+	 * The averaged image a mosaic is blitted from, one per grid size, built on demand.
 	 *
 	 * Drawing the whole picture into a canvas one pixel per block gives, in a single call, the
 	 * average colour of every block — which is what a mosaic is. Painting a block is then blitting
 	 * one pixel of it back at block size with smoothing off; the alternative, averaging pixels per
 	 * block per frame, is the same answer computed thousands of times a second.
 	 *
-	 * Rebuilt when the grain changes, and rebuilt *during render* rather than in an effect. The
-	 * source's resolution is `naturalWidth / block`, so the two are one decision: a canvas built for
-	 * one block size and blitted at another samples the wrong pixel for every cell. Effects in a
-	 * child run before effects in its parent, so `AnnotateCanvas` would repaint with the new grain
-	 * and the old source — visibly wrong for a frame, every time the size is changed.
+	 * Keyed by block size rather than kept as one canvas, because the source's resolution *is* the
+	 * grid: it holds `naturalWidth / block` pixels, so one built for one grain and blitted at
+	 * another samples the wrong pixel for every cell. Now that each mark remembers the grain it was
+	 * drawn at, a single picture can hold several — a coarse redaction over a window and a fine one
+	 * over a line of text — and each needs its own source. There are only as many as there are size
+	 * settings, and each is a few kilobytes.
 	 */
-	const block = width > 0 ? mosaicBlock(width, weight) : 0;
-	const mosaicSource = useMemo(() => {
-		const img = image.current;
-		if (!img || !ready || block <= 0) return null;
-		const small = document.createElement("canvas");
-		small.width = Math.max(1, Math.ceil(img.naturalWidth / block));
-		small.height = Math.max(1, Math.ceil(img.naturalHeight / block));
-		small.getContext("2d")?.drawImage(img, 0, 0, small.width, small.height);
-		return small;
-	}, [ready, block, image]);
-	pixels.current = mosaicSource;
+	const sources = useRef(new Map<number, HTMLCanvasElement>());
+	const mosaicSourceFor = useCallback(
+		(grid: number): HTMLCanvasElement | null => {
+			const img = image.current;
+			const key = Math.max(1, Math.round(grid));
+			if (!img || !Number.isFinite(grid) || grid <= 0) return null;
+			const known = sources.current.get(key);
+			if (known) return known;
+			const small = document.createElement("canvas");
+			small.width = Math.max(1, Math.ceil(img.width / key));
+			small.height = Math.max(1, Math.ceil(img.height / key));
+			small.getContext("2d")?.drawImage(img.source, 0, 0, small.width, small.height);
+			sources.current.set(key, small);
+			return small;
+		},
+		[image],
+	);
 
 	const shapes = current(history);
 
@@ -302,7 +404,7 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 		canvas,
 		setHistory,
 		image,
-		pixels,
+		mosaicSourceFor,
 		ready,
 		width,
 		block,
@@ -319,7 +421,15 @@ export const STAGE_FIT = "max-h-[86vh] max-w-[86vw]";
 const CURSOR: Partial<Record<Tool, string>> = {
 	text: "cursor-text",
 	step: "cursor-copy",
-	mosaic: "cursor-cell",
+	/*
+	 * The mosaic hides the pointer and draws its own.
+	 *
+	 * How much a stroke will cover is the one thing you need to know before making it — redaction
+	 * is not something you want to discover you did too narrowly — and a system cursor cannot say
+	 * it. The ring below is that answer, drawn at the brush's real size, so a system cursor beside
+	 * it would only be a second thing to look at.
+	 */
+	mosaic: "cursor-none",
 };
 
 /**
@@ -340,12 +450,14 @@ export function AnnotateCanvas({
 	className?: string;
 	style?: React.CSSProperties;
 }) {
-	const { canvas, image, pixels, ready, width, tool, colour, backdrop, weight, shapes, setHistory, selected, setSelected } =
+	const { canvas, image, mosaicSourceFor, ready, width, tool, colour, backdrop, weight, shapes, setHistory, selected, setSelected } =
 		annotator;
 	const [drawing, setDrawing] = useState<Shape | null>(null);
 	const [typing, setTyping] = useState<Typing | null>(null);
 	const [dragging, setDragging] = useState<Dragging | null>(null);
 	const [hovering, setHovering] = useState<"move" | "point" | "width" | null>(null);
+	/** Where the mosaic ring is, in image pixels, or null when the pointer is not over the canvas. */
+	const [brushAt, setBrushAt] = useState<Point | null>(null);
 	const field = useRef<HTMLTextAreaElement>(null);
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
 	const carrying = useRef<{ x: number; y: number; from: Point; scale: number } | null>(null);
@@ -376,9 +488,9 @@ export function AnnotateCanvas({
 		(el: HTMLCanvasElement | null) => {
 			canvas.current = el;
 			const img = image.current;
-			if (el && img && el.width !== img.naturalWidth) {
-				el.width = img.naturalWidth;
-				el.height = img.naturalHeight;
+			if (el && img && el.width !== img.width) {
+				el.width = img.width;
+				el.height = img.height;
 			}
 		},
 		[canvas, image],
@@ -398,6 +510,16 @@ export function AnnotateCanvas({
 	/** The selected mark as it currently looks, which during a drag is not what is committed. */
 	const chosen = selected === null ? null : (dragging?.index === selected ? dragging.moving : shapes[selected]) ?? null;
 	const grips = chosen ? handlesOf(chosen) : [];
+	/**
+	 * How close counts as pressing a grip, in image pixels — about what the grip looks like.
+	 *
+	 * It used to be derived from the stroke and multiplied by 1.8, which on a Retina capture came out
+	 * around 25 image pixels for a dot drawn at 10. A target two and a half times its own size is a
+	 * mark you cannot reliably pick *up*: reach for the middle of a rectangle to move it and a corner
+	 * claims the press instead, and it resizes. Sized off `display` so the reach is the same few
+	 * points on screen whatever the picture's resolution or the zoom.
+	 */
+	const gripReach = 9 / (display || 1);
 
 	/*
 	 * The canvas carries only what will be saved.
@@ -415,17 +537,40 @@ export function AnnotateCanvas({
 		if (!ctx) return;
 
 		ctx.clearRect(0, 0, el.width, el.height);
-		ctx.drawImage(img, 0, 0);
+		ctx.drawImage(img.source, 0, 0);
 
-		// The grid comes from the annotator, which is also what `pixels` was averaged for — computing
-		// it again here is how the two drift apart.
+		/*
+		 * These are the sizes for a mark that has none of its own — the one being dragged out right
+		 * now, and anything drawn by a build from before marks carried their own. Everything else
+		 * paints at the size it was made at; see `paintAll`.
+		 */
 		paintAll(ctx, live, {
 			stroke,
-			pixels: pixels.current,
+			mosaicSourceFor,
 			block: annotator.block,
 			brush: mosaicBrush(width) * weight,
 		});
-	}, [live, ready, width, stroke, weight, canvas, image, pixels, annotator.block]);
+	}, [live, ready, width, stroke, weight, canvas, image, mosaicSourceFor, annotator.block]);
+
+	/**
+	 * The column that just fits this text, in image pixels.
+	 *
+	 * Measured with the same font the caption will be painted in, so the box the user types into is
+	 * the shape the caption will actually be. Capped at most of the picture, because a single
+	 * unbroken line of CJK has no natural place to stop.
+	 */
+	const fitWidth = useCallback(
+		(text: string): number => {
+			const ctx = canvas.current?.getContext("2d");
+			const pad = typeSize * PAD * 2;
+			if (!ctx) return typeSize * 8;
+			ctx.font = fontOf(typeSize);
+			const longest = text.split("\n").reduce((n, line) => Math.max(n, ctx.measureText(line).width), 0);
+			// A little slack past the last glyph, so the caret is never sitting on the edge.
+			return Math.min(Math.max(longest + pad + typeSize * 0.8, typeSize * 6), Math.max(width * 0.9, typeSize * 6));
+		},
+		[canvas, typeSize, width],
+	);
 
 	/** Whether the field has been focused for the caption currently open in it. */
 	const entered = useRef(false);
@@ -531,12 +676,14 @@ export function AnnotateCanvas({
 			setTyping({
 				at: shape.points[0] ?? { x: 0, y: 0 },
 				value: shape.text ?? "",
-				width: shape.width ?? Math.max(160, Math.round(width * 0.3)),
+				width: shape.width ?? fitWidth(shape.text ?? ""),
+				// Its width is already a decision — either dragged, or fitted when it was written.
+				manual: shape.width !== undefined,
 				replacing: index,
 			});
 			return true;
 		},
-		[shapes, annotator, setSelected, width],
+		[shapes, annotator, setSelected, fitWidth],
 	);
 
 	const start = (event: React.PointerEvent) => {
@@ -559,7 +706,7 @@ export function AnnotateCanvas({
 		 * would stop meaning what it says.
 		 */
 		if (chosen && selected !== null) {
-			const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= tolerance * 1.8);
+			const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= gripReach);
 			if (grip) {
 				event.currentTarget.setPointerCapture(event.pointerId);
 				setDragging({ index: selected, from: point, moving: chosen, handle: grip.index, moved: false, wasSelected: true });
@@ -629,23 +776,40 @@ export function AnnotateCanvas({
 			// Commit what is open and start a new one where the click landed, rather than making the
 			// second click of two do nothing but put the first one away.
 			if (typing) commitText();
-			setTyping({ at: point, value: "", width: Math.max(160, Math.round(width * 0.3)) });
+			setTyping({ at: point, value: "", width: fitWidth("") });
 			return;
 		}
 
 		// A badge is placed, not dragged; there is nothing to preview between press and release.
 		if (tool === "step") {
-			setHistory((h) => commit(h, [...current(h), { tool: "step", colour, points: [point] }]));
+			// Carries its own size too: the badge's radius is derived from the stroke.
+			setHistory((h) => commit(h, [...current(h), { tool: "step", colour, points: [point], stroke }]));
 			setSelected(shapes.length);
 			return;
 		}
 
 		event.currentTarget.setPointerCapture(event.pointerId);
-		setDrawing({ tool: tool as Exclude<Tool, "text" | "step">, colour, points: [point] });
+		/*
+		 * The size is stamped on at the moment of drawing, not read back at paint time.
+		 *
+		 * Otherwise every mark on the picture is drawn at whatever the toolbar currently says, and
+		 * changing the setting reaches back and resizes finished work — redact three things coarsely,
+		 * pick a finer grain for the fourth, and the first three turn fine as well.
+		 */
+		setDrawing({
+			tool: tool as Exclude<Tool, "text" | "step">,
+			colour,
+			points: [point],
+			stroke,
+			...(tool === "mosaic" ? { block: annotator.block, brush: mosaicBrush(width) * weight } : {}),
+		});
 	};
 
 	const move = (event: React.PointerEvent) => {
 		const point = at(event);
+
+		// Only while the mosaic is in hand; every other tool leaves this null and draws no ring.
+		setBrushAt(tool === "mosaic" ? point : null);
 
 		/*
 		 * The cursor says whether there is anything here to pick up.
@@ -659,7 +823,7 @@ export function AnnotateCanvas({
 			const tol = pickTolerance(stroke, zoom);
 			let over: "move" | "point" | "width" | null = null;
 			if (chosen && selected !== null) {
-				const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= tol * 1.8);
+				const grip = grips.find((g) => Math.hypot(g.at.x - point.x, g.at.y - point.y) <= gripReach);
 				if (grip) over = grip.index === WIDTH_HANDLE ? "width" : "point";
 				else if (hitShape([chosen], point, tol) === 0) over = "move";
 			}
@@ -776,11 +940,15 @@ export function AnnotateCanvas({
 		<div className="relative">
 			<canvas
 				ref={attach}
+				draggable={false}
 				onPointerDown={start}
 				onPointerMove={move}
 				onPointerUp={end}
 				onPointerCancel={end}
-				onPointerLeave={() => setHovering(null)}
+				onPointerLeave={() => {
+					setHovering(null);
+					setBrushAt(null);
+				}}
 				onDoubleClick={(event) => {
 					/*
 					 * Only to stop the stage below from zooming.
@@ -794,6 +962,26 @@ export function AnnotateCanvas({
 				className={`${className ?? `${STAGE_FIT} rounded-xl bg-white`} block ${cursor}`}
 				style={{ touchAction: "none", ...style }}
 			/>
+
+			{/*
+			 * What the mosaic is about to cover, at the size it will cover it.
+			 *
+			 * Drawn rather than described, because the only useful answer to "how big is the brush"
+			 * is the shape of it on the picture underneath. `display` converts the brush from image
+			 * pixels to screen ones, so the ring is the stroke's true footprint at any zoom — and it
+					 * changes the moment the size setting does, which is how that control explains itself.
+			 */}
+			{tool === "mosaic" && brushAt && (
+				<span
+					className="pointer-events-none absolute rounded-full border border-white/80 bg-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+					style={{
+						left: (brushAt.x - mosaicBrush(width) * weight / 2) * display,
+						top: (brushAt.y - mosaicBrush(width) * weight / 2) * display,
+						width: mosaicBrush(width) * weight * display,
+						height: mosaicBrush(width) * weight * display,
+					}}
+				/>
+			)}
 
 			{box && (
 				/*
@@ -894,17 +1082,30 @@ export function AnnotateCanvas({
 					<textarea
 						ref={field}
 						value={typing.value}
-						onChange={(event) => setTyping((entry) => (entry ? { ...entry, value: event.target.value } : entry))}
+						onChange={(event) =>
+							setTyping((entry) =>
+								entry
+									? {
+											...entry,
+											value: event.target.value,
+											width: entry.manual ? entry.width : fitWidth(event.target.value),
+										}
+									: entry,
+							)
+						}
 						onBlur={commitText}
 						onKeyDown={(event) => {
 							// Stopped here so the viewer's Escape does not close the whole overlay when all
 							// that was wanted was to abandon a caption.
 							event.stopPropagation();
-							// Enter commits; shift-enter is how you ask for the second line.
-							if (event.key === "Enter" && !event.shiftKey) {
-								event.preventDefault();
-								commitText();
-							}
+							/*
+							 * Enter breaks the line. It used to commit the caption.
+							 *
+							 * Typing a second line is an ordinary thing to want and `shift`+`enter` is a
+							 * convention for sending, not for writing — every other place text is written
+							 * puts the line break on the plain key. A caption is finished by clicking away
+							 * from it, which is also how you start the next one.
+							 */
 							if (event.key === "Escape") setTyping(null);
 						}}
 						placeholder="输入文字"
@@ -931,9 +1132,11 @@ export function AnnotateCanvas({
 							 * `paint-order` puts the stroke under the fill, which is what drawing
 							 * `strokeText` before `fillText` does on the canvas.
 							 */
+							// Kept in step with `paint`: a hairline, not a halo. The two must match or the
+							// caption changes appearance at the moment the field disappears.
 							WebkitTextStroke: backdrop
 								? undefined
-								: `${Math.max(2, typeSize / 9) * display}px rgba(255,255,255,0.92)`,
+								: `${Math.max(1, typeSize / 18) * display}px rgba(255,255,255,0.85)`,
 							paintOrder: "stroke fill",
 						}}
 					/>
@@ -955,7 +1158,7 @@ export function AnnotateCanvas({
 							if (!held) return;
 							const next = held.from + (event.clientX - held.x) / held.scale;
 							setTyping((entry) =>
-								entry ? { ...entry, width: Math.max(typeSize * 2, Math.min(next, width)) } : entry,
+								entry ? { ...entry, manual: true, width: Math.max(typeSize * 2, Math.min(next, width)) } : entry,
 							);
 						}}
 						onPointerUp={() => {
@@ -1013,10 +1216,20 @@ export function AnnotateToolbar({
 	requireDirty = true,
 	className,
 	style,
+	propertiesSide = "above",
 }: {
 	annotator: Annotator;
 	onCancel: () => void;
 	onSave: () => void;
+	/**
+	 * Which way the tool's own settings bubble opens, in terms of this bar.
+	 *
+	 * `above` puts it over the bar, `below` under it. The caller decides because only the caller
+	 * knows where the bar was placed relative to what is being annotated: the bubble has to open
+	 * away from that, or it covers it. Defaults to `above`, which is right for the file editor,
+	 * where the bar is pinned to the bottom of the stage.
+	 */
+	propertiesSide?: "above" | "below";
 	/** Whether saving can replace the original, or only produce a copy. */
 	canReplace: boolean;
 	/** Overrides what the save button says. Left off, it says what `canReplace` implies. */
@@ -1080,122 +1293,41 @@ export function AnnotateToolbar({
 			 */
 			className={
 				className ??
-				"pointer-events-auto fixed bottom-6 left-1/2 z-[120] flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
+				"pointer-events-auto fixed bottom-6 left-1/2 z-[120] flex relative items-center gap-0.5 rounded-xl border border-white/12 bg-[#1c1c1e]/92 px-1.5 py-1 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
 			}
 			style={{
 				opacity: shown ? 1 : 0,
 				transform: className ? undefined : `translateX(-50%) translateY(${shown ? 0 : 10}px)`,
 				...style,
 			}}
+			/*
+			 * The bar never takes focus away from what is being typed.
+			 *
+			 * A caption is committed when its field loses focus, and pressing a button here was
+			 * enough to do that — so reaching for a bigger size ended the caption instead of
+			 * resizing it, and the next press started a new one somewhere else. Preventing the
+			 * default on `mousedown` is what stops the focus moving; the click still fires, so every
+			 * control works exactly as before, only now the field is still there afterwards and the
+			 * new size is applied to it live.
+			 */
+			onMouseDown={(event) => event.preventDefault()}
 		>
+			{/*
+			 * The properties of the tool in hand, above the row rather than inside it.
+			 *
+			 * Every property of every tool laid out in one line is what made this bar as wide as a
+			 * laptop screen — and most of it was inert at any moment, because a colour does nothing
+			 * for a mosaic and a backdrop does nothing for an arrow. Lifted into a bubble that points
+			 * at the tool it belongs to, the row is just the tools, and what is on screen is only
+			 * what the current tool actually has.
+			 */}
+			<ToolProperties annotator={annotator} index={TOOLS.findIndex(([id]) => id === annotator.tool)} side={propertiesSide} />
+
 			{TOOLS.map(([id, Icon, label]) => (
 				<ToolButton key={id} label={label} active={annotator.tool === id} onClick={() => annotator.setTool(id)}>
 					<Icon size={14} strokeWidth={1.9} />
 				</ToolButton>
 			))}
-
-			<Divider />
-
-			{/*
-			 * One control, named for whatever it is currently sizing.
-			 *
-			 * It has always driven three things — stroke width, caption size, mosaic grain — and
-			 * calling all three "粗细" made two of them undiscoverable: nobody looks under a word
-			 * about lines for the size of their text. The control does not change, only the word for
-			 * it, which is the honest version of what it does.
-			 */}
-			<div className="flex items-center gap-0.5" data-ly-tip={SIZE_LABEL[annotator.tool] ?? "粗细"}>
-				{WEIGHT_LEVELS.map(([value, label, dot]) => (
-					<button
-						key={label}
-						type="button"
-						onClick={() => annotator.setWeight(value)}
-						data-ly-tip={`${SIZE_LABEL[annotator.tool] ?? "粗细"}：${label}`}
-						data-ly-tip-side="top"
-						aria-label={`${SIZE_LABEL[annotator.tool] ?? "粗细"} ${label}`}
-						className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-							annotator.weight === value ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
-						}`}
-					>
-						<span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
-					</button>
-				))}
-			</div>
-
-			{/*
-			 * No colour for the mosaic, because a mosaic has none.
-			 *
-			 * It samples the picture underneath it; the swatches would sit there doing nothing to
-			 * every stroke made with that tool. A control that cannot affect what is selected is
-			 * worse than a missing one — it is a promise the tool does not keep.
-			 */}
-			{annotator.tool !== "mosaic" && (
-				<>
-			<Divider />
-
-			{/*
-			 * A group with its own spacing.
-			 *
-			 * The swatches are 18pt where the tool buttons are 28pt, and the selected one wears a 2pt
-			 * ring 2pt clear of itself — four points of growth on every side. At the row's own `gap-1`
-			 * that ring lands exactly on its neighbours, which is what made this stretch of the bar
-			 * look jammed together. Smaller controls need proportionally more air, not the same.
-			 */}
-			<div className="flex items-center gap-2">
-				{COLOURS.map((value) => (
-					<button
-						key={value}
-						type="button"
-						data-ly-tip={COLOUR_NAMES[value] ?? value}
-						data-ly-tip-side="top"
-						aria-label={COLOUR_NAMES[value] ?? value}
-						aria-pressed={annotator.colour === value}
-						onClick={() => annotator.setColour(value)}
-						style={{ background: value }}
-						className={`h-[18px] w-[18px] shrink-0 rounded-full transition-transform duration-[var(--ly-t-quick)] ${
-							annotator.colour === value
-								? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]"
-								: "opacity-80 hover:scale-110 hover:opacity-100"
-						}`}
-					/>
-				))}
-			</div>
-				</>
-			)}
-
-			{/*
-			 * Only while the text tool is up.
-			 *
-			 * A backdrop is a property of a caption and of nothing else, and a bar that shows every
-			 * control for every tool is a bar you have to read. It grows in rather than appearing, so
-			 * the buttons beside it are seen to move rather than found to have moved.
-			 */}
-			{annotator.tool === "text" && (
-				<>
-					<Divider />
-					<div className="flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] items-center gap-2">
-						{BACKDROPS.map(([value, label]) => (
-							<button
-								key={label}
-								type="button"
-								data-ly-tip={`文字底色：${label}`}
-								data-ly-tip-side="top"
-								aria-label={`文字底色 ${label}`}
-								aria-pressed={annotator.backdrop === value}
-								onClick={() => annotator.setBackdrop(value)}
-								style={value ? { background: value } : undefined}
-								className={`h-[18px] w-[18px] shrink-0 rounded-[5px] transition-transform duration-[var(--ly-t-quick)] ${
-									value ? "" : "ly-checker-xs"
-								} ${
-									annotator.backdrop === value
-										? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]"
-										: "opacity-80 hover:scale-110 hover:opacity-100"
-								}`}
-							/>
-						))}
-					</div>
-				</>
-			)}
 
 			<Divider />
 
@@ -1231,7 +1363,7 @@ export function AnnotateToolbar({
 				data-ly-tip-side="top"
 				aria-label={cancelLabel}
 				onClick={onCancel}
-				className="flex h-7 items-center rounded-lg px-2.5 text-white/65 transition-colors duration-[var(--ly-t-quick)] hover:text-white"
+				className="flex h-6 items-center rounded-md px-2 text-white/65 transition-colors duration-[var(--ly-t-quick)] hover:text-white"
 			>
 				<X size={13} strokeWidth={2} />
 			</button>
@@ -1244,7 +1376,7 @@ export function AnnotateToolbar({
 				// `whitespace-nowrap` because the label is four characters and the button is sized by
 				// its padding: without it "保存副本" wrapped to two lines and took the whole bar's
 				// height with it.
-				className="flex h-7 items-center whitespace-nowrap rounded-lg bg-white px-3 text-detail font-medium text-[#1c1c1e] transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-35"
+				className="flex h-6 items-center whitespace-nowrap rounded-md bg-white px-2.5 text-detail font-medium text-[#1c1c1e] transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-35"
 			>
 				{saveLabel ?? (canReplace ? "保存" : "保存副本")}
 			</button>
@@ -1254,6 +1386,104 @@ export function AnnotateToolbar({
 
 /** `mx-1.5` rather than `mx-1`: the swatch next to a divider carries a ring that needs the room. */
 const Divider = () => <span className="mx-1.5 h-4 w-px shrink-0 bg-white/15" />;
+
+/** Roughly how far along the row a tool button's centre sits: 24pt wide, 2pt apart, 6pt of padding. */
+const TOOL_STEP = 26;
+const TOOL_INSET = 18;
+
+/**
+ * The properties of the tool currently in hand, in a bubble that points at it.
+ *
+ * Two things are gained by lifting these out of the row. The row stops being a catalogue of every
+ * property of every tool — which is what made it wide enough to run off the side of the screen —
+ * and each tool gets to show only what it actually has: a mosaic samples the picture underneath it
+ * and has no colour, an arrow has no backdrop. A control that cannot affect the thing in your hand
+ * is worse than a missing one, because it reads as a promise the tool does not keep.
+ *
+ * Anchored to the tool's own button rather than centred, so which tool is being configured is
+ * answered by where the bubble is, and clamped so it cannot hang off either end of the bar.
+ */
+function ToolProperties({ annotator, index, side }: { annotator: Annotator; index: number; side: "above" | "below" }) {
+	const isText = annotator.tool === "text";
+	// The mosaic is the one tool with no colour of its own — it takes the picture's.
+	const hasColour = annotator.tool !== "mosaic";
+
+	return (
+		<div
+			/*
+			 * Opens away from the region, not always upwards.
+			 *
+			 * The toolbar itself sits below the selection whenever there is room, so a bubble pinned
+			 * to `bottom-full` opened into the gap between the two — over the bottom of the very
+			 * region being annotated. Which side is "away" is only known where the toolbar was
+			 * placed, so it is passed in: `below` means the toolbar is below the selection and the
+			 * bubble goes further down, `above` means it is above and the bubble goes further up.
+			 */
+			className={`absolute left-0 flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] items-center gap-1 rounded-lg border border-white/12 bg-[#1c1c1e]/95 px-2 py-1 shadow-[0_6px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl ${
+				side === "below" ? "top-full mt-2" : "bottom-full mb-2"
+			}`}
+			style={{ left: Math.max(0, index) * TOOL_STEP + TOOL_INSET, transform: "translateX(-50%)" }}
+		>
+			{WEIGHT_LEVELS.map(([value, label]) => (
+				<button
+					key={label}
+					type="button"
+					onClick={() => annotator.setWeight(value)}
+					aria-label={`${SIZE_LABEL[annotator.tool] ?? "粗细"} ${label}`}
+					aria-pressed={annotator.weight === value}
+					className={`flex h-5 items-center rounded px-1.5 text-caption transition-colors ${
+						annotator.weight === value ? "bg-white/20 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"
+					}`}
+				>
+					{label}
+				</button>
+			))}
+
+			{hasColour && <span className="mx-0.5 h-3.5 w-px shrink-0 bg-white/15" />}
+
+			{hasColour &&
+				COLOURS.map((value) => (
+					<button
+						key={value}
+						type="button"
+						aria-label={COLOUR_NAMES[value] ?? value}
+						aria-pressed={annotator.colour === value}
+						onClick={() => annotator.setColour(value)}
+						style={{ background: value }}
+						className={`h-[14px] w-[14px] shrink-0 rounded-full transition-transform duration-[var(--ly-t-quick)] ${
+							annotator.colour === value
+								? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]"
+								: "opacity-80 hover:scale-110 hover:opacity-100"
+						}`}
+					/>
+				))}
+
+			{/* A caption can sit on a plate; nothing else can, so nothing else offers it. */}
+			{isText && <span className="mx-0.5 h-3.5 w-px shrink-0 bg-white/15" />}
+			{isText &&
+				BACKDROPS.map(([value, label]) => (
+					<button
+						key={label}
+						type="button"
+						aria-label={`文字底色 ${label}`}
+						aria-pressed={annotator.backdrop === value}
+						onClick={() => annotator.setBackdrop(value)}
+						style={value ? { background: value } : undefined}
+						className={`h-[14px] w-[14px] shrink-0 rounded-[4px] transition-transform duration-[var(--ly-t-quick)] ${
+							value ? "" : "ly-checker-xs"
+						} ${
+							annotator.backdrop === value
+								? "scale-110 ring-2 ring-white/85 ring-offset-2 ring-offset-[#1c1c1e]"
+								: "opacity-80 hover:scale-110 hover:opacity-100"
+						}`}
+					/>
+				))}
+
+			{/* The tail, which is what makes it a bubble belonging to a button rather than a second row. */}
+			<span className="-bottom-1 absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-white/12 border-r border-b bg-[#1c1c1e]/95" />
+		</div>
+	);
+}
 
 function ToolButton({
 	label,
@@ -1279,7 +1509,7 @@ function ToolButton({
 			aria-pressed={active}
 			disabled={disabled}
 			onClick={onClick}
-			className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors duration-[var(--ly-t-quick)] disabled:opacity-30 ${
+			className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors duration-[var(--ly-t-quick)] disabled:opacity-30 ${
 				active ? "bg-white text-[#1c1c1e]" : "text-white/65 hover:bg-white/12 hover:text-white"
 			}`}
 		>

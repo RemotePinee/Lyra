@@ -145,22 +145,52 @@ const SCREEN_MARGIN = 12;
  * it. Both are ordinary; what is not is a selection at the very bottom of a short screen, where
  * neither side fits — there it goes inside, at the bottom, which is the only place left.
  */
+/**
+ * Where the toolbar goes, and which side of the region it ended up on.
+ *
+ * The side is not decoration: anything the bar opens — the size and colour bubble, for one — has to
+ * open *away* from the region, or it covers the very thing being annotated. Only the caller of this
+ * function knows which way that is, so it is returned rather than guessed at downstream.
+ */
+export interface ToolbarPlacement extends Point {
+	/** `over` means neither side fits and the bar is on top of the region. */
+	side: "below" | "above" | "over";
+}
+
 export function toolbarPosition(
 	rect: Rect,
 	viewport: { width: number; height: number },
 	toolbar: { width: number; height: number },
-): Point {
+): ToolbarPlacement {
 	const below = rect.y + rect.height + TOOLBAR_GAP;
 	const above = rect.y - toolbar.height - TOOLBAR_GAP;
 
 	let y: number;
-	if (below + toolbar.height <= viewport.height - SCREEN_MARGIN) y = below;
-	else if (above >= SCREEN_MARGIN) y = above;
-	else y = Math.max(SCREEN_MARGIN, viewport.height - toolbar.height - SCREEN_MARGIN);
+	let side: ToolbarPlacement["side"];
+	if (below + toolbar.height <= viewport.height - SCREEN_MARGIN) {
+		y = below;
+		side = "below";
+	} else if (above >= SCREEN_MARGIN) {
+		y = above;
+		side = "above";
+	} else {
+		y = Math.max(SCREEN_MARGIN, viewport.height - toolbar.height - SCREEN_MARGIN);
+		// Neither side fits, so the bar is over the region itself and there is no "away from the
+		// selection" left to be on.
+		side = "over";
+	}
 
+	/*
+	 * Right-aligned to the selection, then kept on screen.
+	 *
+	 * The bar ends with the two controls that finish the job — cancel and confirm — and lining its
+	 * right edge up with the region's puts those under the hand that just released the drag, which
+	 * usually ended at the bottom-right corner. Left-aligned, the same two buttons are a whole bar's
+	 * width away from where the gesture ended.
+	 */
 	const x = Math.min(
-		Math.max(SCREEN_MARGIN, rect.x),
+		Math.max(SCREEN_MARGIN, rect.x + rect.width - toolbar.width),
 		Math.max(SCREEN_MARGIN, viewport.width - toolbar.width - SCREEN_MARGIN),
 	);
-	return { x, y };
+	return { x, y, side };
 }

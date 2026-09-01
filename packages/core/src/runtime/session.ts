@@ -389,6 +389,33 @@ export class AgentSession {
 		return this.tasks.cancel(taskId);
 	}
 
+	/** Take a finished task off the receipt list. The transcript keeps what happened. */
+	async dismissTask(taskId: string): Promise<boolean> {
+		return this.tasks.dismiss(taskId);
+	}
+
+	/** Put an interrupted or failed task back in the queue. See `TaskQueue.resume`. */
+	async resumeTask(taskId: string): Promise<boolean> {
+		return this.tasks.resume(taskId);
+	}
+
+	/**
+	 * The task this session was working on when it stopped, if there is one.
+	 *
+	 * What makes 「继续」 in the main conversation mean the right thing. Pausing a session that was
+	 * running a dispatched task cancels the task too, and continuing afterwards used to resume only
+	 * the conversation — the task stayed cancelled, the side panel went on saying so, and the work
+	 * the panel had dispatched was simply not done. Newest first: if several were interrupted, the
+	 * one that was running is the one to pick up.
+	 */
+	interruptedTask(): QueuedTask | null {
+		for (let i = this.tasks.list().length - 1; i >= 0; i--) {
+			const task = this.tasks.list()[i]!;
+			if (task.status === "cancelled" && task.cancelledBy === "stop") return task;
+		}
+		return null;
+	}
+
 	private emit(event: AgentEvent): Promise<void> {
 		return this.log.emit(event);
 	}

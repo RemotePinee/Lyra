@@ -87,6 +87,10 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 
 	const lightTheme = findCodeTheme(appearance.codeLightTheme, "light");
 	const darkTheme = findCodeTheme(appearance.codeDarkTheme, "dark");
+	/** Whichever of the two is in force right now, and the surface it resolves to. */
+	const codeTheme = dark ? darkTheme : lightTheme;
+	const codeSurface = codeTheme.inherit ? toHex(background) : codeTheme.background;
+	const codeInk = codeTheme.inherit ? toHex(foreground) : codeTheme.foreground;
 
 	const tokens: Record<string, string> = {
 		"--color-shell": toHex(background),
@@ -108,6 +112,42 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		"--ly-code-font": appearance.codeFont,
 		"--ly-ui-size": `${appearance.uiFontSize}px`,
 		"--ly-code-size": `${appearance.codeFontSize}px`,
+		/*
+		 * How code is set, beyond the family.
+		 *
+		 * Fallbacks rather than `??` on the settings object: these fields were added after the fact,
+		 * and a settings file written before they existed has to keep rendering the way it did.
+		 */
+		"--ly-code-weight": String(appearance.codeFontWeight ?? 400),
+		"--ly-code-line-height": String(appearance.codeLineHeight ?? 1.6),
+		"--ly-code-tracking": `${appearance.codeLetterSpacing ?? 0}em`,
+		/*
+		 * The surface code is drawn on, which the theme has always declared and nothing ever read.
+		 *
+		 * `background` and `foreground` sat in `code-themes.ts` labelled "preview color" and were
+		 * used by exactly one thing: the swatch on the settings page. So picking Solarized Light
+		 * showed a warm yellow sample and left every real surface on the app's own white — the
+		 * setting appeared to do nothing, because the most visible half of it did nothing.
+		 *
+		 * Every surface that draws code reads these: the editor and its gutter, fenced blocks in
+		 * a reply, the diff viewer, and the terminal. That last one cannot use a variable — xterm
+		 * paints to a canvas — so `TerminalPane` reads these two back out and pushes them in.
+		 *
+		 * `inherit` is what keeps 「Lyra 默认」 from repainting the window: it takes the app's own
+		 * background, including a tinted one, so only the syntax colours come from the theme.
+		 * Choosing Solarized Light is then an actual choice with an actual consequence, rather
+		 * than something the app did to itself on first launch.
+		 */
+		"--ly-code-bg": codeSurface,
+		"--ly-code-fg": codeInk,
+		/*
+		 * The gutter and the chrome around the code, one step off the code's own surface.
+		 *
+		 * Flat-on-flat loses the line numbers into the text when a theme's background is close to
+		 * its foreground. Mixed rather than a second declared colour, so it follows any theme —
+		 * including one added later — without needing a value per theme.
+		 */
+		"--ly-code-bg-soft": `color-mix(in srgb, ${codeInk} 5%, ${codeSurface})`,
 		"--ly-diff-added-bg": dark ? darkTheme.addedBg : lightTheme.addedBg,
 		"--ly-diff-removed-bg": dark ? darkTheme.removedBg : lightTheme.removedBg,
 	};

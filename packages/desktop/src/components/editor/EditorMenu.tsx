@@ -29,6 +29,7 @@ import {
 	Search,
 	TextSelect,
 	Undo2,
+	Wand2,
 } from "lucide-react";
 
 import { useRevealLabel } from "../../openTargets.ts";
@@ -45,6 +46,8 @@ export function EditorMenu({
 	readOnly,
 	/** Opens CodeMirror's find bar, optionally with the replace half already unfolded. */
 	onFind,
+	/** Runs the formatter and reports the outcome. Lives in the editor, which owns the settings. */
+	onFormat,
 }: {
 	anchor: { x: number; y: number } | null;
 	onClose: () => void;
@@ -52,6 +55,7 @@ export function EditorMenu({
 	path: string;
 	readOnly: boolean;
 	onFind: (withReplace: boolean) => void;
+	onFormat: () => Promise<void>;
 }) {
 	// Before the early return: a hook that only sometimes runs is a hook that runs out of order.
 	const reveal = useRevealLabel();
@@ -115,6 +119,19 @@ export function EditorMenu({
 			</MenuItem>
 			<MenuItem icon={<TextSelect {...ICON} />} hint="⌘A" onClick={() => run(selectAll)}>
 				全选
+			</MenuItem>
+
+			<MenuSeparator />
+
+			{/*
+			 * Offered on every file, not only the ones with a formatter.
+			 *
+			 * Hiding it would mean the menu quietly answers "no formatter for this" by omission,
+			 * which reads as the feature being missing rather than the language being unsupported.
+			 * Pressing it says which — see `formatNow` in `CodeEditor.tsx`.
+			 */}
+			<MenuItem icon={<Wand2 {...ICON} />} hint="⇧⌘F" disabled={readOnly} onClick={() => void onFormat()}>
+				格式化
 			</MenuItem>
 
 			<MenuSeparator />

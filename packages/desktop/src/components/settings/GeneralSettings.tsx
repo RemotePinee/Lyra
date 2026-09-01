@@ -11,7 +11,6 @@ import {
   Segmented,
   Toggle,
 } from "./controls.tsx";
-import { UpdateSection } from "./UpdateSection.tsx";
 
 export function GeneralSettings() {
   const settings = useApp((s) => s.settings);
@@ -183,9 +182,13 @@ export function GeneralSettings() {
       </Card>
 
       {/*
-       * The version, and the way back to an update that was waved off.
+       * The version and the update controls are not here.
+       *
+       * They are a page of their own — 关于 in the sidebar — with the changelog, the check button
+       * and the auto-check interval on it. This section was a second copy of the first two, at the
+       * bottom of an unrelated page, so the same fact was stated in two places and the fuller one
+       * was the one nobody was looking at.
        */}
-      <UpdateSection />
     </div>
   );
 }

@@ -13,7 +13,9 @@ import { test } from "node:test";
 import { BY_FILENAME, GRAMMARS, grammarKeyFor } from "../src/components/highlight.ts";
 
 test("configuration files that are named rather than suffixed are recognised", () => {
-	assert.equal(grammarKeyFor("Dockerfile"), "sh");
+	// Its own grammar now. This said `sh` for as long as there was no `dockerfile` entry in
+	// `GRAMMARS` — a reasonable approximation, and no longer the best one available.
+	assert.equal(grammarKeyFor("Dockerfile"), "dockerfile");
 	assert.equal(grammarKeyFor("project/Makefile"), "sh");
 	assert.equal(grammarKeyFor(".gitignore"), "gitignore");
 	assert.equal(grammarKeyFor("packages/app/.dockerignore"), "gitignore");
@@ -26,9 +28,9 @@ test("a name beats an extension, which is the whole reason the name table exists
 });
 
 test("case and directory separators do not change the answer", () => {
-	assert.equal(grammarKeyFor("DOCKERFILE"), "sh");
+	assert.equal(grammarKeyFor("DOCKERFILE"), "dockerfile");
 	assert.equal(grammarKeyFor("a/b/c/.GitIgnore"), "gitignore");
-	assert.equal(grammarKeyFor("C:\\\\Users\\\\me\\\\Dockerfile"), "sh");
+	assert.equal(grammarKeyFor("C:\\\\Users\\\\me\\\\Dockerfile"), "dockerfile");
 });
 
 test("the shells, the configs and the scripts all have a grammar now", () => {

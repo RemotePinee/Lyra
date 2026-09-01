@@ -1,5 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import type { FontWeight } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { SquareTerminal } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -7,6 +8,9 @@ import { useApp } from "../store.ts";
 import { useSide } from "../sideStore.ts";
 import { useTerminals } from "../store/terminals.ts";
 import { rememberTerminalSize } from "../terminal-prewarm.ts";
+import { CODE_DEFAULTS } from "./settings/code-defaults.ts";
+import { findCodeTheme } from "./code-themes.ts";
+import type { AppearanceSettings } from "@lyra/core";
 
 /**
  * A real shell, in the panel.
@@ -155,14 +159,10 @@ export function TerminalPane() {
 		if (!element) return;
 
 		const terminal = new Terminal({
-			fontFamily: readVar("--ly-code-font") || "ui-monospace, SFMono-Regular, Menlo, monospace",
-			// The resolved step, not the raw setting: `--text-code` carries the default for when
-			// nothing has been configured, so the terminal cannot drift from the diff viewer.
-			fontSize: Number.parseFloat(readVar("--text-code")) || 12.5,
-			lineHeight: 1.35,
+			...typography(useApp.getState().settings?.appearance),
 			cursorBlink: true,
 			// The panel draws its own edges; the terminal should sit flush inside them.
-			theme: paletteFromTheme(),
+			theme: paletteFromTheme(useApp.getState().settings?.appearance),
 			allowProposedApi: true,
 			scrollback: 5000,
 		});
@@ -296,9 +296,57 @@ export function TerminalPane() {
 		};
 	}, [active]);
 
-	// Repaint on a theme change rather than rebuilding the shell under the user.
+	/*
+	 * Follow 代码外观 without rebuilding the shell under the user.
+	 *
+	 * Colours were already handled here; type was not, and could not be — the four typographic
+	 * options were read once inside `new Terminal()` and never again, so changing the code font
+	 * did nothing to the terminal until the pane happened to be rebuilt. It is the one surface in
+	 * the app that CSS cannot reach: xterm measures a character and paints to a canvas, so the
+	 * variables the diff viewer and the Markdown blocks pick up on their own have to be pushed in
+	 * by hand.
+	 *
+	 * From `appearance` rather than `readVar`, and that ordering is the whole reason this is
+	 * subtle: the variables are written by an effect in `App.tsx`, which is a parent, and React
+	 * runs child effects first. Reading the DOM here would reliably get the *previous* setting —
+	 * one change behind, forever.
+	 *
+	 * Deferred, because it is expensive. Setting `fontSize` makes xterm re-measure the cell and
+	 * repaint every glyph on screen, and these arrive from a slider: a drag from 12 to 18 is six
+	 * of them in as many frames. One repaint after the drag settles looks the same and costs a
+	 * sixth as much.
+	 */
 	useEffect(() => {
-		if (term.current) term.current.options.theme = paletteFromTheme();
+		const terminal = term.current;
+		if (!terminal) return;
+		terminal.options.theme = paletteFromTheme(appearance);
+
+		const timer = setTimeout(() => {
+			if (!term.current) return;
+			for (const [key, value] of Object.entries(typography(appearance))) {
+				// One at a time: assigning `options` wholesale would drop everything not named here.
+				(term.current.options as Record<string, unknown>)[key] = value;
+			}
+			/*
+			 * A different cell size is a different number of rows and columns.
+			 *
+			 * Without the refit the terminal keeps the old grid, so bigger text overflows the pane
+			 * and smaller text leaves a band of dead space. And the pty has to be told, or every
+			 * program in it goes on wrapping to a width that is no longer there — which reads as
+			 * corruption rather than as a stale number.
+			 */
+			try {
+				fit.current?.fit();
+			} catch {
+				return;
+			}
+			const next = { cols: term.current.cols, rows: term.current.rows };
+			if (next.cols === size.current.cols && next.rows === size.current.rows) return;
+			size.current = next;
+			rememberTerminalSize(next.cols, next.rows);
+			if (sessionId.current) window.lyra.terminal.resize(sessionId.current, next.cols, next.rows);
+		}, 140);
+		return () => clearTimeout(timer);
 	}, [appearance]);
 
 	const empty = tabs.length === 0;
@@ -361,19 +409,73 @@ function readVar(name: string): string {
 }
 
 /**
+ * 代码外观, translated into the four options xterm understands.
+ *
+ * One function for both uses — building the terminal and updating it — because they had drifted
+ * apart in exactly the way two copies do: the constructor hard-coded `lineHeight: 1.35` and knew
+ * nothing about weight or tracking, so three of the five settings had no path here at all.
+ *
+ * `letterSpacing` is the one that needs converting. The setting is in `em`, like CSS, because that
+ * is what the preview and every other surface use; xterm wants whole pixels, and rounds anyway —
+ * so the same 0.05em is a wider gap at 18px than at 12px, which is the point of the unit.
+ */
+function typography(appearance: { codeFont?: string; codeFontSize?: number; codeFontWeight?: number; codeLineHeight?: number; codeLetterSpacing?: number } | undefined) {
+	const size = appearance?.codeFontSize ?? (Number.parseFloat(readVar("--text-code")) || CODE_DEFAULTS.codeFontSize);
+	return {
+		fontFamily: appearance?.codeFont || readVar("--ly-code-font") || CODE_DEFAULTS.codeFont,
+		fontSize: size,
+		fontWeight: (appearance?.codeFontWeight ?? CODE_DEFAULTS.codeFontWeight) as FontWeight,
+		lineHeight: appearance?.codeLineHeight ?? CODE_DEFAULTS.codeLineHeight,
+		letterSpacing: Math.round((appearance?.codeLetterSpacing ?? CODE_DEFAULTS.codeLetterSpacing) * size),
+	};
+}
+
+/**
  * xterm needs literal colours, so the palette is read out of the live CSS variables.
  *
  * The sixteen ANSI slots are fixed rather than derived: they are what programs mean by "red"
  * and "green", and remapping them to the app's accent would make `git diff` lie about which
  * lines were added.
  */
-function paletteFromTheme(): Terminal["options"]["theme"] {
+function paletteFromTheme(appearance?: AppearanceSettings): Terminal["options"]["theme"] {
 	const dark = document.documentElement.classList.contains("dark");
+	/*
+	 * The code theme's surface, not the app's chrome.
+	 *
+	 * These read `--color-shell` and `--color-ink` — the *UI* tokens — so the terminal followed
+	 * the window's background and had no connection to 代码高亮主题 at all. Choosing Solarized
+	 * Light gave the editor its warm surface and left the terminal on the app's white, which is
+	 * the seam you notice: two panes side by side, both showing code, only one of them themed.
+	 *
+	 * The sixteen ANSI slots below stay as they are, deliberately. They are what programs mean by
+	 * "red" and "green", and remapping them to a theme's palette would make `git diff` lie about
+	 * which lines were added.
+	 */
+	/*
+	 * Resolved from the settings object, not from the DOM.
+	 *
+	 * `--ly-code-bg` is written by an effect in `App.tsx`, which is a parent — and React runs
+	 * child effects first, so reading it here lands one theme change behind, every time. The
+	 * same ordering caught the font settings; this is the colour half of it.
+	 */
+	const theme = appearance
+		? findCodeTheme(dark ? appearance.codeDarkTheme : appearance.codeLightTheme, dark ? "dark" : "light")
+		: null;
+	/*
+	 * `inherit` means "whatever the app's background is", which only the CSS variable knows.
+	 *
+	 * The default theme does not carry a surface of its own — see `--ly-code-bg` in `theme.ts` —
+	 * so resolving it from the spec would paint the terminal a fixed white over a background the
+	 * user may have tinted. For every other theme the spec is authoritative and is used directly,
+	 * which is what keeps this correct on the render before the variable has been written.
+	 */
+	const background = (theme && !theme.inherit ? theme.background : readVar("--ly-code-bg")) || (dark ? "#171717" : "#ffffff");
+	const foreground = (theme && !theme.inherit ? theme.foreground : readVar("--ly-code-fg")) || (dark ? "#ededed" : "#1a1c1f");
 	return {
-		background: readVar("--color-shell") || (dark ? "#171717" : "#ffffff"),
-		foreground: readVar("--color-ink") || (dark ? "#ededed" : "#1a1c1f"),
-		cursor: readVar("--color-ink-muted"),
-		cursorAccent: readVar("--color-shell"),
+		background,
+		foreground,
+		cursor: foreground,
+		cursorAccent: background,
 		selectionBackground: dark ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.12)",
 		black: dark ? "#3b3b3b" : "#2c2c2c",
 		red: dark ? "#f07171" : "#c8402f",

@@ -78,6 +78,29 @@ export class SideChat {
 	}
 
 	/** Start over. The main conversation is untouched, as always. */
+	/**
+	 * Put back a conversation that was saved to disk.
+	 *
+	 * The panel used to be memory only, and said so — 「关闭应用后消失」. That was defensible while it
+	 * held two questions about what just happened; it is not once you have spent ten minutes in it,
+	 * dispatched work from it and come back after a crash to find the whole thread gone.
+	 *
+	 * Refuses to overwrite a conversation in progress: this is called when a chat is first built for
+	 * a session, and doing it to a live one would drop whatever it was in the middle of.
+	 */
+	restore(messages: Message[]): void {
+		if (this.running || this.messages.length > 0) return;
+		this.messages = messages;
+		/*
+		 * The main transcript is *not* rewound to match.
+		 *
+		 * `syncedMainCount` is how much of the main conversation has already been folded in, and it
+		 * counts messages that are in `messages` above as context. Restoring those without restoring
+		 * the count would fold the same stretch in a second time on the next question.
+		 */
+		this.syncedMainCount = this.main.messages.length;
+	}
+
 	reset(): void {
 		this.abort();
 		this.messages = [];
@@ -87,6 +110,27 @@ export class SideChat {
 	abort(): void {
 		this.controller?.abort();
 		this.controller = null;
+	}
+
+	/**
+	 * Replace a question that was already asked, and answer from there.
+	 *
+	 * The same act as editing a message in the main conversation: everything after the edited one
+	 * is dropped, because it was a reply to wording that no longer exists. The usual reason is that
+	 * the question came out wrong — and asking it again below the old one leaves the model reading
+	 * both, which is exactly what makes a side chat lose the thread.
+	 *
+	 * `messages` is plain memory here rather than a log on disk, so rewinding is a truncation and
+	 * there is nothing to undo it with. That matches the panel: it is a scratch conversation about
+	 * the main one, cleared whenever you ask for it to be.
+	 */
+	async editAndResend(index: number, content: UserContent[], options: { thinking?: ThinkingLevel } = {}): Promise<void> {
+		if (this.running) return;
+		if (!Number.isInteger(index) || index < 0 || index >= this.messages.length) return;
+		if (this.messages[index]?.role !== "user") return;
+		this.messages.length = index;
+		await this.emit({ type: "rewound", messageCount: this.messages.length });
+		await this.ask(content, options);
 	}
 
 	async ask(content: UserContent[], options: { thinking?: ThinkingLevel } = {}): Promise<void> {
@@ -125,7 +169,7 @@ export class SideChat {
 					provider: resolved.provider,
 					model: resolved.model,
 					systemPrompt: this.systemPrompt(),
-					tools: [dispatchTaskTool(this.main)],
+					tools: [dispatchTaskTool(this.main), controlMainTool(this.main)],
 					messages: this.messages,
 					thinking: options.thinking ?? this.settings.thinking,
 					retryAttempts: this.settings.retryAttempts,
@@ -203,7 +247,9 @@ export class SideChat {
 			"",
 			"你没有任何操作工作区的能力——不能读写文件、不能执行命令。这是刻意的：主会话可能正在改同一份代码，两边同时动手必然冲突。",
 			"",
-			"需要动手时，用 dispatch_task 把这件事交给主会话。它会在手头的事情做完之后执行。写指令时要完整、可独立执行，因为主会话看不到你和用户的这段对话——它只会收到你写的那一句话。",
+			"需要动手时，用 dispatch_task 把这件事交给主会话。它会在手头的事情做完之后执行。写指令时要完整、可独立执行，因为主会话看不到你和用户的这段对话——它只会收到你写的那一句话。" +
+			"要它停下、接着做、或者想知道它现在在忙什么，用 control_main，那是立刻生效的；" +
+			"千万不要把「暂停」写成一个 dispatch_task——那会排在它正要暂停的工作后面，等于什么都没做。",
 			"",
 			"不要为了显得有用而派活。只有用户明确要求，或者他的意图显然是「去做这件事」时才派。",
 			"",
@@ -263,6 +309,95 @@ function dispatchTaskTool(main: AgentSession): Tool<{ instruction: string }> {
 					: "主会话当前空闲，已经开始执行。",
 				task,
 			);
+		},
+	};
+}
+
+/**
+ * Reaching the main session's controls, rather than its queue.
+ *
+ * `dispatch_task` is for work: it goes to the back of the queue and runs when the session is free.
+ * That is exactly wrong for the things you say *about* a run in progress. Asked to pause, the side
+ * chat had only the queue to reach for — so 「请暂停手头的所有自动执行任务」 was filed behind the
+ * very work it was asking to stop, and would have been carried out, if at all, once there was
+ * nothing left to pause. The panel reported success and nothing happened.
+ *
+ * These take effect immediately, because that is what a control is. They cannot change a file, run
+ * a command or read anything: the whole surface is stop, carry on, and what is it doing.
+ */
+function controlMainTool(main: AgentSession): Tool<{ action: string }> {
+	return {
+		name: "control_main",
+		description:
+			"立即控制主会话的执行状态，不排队、马上生效。" +
+			"pause：让主会话停下手头正在跑的工作（和用户点暂停按钮一样）。" +
+			"resume：让它接着做——如果有被暂停时中断的派出任务，会把那个任务重新排上，否则让它从中断处继续。" +
+			"status：查主会话现在是在忙还是空着，以及队列里还剩什么。" +
+			"需要它去『做』一件新的事，用 dispatch_task，不要用这个。",
+		snippet: "control_main — 直接暂停 / 继续主会话，或看它在忙什么",
+		parameters: {
+			type: "object",
+			properties: {
+				action: {
+					type: "string",
+					enum: ["pause", "resume", "status"],
+					description: "pause 暂停，resume 继续，status 查看当前状态。",
+				},
+			},
+			required: ["action"],
+		},
+		summarize: (args) => {
+			const action = String(args.action ?? "");
+			if (action === "pause") return "让主会话停下";
+			if (action === "resume") return "让主会话接着做";
+			return "查看主会话状态";
+		},
+		async execute(args) {
+			const action = String(args.action ?? "").trim();
+
+			if (action === "pause") {
+				if (!main.running) return textResult("主会话现在没有在执行任何东西，不需要暂停。");
+				main.abort();
+				return textResult("已经让主会话停下了。它手头的工作已中止，派出的任务也一并中断——需要的话可以让我继续。");
+			}
+
+			if (action === "resume") {
+				/*
+				 * A task interrupted by the pause is what "carry on" means, when there is one.
+				 *
+				 * Pausing cancels the dispatched task along with the turn, and resuming only the
+				 * conversation leaves that task cancelled — the work the panel asked for silently
+				 * never happens. Same rule the main window's 继续 follows.
+				 */
+				const interrupted = main.interruptedTask();
+				if (interrupted) {
+					await main.resumeTask(interrupted.id);
+					return textResult(`已把被中断的任务重新排上：${interrupted.text.slice(0, 60)}`);
+				}
+				if (main.running) return textResult("主会话正在执行，不用继续。");
+				/*
+				 * `synthetic`, because nobody typed it.
+				 *
+				 * It keeps the sentence out of the transcript — the user pressed nothing and wrote
+				 * nothing — and keeps the turn's elapsed time and tokens counting from where the work
+				 * actually started rather than restarting at this message.
+				 */
+				await main.prompt([{ type: "text", text: "继续，从中断的地方接着做。" }], { synthetic: true });
+				return textResult("已经让主会话接着做了。");
+			}
+
+			if (action === "status") {
+				const queued = main.taskQueue.filter((t) => t.status === "queued").length;
+				const running = main.taskQueue.find((t) => t.status === "running");
+				const interrupted = main.interruptedTask();
+				const parts = [main.running ? "主会话正在执行" : "主会话当前空闲"];
+				if (running) parts.push(`正在跑派出的任务：${running.text.slice(0, 40)}`);
+				if (queued > 0) parts.push(`队列里还有 ${queued} 个任务在等`);
+				if (interrupted) parts.push(`有一个被中断的任务可以继续：${interrupted.text.slice(0, 40)}`);
+				return textResult(parts.join("；") + "。");
+			}
+
+			return textResult(`不认识的动作「${action}」。可用的是 pause、resume、status。`);
 		},
 	};
 }

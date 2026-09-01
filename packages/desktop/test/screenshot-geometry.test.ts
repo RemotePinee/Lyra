@@ -110,10 +110,24 @@ test("inside is inside, including the border", () => {
 
 const toolbar = { width: 360, height: 40 };
 
-test("the toolbar sits under the selection, aligned to its left edge", () => {
+test("the toolbar sits under the selection, aligned to its right edge", () => {
+	/*
+	 * Right, not left. The bar ends with cancel and confirm, and a drag almost always ends at the
+	 * bottom-right corner — so aligning that end with the selection puts the two controls that
+	 * finish the job under the hand that just let go. Left-aligned they are a bar's width away.
+	 */
+	// A selection with room for the bar under it; the narrow case is the test below.
+	const roomy = { x: 200, y: 100, width: 500, height: 100 };
+	const at = toolbarPosition(roomy, screen, toolbar);
+	assert.equal(at.x + toolbar.width, roomy.x + roomy.width, "right-aligned with the selection");
+	assert.equal(at.y, roomy.y + roomy.height + 12);
+});
+
+test("a selection narrower than the toolbar keeps it on screen instead", () => {
+	// Right-aligning a 360pt bar to a 200pt region would start it off the left edge of the display.
 	const at = toolbarPosition(rect, screen, toolbar);
-	assert.equal(at.x, rect.x, "left-aligned with the selection");
-	assert.equal(at.y, rect.y + rect.height + 12);
+	assert.ok(at.x >= 0, `${at.x} is off the left edge`);
+	assert.ok(at.x + toolbar.width <= screen.width, `${at.x + toolbar.width} is off the right edge`);
 });
 
 test("and flips above when there is no room below", () => {

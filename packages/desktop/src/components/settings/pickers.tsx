@@ -100,6 +100,18 @@ export function NumberField({
 	label: string;
 }): JSX.Element {
 	const clamp = (next: number) => Math.min(max, Math.max(min, next));
+	/*
+	 * How many decimals this field accepts, taken from its own step.
+	 *
+	 * This used to be `Math.trunc`, unconditionally, which is right for a font size and silently
+	 * destroys the two fields whose step is a fraction: typing 1.8 into 行高 stored 1, and 字距
+	 * — whose entire range is -0.1 to 0.2 — could only ever be set to 0. Both looked like the
+	 * setting having no effect, because the value that reached the app was not the one typed.
+	 *
+	 * From `step` rather than a flag, since the step already says what the field's resolution is.
+	 */
+	const decimals = (String(step).split(".")[1] ?? "").length;
+	const round = (next: number) => (decimals === 0 ? Math.trunc(next) : Number(next.toFixed(decimals)));
 
 	return (
 		<div
@@ -117,12 +129,13 @@ export function NumberField({
 					// field impossible to clear, since selecting all and typing passes through "".
 					if (text === "" || text === "-") return onChange(clamp(0));
 					const parsed = Number(text);
-					if (Number.isFinite(parsed)) onChange(clamp(Math.trunc(parsed)));
+					if (Number.isFinite(parsed)) onChange(clamp(round(parsed)));
 				}}
 				onKeyDown={(event) => {
 					if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
 					event.preventDefault();
-					onChange(clamp(value + (event.key === "ArrowUp" ? step : -step)));
+					// Rounded, or 1.6 + 0.1 arrives as 1.7000000000000002 and the box shows all of it.
+					onChange(clamp(round(value + (event.key === "ArrowUp" ? step : -step))));
 				}}
 				className="w-full min-w-0 bg-transparent px-2 text-center font-mono text-label text-ink"
 			/>

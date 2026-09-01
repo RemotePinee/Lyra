@@ -15,6 +15,7 @@
  * retaken on every drag, and every mark on it would slide.
  */
 
+import { Check } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScreenshotSettings } from "@lyra/core";
 import {
@@ -22,6 +23,7 @@ import {
 	AnnotateToolbar,
 	useAnnotator,
 } from "./Annotator.tsx";
+import { ScreenshotLoupe, type LoupeReading } from "./ScreenshotLoupe.tsx";
 import {
 	clampRect,
 	handlePoint,
@@ -57,12 +59,53 @@ const EDGE_GRAB = 8;
  */
 const ENTER_MS = 160;
 const LEAVE_MS = 120;
+/**
+ * How long 「已复制色值」 stays up *after* the capture has gone, and how long it takes to go itself.
+ *
+ * It outlives the overlay's contents on purpose. The colour is on the clipboard and there is nothing
+ * left to frame, so the capture leaves at once — the same 120ms Escape takes — and the confirmation
+ * is left sitting over the real desktop for long enough to read, which is what it is for.
+ */
+const TOAST_MS = 700;
+const TOAST_FADE_MS = 200;
 
 interface ScreenshotInit {
-	snapshot: string;
+	/**
+	 * The screen, as raw RGBA pixels.
+	 *
+	 * Not an encoded image: PNG-encoding a 2940×1912 screen in the main process so it could be
+	 * decoded again here measured 133ms, and it was the biggest thing Lyra itself added to the wait
+	 * before a capture appears. That wait is what makes the desktop appear to jump — the picture is
+	 * taken at the start of it, so anything that moves on screen while it runs is undone in one
+	 * frame when the overlay lands on top.
+	 */
+	snapshot: { pixels: Uint8Array; width: number; height: number };
+	/**
+	 * Which capture this is.
+	 *
+	 * The overlay is one page for the life of the app — shown and hidden rather than built and torn
+	 * down, because building it took 147ms that the capture could see. So "a new capture has begun"
+	 * is not something this page can work out for itself: it did not just load, and the picture is
+	 * no help either, since two captures of an unchanged screen are byte-identical.
+	 */
+	session: number;
 	bounds: { x: number; y: number; width: number; height: number };
 	scaleFactor: number;
+	/** On-screen windows, front to back, already in this overlay's coordinates. */
+	windows?: (Rect & { app: string })[];
+	/** Where the pointer already was, so a window is offered before the mouse moves. */
+	cursor?: Point;
 	settings?: ScreenshotSettings;
+}
+
+/**
+ * The window under the pointer, which is the first one that contains it.
+ *
+ * Front to back is the order the Window Server returns them in, and it is the same order a click
+ * would resolve — so what highlights is what you would have hit.
+ */
+function windowAt(windows: (Rect & { app: string })[] | undefined, at: Point): (Rect & { app: string }) | null {
+	return windows?.find((w) => insideRect(w, at)) ?? null;
 }
 
 type DragMode =
@@ -90,6 +133,26 @@ export function ScreenshotOverlay() {
 	const [isAnnotating, setIsAnnotating] = useState(false);
 
 	const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	/**
+	 * The window the pointer is over, before a region has been drawn.
+	 *
+	 * Offering whole windows is most of what makes a capture quick: the common case is "this
+	 * window", and dragging a rectangle around one by hand is both slower and less accurate than
+	 * the window's own bounds. It stops mattering the moment a region exists — from then on the
+	 * region is what is being adjusted.
+	 */
+	const [hoverWindow, setHoverWindow] = useState<(Rect & { app: string }) | null>(null);
+
+	/**
+	 * Where the pointer is and what is under it, for the loupe.
+	 *
+	 * Kept until a region exists: once there is something to annotate, a magnifier following the
+	 * pointer is in the way of the drawing rather than in aid of it.
+	 */
+	const [pointer, setPointer] = useState<Point | null>(null);
+	const [reading, setReading] = useState<LoupeReading | null>(null);
+	const [copied, setCopied] = useState(false);
+
 	/** The toolbar's measured size, so it is kept on screen against what it really is. */
 	const [toolbarSize, setToolbarSize] = useState<{ width: number; height: number } | null>(null);
 	const measureToolbar = useCallback((el: HTMLDivElement | null) => {
@@ -111,16 +174,8 @@ export function ScreenshotOverlay() {
 	 * a second time. On a 5K display that is several megabytes and a visible fraction of the delay
 	 * before the overlay can be shown at all.
 	 */
-	const annotator = useAnnotator(initData?.snapshot ?? "");
+	const annotator = useAnnotator(initData?.snapshot ?? null, { session: initData?.session });
 	const { ready: snapshotReady, image: snapshotImage } = annotator;
-
-	// Receive initialization data from main process
-	useEffect(() => {
-		const cleanup = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
-			setInitData(data);
-		});
-		return cleanup;
-	}, []);
 
 	/*
 	 * The frozen screen, at the resolution it was captured at.
@@ -138,9 +193,28 @@ export function ScreenshotOverlay() {
 		const ctx = canvas.getContext("2d");
 		if (!ctx) return;
 
-		canvas.width = img.naturalWidth;
-		canvas.height = img.naturalHeight;
-		ctx.drawImage(img, 0, 0);
+		canvas.width = img.width;
+		canvas.height = img.height;
+		ctx.drawImage(img.source, 0, 0);
+
+		/*
+		 * The numbers that decide whether the frozen picture matches the screen under it.
+		 *
+		 * The backdrop is stretched to fill the window, so if the snapshot's aspect ratio differs
+		 * from the display's — even slightly — everything in it shifts, and the capture opens looking
+		 * like the whole desktop moved. `desktopCapturer` scales its thumbnail to *fit* what it is
+		 * asked for and does not promise to return that size, which is exactly how that happens.
+		 */
+		const rect = canvas.getBoundingClientRect();
+		window.lyra?.screenshot?.debug?.("backdrop painted", {
+			snapshot: { w: img.width, h: img.height, aspect: img.width / img.height },
+			window: { w: window.innerWidth, h: window.innerHeight, aspect: window.innerWidth / window.innerHeight, dpr: window.devicePixelRatio },
+			canvasCss: { w: Math.round(rect.width), h: Math.round(rect.height) },
+			bounds: initData.bounds,
+			stretched:
+				Math.abs(img.width / img.height - window.innerWidth / window.innerHeight) > 0.001,
+			screen: { w: screen.width, h: screen.height, availH: screen.availHeight },
+		});
 
 		/*
 		 * Said straight away, and deliberately not after a `requestAnimationFrame`.
@@ -168,9 +242,50 @@ export function ScreenshotOverlay() {
 	 */
 	const [entered, setEntered] = useState(false);
 	const [leaving, setLeaving] = useState(false);
+	/** Whether the colour-pick confirmation is on its way out. See `leaveWithToast`. */
+	const [toastLeaving, setToastLeaving] = useState(false);
 
 	useEffect(() => {
-		const cleanup = window.lyra?.screenshot?.onShown?.(() => setEntered(true));
+		const cleanup = window.lyra?.screenshot?.onShown?.(() => {
+			setEntered(true);
+			window.lyra?.screenshot?.debug?.("shown", {
+				window: { w: window.innerWidth, h: window.innerHeight },
+				screen: { w: screen.width, h: screen.height },
+				at: Math.round(performance.now()),
+			});
+			/*
+			 * Say when a frame actually exists, which is what the window is waiting for to become
+			 * visible at all.
+			 *
+			 * The window is up but transparent at this point. Its GPU surface was released while it
+			 * was hidden and is being rebuilt; shown before that finishes, what the window server puts
+			 * up is the old surface stretched to the new size — the capture appearing to scale for an
+			 * instant. `ready` cannot stand in for this: it fires when the snapshot has been written
+			 * into the canvas's bitmap, which is CPU-side and happens while the window is still hidden.
+			 *
+			 * Two frames deep on purpose. The first callback runs *before* the frame it belongs to is
+			 * composited; the second is scheduled from inside that frame, so by the time it runs one
+			 * has been through. Animation frames work here where they would not in `ready`, because
+			 * the window is on screen — invisible, but composited.
+			 */
+			/*
+			 * One frame, then let the window be seen.
+			 *
+			 * The window is up but transparent until this runs. It is a cheap guarantee that what
+			 * becomes visible is a page that has drawn, rather than one that is about to — measured at
+			 * 4-15ms, so it costs a frame and no more.
+			 *
+			 * It was two frames, on the theory that a window hidden for a while loses its surface and
+			 * shows a stale one stretched while the new one is built. That theory was tested and is
+			 * wrong: the first frame after a sixty-second pause arrives in 4ms, the same as one taken
+			 * seconds after the last capture. The second frame is not bought anything, so it is gone.
+			 */
+			const shownAt = performance.now();
+			requestAnimationFrame(() => {
+				window.lyra?.screenshot?.debug?.("first frame", { ms: Math.round(performance.now() - shownAt) });
+				window.lyra?.screenshot?.painted?.();
+			});
+		});
 		/*
 		 * The main process is the only thing that knows, and `document.hidden` is not it.
 		 *
@@ -208,22 +323,130 @@ export function ScreenshotOverlay() {
 		setTimeout(act, LEAVE_MS);
 	}, []);
 
+	/**
+	 * Everything this page holds that belongs to one capture, put back.
+	 *
+	 * This used to be free: the page had just loaded, so "new capture" and "new everything" were the
+	 * same event. The window is permanent now — that is what removed the delay in which the desktop
+	 * visibly jumped — so every value left over from the last capture is still here, and each one is
+	 * a bug waiting. An old selection. A half-finished drag. `leaving` still true, so the overlay
+	 * opens already fading out. `leavingRef` still set, so Escape does nothing at all.
+	 *
+	 * One function rather than the same list written out at both call sites, because keeping two
+	 * copies in step is exactly the mistake that shipped: `toastLeaving` was added to the fade and
+	 * to neither list, so the first colour pick set it and nothing ever cleared it — from the second
+	 * pick onwards 「已复制色值」 rendered at `opacity: 0` and was never seen again.
+	 *
+	 * Marks are not here: `useAnnotator` clears those off the same session number.
+	 */
+	const resetSession = useCallback(() => {
+		setSelection(null);
+		setDragMode({ kind: "none" });
+		setCursor("crosshair");
+		setIsAnnotating(false);
+		setHoverWindow(null);
+		setPointer(null);
+		setReading(null);
+		setCopied(false);
+		setToastLeaving(false);
+		setEntered(false);
+		setLeaving(false);
+		leavingRef.current = false;
+	}, []);
+	useEffect(() => {
+		const cleanup = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
+			resetSession();
+			setInitData(data);
+			// Before any movement: the overlay often opens under a pointer that is not going to move.
+			setPointer(data.cursor ?? null);
+			setHoverWindow(data.cursor ? windowAt(data.windows, data.cursor) : null);
+		});
+		return cleanup;
+	}, [resetSession]);
+
+	/*
+	 * The capture is over: put the picture down.
+	 *
+	 * The window stays for the life of the app now, and what it was holding is a full-resolution
+	 * copy of the display — over twenty megabytes on a Retina screen, kept for as long as nobody
+	 * takes another screenshot. Clearing `initData` also empties the annotator, since the source it
+	 * loads from becomes "".
+	 *
+	 * The main process only sends this once the window is *off* screen, which matters: this blanks
+	 * the canvas, and doing that a moment early is a white flash over the desktop.
+	 */
+	useEffect(() => {
+		const cleanup = window.lyra?.screenshot?.onHidden?.(() => {
+			resetSession();
+			setInitData(null);
+		});
+		return cleanup;
+	}, [resetSession]);
+
 	// Cancel / close screenshot
 	const handleCancel = useCallback(() => {
 		leaveThen(() => window.lyra?.screenshot?.cancel?.());
 	}, [leaveThen]);
 
-	// Escape shortcut
+	/**
+	 * Leave the way Escape does, and let the confirmation outlive the capture.
+	 *
+	 * Taking a colour used to hold the whole overlay up for 850ms so the message could be read, and
+	 * only then start leaving — nearly a second of frozen screen after the errand was finished. What
+	 * it should be is the other way round: the capture goes at once, exactly as Escape makes it go,
+	 * and the message stays a moment longer over the real desktop.
+	 *
+	 * So the two are separated. `leaving` takes the dimming, the loupe and the frozen picture away on
+	 * the same 120ms Escape uses; the toast lives outside that layer and is dismissed on its own
+	 * clock. In between, the window is still there — transparent, showing nothing but the message —
+	 * and `colourPicked` tells the main process to let presses through it, so the moment the screen
+	 * looks normal it behaves normally too.
+	 */
+	const leaveWithToast = useCallback(() => {
+		if (leavingRef.current) return;
+		leavingRef.current = true;
+		setLeaving(true);
+		window.lyra?.screenshot?.colourPicked?.();
+		setTimeout(() => setToastLeaving(true), LEAVE_MS + TOAST_MS);
+		setTimeout(() => window.lyra?.screenshot?.cancel?.(), LEAVE_MS + TOAST_MS + TOAST_FADE_MS);
+	}, []);
+
+	// Escape shortcut, and ⌘C while the loupe is reading a colour.
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				e.preventDefault();
 				handleCancel();
+				return;
+			}
+			/*
+			 * The colour under the crosshair, on the clipboard.
+			 *
+			 * Only before a region exists, which is exactly when the loupe is on screen — once there
+			 * is something to annotate, copy belongs to whatever is being edited.
+			 */
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && reading && !selection) {
+				e.preventDefault();
+				/*
+				 * Taking a colour is the whole errand, so it ends the capture.
+				 *
+				 * You came for the value, it is on the clipboard, and there is nothing left to frame
+				 * — staying in capture mode afterwards means the user has to dismiss a thing they are
+				 * already done with. The confirmation stays up for a beat so the answer is visible
+				 * before the screen goes back to normal.
+				 */
+				void navigator.clipboard?.writeText(reading.hex).then(
+					() => {
+						setCopied(true);
+						leaveWithToast();
+					},
+					() => setCopied(false),
+				);
 			}
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [handleCancel]);
+	}, [handleCancel, reading, selection, leaveWithToast]);
 
 	/**
 	 * The selection and the marks on it, cut out of the annotated canvas at its own resolution.
@@ -275,11 +498,25 @@ export function ScreenshotOverlay() {
 		if ((e.target as HTMLElement).closest?.("[data-screenshot-ui]")) return;
 		const pt: Point = { x: e.clientX, y: e.clientY };
 
+		/*
+		 * Taking the press means the canvas must not also have it.
+		 *
+		 * This runs in the capture phase, so it sees the press before `AnnotateCanvas` does. That
+		 * matters for the edge band: there is no handle element out there, so the press lands on the
+		 * canvas, which starts a stroke — and then bubbles up here and moves the selection. Dragging
+		 * the frame therefore drew a line every time. Stopping propagation is what makes adjusting
+		 * the region and drawing on it two different gestures instead of one gesture doing both.
+		 */
+		const take = () => {
+			e.stopPropagation();
+			(e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+		};
+
 		if (selection) {
 			const handle = hitHandle(selection, pt, HANDLE_GRAB);
 			if (handle) {
 				setDragMode({ kind: "resizing", handle, origin: selection });
-				(e.target as HTMLElement).setPointerCapture(e.pointerId);
+				take();
 				return;
 			}
 			if (insideRect(selection, pt)) {
@@ -287,23 +524,61 @@ export function ScreenshotOverlay() {
 				// edge is, because the middle is the canvas.
 				if (!isAnnotating || onEdge(selection, pt, EDGE_GRAB)) {
 					setDragMode({ kind: "moving", from: pt, origin: selection });
-					(e.target as HTMLElement).setPointerCapture(e.pointerId);
+					take();
 				}
-				// Otherwise the press belongs to `AnnotateCanvas`, which has already had it.
+				// Otherwise the press belongs to `AnnotateCanvas`, and is deliberately left to reach it.
 				return;
 			}
 		}
 
-		// Anywhere outside starts a new region, and abandons the marks made on the old one.
+		/*
+		 * Once a region exists, everything outside it is dead.
+		 *
+		 * It used to start a new region from scratch, throwing away the one that was framed and every
+		 * mark on it — a whole capture lost to a press a few pixels outside the frame, which is easy
+		 * to do while reaching for the toolbar. The region is adjusted by its handles and moved by its
+		 * edge; nothing out here is meant to do anything, and the cursor says so.
+		 *
+		 * Escape is how you start over, and it is what the hint says.
+		 */
+		if (selection) {
+			e.stopPropagation();
+			return;
+		}
+
+		// With no region yet, a press anywhere begins one.
 		setIsAnnotating(false);
 		setDragMode({ kind: "creating", from: pt });
 		setSelection({ x: pt.x, y: pt.y, width: 0, height: 0 });
-		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+		take();
 	};
 
 	const handlePointerMove = (e: React.PointerEvent) => {
 		if (!initData) return;
 		const pt: Point = { x: e.clientX, y: e.clientY };
+
+		/*
+		 * The loupe follows the pointer until there is a region, and then gets out of the way.
+		 *
+		 * Sampled from the backdrop canvas: it holds the snapshot at its own resolution, so the
+		 * coordinates reported are the picture's own and the colour is the one that will be saved.
+		 */
+		if (!selection) {
+			setPointer(pt);
+			const bg = bgCanvasRef.current;
+			const scale = bg && initData.bounds.width ? bg.width / initData.bounds.width : 1;
+			const px = Math.round(pt.x * scale);
+			const py = Math.round(pt.y * scale);
+			const ctx = bg?.getContext("2d", { willReadFrequently: true });
+			if (ctx && px >= 0 && py >= 0 && px < (bg?.width ?? 0) && py < (bg?.height ?? 0)) {
+				const [r, g, b] = ctx.getImageData(px, py, 1, 1).data;
+				const hex = `#${[r, g, b].map((n) => (n ?? 0).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+				setReading({ x: px, y: py, hex });
+			}
+			setCopied(false);
+		} else if (pointer) {
+			setPointer(null);
+		}
 
 		if (dragMode.kind === "creating") {
 			const rect = clampRect(rectFromPoints(dragMode.from, pt), initData.bounds);
@@ -319,6 +594,15 @@ export function ScreenshotOverlay() {
 				initData.bounds,
 			);
 			setSelection(rect);
+		} else if (!selection) {
+			/*
+			 * Nothing drawn yet, so offer whatever is under the pointer.
+			 *
+			 * Only in this state: once a region exists it is the thing being worked on, and having
+			 * windows light up behind it would be offering to throw it away.
+			 */
+			setHoverWindow(windowAt(initData.windows, pt));
+			setCursor("crosshair");
 		} else if (selection) {
 			// Update hover cursor
 			const handle = hitHandle(selection, pt, HANDLE_GRAB);
@@ -331,7 +615,9 @@ export function ScreenshotOverlay() {
 				setCursor(!isAnnotating || onEdge(selection, pt, EDGE_GRAB) ? "move" : "default");
 				return;
 			}
-			setCursor("crosshair");
+			// Outside a region that already exists: nothing here does anything, and a crosshair would
+			// promise that it does. See the matching rule in `handlePointerDown`.
+			setCursor("not-allowed");
 		} else {
 			setCursor("crosshair");
 		}
@@ -339,18 +625,40 @@ export function ScreenshotOverlay() {
 
 	const handlePointerUp = () => {
 		if (dragMode.kind === "creating" && selection) {
-			// A stray click is not a selection: it is how someone clears the one they had.
 			if (selection.width < MIN_SELECTION || selection.height < MIN_SELECTION) {
-				setSelection(null);
+				/*
+				 * A press that went nowhere takes the window under it, if there is one.
+				 *
+				 * The two gestures share a beginning and are told apart by what happened next: drag
+				 * and you framed a region by hand, release without moving and you pointed at a
+				 * window. With no window there — the desktop, or a display whose windows could not be
+				 * read — it stays what it always was, the way to clear a selection.
+				 */
+				const whole = hoverWindow ? clampRect(hoverWindow, initData!.bounds) : null;
+				if (whole && whole.width >= MIN_SELECTION && whole.height >= MIN_SELECTION) {
+					setSelection(whole);
+					setIsAnnotating(true);
+				} else {
+					setSelection(null);
+				}
 			} else {
 				setIsAnnotating(true);
 			}
+			setHoverWindow(null);
 		}
 		setDragMode({ kind: "none" });
 	};
 
+	/*
+	 * Between captures. The window still exists — it is never destroyed any more — so this is what
+	 * it looks like when nothing is being captured: transparent, empty, and holding no picture.
+	 *
+	 * `data-capture` says which of the two states this is, because from outside the page they are
+	 * otherwise indistinguishable: the window's debugger target is listed either way, so a test
+	 * asking "did the capture end?" by looking for the target would always be told no.
+	 */
 	if (!initData) {
-		return <div className="fixed inset-0 bg-transparent" />;
+		return <div data-capture="idle" className="fixed inset-0 bg-transparent" />;
 	}
 
 	const { bounds } = initData;
@@ -370,8 +678,26 @@ export function ScreenshotOverlay() {
 	return (
 		<div
 			className="fixed inset-0 select-none overflow-hidden"
-			style={{ cursor }}
-			onPointerDown={handlePointerDown}
+			/*
+			 * How many windows can be pointed at, exposed for the probe.
+			 *
+			 * "Clicking a window does nothing" and "there were no windows to click" look identical
+			 * from outside, and only one of them is a fault in here.
+			 */
+			data-window-count={initData.windows?.length ?? 0}
+			data-capture="active"
+			style={{ cursor, WebkitUserDrag: "none" } as React.CSSProperties}
+			/*
+			 * A press-and-move here is a selection, never a drag of the page.
+			 *
+			 * The overlay is a canvas over an image, and the browser's own drag-and-drop reads
+			 * exactly that gesture as dragging the picture somewhere — which replaces the crosshair
+			 * with the "you cannot drop this here" cursor for as long as the button is down. There is
+			 * nowhere to drop anything: this window is the whole screen.
+			 */
+			onDragStart={(e) => e.preventDefault()}
+			// Capture, so the frame's own gestures are decided before the canvas can start a stroke.
+			onPointerDownCapture={handlePointerDown}
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
@@ -381,7 +707,21 @@ export function ScreenshotOverlay() {
 			 * It is a picture of what is already there, so there is nothing to fade *from* — it is
 			 * everything drawn on top of it that arrives.
 			 */}
-			<canvas ref={bgCanvasRef} className="absolute inset-0 block h-full w-full pointer-events-none" />
+			<canvas
+				ref={bgCanvasRef}
+				draggable={false}
+				className="absolute inset-0 block h-full w-full pointer-events-none"
+				/*
+				 * Taken away the instant leaving starts, without a fade.
+				 *
+				 * It is a copy of the screen underneath it, so removing it is invisible — and it has to
+				 * go, because what follows a colour pick is the confirmation sitting over the *real*
+				 * desktop for another beat. Leave the frozen copy up and the desktop behind it is
+				 * unresponsive-looking for as long as the message is: clicks land, nothing appears to
+				 * happen, because what is on screen is a photograph.
+				 */
+				style={{ opacity: leaving ? 0 : 1 }}
+			/>
 
 			{/*
 			 * `pointer-events-none`, and everything inside it that is meant to be touched says so
@@ -410,16 +750,48 @@ export function ScreenshotOverlay() {
 							/>
 						</mask>
 					</defs>
-					<rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.42)" mask="url(#cutout)" />
+					<rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.3)" mask="url(#cutout)" />
 				</svg>
 			)}
 
-			{!selection && (
-				<div className="pointer-events-none absolute inset-0 bg-black/25 flex items-center justify-center">
-					<div className="rounded-xl border border-white/20 bg-black/60 px-4 py-2 text-label text-white shadow-2xl backdrop-blur-md">
-						拖拽鼠标框选截图区域 · 按 Esc 退出
+			{/*
+			 * Nothing is said in words before a region exists.
+			 *
+			 * A window lighting up as the pointer crosses it explains the gesture better than a
+			 * sentence does, and a banner in the middle of the screen sits on top of the very thing
+			 * being captured. Only the dimming remains, which is what says "capture mode".
+			 */}
+			{!selection && !hoverWindow && <div className="pointer-events-none absolute inset-0 bg-black/25" />}
+
+			{/*
+			 * The window on offer, drawn as the region it would become.
+			 *
+			 * Undimmed inside the frame and dimmed outside it, which is the same language the
+			 * selection itself uses — so pressing does not change what you are looking at, only its
+			 * status. The size is shown because it is the fact that decides whether this is the right
+			 * window when two of an application's windows overlap.
+			 */}
+			{!selection && hoverWindow && (
+				<>
+					<svg className="pointer-events-none absolute inset-0 h-full w-full">
+						<defs>
+							<mask id="window-cutout">
+								<rect width="100%" height="100%" fill="white" />
+								<rect x={hoverWindow.x} y={hoverWindow.y} width={hoverWindow.width} height={hoverWindow.height} fill="black" />
+							</mask>
+						</defs>
+						<rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.3)" mask="url(#window-cutout)" />
+					</svg>
+					<div
+						data-window-highlight
+						className="pointer-events-none absolute border-2 border-[var(--color-accent)]"
+						style={{ left: hoverWindow.x, top: hoverWindow.y, width: hoverWindow.width, height: hoverWindow.height }}
+					>
+						<span className="absolute left-1/2 -top-7 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/70 px-2 py-0.5 text-caption text-white tabular-nums backdrop-blur-sm">
+							{Math.round(hoverWindow.width)} × {Math.round(hoverWindow.height)}
+						</span>
 					</div>
-				</div>
+				</>
 			)}
 
 			{/*
@@ -451,10 +823,28 @@ export function ScreenshotOverlay() {
 				</div>
 			)}
 
+			{/*
+			 * The loupe, while there is still a choice to make about where the region goes.
+			 *
+			 * Outside the dimmed layer, because a magnifier showing a dimmed version of the screen
+			 * would misreport the colour it is there to report.
+			 */}
+			{!selection && pointer && (
+				<ScreenshotLoupe
+					source={bgCanvasRef.current}
+					at={pointer}
+					scale={bgCanvasRef.current && bounds.width ? bgCanvasRef.current.width / bounds.width : 1}
+					viewport={bounds}
+					reading={reading}
+					copied={copied}
+				/>
+			)}
+
 			{/* Selected region borders & resize handles */}
 			{selection && (
 				<div
-					className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+					data-selection
+					className="pointer-events-none absolute border border-[var(--color-accent)] shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
 					style={{
 						left: selection.x,
 						top: selection.y,
@@ -467,7 +857,7 @@ export function ScreenshotOverlay() {
 						return (
 							<div
 								key={h}
-								className="pointer-events-auto absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/30 bg-white shadow-sm"
+								className="pointer-events-auto absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--color-accent)] shadow-sm"
 								style={{ left: pt.x, top: pt.y, cursor: HANDLE_CURSOR[h] }}
 							/>
 						);
@@ -503,11 +893,45 @@ export function ScreenshotOverlay() {
 						saveLabel="完成"
 						cancelLabel="取消"
 						requireDirty={false}
-						className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/12 bg-[#1c1c1e]/92 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
+						/*
+						 * The bubble opens away from the region, which is the opposite of where the bar
+						 * is. The bar sits below the selection whenever there is room, and a bubble that
+						 * always opened upwards landed in the gap between the two — on top of the bottom
+						 * of the very region being annotated.
+						 */
+						propertiesSide={toolbarAt?.side === "below" ? "below" : "above"}
+						className="pointer-events-auto relative flex items-center gap-0.5 rounded-xl border border-white/12 bg-[#1c1c1e]/92 px-1.5 py-1 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[opacity,transform] duration-[var(--ly-t-base)] ease-out"
 					/>
 				</div>
 			)}
 			</div>
+
+			{/*
+			 * "Copied", in the middle of the screen — and deliberately outside the layer above.
+			 *
+			 * Everything in that layer is the capture, and the capture leaves the instant a colour is
+			 * taken, on the same 120ms Escape uses. This does not: the value is on the clipboard and
+			 * the message is the answer, so it stays a beat longer over the real desktop and then goes
+			 * on its own. Inside the fading layer it left *with* the capture, which meant the whole
+			 * overlay had to be held up for most of a second first so it could be read at all.
+			 *
+			 * Centred rather than beside the pointer because by now the pointer is not where the user
+			 * is looking.
+			 */}
+			{copied && (
+				<div
+					className="pointer-events-none absolute inset-0 flex items-center justify-center"
+					style={{
+						opacity: toastLeaving ? 0 : 1,
+						transition: `opacity ${TOAST_FADE_MS}ms ease-out`,
+					}}
+				>
+					<div className="flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] flex-col items-center gap-2 rounded-2xl bg-black/75 px-9 py-7 text-white shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
+						<Check size={44} strokeWidth={2.2} />
+						<span className="text-label">已复制色值</span>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

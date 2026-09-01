@@ -1,8 +1,15 @@
 import type { AppearanceSettings as Appearance } from "@lyra/core";
+import { useState } from "react";
 import { useApp } from "../../store.ts";
 import { Card, GhostButton, InlineSelect, Row, SectionTitle, Segmented, TextInput, Toggle } from "./controls.tsx";
 import { findCodeTheme, LIGHT_CODE_THEMES, DARK_CODE_THEMES } from "../code-themes.ts";
 import { CodeAppearancePreview } from "./CodeAppearancePreview.tsx";
+import { CODE_DEFAULTS } from "./code-defaults.ts";
+import { CODE_FONTS, fontAvailable, matchCodeFont } from "./code-fonts.ts";
+
+/** The sentinel the font menu uses for 「自定义…」; never stored as a font stack. */
+const CUSTOM_FONT = "__custom__";
+
 
 /**
  * Mirrors `DEFAULT_APPEARANCE` in @lyra/core.
@@ -19,8 +26,8 @@ const FACTORY_APPEARANCE: Appearance = {
 	darkForeground: "#EDEDED",
 	uiFont: '"Inter Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
 	codeFont: '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, "PingFang SC", monospace',
-	codeLightTheme: "solarized-light",
-	codeDarkTheme: "github-dark",
+	codeLightTheme: "lyra-light",
+	codeDarkTheme: "lyra-dark",
 	uiFontSize: 13,
 	codeFontSize: 12,
 	contrast: 60,
@@ -38,9 +45,18 @@ const PRESETS: { id: string; label: string; patch: Partial<Appearance> }[] = [
 ];
 
 import { ColorRow, PixelField, ThemePreview } from "./appearance-controls.tsx";
+import { NumberField } from "./pickers.tsx";
 import { Slider } from "./pickers.tsx";
 
 export function AppearanceSettings() {
+	/*
+	 * Whether the custom stack field is open.
+	 *
+	 * Kept in the component rather than in settings: it is about what is on screen, not about how
+	 * code is rendered. A stack that matches no preset opens it on its own, so a hand-written value
+	 * from before this menu existed is still editable without picking 自定义 first.
+	 */
+	const [customFont, setCustomFont] = useState(false);
 	const settings = useApp((s) => s.settings);
 	const saveSettings = useApp((s) => s.saveSettings);
 	if (!settings) return null;
@@ -133,7 +149,24 @@ export function AppearanceSettings() {
 				/>
 			</Card>
 
-			<SectionTitle>代码外观 (Code appearance)</SectionTitle>
+			{/*
+			 * The heading, with a way back to where it started.
+			 *
+			 * Seven controls here compound — a weight, a leading and a tracking that each looked fine
+			 * on their own can add up to something unreadable, and working back to the defaults one
+			 * control at a time means remembering seven numbers. Only these seven are reset; the
+			 * theme, the accent and the fonts above are a separate decision.
+			 */}
+			<div className="flex items-baseline justify-between">
+				<SectionTitle>代码外观 (Code appearance)</SectionTitle>
+				<GhostButton
+					onClick={() =>
+						patch({ ...CODE_DEFAULTS })
+					}
+				>
+					恢复默认
+				</GhostButton>
+			</div>
 			<Card className="mb-8 p-4 space-y-4">
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<div className="flex-1 min-w-0">
@@ -141,7 +174,7 @@ export function AppearanceSettings() {
 						<span className="block text-caption text-ink-muted">浅色模式下文件预览与代码块的高亮主题</span>
 					</div>
 					<InlineSelect
-						value={appearance.codeLightTheme ?? "solarized-light"}
+						value={appearance.codeLightTheme ?? CODE_DEFAULTS.codeLightTheme}
 						onChange={(codeLightTheme) => patch({ codeLightTheme })}
 						options={LIGHT_CODE_THEMES.map((t) => ({ value: t.id, label: t.label }))}
 					/>
@@ -153,32 +186,164 @@ export function AppearanceSettings() {
 						<span className="block text-caption text-ink-muted">深色模式下文件预览与代码块的高亮主题</span>
 					</div>
 					<InlineSelect
-						value={appearance.codeDarkTheme ?? "github-dark"}
+						value={appearance.codeDarkTheme ?? CODE_DEFAULTS.codeDarkTheme}
 						onChange={(codeDarkTheme) => patch({ codeDarkTheme })}
 						options={DARK_CODE_THEMES.map((t) => ({ value: t.id, label: t.label }))}
 					/>
 				</div>
 
 				<div className="pt-2">
+					{/* Everything below feeds this: change a weight or a line height and both specimens
+					    redraw on the keystroke. */}
 					<CodeAppearancePreview
 						lightTheme={findCodeTheme(appearance.codeLightTheme, "light")}
 						darkTheme={findCodeTheme(appearance.codeDarkTheme, "dark")}
-						fontFamily={appearance.codeFont}
+						type={{
+							fontFamily: appearance.codeFont,
+							fontSize: appearance.codeFontSize,
+							fontWeight: appearance.codeFontWeight,
+							lineHeight: appearance.codeLineHeight,
+							letterSpacing: appearance.codeLetterSpacing,
+						}}
 					/>
+				</div>
+
+				{/*
+				 * Pick a face by name; type a stack only if you want to.
+				 *
+				 * The stored value is a CSS font stack either way — it has to be, because the first
+				 * choice may not be installed and something must catch that. What the menu removes is
+				 * having to write one by hand, quotes and fallbacks included, in order to change a
+				 * font. Faces that are not installed are marked rather than hidden, so the menu never
+				 * claims you are looking at something you are not.
+				 */}
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
+					<div className="flex-1 min-w-0">
+						<span className="block text-label font-medium text-ink">代码字体 (Code font)</span>
+						<span className="block text-caption text-ink-muted">用于文件预览、代码编辑器与终端的等宽字体</span>
+					</div>
+					<InlineSelect
+						value={matchCodeFont(appearance.codeFont)?.stack ?? CUSTOM_FONT}
+						onChange={(next) => {
+							if (next === CUSTOM_FONT) {
+								setCustomFont(true);
+								return;
+							}
+							setCustomFont(false);
+							patch({ codeFont: next });
+						}}
+						options={[
+							...CODE_FONTS.map((font) => ({
+								value: font.stack,
+								label: fontAvailable(font) ? font.label : `${font.label}（未安装）`,
+							})),
+							{ value: CUSTOM_FONT, label: "自定义…" },
+						]}
+					/>
+				</div>
+
+				{(customFont || !matchCodeFont(appearance.codeFont)) && (
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
+						<div className="flex-1 min-w-0">
+							<span className="block text-label font-medium text-ink">自定义字体栈</span>
+							<span className="block text-caption text-ink-muted">
+								按 CSS 写法，逗号分隔，带空格的名字要加引号；靠后的是装不上时的退路
+							</span>
+						</div>
+						<TextInput
+							value={appearance.codeFont}
+							onChange={(codeFont) => patch({ codeFont })}
+							mono
+							placeholder='"Fira Code", ui-monospace, Menlo, monospace'
+							className="w-full sm:w-[260px]"
+						/>
+					</div>
+				)}
+
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
+					<div className="flex-1 min-w-0">
+						<span className="block text-label font-medium text-ink">字重 (Weight)</span>
+						<span className="block text-caption text-ink-muted">深色主题下细字容易发虚，可以调粗一档</span>
+					</div>
+					{/* Presets for the common answers, a field for the one you actually want. The two
+					    stay in step: typing 550 leaves every preset unselected, which is honest. */}
+					<div className="flex items-center gap-2">
+						<Segmented
+							value={String(appearance.codeFontWeight ?? 400)}
+							onChange={(weight) => patch({ codeFontWeight: Number(weight) })}
+							options={[
+								{ value: "300", label: "细" },
+								{ value: "400", label: "常规" },
+								{ value: "500", label: "中" },
+								{ value: "600", label: "粗" },
+							]}
+						/>
+						<NumberField
+							value={appearance.codeFontWeight ?? 400}
+							min={100}
+							max={900}
+							step={50}
+							width={72}
+							label="字重"
+							onChange={(codeFontWeight) => patch({ codeFontWeight })}
+						/>
+					</div>
 				</div>
 
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
 					<div className="flex-1 min-w-0">
-						<span className="block text-label font-medium text-ink">代码字体 (Code font)</span>
-						<span className="block text-caption text-ink-muted">用于文件预览、代码编辑器与终端的等宽字体栈</span>
+						<span className="block text-label font-medium text-ink">行高 (Line height)</span>
+						<span className="block text-caption text-ink-muted">倍数，不是像素——换字号时不用重调</span>
 					</div>
-					<TextInput
-						value={appearance.codeFont}
-						onChange={(codeFont) => patch({ codeFont })}
-						mono
-						placeholder="e.g. JetBrains Mono, SF Mono"
-						className="w-full sm:w-[260px]"
-					/>
+					<div className="flex items-center gap-2">
+						<Segmented
+							value={String(appearance.codeLineHeight ?? 1.6)}
+							onChange={(height) => patch({ codeLineHeight: Number(height) })}
+							options={[
+								{ value: "1.4", label: "紧凑" },
+								{ value: "1.6", label: "标准" },
+								{ value: "1.8", label: "宽松" },
+								{ value: "2", label: "最宽" },
+							]}
+						/>
+						<NumberField
+							value={appearance.codeLineHeight ?? 1.6}
+							min={1}
+							max={3}
+							step={0.05}
+							width={72}
+							label="行高"
+							onChange={(codeLineHeight) => patch({ codeLineHeight })}
+						/>
+					</div>
+				</div>
+
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line-soft pt-3">
+					<div className="flex-1 min-w-0">
+						<span className="block text-label font-medium text-ink">字距 (Tracking)</span>
+						<span className="block text-caption text-ink-muted">以 em 为单位，跟着字号缩放</span>
+					</div>
+					<div className="flex items-center gap-2">
+						<Segmented
+							value={String(appearance.codeLetterSpacing ?? 0)}
+							onChange={(spacing) => patch({ codeLetterSpacing: Number(spacing) })}
+							options={[
+								{ value: "-0.02", label: "收紧" },
+								{ value: "0", label: "默认" },
+								{ value: "0.02", label: "放宽" },
+								{ value: "0.04", label: "更宽" },
+							]}
+						/>
+						<NumberField
+							value={appearance.codeLetterSpacing ?? 0}
+							min={-0.1}
+							max={0.2}
+							step={0.01}
+							width={72}
+							label="字距"
+							onChange={(codeLetterSpacing) => patch({ codeLetterSpacing })}
+						/>
+					</div>
 				</div>
 			</Card>
 
@@ -242,6 +407,20 @@ export function AppearanceSettings() {
 							options={[
 								{ value: "color", label: "颜色" },
 								{ value: "symbols", label: "+/-" },
+							]}
+						/>
+					}
+				/>
+				<Row
+					title="出错时显示"
+					detail="一轮出错后，在对话里说多少。常见的失败是网络抖动，措辞是一串 JSON"
+					control={
+						<Segmented
+							value={appearance.errorDetail ?? "compact"}
+							onChange={(errorDetail) => patch({ errorDetail })}
+							options={[
+								{ value: "compact", label: "一行" },
+								{ value: "full", label: "完整" },
 							]}
 						/>
 					}

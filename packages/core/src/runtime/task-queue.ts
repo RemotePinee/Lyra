@@ -25,6 +25,19 @@ export interface TaskQueueOptions {
 	now(): number;
 }
 
+/**
+ * Whether a task that has stopped can be picked up again.
+ *
+ * The panel reads this rule too, in `TaskStrip`, written out rather than imported: pulling a value
+ * out of this package and into the renderer drags the whole of it — native modules included — into
+ * that bundle. Duplicating it is safe in this direction because `resume` below is the one that
+ * decides; a stale copy in the panel can only offer a button that declines.
+ */
+export function isResumable(task: QueuedTask): boolean {
+	if (task.status === "failed") return true;
+	return task.status === "cancelled" && task.cancelledBy === "stop";
+}
+
 export class TaskQueue {
 	private readonly tasks: QueuedTask[] = [];
 	/** Guards the drain loop against the re-entry its own `run` would otherwise cause. */
@@ -64,7 +77,56 @@ export class TaskQueue {
 		const task = this.tasks.find((t) => t.id === taskId);
 		if (!task || task.status !== "queued") return false;
 		task.status = "cancelled";
+		task.cancelledBy = "user";
 		task.finishedAt = this.options.now();
+		await this.options.changed();
+		return true;
+	}
+
+	/**
+	 * Put an interrupted task back in the queue.
+	 *
+	 * Only the ones that stopped because the *session* stopped. A task cancelled that way is not
+	 * finished business — it was running, something else was paused, and it went down with it — and
+	 * until now there was no way back: the row said 「主会话已暂停，任务一并中断」 and that was the
+	 * end of it, whatever the main conversation did afterwards. Continuing the main session does not
+	 * revive it either, because by then it is a terminal record with nothing tying it to the turn.
+	 *
+	 * So the way back is explicit, and it is the same act as dispatching it the first time: the task
+	 * goes to the back of the queue and drains when the session is free.
+	 *
+	 * Failures qualify too, for the same reason and by the same gesture — a task that died on a
+	 * dropped connection is work you still want done. Withdrawn tasks do not: you took that one back
+	 * on purpose. Nor do completed ones; asking for the same thing twice is a new dispatch.
+	 */
+	async resume(taskId: string): Promise<boolean> {
+		const task = this.tasks.find((t) => t.id === taskId);
+		if (!task || !isResumable(task)) return false;
+		task.status = "queued";
+		delete task.cancelledBy;
+		delete task.finishedAt;
+		delete task.startedAt;
+		await this.options.changed();
+		void this.drain();
+		return true;
+	}
+
+	/**
+	 * Take a finished task off the list.
+	 *
+	 * The list is a receipt, not a record: what actually happened is in the session's transcript,
+	 * and that is not touched. This is for clearing away rows you have already read — including the
+	 * ones you cancelled yourself, whose outcome you knew before you clicked.
+	 *
+	 * Only tasks that are over. Dismissing something still queued would look like cancelling it and
+	 * would not be: the work would run with nothing on screen saying so.
+	 */
+	async dismiss(taskId: string): Promise<boolean> {
+		const index = this.tasks.findIndex((t) => t.id === taskId);
+		if (index < 0) return false;
+		const task = this.tasks[index]!;
+		if (task.status === "queued" || task.status === "running") return false;
+		this.tasks.splice(index, 1);
 		await this.options.changed();
 		return true;
 	}
@@ -81,6 +143,9 @@ export class TaskQueue {
 		for (const task of this.tasks) {
 			if (task.status !== "queued" && task.status !== "running") continue;
 			task.status = "cancelled";
+			// Not the same as being withdrawn: this task was going, and it stopped because the main
+			// session did. The list has to keep saying so — see `cancelledBy`.
+			task.cancelledBy = "stop";
 			task.finishedAt = this.options.now();
 			touched = true;
 		}

@@ -8,8 +8,9 @@
 
 import type { UserContent } from "@lyra/core";
 import { FileText, Plus, RotateCcw, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { findModel } from "../../models.ts";
+import { useSide } from "../../sideStore.ts";
 import { useApp } from "../../store.ts";
 import { openViewer } from "../image/viewer-store.ts";
 import { ComposerSend, ComposerShell } from "../ComposerShell.tsx";
@@ -43,6 +44,21 @@ export function SideComposer({
 	const [text, setText] = useState("");
 	const [attachments, setAttachments] = useState<SideAttachment[]>([]);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	/*
+	 * Text handed back by withdrawing a task.
+	 *
+	 * Withdrawing is nearly always "not like that" rather than "never mind", so the wording comes
+	 * back here to be edited and sent again instead of being thrown away. Appended rather than
+	 * substituted when something is already half-typed: losing what you were writing to recover
+	 * something you asked for is a bad trade.
+	 */
+	const draftSeed = useSide((s) => s.draftSeed);
+	useEffect(() => {
+		if (!draftSeed) return;
+		setText((was) => (was.trim() ? `${was.replace(/\s+$/, "")}\n${draftSeed.text}` : draftSeed.text));
+		useSide.getState().clearDraftSeed();
+	}, [draftSeed]);
 
 	const addFiles = async (fileList: FileList | null) => {
 		if (!fileList || fileList.length === 0) return;
