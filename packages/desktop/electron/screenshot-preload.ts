@@ -15,11 +15,12 @@ function keepDocumentTransparent(): void {
 
 keepDocumentTransparent();
 
-type ScreenshotBridge = Pick<LyraApi["screenshot"], "finish" | "cancel" | "onInit" | "ready">;
+type ScreenshotBridge = Pick<LyraApi["screenshot"], "finish" | "cancel" | "copyColor" | "onInit" | "ready">;
 
 const screenshot: ScreenshotBridge = {
 	finish: (dataUrl, settings) => ipcRenderer.invoke("screenshot:finish", dataUrl, settings),
 	cancel: () => ipcRenderer.invoke("screenshot:cancel"),
+	copyColor: (value) => ipcRenderer.invoke("screenshot:copyColor", value),
 	onInit: (handler) => {
 		const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
 		ipcRenderer.on("screenshot:init", listener);

@@ -1,5 +1,5 @@
 /**
- * Fullscreen snipping overlay: captured desktop, dim mask and cutout.
+ * Transparent snipping overlay: selection controls and annotation UI over the live desktop.
  *
  * Two coordinate spaces meet here. The selection and every pointer event are in CSS pixels, because
  * that is what the overlay window is measured in. Marks live in the snapshot's own pixels, which
@@ -19,6 +19,7 @@ import {
 	AnnotateToolbar,
 	useAnnotator,
 } from "./Annotator.tsx";
+import { ScreenshotLoupe, type LoupeReading } from "./ScreenshotLoupe.tsx";
 import {
 	clampRect,
 	findSnapWindow,
@@ -50,7 +51,8 @@ const MIN_SELECTION = 10;
  */
 const EDGE_GRAB = 8;
 interface ScreenshotInit {
-	snapshot: string;
+	session: number;
+	snapshot: { pixels: Uint8Array; width: number; height: number } | null;
 	bounds: { x: number; y: number; width: number; height: number };
 	scaleFactor: number;
 	settings?: ScreenshotSettings;
@@ -81,6 +83,10 @@ export function ScreenshotOverlay() {
 	const [dragMode, setDragMode] = useState<DragMode>({ kind: "none" });
 	const [cursor, setCursor] = useState("crosshair");
 	const [isAnnotating, setIsAnnotating] = useState(false);
+	const [pointer, setPointer] = useState<Point | null>(null);
+	const [loupeHeld, setLoupeHeld] = useState(false);
+	const [reading, setReading] = useState<LoupeReading | null>(null);
+	const [copied, setCopied] = useState(false);
 
 	/** The toolbar's measured size, so it is kept on screen against what it really is. */
 	const [toolbarSize, setToolbarSize] = useState<{ width: number; height: number } | null>(null);
@@ -95,30 +101,63 @@ export function ScreenshotOverlay() {
 		);
 	}, []);
 
-	const snapshotWaiters = useRef<Array<(src: string) => void>>([]);
 	const initRef = useRef<ScreenshotInit | null>(null);
+	const loupeSourceRef = useRef<HTMLCanvasElement | null>(null);
 	const displayBounds = initData?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 	const scale = initData?.scaleFactor || window.devicePixelRatio || 1;
 	const bitmapWidth = Math.round(displayBounds.width * scale);
-	const bitmapHeight = Math.round(displayBounds.height * scale);
-	const annotator = useAnnotator(initData?.snapshot ?? "", { bitmapWidth });
+	const annotator = useAnnotator(initData?.snapshot ?? null, { session: initData?.session });
+
+	useEffect(() => {
+		const decoded = annotator.image.current;
+		const canvas = loupeSourceRef.current;
+		if (!decoded || !canvas || !annotator.ready) return;
+		if (canvas.width !== decoded.width || canvas.height !== decoded.height) {
+			canvas.width = decoded.width;
+			canvas.height = decoded.height;
+		}
+		canvas.getContext("2d")?.drawImage(decoded.source, 0, 0);
+	}, [annotator.image, annotator.ready, annotator.width]);
+
+	useEffect(() => {
+		if (!loupeHeld || selection || !pointer) {
+			setReading(null);
+			return;
+		}
+		const source = loupeSourceRef.current;
+		const latest = initRef.current;
+		if (!source || !latest?.bounds.width) return;
+		const pixelScale = source.width / latest.bounds.width;
+		const x = Math.round(pointer.x * pixelScale);
+		const y = Math.round(pointer.y * pixelScale);
+		if (x < 0 || y < 0 || x >= source.width || y >= source.height) return;
+		const sample = source.getContext("2d", { willReadFrequently: true })?.getImageData(x, y, 1, 1).data;
+		if (!sample) return;
+		const hex = `#${[sample[0], sample[1], sample[2]].map((value) => value!.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+		setReading({ x, y, hex });
+	}, [annotator.ready, loupeHeld, pointer, selection]);
 
 	useEffect(() => {
 		const cleanup = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
 			setInitData((prev) => {
+				const sameSession = prev?.session === data.session;
 				const next: ScreenshotInit = {
+					session: data.session,
 					bounds: data.bounds ?? prev?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
 					scaleFactor: data.scaleFactor ?? prev?.scaleFactor ?? 1,
 					settings: data.settings ?? prev?.settings,
-					snapshot: data.snapshot || prev?.snapshot || "",
+					// IPC clones Uint8Array payloads. Keep the first snapshot for later window updates, or
+					// the persistent overlay would decode the same screen and erase its marks repeatedly.
+					snapshot: data.snapshot === null
+						? null
+						: data.snapshot !== undefined && (!sameSession || !prev?.snapshot)
+							? data.snapshot
+							: prev?.snapshot ?? null,
 					windows: data.windows ?? prev?.windows,
 				};
 				initRef.current = next;
 				return next;
 			});
-			if (data.snapshot) {
-				for (const wait of snapshotWaiters.current.splice(0)) wait(data.snapshot);
-			}
 		});
 		window.lyra?.screenshot?.ready?.();
 		return cleanup;
@@ -132,6 +171,7 @@ export function ScreenshotOverlay() {
 	 * or IPC path stalls; the main process owns the window, so teardown is requested immediately.
 	 */
 	const leavingRef = useRef(false);
+	const finishPendingRef = useRef(false);
 	const beginLeaving = useCallback(() => {
 		if (leavingRef.current) return false;
 		leavingRef.current = true;
@@ -144,115 +184,115 @@ export function ScreenshotOverlay() {
 		void window.lyra.screenshot.cancel();
 	}, [beginLeaving]);
 
-	// Escape shortcut
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				e.preventDefault();
 				handleCancel();
-			}
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [handleCancel]);
-
-	const waitForSnapshot = useCallback((): Promise<string> => {
-		const have = initRef.current?.snapshot;
-		if (have) return Promise.resolve(have);
-		return new Promise((resolve) => {
-			snapshotWaiters.current.push(resolve);
-			setTimeout(() => resolve(initRef.current?.snapshot || ""), 4000);
-		});
-	}, []);
-
-	/**
-	 * Cut the selection and its marks out at the snapshot's own resolution. The snapshot stays
-	 * off-screen throughout capture; this is the only point where it is composed for user output.
-	 */
-	const handleFinish = useCallback(async () => {
-		if (!selection) return;
-
-		const snapshotSrc = await waitForSnapshot();
-		if (!snapshotSrc) return;
-		const latest = initRef.current;
-		const bounds = latest?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
-		const markCanvas = annotator.canvas.current;
-		let snapshotImg = annotator.image.current;
-
-		if (!snapshotImg || snapshotImg.src !== snapshotSrc || !snapshotImg.complete || snapshotImg.naturalWidth === 0) {
-			snapshotImg = new Image();
-			snapshotImg.src = snapshotSrc;
-			try {
-				await snapshotImg.decode();
-			} catch {
 				return;
 			}
+			if (e.key === "Alt") setLoupeHeld(true);
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && reading && !selection) {
+				e.preventDefault();
+				void window.lyra.screenshot.copyColor(reading.hex);
+				setCopied(true);
+			}
+		};
+		const handleKeyUp = (e: KeyboardEvent) => {
+			if (e.key !== "Alt") return;
+			setLoupeHeld(false);
+			setCopied(false);
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		window.addEventListener("keyup", handleKeyUp);
+		return () => {
+			window.removeEventListener("keydown", handleKeyDown);
+			window.removeEventListener("keyup", handleKeyUp);
+		};
+	}, [handleCancel, reading, selection]);
+
+	/** Cut the selection from the upstream annotator's full-resolution composited canvas. */
+	const handleFinish = useCallback(() => {
+		const source = annotator.canvas.current;
+		const latest = initRef.current;
+		if (!selection || !latest) return;
+		if (!annotator.ready || !source || (source.width === 300 && source.height === 150)) {
+			finishPendingRef.current = true;
+			return;
 		}
+		finishPendingRef.current = false;
 
-		const naturalW = snapshotImg.naturalWidth || markCanvas?.width || bounds.width * (latest?.scaleFactor || 1);
-		const outScale = bounds.width > 0 ? naturalW / bounds.width : 1;
-
-		const outW = Math.max(1, Math.round(selection.width * outScale));
-		const outH = Math.max(1, Math.round(selection.height * outScale));
-		const sx = Math.round(selection.x * outScale);
-		const sy = Math.round(selection.y * outScale);
-
+		const outScale = source.width / latest.bounds.width;
 		const out = document.createElement("canvas");
-		out.width = outW;
-		out.height = outH;
-		const ctx = out.getContext("2d", { willReadFrequently: true });
+		out.width = Math.max(1, Math.round(selection.width * outScale));
+		out.height = Math.max(1, Math.round(selection.height * outScale));
+		const ctx = out.getContext("2d");
 		if (!ctx) return;
+		ctx.drawImage(
+			source,
+			Math.round(selection.x * outScale),
+			Math.round(selection.y * outScale),
+			out.width,
+			out.height,
+			0,
+			0,
+			out.width,
+			out.height,
+		);
 
-		ctx.drawImage(snapshotImg, sx, sy, outW, outH, 0, 0, outW, outH);
-		if (markCanvas && markCanvas.width > 0 && markCanvas.height > 0) {
-			ctx.drawImage(markCanvas, sx, sy, outW, outH, 0, 0, outW, outH);
-		}
-
-		const png = out.toDataURL("image/png");
 		if (!beginLeaving()) return;
-		void window.lyra.screenshot.finish(png, latest?.settings);
-	}, [annotator, selection, beginLeaving, waitForSnapshot]);
+		void window.lyra.screenshot.finish(out.toDataURL("image/png"), latest.settings);
+	}, [annotator, selection, beginLeaving]);
+
+	useEffect(() => {
+		if (annotator.ready && finishPendingRef.current) handleFinish();
+	}, [annotator.ready, handleFinish]);
 
 	const handlePointerDown = (e: React.PointerEvent) => {
-		/*
-		 * A press on a control is not a press on the screen.
-		 *
-		 * The toolbar floats *outside* the selection — below it, by `toolbarPosition` — so without
-		 * this every press on it falls through to the rule at the bottom of this function and is
-		 * read as "start a new region somewhere else". Pressing any tool button therefore threw the
-		 * selection away and went back to the empty crosshair, which is the whole of "点一个按钮就
-		 * 立马出现新的截图". Nothing about it is visible to a test that clicks buttons through the
-		 * DOM: `element.click()` dispatches a click and no pointer event at all.
-		 */
 		if ((e.target as HTMLElement).closest?.("[data-screenshot-ui]")) return;
+		if (e.button === 2 && loupeHeld && reading) {
+			e.preventDefault();
+			e.stopPropagation();
+			void window.lyra.screenshot.copyColor(reading.hex);
+			setCopied(true);
+			return;
+		}
 		const pt: Point = { x: e.clientX, y: e.clientY };
+		const take = () => {
+			e.stopPropagation();
+			(e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+		};
 
 		if (selection) {
 			const handle = hitHandle(selection, pt, HANDLE_GRAB);
 			if (handle) {
 				setDragMode({ kind: "resizing", handle, origin: selection });
-				(e.target as HTMLElement).setPointerCapture(e.pointerId);
+				take();
 				return;
 			}
 			if (insideRect(selection, pt)) {
-				// When annotating, the inside belongs to AnnotateCanvas for drawing marks
 				if (!isAnnotating || onEdge(selection, pt, EDGE_GRAB)) {
 					setDragMode({ kind: "moving", from: pt, origin: selection });
-					(e.target as HTMLElement).setPointerCapture(e.pointerId);
+					take();
 				}
 				return;
 			}
+			// Once a region exists, presses outside it cannot discard the crop and its marks.
+			return;
 		}
 
-		// Anywhere outside starts a new region, and abandons the marks made on the old one.
 		setIsAnnotating(false);
 		setDragMode({ kind: "creating", from: pt });
 		setSelection({ x: pt.x, y: pt.y, width: 0, height: 0 });
-		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+		take();
 	};
 
 	const handlePointerMove = (e: React.PointerEvent) => {
 		const pt: Point = { x: e.clientX, y: e.clientY };
+		if (!selection) {
+			setPointer(pt);
+			setLoupeHeld(e.altKey);
+		}
 		const bounds = initData?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 
 		if (dragMode.kind === "creating") {
@@ -328,7 +368,6 @@ export function ScreenshotOverlay() {
 	const zoom = physicalWidth > 0 ? bounds.width / physicalWidth : 1;
 	const hoverRect =
 		!selection && hoveredWindow && initData ? windowToLocalRect(hoveredWindow, initData.bounds) : null;
-	const hole = selection ?? hoverRect;
 	/*
 	 * Placed against the bar's real width, not a guess at it.
 	 *
@@ -345,29 +384,18 @@ export function ScreenshotOverlay() {
 			data-screenshot-overlay
 			className="fixed inset-0 select-none overflow-hidden bg-transparent"
 			style={{ cursor }}
-			onPointerDown={handlePointerDown}
+			onPointerDownCapture={handlePointerDown}
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
+			onContextMenu={(e) => e.preventDefault()}
 		>
+			<canvas ref={loupeSourceRef} className="pointer-events-none absolute h-0 w-0 opacity-0" aria-hidden="true" />
 			{/*
 			 * `pointer-events-none`, and everything inside it that is meant to be touched says so
 			 * itself. A full-screen layer that swallowed presses would put itself between the user
 			 * and the overlay's own handlers — the selection is dragged on the root, not here.
 			 */}
 			<div className="pointer-events-none absolute inset-0">
-			{/* Dim mask around selection */}
-			{hole && (
-				<svg className="pointer-events-none absolute inset-0 h-full w-full">
-					<defs>
-						<mask id="cutout">
-							<rect width="100%" height="100%" fill="white" />
-							<rect x={hole.x} y={hole.y} width={hole.width} height={hole.height} fill="black" />
-						</mask>
-					</defs>
-					<rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.42)" mask="url(#cutout)" />
-				</svg>
-			)}
-
 			{hoverRect && hoveredWindow && (
 				<div
 					className="pointer-events-none absolute border-2 border-sky-400"
@@ -413,8 +441,6 @@ export function ScreenshotOverlay() {
 						<AnnotateCanvas
 							annotator={annotator}
 							zoom={zoom}
-							paintBackdrop={false}
-							pixelSize={{ width: bitmapWidth, height: bitmapHeight }}
 							className="bg-transparent"
 							style={{
 								width: bounds.width,
@@ -462,6 +488,17 @@ export function ScreenshotOverlay() {
 			 * bottom-right handle ends with the pointer over it — and a `pointerup` swallowed there
 			 * never reaches the overlay, which is left believing the drag is still going.
 			 */}
+			{!selection && loupeHeld && pointer && annotator.ready && (
+				<ScreenshotLoupe
+					source={loupeSourceRef.current}
+					at={pointer}
+					scale={annotator.width && bounds.width ? annotator.width / bounds.width : scale}
+					viewport={bounds}
+					reading={reading}
+					copied={copied}
+				/>
+			)}
+
 			{isAnnotating && toolbarAt && (
 				<div
 					ref={measureToolbar}

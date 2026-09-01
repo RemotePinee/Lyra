@@ -7,7 +7,7 @@
  */
 
 import { join } from "node:path";
-import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from "electron";
+import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen, systemPreferences } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 
 import { resolveSaveDirectory } from "./screenshot-path.ts";
@@ -124,6 +124,7 @@ function takeOverlayWindow(bounds: Electron.Rectangle): BrowserWindow {
  */
 let cameFromApp = false;
 let activeShortcut: string | null = null;
+let screenshotSessionId = 0;
 let escapeShortcutRegistered = false;
 let currentSettingsProvider: (() => Settings | undefined) | null = null;
 
@@ -167,7 +168,7 @@ function generateScreenshotFilename(): string {
 }
 
 /**
- * A picture of one display, as a data URL.
+ * A picture of one display, as raw RGBA pixels.
  *
  * `desktopCapturer` rather than shelling out to `/usr/sbin/screencapture`. The CLI was macOS-only,
  * and the guard that said so — `if (process.platform !== "darwin") return null` — made screenshots
@@ -182,11 +183,16 @@ function generateScreenshotFilename(): string {
  * to fit whatever it is given, and a Retina screen asked for its logical size comes back at half
  * resolution. The name is misleading: this is the capture size, not a preview.
  */
-async function captureFullDisplaySnapshot(displayId?: number): Promise<{ dataUrl: string; width: number; height: number; scaleFactor: number } | null> {
+async function captureFullDisplaySnapshot(displayId?: number): Promise<{ pixels: Uint8Array; width: number; height: number; scaleFactor: number } | null> {
 	const targetDisplay = displayId !== undefined
 		? screen.getAllDisplays().find((d) => d.id === displayId) ?? screen.getPrimaryDisplay()
 		: screen.getPrimaryDisplay();
 	const scaleFactor = targetDisplay.scaleFactor || 1;
+
+	if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+		await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } }).catch(() => []);
+		return null;
+	}
 
 	try {
 		const sources = await desktopCapturer.getSources({
@@ -219,8 +225,15 @@ async function captureFullDisplaySnapshot(displayId?: number): Promise<{ dataUrl
 		}
 
 		const size = image.getSize();
+		const pixels = image.toBitmap();
+		// Electron returns native bitmap pixels as BGRA; ImageData consumes RGBA.
+		for (let i = 0; i < pixels.length; i += 4) {
+			const blue = pixels[i]!;
+			pixels[i] = pixels[i + 2]!;
+			pixels[i + 2] = blue;
+		}
 		return {
-			dataUrl: image.toDataURL(),
+			pixels,
 			width: size.width,
 			height: size.height,
 			scaleFactor,
@@ -362,6 +375,7 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 	const { bounds } = currentDisplay;
 	const scaleFactor = currentDisplay.scaleFactor || 1;
 	const settings = customSettings ?? currentSettingsProvider?.()?.screenshot;
+	const session = ++screenshotSessionId;
 	/*
 	 * Start capture first, then reveal as soon as the prewarmed renderer is ready. Windows content
 	 * protection excludes this window if those operations overlap; other platforms still get the
@@ -376,29 +390,27 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		overlayWindows = overlayWindows.filter((w) => w !== win);
 	});
 
-	const base = { bounds, scaleFactor, settings };
+	const base = { bounds, scaleFactor, settings, session };
 	let rendererReady = false;
-	let snapshotDataUrl: string | null = null;
+	let snapshotData: { pixels: Uint8Array; width: number; height: number } | null = null;
 	let detectedWindows: Awaited<ReturnType<typeof detectVisibleWindows>> | undefined;
-	let initialized = false;
 	let revealed = false;
 	const webContentsId = win.webContents.id;
 
+	const sendState = () => {
+		if (!rendererReady || win.isDestroyed() || win.webContents.isDestroyed()) return;
+		win.webContents.send("screenshot:init", { ...base, snapshot: snapshotData, windows: detectedWindows });
+	};
 	const reveal = () => {
 		if (revealed || !rendererReady || win.isDestroyed() || win.webContents.isDestroyed()) return;
 		// Showing without activation leaves the user's current application directly underneath.
 		win.showInactive();
 		revealed = true;
 	};
-	const initialize = () => {
-		if (initialized || !rendererReady || !snapshotDataUrl || win.isDestroyed() || win.webContents.isDestroyed()) return;
-		initialized = true;
-		win.webContents.send("screenshot:init", { ...base, snapshot: snapshotDataUrl, windows: detectedWindows });
-	};
 	screenshotRendererGate.whenReady(webContentsId, () => {
 		rendererReady = true;
+		sendState();
 		reveal();
-		initialize();
 	});
 
 	let excludeHwnd: bigint | undefined;
@@ -410,9 +422,7 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 
 	void detectVisibleWindows({ excludeHwnd, excludeBounds: bounds }).then((windows) => {
 		detectedWindows = windows;
-		if (initialized && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-			win.webContents.send("screenshot:init", { ...base, snapshot: "", windows });
-		}
+		sendState();
 	});
 
 	const snapshot = await snapshotPromise;
@@ -421,8 +431,8 @@ export async function startScreenshotSession(customSettings?: ScreenshotSettings
 		closeScreenshotOverlay({ restoreFocus: false });
 		return;
 	}
-	snapshotDataUrl = snapshot.dataUrl;
-	initialize();
+	snapshotData = { pixels: snapshot.pixels, width: snapshot.width, height: snapshot.height };
+	sendState();
 }
 
 /**

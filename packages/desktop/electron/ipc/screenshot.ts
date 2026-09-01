@@ -2,7 +2,7 @@
  * IPC handlers for screenshot capabilities.
  */
 
-import { dialog, ipcMain } from "electron";
+import { clipboard, dialog, ipcMain } from "electron";
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 import {
 	checkShortcutAvailable,
@@ -42,6 +42,10 @@ export function registerScreenshotIpc(deps: ScreenshotIpcDeps): void {
 	 */
 	ipcMain.handle("screenshot:cancel", async (): Promise<void> => {
 		closeScreenshotOverlay({ foreground: false });
+	});
+
+	ipcMain.handle("screenshot:copyColor", async (_event, value: string): Promise<void> => {
+		if (/^#[0-9A-F]{6}$/i.test(value)) clipboard.writeText(value.toUpperCase());
 	});
 
 	/*

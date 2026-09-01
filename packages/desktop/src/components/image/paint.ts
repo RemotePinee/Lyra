@@ -16,7 +16,15 @@ import { mosaicCells, stepNumber, wrapText, type Shape } from "./annotate.ts";
 /** Scaled with the image, so a mark on a 3000px screenshot is not a hairline. */
 export const STROKE_BASE = 3;
 /** Type size relative to the stroke, which is itself relative to the image. */
-export const TEXT_SCALE = 7;
+/**
+ * Type size relative to the stroke.
+ *
+ * Was 7, which put the middle setting at roughly 21 points on screen — half again the size of the
+ * text being annotated, so every caption shouted. A caption is a note *about* a screenshot and
+ * should sit at about the size of the interface underneath it; 5 lands the middle setting near 15,
+ * which is that, and leaves the large setting for when it genuinely has to carry.
+ */
+export const TEXT_SCALE = 5;
 /** Line spacing and padding, shared by the field and the paint so the two agree exactly. */
 export const LINE = 1.35;
 export const PAD = 0.28;
@@ -87,10 +95,16 @@ export function paint(ctx: CanvasRenderingContext2D, shape: Shape, stroke: numbe
 			ctx.roundRect(first.x, first.y, box, height, size * 0.2);
 			ctx.fill();
 		} else {
-			// Nothing behind it, so the text carries its own contrast: a light outline under the fill
-			// keeps a red caption readable over a red screenshot.
-			ctx.strokeStyle = "rgba(255,255,255,0.92)";
-			ctx.lineWidth = Math.max(2, size / 9);
+			/*
+			 * A hairline of contrast, not a halo.
+			 *
+			 * Nothing sits behind the text, so it has to carry its own legibility over whatever it
+			 * lands on — but at `size / 9` the outline was thicker than the strokes of the glyphs
+			 * themselves, which bleeds white into every counter and reads as out-of-focus text. Thin
+			 * enough to separate the letters from the background and no thicker is the whole job.
+			 */
+			ctx.strokeStyle = "rgba(255,255,255,0.85)";
+			ctx.lineWidth = Math.max(1, size / 18);
 			ctx.lineJoin = "round";
 			lines.forEach((line, i) => ctx.strokeText(line, first.x + pad, baseline(first.y, pad, i, step, size)));
 		}
@@ -177,12 +191,30 @@ export function paint(ctx: CanvasRenderingContext2D, shape: Shape, stroke: numbe
 export function paintAll(
 	ctx: CanvasRenderingContext2D,
 	shapes: Shape[],
-	options: { stroke: number; pixels: HTMLCanvasElement | null; block: number; brush: number },
+	options: {
+		stroke: number;
+		/** Keyed by grid size, because the source's resolution *is* the grid — see `useAnnotator`. */
+		mosaicSourceFor: (block: number) => HTMLCanvasElement | null;
+		block: number;
+		brush: number;
+	},
 ) {
+	/*
+	 * A mark's own size wins over the current one.
+	 *
+	 * The options are the defaults for a mark that predates this — a picture annotated by an older
+	 * build, or the one being dragged out right now, which has not been committed yet. Everything
+	 * committed carries the size it was drawn at, so changing the setting no longer reaches back
+	 * and resizes work that is already done.
+	 */
 	shapes.forEach((shape, index) => {
 		ctx.save();
-		if (shape.tool === "mosaic") paintMosaic(ctx, shape, options.pixels, options.block, options.brush);
-		else paint(ctx, shape, options.stroke, stepNumber(shapes, index));
+		if (shape.tool === "mosaic") {
+			const grid = shape.block ?? options.block;
+			paintMosaic(ctx, shape, options.mosaicSourceFor(grid), grid, shape.brush ?? options.brush);
+		} else {
+			paint(ctx, shape, shape.stroke ?? options.stroke, stepNumber(shapes, index));
+		}
 		ctx.restore();
 	});
 }

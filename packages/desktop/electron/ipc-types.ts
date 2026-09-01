@@ -594,11 +594,13 @@ export interface LyraApi {
 		start(settings?: ScreenshotSettings): Promise<void>;
 		finish(dataUrl: string, settings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }>;
 		cancel(): Promise<void>;
+		copyColor(value: string): Promise<void>;
 		pickDirectory(): Promise<string | null>;
 		validateShortcut(shortcut: string): Promise<{ ok: boolean; error?: string }>;
 		onCaptured(handler: (dataUrl: string) => void): () => void;
 		onInit(handler: (payload: {
-			snapshot: string;
+			session: number;
+			snapshot: { pixels: Uint8Array; width: number; height: number } | null;
 			bounds: { x: number; y: number; width: number; height: number };
 			scaleFactor: number;
 			settings?: ScreenshotSettings;

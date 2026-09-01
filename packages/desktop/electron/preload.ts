@@ -301,6 +301,7 @@ const api: LyraApi = {
 		start: (settings) => ipcRenderer.invoke("screenshot:start", settings),
 		finish: (dataUrl, settings) => ipcRenderer.invoke("screenshot:finish", dataUrl, settings),
 		cancel: () => ipcRenderer.invoke("screenshot:cancel"),
+		copyColor: (value) => ipcRenderer.invoke("screenshot:copyColor", value),
 		pickDirectory: () => ipcRenderer.invoke("screenshot:pickDirectory"),
 		validateShortcut: (shortcut) => ipcRenderer.invoke("screenshot:validateShortcut", shortcut),
 		onCaptured: (handler) => {
