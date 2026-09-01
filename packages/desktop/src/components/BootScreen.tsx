@@ -53,9 +53,9 @@ export function BootScreen() {
 	}, []);
 
 	return (
-		<div className="flex h-full items-center justify-center bg-shell" aria-busy aria-label="Lyra 正在启动">
+		<div className="drag-region flex h-full items-center justify-center bg-shell select-none" aria-busy aria-label="Lyra 正在启动">
 			<div
-				className="flex flex-col items-center gap-8 transition-opacity duration-[520ms] ease-out"
+				className="no-drag flex flex-col items-center gap-8 transition-opacity duration-[520ms] ease-out"
 				style={{ opacity: shown ? 1 : 0 }}
 			>
 				{/*

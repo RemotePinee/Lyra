@@ -76,6 +76,9 @@ export function App() {
 	// dropped for the one or two frames the boot screen is up.
 	useTrayCommands();
 
+	const isAuxiliarySessionWindow =
+		typeof window !== "undefined" && new URLSearchParams(window.location.search).has("session");
+
 	/*
 	 * The boot screen has a floor as well as a ceiling.
 	 *
@@ -83,12 +86,16 @@ export function App() {
 	 * unmounted faster than it could fade in — the launch read as a stutter rather than as a start.
 	 * Holding it for `MIN_BOOT_MS` gives it time to be seen; the timer starts with the window, so it
 	 * costs nothing that the boot was not already spending.
+	 *
+	 * In auxiliary detached session windows (?session=...), skip the artificial 2000ms delay so
+	 * tearing a tab off into its own window is instant and seamless!
 	 */
-	const [settled, setSettled] = useState(false);
+	const [settled, setSettled] = useState(isAuxiliarySessionWindow);
 	useEffect(() => {
+		if (isAuxiliarySessionWindow) return;
 		const timer = window.setTimeout(() => setSettled(true), MIN_BOOT_MS);
 		return () => window.clearTimeout(timer);
-	}, []);
+	}, [isAuxiliarySessionWindow]);
 
 	if (!ready || !settled) return <BootScreen />;
 

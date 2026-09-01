@@ -48,8 +48,8 @@ export function TaskList({ placement }: { placement: "floating" | "inline" }) {
 	const action = running
 		? { icon: Pause, label: "暂停", run: () => void abort() }
 		: failed
-			? { icon: RotateCw, label: "重试这一步", run: () => void send([{ type: "text", text: "重试刚才失败的那一步。" }]) }
-			: { icon: Play, label: "继续", run: () => void send([{ type: "text", text: "继续，从暂停的地方接着做。" }]) };
+			? { icon: RotateCw, label: "重试这一步", run: () => void send([{ type: "text", text: "重试刚才失败的那一步。" }], { synthetic: true }) }
+			: { icon: Play, label: "继续", run: () => void send([{ type: "text", text: "继续，从暂停的地方接着做。" }], { synthetic: true }) };
 
 	const [open, setOpen] = useState(false);
 	const body = useRef<HTMLDivElement>(null);

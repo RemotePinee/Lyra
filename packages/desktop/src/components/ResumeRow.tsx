@@ -73,7 +73,7 @@ export function ResumeRow() {
 			<button
 				type="button"
 				data-ly-tip="接着做完没做完的部分"
-				onClick={() => void send([{ type: "text", text: carryOn }])}
+				onClick={() => void send([{ type: "text", text: carryOn }], { synthetic: true })}
 				className="rounded px-1 text-ink-muted underline decoration-line underline-offset-2 transition-colors hover:text-ink"
 			>
 				继续

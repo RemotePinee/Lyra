@@ -116,12 +116,9 @@ export function SessionTabBar() {
 		sessionMap.set(s.id, s);
 	}
 
-	const handleTearOff = (sessionId: string, screenX?: number, screenY?: number) => {
-		const coords =
-			screenX !== undefined && screenY !== undefined
-				? `?x=${Math.round(screenX)}&y=${Math.round(screenY)}`
-				: "";
-		void window.lyra.system.openExternal(`lyra://session/${sessionId}${coords}`);
+	const handleTearOff = (sessionId: string, _screenX?: number, _screenY?: number) => {
+		// Use physical cursor coordinates from main process screen point for 100% precision across multi-monitors / scaling
+		void window.lyra.system.openExternal(`lyra://session/${sessionId}`);
 		void closeTab(sessionId);
 	};
 

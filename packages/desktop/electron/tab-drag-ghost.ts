@@ -253,10 +253,25 @@ export function moveDragGhost(title?: string, sourceWebContentsId?: number): voi
 	const nextMode: "detach" | "merge" | "back" = hit.isSourceWin ? "back" : (hit.targetWin ? "merge" : "detach");
 
 	// Broadcast drag-over or drag-leave to target window if hovering state changes
-	if (hit.targetWin && !hit.isSourceWin) {
-		const winBounds = hit.targetWin.getBounds();
-		const relativeX = cursor.x - winBounds.x;
-		hit.targetWin.webContents.send("sessions:tabDragOver", { x: relativeX, title });
+	if (hit.targetWin) {
+		// Chrome behavior: bring whatever window is currently under cursor to visual front immediately
+		// (Whether it's another window to merge into, or returning to the source window itself)
+		if (lastHoveredWindowId !== hit.targetWin.id) {
+			if (hit.targetWin.isMinimized()) hit.targetWin.restore();
+			hit.targetWin.showInactive();
+			hit.targetWin.moveTop();
+		}
+
+		if (!hit.isSourceWin) {
+			const winBounds = hit.targetWin.getBounds();
+			const relativeX = cursor.x - winBounds.x;
+			hit.targetWin.webContents.send("sessions:tabDragOver", { x: relativeX, title });
+		} else if (lastHoveredWindowId !== null && lastHoveredWindowId !== hit.targetWin.id) {
+			const lastWin = BrowserWindow.fromId(lastHoveredWindowId);
+			if (lastWin && !lastWin.isDestroyed()) {
+				lastWin.webContents.send("sessions:tabDragLeave");
+			}
+		}
 		lastHoveredWindowId = hit.targetWin.id;
 	} else if (lastHoveredWindowId !== null) {
 		const lastWin = BrowserWindow.fromId(lastHoveredWindowId);

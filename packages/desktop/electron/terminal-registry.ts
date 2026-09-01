@@ -29,6 +29,7 @@
 import type { BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { systemShell } from "@lyra/core";
 import type { IPty } from "node-pty";
 
 /**
@@ -158,7 +159,7 @@ export function createTerminalRegistry({ terminals, spawnPty, insideAProject, wi
 		retireIdle(terminals, dir);
 
 		const id = randomUUID();
-		const shell = process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash");
+		const shell = process.env.SHELL || systemShell().file;
 		const child = spawnPty(shell, [], {
 			name: "xterm-256color",
 			cols: Math.max(2, cols),

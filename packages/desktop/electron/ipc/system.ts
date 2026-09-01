@@ -8,7 +8,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { lyraHome } from "@lyra/core";
-import { clipboard, ipcMain, shell } from "electron";
+import { clipboard, ipcMain, screen, shell } from "electron";
 import { remoteImage } from "../avatars.ts";
 import { openTargets, openWith, type OpenTarget } from "../open-targets.ts";
 import { createSessionWindow } from "../window.ts";
@@ -36,7 +36,10 @@ export function registerSystemIpc(): void {
 			const sessionId = parsed.pathname.replace(/^\/+/, "").trim() || parsed.hostname;
 			const posX = parsed.searchParams.get("x");
 			const posY = parsed.searchParams.get("y");
-			const initialPosition = posX && posY ? { x: Number.parseFloat(posX), y: Number.parseFloat(posY) } : undefined;
+			// If not provided in URL, grab the exact physical cursor position at this exact drop moment
+			const initialPosition = posX && posY
+				? { x: Number.parseFloat(posX), y: Number.parseFloat(posY) }
+				: screen.getCursorScreenPoint();
 			if (sessionId) {
 				createSessionWindow(sessionId, initialPosition, event.sender);
 				return;

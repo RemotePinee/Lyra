@@ -163,6 +163,8 @@ export function createSessionWindow(
 			sandbox: false,
 			webviewTag: true,
 			backgroundThrottling: false,
+			// Read by the preload before the first frame, so the app never opens in the wrong theme.
+			additionalArguments: [`--ly-boot=${encodeURIComponent(JSON.stringify(bootTheme()))}`],
 		},
 	});
 

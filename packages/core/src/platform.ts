@@ -13,7 +13,8 @@
  */
 
 import { homedir } from "node:os";
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, relative, join, dirname } from "node:path";
+import { existsSync } from "node:fs";
 import { TextDecoder } from "node:util";
 import { execFileSync } from "node:child_process";
 
@@ -22,33 +23,64 @@ let cachedWinShell: { file: string; flag: string } | null = null;
 function probeWindowsShell(): { file: string; flag: string } {
 	if (cachedWinShell) return cachedWinShell;
 
-	// 1. Respect explicit user SHELL preference (e.g. bash / zsh / custom pwsh)
-	if (process.env.SHELL) {
+	// 1. Respect explicit user SHELL preference (e.g. bash / zsh / custom shell)
+	if (process.env.SHELL && existsSync(process.env.SHELL)) {
 		return (cachedWinShell = { file: process.env.SHELL, flag: "-c" });
 	}
 
-	// 2. Prefer PowerShell 7+ (pwsh.exe) which natively supports '&&', '||', and POSIX features
+	// 2. Prefer Git Bash (fast startup ~200ms, 100% POSIX / Linux pipeline compatible)
+	// Probe 2.1: Standard 64-bit / 32-bit / LocalAppData Git installation directories (instant filesystem check, 0ms overhead)
+	const standardGitBashPaths = [
+		"C:\\Program Files\\Git\\bin\\bash.exe",
+		"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+		"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+		join(process.env.LOCALAPPDATA || "", "Programs", "Git", "bin", "bash.exe"),
+	];
+	for (const path of standardGitBashPaths) {
+		if (path && existsSync(path)) {
+			return (cachedWinShell = { file: path, flag: "-c" });
+		}
+	}
+
+	// Probe 2.2: Locate relative to git.exe installation root via where.exe (fallback if installed in non-standard directory)
 	try {
-		execFileSync("where.exe", ["pwsh.exe"], { stdio: "ignore" });
-		return (cachedWinShell = { file: "pwsh.exe", flag: "-Command" });
+		const gitOut = execFileSync("where.exe", ["git.exe"], { stdio: ["ignore", "pipe", "ignore"] })
+			.toString()
+			.trim()
+			.split(/\r?\n/)[0];
+		if (gitOut) {
+			const gitDir = dirname(dirname(gitOut));
+			const candidates = [join(gitDir, "bin", "bash.exe"), join(gitDir, "usr", "bin", "bash.exe")];
+			for (const candidate of candidates) {
+				if (existsSync(candidate)) {
+					return (cachedWinShell = { file: candidate, flag: "-c" });
+				}
+			}
+		}
 	} catch {}
 
-	// 3. Prefer Git Bash (bash.exe) if installed, giving standard POSIX shell compatibility
+	// Probe 2.3: Check where.exe bash.exe (excluding Windows System32 WSL stub)
 	try {
-		execFileSync("where.exe", ["bash.exe"], { stdio: "ignore" });
-		return (cachedWinShell = { file: "bash.exe", flag: "-c" });
+		const bashOut = execFileSync("where.exe", ["bash.exe"], { stdio: ["ignore", "pipe", "ignore"] })
+			.toString()
+			.trim()
+			.split(/\r?\n/)[0];
+		if (bashOut && !bashOut.toLowerCase().includes("system32") && existsSync(bashOut)) {
+			return (cachedWinShell = { file: bashOut, flag: "-c" });
+		}
 	} catch {}
 
-	// 4. Fallback to cmd.exe which is guaranteed to exist on all Windows installations
+	// 3. Fallback to cmd.exe (guaranteed on all Windows hosts, ultra-fast 40ms, native && / || support)
 	return (cachedWinShell = { file: process.env.ComSpec || "cmd.exe", flag: "/c" });
 }
 
 /**
  * The shell to run a command line through, and the flag that says "here is the command".
  *
- * On Windows, default `powershell.exe` (Windows PowerShell 5.1) does not support `&&` or `||`,
- * so commands chained with `&&` fail with ParserError. We probe for modern PowerShell 7 (`pwsh.exe`),
- * falling back to `cmd.exe` or respecting `process.env.SHELL`.
+ * On Windows, we follow the industry standard:
+ * Prioritise Git Bash (fast startup, native POSIX & tool compatibility),
+ * falling back to cmd.exe (/c) or respecting process.env.SHELL.
+ * Cold-starting PowerShell (pwsh/powershell) is avoided as its CLR VM boot takes seconds per call.
  */
 export function systemShell(): { file: string; flag: string } {
 	if (process.platform === "win32") {

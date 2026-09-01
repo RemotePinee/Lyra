@@ -29,6 +29,15 @@ function paintBootTheme(): void {
 		// `light-dark()` in the editor's syntax colours resolves against this and nothing else.
 		root.style.colorScheme = boot.dark ? "dark" : "light";
 		root.style.setProperty("--color-shell", boot.background);
+		root.style.setProperty("--color-sidebar", boot.background);
+		root.style.setProperty("--color-panel", boot.background);
+		root.style.setProperty("--color-card", boot.background);
+		// Card hover & selected session row in sidebar (defaults to dark #2a2a2a in CSS, overrides immediately)
+		const hoverAlpha = boot.dark ? 6.2 : 5.0;
+		root.style.setProperty("--color-card-hover", `color-mix(in srgb, ${boot.foreground} ${hoverAlpha}%, transparent)`);
+		// Elevated surface for active tabs / selected rows (defaults to dark #2c2c2c in CSS, overrides immediately)
+		const elevatedAlpha = boot.dark ? 10 : 8.5;
+		root.style.setProperty("--color-elevated", `color-mix(in srgb, ${boot.foreground} ${elevatedAlpha}%, transparent)`);
 		root.style.setProperty("--color-ink", boot.foreground);
 		root.style.setProperty("--color-accent", boot.accent);
 		root.style.color = boot.foreground;
