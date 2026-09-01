@@ -10,6 +10,8 @@
  * Pure, so `node --test` can hold it to those claims.
  */
 
+import { explain } from "./explain.ts";
+
 export type ToastLevel = "info" | "warn" | "error";
 
 export interface Notice {
@@ -24,6 +26,8 @@ export interface ToastGroup {
 	key: string;
 	level: ToastLevel;
 	message: string;
+	/** What to do about it, when the message is one we recognise. See `explain`. */
+	hint?: string;
 	/** Newest last. More than one means the same thing happened again. */
 	ids: string[];
 }
@@ -74,10 +78,19 @@ export const TOAST_Z = 1000;
 export function groupNotices(notices: readonly Notice[]): ToastGroup[] {
 	const byKey = new Map<string, ToastGroup>();
 	for (const notice of notices) {
-		const key = `${notice.level}:${notice.message}`;
+		/*
+		 * Restated before anything else, because that is what decides both whether this is said at
+		 * all and what counts as "the same message again".
+		 *
+		 * Grouping on the raw text would keep two cards apart that say the same thing to the reader
+		 * — a socket dropped twice arrives with two different errnos in the sentence.
+		 */
+		const said = explain(notice.message);
+		if (said.silent) continue;
+		const key = `${notice.level}:${said.message}`;
 		const existing = byKey.get(key);
 		if (existing) existing.ids.push(notice.id);
-		else byKey.set(key, { key, level: notice.level, message: notice.message, ids: [notice.id] });
+		else byKey.set(key, { key, level: notice.level, message: said.message, hint: said.hint, ids: [notice.id] });
 	}
 	return [...byKey.values()];
 }

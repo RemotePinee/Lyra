@@ -102,7 +102,7 @@ export function ProjectHead({
 				)}
 			</button>
 
-			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-100 focus-within:opacity-100">
+			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-100 group-has-[:focus-visible]/project:opacity-100">
 				<button
 					type="button"
 					data-ly-tip="项目操作"

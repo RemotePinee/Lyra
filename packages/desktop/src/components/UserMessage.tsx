@@ -4,10 +4,10 @@ import type {
 } from "@lyra/core";
 import { ChevronDown, ChevronUp, Copy, Check, FileText, MessageSquarePlus, Pencil } from "lucide-react";
 import { openFromEvent } from "./image/viewer-store.ts";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { MessageActions } from "./MessageActions.tsx";
-import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
 import { extractCodeOrErrorBlocks } from "./code-detection.ts";
+import { MessageEditor } from "./message/MessageEditor.tsx";
 import { useApp } from "../store.ts";
 
 /**
@@ -162,16 +162,6 @@ export function UserMessage({
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Grow to fit while editing, so a long prompt is not edited through a three-line window.
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!editing || !el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
-  }, [editing, draft]);
-
   function submit() {
     const trimmed = draft.trim();
     setEditing(false);
@@ -191,56 +181,15 @@ export function UserMessage({
   if (editing) {
     return (
       <div className="ly-enter mb-2.5 flex justify-end">
-        {/* The same surface as the composer: editing a message is the same act as writing one. */}
-        <div className="ly-composer w-full rounded-[18px] border border-line-soft bg-input px-4 pt-3.5 pb-2.5">
-          <div className="ly-scroll-host relative">
-            <textarea
-              ref={textareaRef}
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setEditing(false);
-                  setDraft(text);
-                }
-                if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing
-                ) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              rows={1}
-              className="block max-h-[320px] w-full resize-none overflow-y-auto bg-transparent text-body leading-relaxed text-ink"
-            />
-            {/* Same treatment as the composer: a long edit scrolls, so it needs a thumb. */}
-            <OverlayScrollbar viewport={textareaRef} orientation="vertical" />
-          </div>
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(false);
-                setDraft(text);
-              }}
-              className="h-7 rounded-lg border border-line px-3 text-label text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              disabled={!draft.trim()}
-              onClick={submit}
-              className="h-7 rounded-lg bg-ink px-3 text-label font-medium text-shell transition-opacity duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-45"
-            >
-              发送
-            </button>
-          </div>
-        </div>
+        <MessageEditor
+          value={draft}
+          onChange={setDraft}
+          onSubmit={submit}
+          onCancel={() => {
+            setEditing(false);
+            setDraft(text);
+          }}
+        />
       </div>
     );
   }

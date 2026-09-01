@@ -218,6 +218,67 @@ test("computeTurnStats aggregates duration and output tokens across all assistan
 	assert.equal(stats.requestCount, 3);
 });
 
+/*
+ * A turn broken by a failure and picked up again is one turn.
+ *
+ * The reported figures are what a task cost, and a task that failed halfway and was resumed cost
+ * both halves. Counting the 继续 as a new turn reported the second half only — so a job that took
+ * twenty minutes over two legs claimed the length of the shorter one, and its tokens-per-second
+ * described a stretch of work that was never run on its own.
+ */
+test("continuing after a failure keeps the turn's totals whole", () => {
+	const first = assistant([call("a")], "error");
+	first.durationMs = 5000;
+	first.sseDurationMs = 4000;
+	first.usage = { input: 100, output: 200, cacheRead: 0, cacheWrite: 0, total: 300 };
+
+	const second = assistant([text("做完了")], "stop");
+	second.durationMs = 3000;
+	second.sseDurationMs = 2500;
+	second.usage = { input: 50, output: 80, cacheRead: 0, cacheWrite: 0, total: 130 };
+
+	const messages: Message[] = [
+		user("干这件事"),
+		first,
+		user("继续，从中断的地方接着做。"),
+		second,
+	];
+
+	const stats = computeTurnStats(messages, 3);
+	assert.equal(stats.durationMs, 8000, "两段的耗时要加起来");
+	assert.equal(stats.outputTokens, 280, "两段的 token 要加起来");
+	assert.equal(stats.requestCount, 2);
+});
+
+/*
+ * The same sentence after a turn that ended normally is a new instruction.
+ *
+ * "继续" is a perfectly ordinary thing to say to a conversation that finished — carry on with the
+ * next thing — and reading it as a continuation would silently glue two separate pieces of work
+ * together in the figures.
+ */
+test("the same wording after a clean finish starts a new turn", () => {
+	const first = assistant([text("做完了")], "stop");
+	first.durationMs = 5000;
+	first.usage = { input: 100, output: 200, cacheRead: 0, cacheWrite: 0, total: 300 };
+
+	const second = assistant([text("好的")], "stop");
+	second.durationMs = 3000;
+	second.usage = { input: 50, output: 80, cacheRead: 0, cacheWrite: 0, total: 130 };
+
+	const messages: Message[] = [
+		user("干这件事"),
+		first,
+		user("继续，从中断的地方接着做。"),
+		second,
+	];
+
+	const stats = computeTurnStats(messages, 3);
+	assert.equal(stats.durationMs, 3000, "上一轮正常结束，这是新的一轮");
+	assert.equal(stats.outputTokens, 80);
+	assert.equal(stats.requestCount, 1);
+});
+
 test("computeTurnStats returns zeros if no assistant messages or out of bounds", () => {
 	const messages: Message[] = [user("问题")];
 	const stats = computeTurnStats(messages, 0);
@@ -302,4 +363,64 @@ test("a person speaking starts the count over; the first turn's cost stays with 
 		totals.map((t) => t?.outputTokens),
 		[20, 30],
 	);
+});
+
+/*
+ * The reported case: paused by hand, then 继续.
+ *
+ * A pause is `aborted`, not `error`, and the wording 继续 sends for it is the first of the three.
+ * Reported as still restarting the clock, so it is pinned here separately from the failure case
+ * rather than assumed to follow from it.
+ */
+test("continuing after a manual pause keeps the turn's totals whole", () => {
+	const first = assistant([call("a")], "aborted");
+	first.durationMs = 90_000;
+	first.usage = { input: 100, output: 1000, cacheRead: 0, cacheWrite: 0, total: 1100 };
+
+	const second = assistant([text("接着做完了")], "stop");
+	second.durationMs = 30_000;
+	second.usage = { input: 50, output: 200, cacheRead: 0, cacheWrite: 0, total: 250 };
+
+	const messages: Message[] = [
+		user("干这件事"),
+		first,
+		user("继续，从暂停的地方接着做。"),
+		second,
+	];
+
+	const stats = computeTurnStats(messages, 3);
+	assert.equal(stats.durationMs, 120_000, "暂停前后的耗时要加起来");
+	assert.equal(stats.outputTokens, 1200);
+});
+
+/*
+ * 继续 sent by the button, which is a message the app composed rather than one you typed.
+ *
+ * `synthetic` is how the transcript says so: those messages are not drawn, and they do not open a
+ * turn. `ResumeRow` simply never passed it, so pressing 继续 put the sentence in the conversation
+ * and restarted the turn's clock. Both halves are checked here — the row is skipped, and the totals
+ * carry across it.
+ */
+test("继续 sent as a synthetic message neither shows nor restarts the turn", () => {
+	const first = assistant([call("a")], "aborted");
+	first.durationMs = 90_000;
+	first.usage = { input: 100, output: 1000, cacheRead: 0, cacheWrite: 0, total: 1100 };
+
+	const second = assistant([text("接着做完了")], "stop");
+	second.durationMs = 30_000;
+	second.usage = { input: 50, output: 200, cacheRead: 0, cacheWrite: 0, total: 250 };
+
+	const carryOn = user("继续，从暂停的地方接着做。");
+	carryOn.synthetic = true;
+
+	const messages: Message[] = [user("干这件事"), first, carryOn, second];
+
+	const stats = computeTurnStats(messages, 3);
+	assert.equal(stats.durationMs, 120_000, "暂停前后的耗时要加起来");
+	assert.equal(stats.outputTokens, 1200);
+
+	// And it is not a row: `runs` drops synthetic user messages entirely.
+	const rows = runs(messages, []);
+	const shown = rows.filter((r) => r.kind === "message" && r.message.role === "user");
+	assert.equal(shown.length, 1, "只应该看到你真正写的那一条");
 });

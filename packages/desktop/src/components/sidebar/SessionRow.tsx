@@ -152,10 +152,26 @@ export function SessionRow({
 					card.dismiss();
 					onOpen();
 				}}
+				/*
+				 * The room made for the buttons is made on exactly the conditions that show them.
+				 *
+				 * It used to be `group-focus-within`, which is any focus anywhere in the row — and
+				 * this button is in the row. Clicking a conversation focuses it, in Chromium, and the
+				 * focus stays: move the pointer away and `:hover` drops but `:focus-within` does not,
+				 * so the row went on reserving 56px for buttons whose own visibility is governed by
+				 * the strip's `focus-within` — which the button is not inside of. Measured: 8px at
+				 * rest, 56px on hover, 56px after the pointer left with the icons at opacity 0. A gap
+				 * on the right of the open conversation with nothing in it, for as long as it kept
+				 * focus. See `e2e/session-row-probe.ts`.
+				 *
+				 * `group-has-[:focus-visible]` is the same rule the strip uses below, and it is the
+				 * one that was meant: keyboard focus reveals the buttons and is given room, a mouse
+				 * click does neither.
+				 */
 				className={`flex w-full min-w-0 items-center gap-2 rounded-lg pl-2 text-left text-label transition-[padding,color,background-color] duration-[var(--ly-t-quick)] ${
 					actionsCount === 2
-						? "pr-2 group-hover/session:pr-14 group-focus-within/session:pr-14"
-						: "pr-2 group-hover/session:pr-8 group-focus-within/session:pr-8"
+						? "pr-2 group-hover/session:pr-14 group-has-[:focus-visible]/session:pr-14"
+						: "pr-2 group-hover/session:pr-8 group-has-[:focus-visible]/session:pr-8"
 				} ${compact ? "h-[34px]" : "h-[27px]"} ${
 					active ? "text-ink" : "text-ink-muted group-hover/session:text-ink"
 				}`}
@@ -167,7 +183,10 @@ export function SessionRow({
 
 			{/* The strip never takes pointer events; only the button does. Anything wider would
 			    shadow the row button and cost it its hover. */}
-			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-100 focus-within:opacity-100">
+			{/* Shown on hover, and on keyboard focus anywhere in the row — which is the same condition
+			    the button above reserves its space on. Two conditions that differ by a millimetre is
+			    what left a gap with nothing in it; see the note there. */}
+			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/session:opacity-100 group-has-[:focus-visible]/session:opacity-100">
 				{onRestore && (
 					<button
 						type="button"

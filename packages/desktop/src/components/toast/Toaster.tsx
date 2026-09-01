@@ -198,7 +198,16 @@ export function Toaster() {
 						{/* The colour lives on the mark, not on the words: a paragraph of red on pink is
 						    the least legible way to say something went wrong. */}
 						<tone.Icon size={13} strokeWidth={2} className={`mt-[2.5px] shrink-0 ${tone.mark}`} />
-						<span className="min-w-0 leading-[18px] break-words">{group.message}</span>
+						<span className="min-w-0 leading-[18px] break-words">
+							{group.message}
+							{/*
+							 * What to do about it, a step back from what happened.
+							 *
+							 * Same card, lighter weight: the failure is the subject and the remedy is
+							 * reference. Only the messages we recognise have one — see `explain`.
+							 */}
+							{group.hint && <span className="block pt-0.5 text-caption text-ink-faint">{group.hint}</span>}
+						</span>
 						{/*
 						 * Only on errors, and only ever one per card.
 						 *

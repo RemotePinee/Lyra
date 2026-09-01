@@ -47,7 +47,7 @@ export function BranchRow({
          * Revealed on hover, like the archive control in the sidebar's session list.
          * Three permanent buttons per row would turn a list you read into a control panel.
          */
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/branch:opacity-100 focus-within:opacity-100">
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/branch:opacity-100 has-[:focus-visible]:opacity-100">
           {onCompare && (
             <IconButton
               icon={<GitCompare size={12} strokeWidth={1.9} />}
