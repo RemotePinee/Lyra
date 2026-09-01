@@ -28,7 +28,6 @@ export function ScreenshotSettings() {
 		showInComposer: false,
 		copyToClipboard: true,
 		insertIntoComposer: false,
-		openEditor: true,
 	};
 
 	// Check if the current configured shortcut has conflict in the OS
@@ -154,16 +153,6 @@ export function ScreenshotSettings() {
 								{config.saveLocation?.trim() ? "更改目录" : "选择保存目录"}
 							</GhostButton>
 						</div>
-					}
-				/>
-				<Row
-					title="截图后打开图片编辑/标注"
-					detail="截取屏幕后立即打开图片标注工具，支持箭头、矩形、文字和画笔"
-					control={
-						<Toggle
-							checked={config.openEditor !== false}
-							onChange={(openEditor) => patch({ openEditor })}
-						/>
 					}
 				/>
 				<Row

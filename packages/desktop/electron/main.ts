@@ -102,7 +102,7 @@ import { registerTerminalIpc, type LiveTerminal } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
 import { createTray, destroyTray, hasTray, refreshMenu, type TrayCommand } from "./tray.ts";
 import { registerScreenshotIpc } from "./ipc/screenshot.ts";
-import { registerScreenshotShortcut, unregisterScreenshotShortcut } from "./screenshot.ts";
+import { prewarmScreenshotOverlay, registerScreenshotShortcut, unregisterScreenshotShortcut } from "./screenshot.ts";
 
 /*
  * A profile is a whole app, Chromium's half included.
@@ -389,16 +389,7 @@ app.whenReady().then(async () => {
 	onSettingsChanged(async (next) => {
 		settings = next;
 		applyNativeAppearance();
-		registerScreenshotShortcut(
-			() => settings,
-			() => {
-				const focused = BrowserWindow.getFocusedWindow();
-				const target = focused && !focused.isDestroyed() ? focused : getWindow();
-				if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
-					target.webContents.send("screenshot:trigger");
-				}
-			},
-		);
+		registerScreenshotShortcut(() => settings);
 		for (const session of sessions.values()) session.updateSettings(next);
 		for (const chat of sideChats.values()) chat.updateSettings(next);
 		if (next.sync.enabled && !syncStatusSource()?.running) await startSync();
@@ -449,17 +440,11 @@ app.whenReady().then(async () => {
 	registerSearchProvider(keyedSearchProvider(BRAVE_PROVIDER_ID, () => settings?.searchApiKeys?.brave));
 
 	registerIpc();
+	// Load the small capture renderer before the main shell, so even a shortcut pressed as soon as
+	// the app appears does not wait for Chromium to create or mount another page.
+	prewarmScreenshotOverlay();
 	createWindow();
-	registerScreenshotShortcut(
-		() => settings,
-		() => {
-			const focused = BrowserWindow.getFocusedWindow();
-			const target = focused && !focused.isDestroyed() ? focused : getWindow();
-			if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
-				target.webContents.send("screenshot:trigger");
-			}
-		},
-	);
+	registerScreenshotShortcut(() => settings);
 	if (settings.sync.enabled) await startSync();
 
 	scheduler = new Scheduler({

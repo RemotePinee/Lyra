@@ -295,27 +295,18 @@ const api: LyraApi = {
 		cancel: () => ipcRenderer.invoke("screenshot:cancel"),
 		pickDirectory: () => ipcRenderer.invoke("screenshot:pickDirectory"),
 		validateShortcut: (shortcut) => ipcRenderer.invoke("screenshot:validateShortcut", shortcut),
-		onTrigger: (handler) => {
-			const listener = () => handler();
-			ipcRenderer.on("screenshot:trigger", listener);
-			return () => ipcRenderer.removeListener("screenshot:trigger", listener);
+		onCaptured: (handler) => {
+			const listener = (_event: unknown, dataUrl: string) => handler(dataUrl);
+			ipcRenderer.on("screenshot:captured", listener);
+			return () => ipcRenderer.removeListener("screenshot:captured", listener);
 		},
 		onInit: (handler) => {
 			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
 			ipcRenderer.on("screenshot:init", listener);
 			return () => ipcRenderer.removeListener("screenshot:init", listener);
 		},
-		// "The snapshot is on the canvas" — the overlay stays hidden until this arrives, so that
-		// what appears is the frozen screen rather than an empty window catching up to it.
+		// A prewarmed overlay reports mounting before a capture session exists; main retains it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
-		// The other half of that handshake: "you are on screen now", which is when a fade has
-		// frames to run in. A hidden page is not composited and a transition started there jumps
-		// straight to its end.
-		onShown: (handler: () => void) => {
-			const listener = () => handler();
-			ipcRenderer.on("screenshot:shown", listener);
-			return () => ipcRenderer.removeListener("screenshot:shown", listener);
-		},
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),

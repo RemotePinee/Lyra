@@ -15,6 +15,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { promisify } from "node:util";
 
 import type { RegistryEntry } from "@lyra/registry-shared";
@@ -142,7 +143,11 @@ export async function unpackVerified(
 		 * `-C staging` so nothing can be written outside it even if the archive says otherwise, and
 		 * no `-P`, so tar strips any leading `/` and refuses `..` on every platform's implementation.
 		 */
-		await run("tar", ["-xzf", file, "-C", staging], { timeout: 60_000 });
+		await run(
+			"tar",
+			["-xzf", basename(file), "-C", basename(staging)],
+			{ cwd: dirname(staging), timeout: 60_000 },
+		);
 	} finally {
 		await rm(file, { force: true });
 	}

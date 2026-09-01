@@ -53,6 +53,7 @@
 		"@xterm/xterm": "5.6.0-beta.126",
 		"docx-preview": "^0.4.0",
 		"katex": "0.18.4",
+		"koffi": "^3.1.0",
 		"node-pty": "1.1.0-beta21",
 		"qrcode": "^1.5.4",
 		"qrcode.react": "^4.2.0",

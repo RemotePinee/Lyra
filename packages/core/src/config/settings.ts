@@ -105,8 +105,6 @@ export interface ScreenshotSettings {
 	copyToClipboard?: boolean;
 	/** Whether to automatically insert the captured screenshot into the active composer. */
 	insertIntoComposer?: boolean;
-	/** Action after capture: open the annotator/editor, or just save/copy quietly. */
-	openEditor?: boolean;
 }
 
 export const DEFAULT_SCREENSHOT_SETTINGS: ScreenshotSettings = {
@@ -115,7 +113,6 @@ export const DEFAULT_SCREENSHOT_SETTINGS: ScreenshotSettings = {
 	showInComposer: false,
 	copyToClipboard: true,
 	insertIntoComposer: false,
-	openEditor: true,
 };
 
 export interface Settings {

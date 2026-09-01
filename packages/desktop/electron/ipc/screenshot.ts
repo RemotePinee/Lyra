@@ -45,10 +45,11 @@ export function registerScreenshotIpc(deps: ScreenshotIpcDeps): void {
 	});
 
 	/*
-	 * The overlay reporting that its snapshot is drawn.
+	 * The overlay reporting that its page is mounted.
 	 *
-	 * `on`, not `handle`: the renderer is telling, not asking, and it must not be made to wait for
-	 * the window to be shown before it can carry on drawing. The sender identifies which overlay.
+	 * `on`, not `handle`: the renderer is telling, not asking. Readiness is retained by webContents
+	 * id when a prewarmed window reports it before a capture session exists, so its first init event
+	 * cannot be sent before React has subscribed. The sender identifies which overlay.
 	 */
 	ipcMain.on("screenshot:ready", (event) => {
 		if (event.sender && !event.sender.isDestroyed()) {

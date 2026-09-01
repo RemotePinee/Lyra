@@ -98,10 +98,22 @@ export async function startApp({
 	 * thing that ships is the only way to see that class of fault.
 	 */
 	const bundle = process.env.LYRA_E2E_APP;
-	const executable = bundle ? join(bundle, "Contents", "MacOS", "Lyra") : "pnpm";
+	const packageManagerScript = process.env.npm_execpath;
+	const executable = bundle
+		? join(bundle, "Contents", "MacOS", "Lyra")
+		: packageManagerScript
+			? process.execPath
+			: "pnpm";
 	const argv = bundle
 		? [`--remote-debugging-port=${port}`]
-		: ["exec", "electron-vite", "preview", "--", `--remote-debugging-port=${port}`];
+		: [
+			...(packageManagerScript ? [packageManagerScript] : []),
+			"exec",
+			"electron-vite",
+			"preview",
+			"--",
+			`--remote-debugging-port=${port}`,
+		];
 
 	/*
 	 * Its own process group.
@@ -144,10 +156,20 @@ export async function startApp({
 		send: <T>(method: string, params?: Record<string, unknown>) => call<T>(target, method, params ?? {}),
 		stop: async () => {
 			if (app.pid) {
-				try {
-					process.kill(-app.pid, "SIGTERM");
-				} catch {
-					app.kill("SIGKILL");
+				if (process.platform === "win32") {
+					await new Promise<void>((resolve) => {
+						const killer = spawn("taskkill.exe", ["/pid", String(app.pid), "/t", "/f"], {
+							windowsHide: true,
+						});
+						killer.once("error", () => resolve());
+						killer.once("close", () => resolve());
+					});
+				} else {
+					try {
+						process.kill(-app.pid, "SIGTERM");
+					} catch {
+						app.kill("SIGKILL");
+					}
 				}
 			}
 			await rm(home, { recursive: true, force: true }).catch(() => {});
@@ -159,9 +181,11 @@ async function waitForWindow(port: number, output: string[]): Promise<string> {
 	const deadline = Date.now() + BOOT_TIMEOUT_MS;
 	while (Date.now() < deadline) {
 		const targets = await fetch(`http://127.0.0.1:${port}/json/list`)
-			.then((r) => r.json() as Promise<{ title: string; type: string; webSocketDebuggerUrl?: string }[]>)
+			.then((r) => r.json() as Promise<{ title: string; type: string; url: string; webSocketDebuggerUrl?: string }[]>)
 			.catch(() => null);
-		const page = targets?.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
+		const page = targets?.find(
+			(t) => t.type === "page" && !t.url.includes("screenshot-overlay") && t.webSocketDebuggerUrl,
+		);
 		if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
 		await new Promise((r) => setTimeout(r, 500));
 	}
@@ -187,7 +211,7 @@ async function waitForShell(evaluate: <T>(expression: string) => Promise<T>): Pr
 	let last = "";
 	while (Date.now() < deadline) {
 		const state = await evaluate<{ shell: boolean; body: string }>(
-			`({ shell: Boolean(document.querySelector(".ly-shell")), body: document.body.innerText.slice(0, 120) })`,
+			`({ shell: Boolean(document.querySelector("textarea")) && !document.querySelector("[aria-busy]"), body: document.body.innerText.slice(0, 120) })`,
 		).catch(() => null);
 		if (state?.shell) return;
 		last = state?.body ?? "(no answer from the renderer)";

@@ -1,18 +1,15 @@
 /**
- * Fullscreen in-place screenshot overlay, drawn with the app's own annotator.
+ * Fullscreen snipping overlay: captured desktop, dim mask and cutout.
  *
- * Two coordinate spaces meet here and it is worth being explicit about which is which. The
- * selection and every pointer event are in CSS pixels, because that is what the overlay window is
- * measured in. The annotator works in the snapshot's own pixels, which on a Retina screen are twice
- * as many. `AnnotateCanvas` is therefore given an explicit CSS size — the display it is standing
- * on, at 1:1 — rather than being allowed to lay out at its bitmap's size, which would cover twice
- * the area it is meant to.
+ * Two coordinate spaces meet here. The selection and every pointer event are in CSS pixels, because
+ * that is what the overlay window is measured in. Marks live in the snapshot's own pixels, which
+ * on a Retina screen are twice as many. `AnnotateCanvas` is given an explicit CSS size — the display
+ * it is standing on, at 1:1 — rather than laying out at its bitmap's size.
  *
- * The annotator is handed the *whole* snapshot, not a crop of the selection, and the selected
- * region is a window onto it: an absolutely positioned frame with the full-size canvas shifted
- * underneath it by the selection's own offset. That is what keeps marks anchored to the thing they
- * were drawn on when the selection is moved or resized afterwards — a crop would have to be
- * retaken on every drag, and every mark on it would slide.
+ * The window never paints the captured desktop as a backdrop: entering capture mode changes only the
+ * cursor and interaction UI, while the snapshot remains an off-screen source for export and mosaic.
+ * The selected region is a window onto the full-size canvas, shifted by the selection's offset, so
+ * marks stay put when the frame is moved afterwards.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,6 +21,7 @@ import {
 } from "./Annotator.tsx";
 import {
 	clampRect,
+	findSnapWindow,
 	handlePoint,
 	hitHandle,
 	insideRect,
@@ -31,11 +29,13 @@ import {
 	rectFromPoints,
 	resizeRect,
 	toolbarPosition,
+	windowToLocalRect,
 	HANDLES,
 	HANDLE_CURSOR,
 	type Handle,
 	type Point,
 	type Rect,
+	type SnappableWindow,
 } from "./screenshot-geometry.ts";
 
 const HANDLE_GRAB = 10;
@@ -49,20 +49,12 @@ const MIN_SELECTION = 10;
  * already reads as the edge of the shot, and the same convention every other capture tool uses.
  */
 const EDGE_GRAB = 8;
-/**
- * How long the dimming takes to arrive, and to leave.
- *
- * Short enough not to be a wait before you can drag, long enough to read as a transition rather
- * than a jump — the complaint being answered is a capture that appears all at once.
- */
-const ENTER_MS = 160;
-const LEAVE_MS = 120;
-
 interface ScreenshotInit {
 	snapshot: string;
 	bounds: { x: number; y: number; width: number; height: number };
 	scaleFactor: number;
 	settings?: ScreenshotSettings;
+	windows?: SnappableWindow[];
 }
 
 type DragMode =
@@ -85,11 +77,11 @@ function onEdge(rect: Rect, at: Point, tolerance: number): boolean {
 export function ScreenshotOverlay() {
 	const [initData, setInitData] = useState<ScreenshotInit | null>(null);
 	const [selection, setSelection] = useState<Rect | null>(null);
+	const [hoveredWindow, setHoveredWindow] = useState<SnappableWindow | null>(null);
 	const [dragMode, setDragMode] = useState<DragMode>({ kind: "none" });
 	const [cursor, setCursor] = useState("crosshair");
 	const [isAnnotating, setIsAnnotating] = useState(false);
 
-	const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	/** The toolbar's measured size, so it is kept on screen against what it really is. */
 	const [toolbarSize, setToolbarSize] = useState<{ width: number; height: number } | null>(null);
 	const measureToolbar = useCallback((el: HTMLDivElement | null) => {
@@ -103,115 +95,54 @@ export function ScreenshotOverlay() {
 		);
 	}, []);
 
-	/*
-	 * The whole screen, decoded once.
-	 *
-	 * The frozen backdrop below and the annotator both need this bitmap, and `useAnnotator` already
-	 * loads it — so the backdrop is painted from *its* image rather than decoding the same data URL
-	 * a second time. On a 5K display that is several megabytes and a visible fraction of the delay
-	 * before the overlay can be shown at all.
-	 */
-	const annotator = useAnnotator(initData?.snapshot ?? "");
-	const { ready: snapshotReady, image: snapshotImage } = annotator;
+	const snapshotWaiters = useRef<Array<(src: string) => void>>([]);
+	const initRef = useRef<ScreenshotInit | null>(null);
+	const displayBounds = initData?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+	const scale = initData?.scaleFactor || window.devicePixelRatio || 1;
+	const bitmapWidth = Math.round(displayBounds.width * scale);
+	const bitmapHeight = Math.round(displayBounds.height * scale);
+	const annotator = useAnnotator(initData?.snapshot ?? "", { bitmapWidth });
 
-	// Receive initialization data from main process
 	useEffect(() => {
 		const cleanup = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
-			setInitData(data);
+			setInitData((prev) => {
+				const next: ScreenshotInit = {
+					bounds: data.bounds ?? prev?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+					scaleFactor: data.scaleFactor ?? prev?.scaleFactor ?? 1,
+					settings: data.settings ?? prev?.settings,
+					snapshot: data.snapshot || prev?.snapshot || "",
+					windows: data.windows ?? prev?.windows,
+				};
+				initRef.current = next;
+				return next;
+			});
+			if (data.snapshot) {
+				for (const wait of snapshotWaiters.current.splice(0)) wait(data.snapshot);
+			}
 		});
+		window.lyra?.screenshot?.ready?.();
 		return cleanup;
 	}, []);
 
-	/*
-	 * The frozen screen, at the resolution it was captured at.
-	 *
-	 * The backing store is the snapshot's own pixel count, not the display's logical size: sized
-	 * logically, a Retina capture is squeezed to half resolution and then stretched back over the
-	 * screen, and the first thing the user sees on pressing the shortcut is their desktop going
-	 * blurry.
-	 */
-	useEffect(() => {
-		if (!initData || !snapshotReady) return;
-		const img = snapshotImage.current;
-		const canvas = bgCanvasRef.current;
-		if (!img || !canvas) return;
-		const ctx = canvas.getContext("2d");
-		if (!ctx) return;
-
-		canvas.width = img.naturalWidth;
-		canvas.height = img.naturalHeight;
-		ctx.drawImage(img, 0, 0);
-
-		/*
-		 * Said straight away, and deliberately not after a `requestAnimationFrame`.
-		 *
-		 * Waiting for a frame would be the more careful-looking thing to do and it deadlocks: the
-		 * window this runs in is hidden until this very message arrives, a hidden page is not
-		 * composited, and a rAF callback in one never runs. The overlay would appear 1.5 seconds
-		 * later off the failsafe timer, every time. It is also unnecessary — `drawImage` has already
-		 * written the snapshot into the canvas's bitmap, so the first frame after `show()` has it.
-		 */
-		window.lyra?.screenshot?.ready?.();
-	}, [initData, snapshotReady, snapshotImage]);
-
-	/*
-	 * The way in and the way out, as a fade rather than a cut.
-	 *
-	 * The frozen snapshot is not what fades — it is a picture of the screen it is covering, so
-	 * showing it instantly is invisible by construction. What fades is the dimming and the hint,
-	 * which is the part that says "you are in capture mode now": the screen darkens over a beat
-	 * instead of the whole thing arriving in one frame.
-	 *
-	 * `entered` is driven by the main process rather than by a mount effect, because until the
-	 * window is shown this page is not composited and a transition started here has no frames to
-	 * run in — it would land on its end state immediately, which is the abruptness being removed.
-	 */
-	const [entered, setEntered] = useState(false);
-	const [leaving, setLeaving] = useState(false);
-
-	useEffect(() => {
-		const cleanup = window.lyra?.screenshot?.onShown?.(() => setEntered(true));
-		/*
-		 * The main process is the only thing that knows, and `document.hidden` is not it.
-		 *
-		 * An Electron window that has never been shown still reports its document as visible — it is
-		 * a window, not a background tab. Trusting that here set the end state before the window was
-		 * on screen, so the transition had nothing left to run and capture mode arrived in one
-		 * frame: the abruptness this is supposed to remove, reintroduced by the safety net.
-		 *
-		 * The timer is the real safety net. `reveal` sends the message from every path that shows
-		 * the window, including the failsafe one, so this should never fire — and if it somehow
-		 * does, an overlay that is a little abrupt beats one that is permanently invisible.
-		 */
-		const safety = setTimeout(() => setEntered(true), 2000);
-		return () => {
-			cleanup?.();
-			clearTimeout(safety);
-		};
-	}, []);
-
 	/**
-	 * Play the way out, then do the thing. Guarded, so a second Escape cannot double-fire it.
+	 * Guard teardown without delaying it.
 	 *
-	 * The guard is a ref and the timer is set outside any updater, which is not a style choice. A
-	 * state updater has to be a pure function of the state — React calls it more than once per
-	 * commit, and may not call it at all when the value it would return is the one already there.
-	 * Scheduling the timer inside one is therefore a coin toss on whether the screenshot is ever
-	 * delivered: press 完成, watch it fade, and stay in capture mode forever with nothing on the
-	 * clipboard. Which is exactly what it did.
+	 * This window is always on top and owns the pointer while visible. Waiting for a renderer timer
+	 * before asking the main process to destroy it can leave the whole desktop trapped if that timer
+	 * or IPC path stalls; the main process owns the window, so teardown is requested immediately.
 	 */
 	const leavingRef = useRef(false);
-	const leaveThen = useCallback((act: () => void) => {
-		if (leavingRef.current) return;
+	const beginLeaving = useCallback(() => {
+		if (leavingRef.current) return false;
 		leavingRef.current = true;
-		setLeaving(true);
-		setTimeout(act, LEAVE_MS);
+		return true;
 	}, []);
 
-	// Cancel / close screenshot
+	// Releasing the always-on-top input window cannot depend on an animation timer.
 	const handleCancel = useCallback(() => {
-		leaveThen(() => window.lyra?.screenshot?.cancel?.());
-	}, [leaveThen]);
+		if (!beginLeaving()) return;
+		void window.lyra.screenshot.cancel();
+	}, [beginLeaving]);
 
 	// Escape shortcut
 	useEffect(() => {
@@ -225,43 +156,64 @@ export function ScreenshotOverlay() {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [handleCancel]);
 
-	/**
-	 * The selection and the marks on it, cut out of the annotated canvas at its own resolution.
-	 *
-	 * Read straight off the live canvas rather than through `render()` and a second decode: the
-	 * canvas is already exactly the picture that is wanted, minus everything outside the frame.
-	 */
-	const handleFinish = useCallback(() => {
-		const source = annotator.canvas.current;
-		if (!source || !selection || !initData) return;
+	const waitForSnapshot = useCallback((): Promise<string> => {
+		const have = initRef.current?.snapshot;
+		if (have) return Promise.resolve(have);
+		return new Promise((resolve) => {
+			snapshotWaiters.current.push(resolve);
+			setTimeout(() => resolve(initRef.current?.snapshot || ""), 4000);
+		});
+	}, []);
 
-		const scale = source.width / initData.bounds.width;
+	/**
+	 * Cut the selection and its marks out at the snapshot's own resolution. The snapshot stays
+	 * off-screen throughout capture; this is the only point where it is composed for user output.
+	 */
+	const handleFinish = useCallback(async () => {
+		if (!selection) return;
+
+		const snapshotSrc = await waitForSnapshot();
+		if (!snapshotSrc) return;
+		const latest = initRef.current;
+		const bounds = latest?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+		const markCanvas = annotator.canvas.current;
+		let snapshotImg = annotator.image.current;
+
+		if (!snapshotImg || snapshotImg.src !== snapshotSrc || !snapshotImg.complete || snapshotImg.naturalWidth === 0) {
+			snapshotImg = new Image();
+			snapshotImg.src = snapshotSrc;
+			try {
+				await snapshotImg.decode();
+			} catch {
+				return;
+			}
+		}
+
+		const naturalW = snapshotImg.naturalWidth || markCanvas?.width || bounds.width * (latest?.scaleFactor || 1);
+		const outScale = bounds.width > 0 ? naturalW / bounds.width : 1;
+
+		const outW = Math.max(1, Math.round(selection.width * outScale));
+		const outH = Math.max(1, Math.round(selection.height * outScale));
+		const sx = Math.round(selection.x * outScale);
+		const sy = Math.round(selection.y * outScale);
+
 		const out = document.createElement("canvas");
-		out.width = Math.max(1, Math.round(selection.width * scale));
-		out.height = Math.max(1, Math.round(selection.height * scale));
-		const ctx = out.getContext("2d");
+		out.width = outW;
+		out.height = outH;
+		const ctx = out.getContext("2d", { willReadFrequently: true });
 		if (!ctx) return;
 
-		ctx.drawImage(
-			source,
-			Math.round(selection.x * scale),
-			Math.round(selection.y * scale),
-			out.width,
-			out.height,
-			0,
-			0,
-			out.width,
-			out.height,
-		);
+		ctx.drawImage(snapshotImg, sx, sy, outW, outH, 0, 0, outW, outH);
+		if (markCanvas && markCanvas.width > 0 && markCanvas.height > 0) {
+			ctx.drawImage(markCanvas, sx, sy, outW, outH, 0, 0, outW, outH);
+		}
 
-		// Rendered before the fade, so the picture is of the marks and not of them half faded out.
 		const png = out.toDataURL("image/png");
-		leaveThen(() => window.lyra?.screenshot?.finish?.(png, initData.settings));
-	}, [annotator, selection, initData, leaveThen]);
+		if (!beginLeaving()) return;
+		void window.lyra.screenshot.finish(png, latest?.settings);
+	}, [annotator, selection, beginLeaving, waitForSnapshot]);
 
-	// Selection pointer events
 	const handlePointerDown = (e: React.PointerEvent) => {
-		if (!initData) return;
 		/*
 		 * A press on a control is not a press on the screen.
 		 *
@@ -283,13 +235,11 @@ export function ScreenshotOverlay() {
 				return;
 			}
 			if (insideRect(selection, pt)) {
-				// Before there is anything to annotate the whole region is a grab; afterwards only its
-				// edge is, because the middle is the canvas.
+				// When annotating, the inside belongs to AnnotateCanvas for drawing marks
 				if (!isAnnotating || onEdge(selection, pt, EDGE_GRAB)) {
 					setDragMode({ kind: "moving", from: pt, origin: selection });
 					(e.target as HTMLElement).setPointerCapture(e.pointerId);
 				}
-				// Otherwise the press belongs to `AnnotateCanvas`, which has already had it.
 				return;
 			}
 		}
@@ -302,21 +252,21 @@ export function ScreenshotOverlay() {
 	};
 
 	const handlePointerMove = (e: React.PointerEvent) => {
-		if (!initData) return;
 		const pt: Point = { x: e.clientX, y: e.clientY };
+		const bounds = initData?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 
 		if (dragMode.kind === "creating") {
-			const rect = clampRect(rectFromPoints(dragMode.from, pt), initData.bounds);
+			const rect = clampRect(rectFromPoints(dragMode.from, pt), bounds);
 			setSelection(rect);
 		} else if (dragMode.kind === "moving") {
 			const dx = pt.x - dragMode.from.x;
 			const dy = pt.y - dragMode.from.y;
-			const rect = moveRect(dragMode.origin, dx, dy, initData.bounds);
+			const rect = moveRect(dragMode.origin, dx, dy, bounds);
 			setSelection(rect);
 		} else if (dragMode.kind === "resizing") {
 			const rect = clampRect(
 				resizeRect(dragMode.origin, dragMode.handle, pt),
-				initData.bounds,
+				bounds,
 			);
 			setSelection(rect);
 		} else if (selection) {
@@ -327,35 +277,58 @@ export function ScreenshotOverlay() {
 				return;
 			}
 			if (insideRect(selection, pt)) {
-				// The canvas sets its own cursor for the tool in hand; this is only about the frame.
-				setCursor(!isAnnotating || onEdge(selection, pt, EDGE_GRAB) ? "move" : "default");
+				// The canvas owns tool-specific cursors; the frame only claims its movable edge.
+				setCursor(onEdge(selection, pt, EDGE_GRAB) ? "move" : "default");
 				return;
 			}
 			setCursor("crosshair");
 		} else {
 			setCursor("crosshair");
+			// When there is no active selection, smart-detect hovered window for snapping
+			if (initData?.windows && initData.windows.length > 0) {
+				const matched = findSnapWindow(initData.windows, pt, bounds);
+				setHoveredWindow(matched);
+			}
 		}
 	};
 
-	const handlePointerUp = () => {
+	const handlePointerUp = (e: React.PointerEvent) => {
+		try {
+			if ((e.target as HTMLElement).hasPointerCapture?.(e.pointerId)) {
+				(e.target as HTMLElement).releasePointerCapture(e.pointerId);
+			}
+		} catch {
+			// Ignore DOMException if capture was already released
+		}
+
 		if (dragMode.kind === "creating" && selection) {
-			// A stray click is not a selection: it is how someone clears the one they had.
+			// A single click without dragging: if we were hovering a window, snap directly to that window
 			if (selection.width < MIN_SELECTION || selection.height < MIN_SELECTION) {
-				setSelection(null);
+				if (hoveredWindow && initData) {
+					const snapped = windowToLocalRect(hoveredWindow, initData.bounds);
+					setSelection(snapped);
+					setIsAnnotating(true);
+					setHoveredWindow(null);
+					setCursor("default");
+				} else {
+					setSelection(null);
+				}
 			} else {
 				setIsAnnotating(true);
+				setHoveredWindow(null);
+				setCursor("default");
 			}
 		}
 		setDragMode({ kind: "none" });
 	};
 
-	if (!initData) {
-		return <div className="fixed inset-0 bg-transparent" />;
-	}
-
-	const { bounds } = initData;
+	const bounds = displayBounds;
+	const physicalWidth = annotator.width || bitmapWidth;
 	// Snapshot pixels → screen pixels, which is the scale the annotator's hit tolerances are in.
-	const zoom = annotator.width > 0 ? bounds.width / annotator.width : 1;
+	const zoom = physicalWidth > 0 ? bounds.width / physicalWidth : 1;
+	const hoverRect =
+		!selection && hoveredWindow && initData ? windowToLocalRect(hoveredWindow, initData.bounds) : null;
+	const hole = selection ?? hoverRect;
 	/*
 	 * Placed against the bar's real width, not a guess at it.
 	 *
@@ -369,58 +342,54 @@ export function ScreenshotOverlay() {
 
 	return (
 		<div
-			className="fixed inset-0 select-none overflow-hidden"
+			data-screenshot-overlay
+			className="fixed inset-0 select-none overflow-hidden bg-transparent"
 			style={{ cursor }}
 			onPointerDown={handlePointerDown}
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
 			{/*
-			 * The frozen screen, shown instantly and deliberately not faded.
-			 *
-			 * It is a picture of what is already there, so there is nothing to fade *from* — it is
-			 * everything drawn on top of it that arrives.
-			 */}
-			<canvas ref={bgCanvasRef} className="absolute inset-0 block h-full w-full pointer-events-none" />
-
-			{/*
 			 * `pointer-events-none`, and everything inside it that is meant to be touched says so
 			 * itself. A full-screen layer that swallowed presses would put itself between the user
 			 * and the overlay's own handlers — the selection is dragged on the root, not here.
 			 */}
-			<div
-				className="pointer-events-none absolute inset-0"
-				style={{
-					opacity: leaving || !entered ? 0 : 1,
-					transition: `opacity ${leaving ? LEAVE_MS : ENTER_MS}ms ease-out`,
-				}}
-			>
+			<div className="pointer-events-none absolute inset-0">
 			{/* Dim mask around selection */}
-			{selection && (
+			{hole && (
 				<svg className="pointer-events-none absolute inset-0 h-full w-full">
 					<defs>
 						<mask id="cutout">
 							<rect width="100%" height="100%" fill="white" />
-							<rect
-								x={selection.x}
-								y={selection.y}
-								width={selection.width}
-								height={selection.height}
-								fill="black"
-							/>
+							<rect x={hole.x} y={hole.y} width={hole.width} height={hole.height} fill="black" />
 						</mask>
 					</defs>
 					<rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.42)" mask="url(#cutout)" />
 				</svg>
 			)}
 
-			{!selection && (
-				<div className="pointer-events-none absolute inset-0 bg-black/25 flex items-center justify-center">
-					<div className="rounded-xl border border-white/20 bg-black/60 px-4 py-2 text-label text-white shadow-2xl backdrop-blur-md">
-						拖拽鼠标框选截图区域 · 按 Esc 退出
+			{hoverRect && hoveredWindow && (
+				<div
+					className="pointer-events-none absolute border-2 border-sky-400"
+					style={{
+						left: hoverRect.x,
+						top: hoverRect.y,
+						width: hoverRect.width,
+						height: hoverRect.height,
+					}}
+				>
+					<div
+						className="absolute left-0 flex items-center gap-1.5 rounded-md bg-sky-500 px-2 py-0.5 text-detail font-medium text-white shadow-md"
+						style={{
+							top: hoverRect.y < 32 ? 4 : -28,
+						}}
+					>
+						<span className="max-w-[320px] truncate">{hoveredWindow.title || "窗口"}</span>
+						<span className="opacity-75">{hoveredWindow.width} × {hoveredWindow.height}</span>
 					</div>
 				</div>
 			)}
+			</div>
 
 			{/*
 			 * The annotator, seen through the selection.
@@ -444,8 +413,14 @@ export function ScreenshotOverlay() {
 						<AnnotateCanvas
 							annotator={annotator}
 							zoom={zoom}
+							paintBackdrop={false}
+							pixelSize={{ width: bitmapWidth, height: bitmapHeight }}
 							className="bg-transparent"
-							style={{ width: bounds.width, height: bounds.height }}
+							style={{
+								width: bounds.width,
+								height: bounds.height,
+								cursor: annotator.tool === "pen" ? "default" : undefined,
+							}}
 						/>
 					</div>
 				</div>
@@ -507,7 +482,6 @@ export function ScreenshotOverlay() {
 					/>
 				</div>
 			)}
-			</div>
 		</div>
 	);
 }

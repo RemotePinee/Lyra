@@ -1,10 +1,9 @@
 /**
-/**
  * Screen capture overlay window manager for desktop integration.
  *
- * Creates a full-screen, frameless, transparent overlay across active displays,
- * captures background screen snapshot, and lets the user drag-to-select and annotate
- * directly on top of the frozen screen.
+ * A prewarmed, no-activate transparent window appears as soon as its renderer is ready. The raw
+ * display snapshot is captured independently and is used only as the crop/annotation source; it is
+ * never painted across the desktop, so entering capture mode changes only the cursor.
  */
 
 import { join } from "node:path";
@@ -12,17 +11,105 @@ import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeI
 import type { ScreenshotSettings, Settings } from "@lyra/core";
 
 import { resolveSaveDirectory } from "./screenshot-path.ts";
-
+import { findScreenshotReturnWindow, markScreenshotWindow, ScreenshotRendererGate } from "./screenshot-window.ts";
+import { detectVisibleWindows, hwndFromNativeHandle } from "./window-detect.ts";
 
 let overlayWindows: BrowserWindow[] = [];
+let prewarmedOverlay: BrowserWindow | null = null;
+const screenshotRendererGate = new ScreenshotRendererGate();
+
+function overlayBounds(bounds: Electron.Rectangle): Electron.BrowserWindowConstructorOptions {
+	return {
+		x: bounds.x,
+		y: bounds.y,
+		width: bounds.width,
+		height: bounds.height,
+		frame: false,
+		transparent: true,
+		show: false,
+		focusable: false,
+		alwaysOnTop: true,
+		skipTaskbar: process.platform !== "darwin",
+		resizable: false,
+		movable: false,
+		fullscreenable: false,
+		hasShadow: false,
+		backgroundColor: "#00000000",
+		enableLargerThanScreen: true,
+		webPreferences: {
+			preload: join(import.meta.dirname, "../preload/screenshot.js"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: false,
+			backgroundThrottling: false,
+		},
+	};
+}
+
+function overlayIsLoaded(win: BrowserWindow): boolean {
+	if (win.webContents.isDestroyed() || win.webContents.isLoading()) return false;
+	return win.webContents.getURL().includes("screenshot-overlay");
+}
+
+function loadOverlay(win: BrowserWindow): void {
+	if (overlayIsLoaded(win)) return;
+	const devServer = process.env.ELECTRON_RENDERER_URL;
+	if (devServer) {
+		void win.loadURL(`${devServer.replace(/\/$/, "")}/screenshot-overlay.html`);
+		return;
+	}
+	void win.loadFile(join(import.meta.dirname, "../renderer/screenshot-overlay.html"));
+}
+
+function decorateOverlay(win: BrowserWindow): void {
+	win.setAlwaysOnTop(true, "screen-saver");
+	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+}
+
+function createOverlayWindow(bounds: Electron.Rectangle): BrowserWindow {
+	const win = markScreenshotWindow(new BrowserWindow(overlayBounds(bounds)));
+	decorateOverlay(win);
+	// Windows excludes this surface from capture; macOS applies NSWindowSharingNone for capture
+	// implementations that still honor it. ScreenCaptureKit can bypass the macOS flag, so capture is
+	// still requested before this window is shown rather than relying on protection alone.
+	if (process.platform === "win32" || process.platform === "darwin") win.setContentProtection(true);
+	const webContentsId = win.webContents.id;
+	win.webContents.on("did-start-navigation", () => screenshotRendererGate.markLoading(webContentsId));
+	win.webContents.on("before-input-event", (event, input) => {
+		if (input.type !== "keyDown" || input.key !== "Escape") return;
+		event.preventDefault();
+		closeScreenshotOverlay({ foreground: false });
+	});
+	win.on("closed", () => {
+		screenshotRendererGate.forget(webContentsId);
+	});
+	loadOverlay(win);
+	return win;
+}
 
 /**
- * How to show each overlay, by the id of the page that will ask for it.
- *
- * Keyed on `webContents.id` so the renderer needs to send nothing but the fact that it is ready —
- * the sender identifies the window. See `revealScreenshotOverlay`.
+ * Hidden overlay, already loaded, so the shortcut does not wait on Chromium creating a window.
  */
-const revealers = new Map<number, () => void>();
+export function prewarmScreenshotOverlay(): void {
+	if (prewarmedOverlay && !prewarmedOverlay.isDestroyed()) return;
+	const primary = screen.getPrimaryDisplay();
+	const win = createOverlayWindow(primary.bounds);
+	win.on("closed", () => {
+		if (prewarmedOverlay === win) prewarmedOverlay = null;
+	});
+	prewarmedOverlay = win;
+}
+
+function takeOverlayWindow(bounds: Electron.Rectangle): BrowserWindow {
+	if (prewarmedOverlay && !prewarmedOverlay.isDestroyed()) {
+		const win = prewarmedOverlay;
+		prewarmedOverlay = null;
+		win.setBounds(bounds);
+		return win;
+	}
+	return createOverlayWindow(bounds);
+}
+
 /**
  * Whether Lyra was the application in front when the screenshot started.
  *
@@ -37,8 +124,35 @@ const revealers = new Map<number, () => void>();
  */
 let cameFromApp = false;
 let activeShortcut: string | null = null;
-let onCaptureTriggered: (() => void) | null = null;
+let escapeShortcutRegistered = false;
 let currentSettingsProvider: (() => Settings | undefined) | null = null;
+
+function hasActiveScreenshotOverlay(): boolean {
+	return overlayWindows.some((window) => !window.isDestroyed());
+}
+
+function registerScreenshotEscape(): void {
+	if (escapeShortcutRegistered || activeShortcut?.toLowerCase() === "escape") return;
+	try {
+		escapeShortcutRegistered = globalShortcut.register("Escape", () => {
+			closeScreenshotOverlay({ foreground: false });
+		});
+		if (!escapeShortcutRegistered) {
+			console.warn("[screenshot] failed to register Escape while the no-activate overlay is open");
+		}
+	} catch (error) {
+		console.warn("[screenshot] failed to register Escape while the no-activate overlay is open", error);
+	}
+}
+
+function unregisterScreenshotEscape(): void {
+	if (!escapeShortcutRegistered) return;
+	try {
+		globalShortcut.unregister("Escape");
+	} finally {
+		escapeShortcutRegistered = false;
+	}
+}
 
 function generateScreenshotFilename(): string {
 	const now = new Date();
@@ -151,21 +265,13 @@ export function checkShortcutAvailable(shortcut: string): { ok: boolean; error?:
 	}
 }
 
-/**
- * Show the overlay that has just finished painting its snapshot.
- *
- * Ignores anything that is not an overlay awaiting reveal, so a stray message cannot raise a
- * window; and ignores a second one, because the failsafe timer may already have shown it.
- */
+/** Remember renderer readiness even when a prewarmed overlay reports it before capture starts. */
 export function revealScreenshotOverlay(webContentsId: number): void {
-	const reveal = revealers.get(webContentsId);
-	if (!reveal) return;
-	revealers.delete(webContentsId);
-	reveal();
+	screenshotRendererGate.markReady(webContentsId);
 }
 
 /**
- * Close and destroy all active overlay windows, and give the app back the foreground.
+ * Close and destroy all active overlay windows, restoring the foreground only when appropriate.
  *
  * The overlay is `alwaysOnTop` at `screen-saver` level and visible on every workspace — it has to
  * be, or it cannot cover a fullscreen app to take a picture of it. What that costs is where the
@@ -178,8 +284,19 @@ export function revealScreenshotOverlay(webContentsId: number): void {
  * showing and focusing a window belonging to an application that is not frontmost raises it within
  * that application, and leaves the application itself behind.
  */
-export function closeScreenshotOverlay(options?: { restoreFocus?: boolean; foreground?: boolean }): void {
-	const overlays = new Set(overlayWindows);
+export function closeScreenshotOverlay(options?: { restoreFocus?: boolean; foreground?: boolean; prewarm?: boolean }): void {
+	unregisterScreenshotEscape();
+	const activeOverlays = overlayWindows;
+	const previousPrewarm = prewarmedOverlay;
+	/*
+	 * Resolve the application window before creating the next prewarm.
+	 *
+	 * A prewarmed overlay is a BrowserWindow too. Creating it first made this search select that
+	 * hidden capture window as the "main" window and show it after Escape or Finish. With no init data,
+	 * it painted the shell background, kept the crosshair, and could never export a selection.
+	 */
+	const main = findScreenshotReturnWindow(BrowserWindow.getAllWindows(), activeOverlays, previousPrewarm);
+
 	for (const win of overlayWindows) {
 		if (!win.isDestroyed()) {
 			win.destroy();
@@ -187,16 +304,11 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean; foreg
 	}
 	overlayWindows = [];
 
+	if (options?.prewarm !== false) prewarmScreenshotOverlay();
+
 	// Not when another overlay is about to take its place — see the call in
 	// `startScreenshotSession`. Raising the app for one frame between two overlays is a flicker.
 	if (options?.restoreFocus === false) return;
-
-	/*
-	 * Whatever window is not an overlay. Found rather than injected: this module is reached from
-	 * a global shortcut, from IPC and from the overlay's own completion, and threading the main
-	 * window through all three to be used in one place is bookkeeping in three files.
-	 */
-	const main = BrowserWindow.getAllWindows().find((win) => !overlays.has(win) && !win.isDestroyed());
 	if (!main) return;
 	if (main.isMinimized()) main.restore();
 
@@ -214,14 +326,6 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean; foreg
 	if (!(options?.foreground ?? cameFromApp)) {
 		main.showInactive();
 		/*
-		 * Hand the foreground back, rather than merely not asking for it.
-		 *
-		 * `showInactive` is not enough here and that is easy to miss. The overlay had to take focus
-		 * to receive Escape at all, and taking it made *Lyra* the frontmost application; destroying
-		 * the overlay leaves the foreground there, on the main window, however politely this one is
-		 * shown. So a capture started with the global shortcut while reading something else ended
-		 * with Lyra in front of it — the exact barging-in this branch exists to avoid.
-		 *
 		 * `app.hide()` is how a macOS application steps back: the window is not closed and nothing
 		 * is lost, the frontmost slot returns to whatever had it, and the dock icon brings Lyra back
 		 * exactly as it was. Only when the capture did not come from Lyra in the first place —
@@ -237,153 +341,103 @@ export function closeScreenshotOverlay(options?: { restoreFocus?: boolean; foreg
 }
 
 /**
- * Open the interactive fullscreen overlay window on the display where the cursor currently is.
+ * Open the interactive fullscreen overlay on the display under the cursor.
+ *
+ * Capture starts before the overlay is shown. On Windows the no-activate overlay is excluded from
+ * capture, so its cursor and later selection UI cannot race into the saved pixels.
  */
 export async function startScreenshotSession(customSettings?: ScreenshotSettings): Promise<void> {
 	/*
-	 * Asked before anything is shown, because in a moment the overlay itself will be the focused
-	 * window and the answer will always be yes. See `cameFromApp`.
+	 * Asked before the overlay is shown. The overlay is non-focusable, but resolving intent before
+	 * changing any window state keeps this independent of platform-specific foreground behaviour.
 	 */
 	cameFromApp = BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isFocused());
 
 	// A leftover overlay from a previous session, cleared without handing the foreground back —
-	// this one is about to take it.
-	closeScreenshotOverlay({ restoreFocus: false });
+	// this one is about to take its place. Do not prewarm: we are about to take that window.
+	closeScreenshotOverlay({ restoreFocus: false, prewarm: false });
 
 	const cursorPoint = screen.getCursorScreenPoint();
 	const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
-
-	const snapshot = await captureFullDisplaySnapshot(currentDisplay.id);
-	if (!snapshot) return;
-
 	const { bounds } = currentDisplay;
-
-	const win = new BrowserWindow({
-		x: bounds.x,
-		y: bounds.y,
-		width: bounds.width,
-		height: bounds.height,
-		frame: false,
-		transparent: true,
-		/*
-		 * Hidden until the renderer has the snapshot on screen — see `reveal` below.
-		 *
-		 * Without this the whole handshake is dead code: `show` defaults to true, so the window is
-		 * already visible by the time anything can ask for it to be revealed, and `reveal` returns
-		 * at its own `isVisible()` guard having done nothing. What the user sees in the meantime is
-		 * a transparent full-screen window over everything — the flicker the handshake exists to
-		 * remove.
-		 */
-		show: false,
-		alwaysOnTop: true,
-		skipTaskbar: process.platform !== "darwin",
-		resizable: false,
-		movable: false,
-		fullscreenable: false,
-		hasShadow: false,
-		backgroundColor: "#00000000",
-		enableLargerThanScreen: true,
-		webPreferences: {
-			preload: join(import.meta.dirname, "../preload/index.js"),
-			contextIsolation: true,
-			nodeIntegration: false,
-			sandbox: false,
-			backgroundThrottling: false,
-		},
-	});
-
-	// Level screen-saver makes sure it sits above normal fullscreen apps and menu bar on macOS
-	win.setAlwaysOnTop(true, "screen-saver");
+	const scaleFactor = currentDisplay.scaleFactor || 1;
+	const settings = customSettings ?? currentSettingsProvider?.()?.screenshot;
 	/*
-	 * `skipTransformProcessType` is the whole of the disappearing dock icon, and of the flicker.
-	 *
-	 * Electron's macOS implementation of `setVisibleOnAllWorkspaces(true)` switches the *process*
-	 * between `ForegroundApplication` and `UIElementApplication` — its own documentation says so,
-	 * and says what it costs: "this will hide the window and dock for a short time every time it is
-	 * called". A `UIElement` process has no dock tile by definition, so the icon does not flicker,
-	 * it goes; and because the transform is never undone, it stays gone after the capture ends.
-	 * Confirmed by asking LaunchServices what it thinks this process is before and after — see
-	 * `e2e/dock-policy-probe.ts`.
-	 *
-	 * Skipping the transform keeps the process a regular application. The overlay still covers
-	 * everything it needs to: `visibleOnFullScreen` puts it over a fullscreen app's space, and the
-	 * `screen-saver` level above puts it over the menu bar.
+	 * Start capture first, then reveal as soon as the prewarmed renderer is ready. Windows content
+	 * protection excludes this window if those operations overlap; other platforms still get the
+	 * earliest possible capture request without delaying the crosshair on capture completion.
 	 */
-	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+	const snapshotPromise = captureFullDisplaySnapshot(currentDisplay.id);
 
+	const win = takeOverlayWindow(bounds);
 	overlayWindows.push(win);
-
+	registerScreenshotEscape();
 	win.on("closed", () => {
 		overlayWindows = overlayWindows.filter((w) => w !== win);
 	});
 
-	// Pass snapshot data and initial settings to overlay via query / hash
-	const devServer = process.env.ELECTRON_RENDERER_URL;
-	const overlayUrl = devServer
-		? `${devServer}#/screenshot-overlay`
-		: `file://${join(import.meta.dirname, "../renderer/index.html")}#/screenshot-overlay`;
-
-	/*
-	 * Shown when the snapshot is on screen, not when the document has loaded.
-	 *
-	 * `did-finish-load` only means the page exists. What follows it is an IPC hop, an `Image`
-	 * decoding a base64 data URL, and a React effect drawing that image to a canvas — all
-	 * asynchronous. Showing the window at the start of that sequence puts an empty transparent
-	 * overlay over the screen for a few frames, which is the flicker: the screen appears to blink
-	 * before freezing.
-	 *
-	 * The renderer says when it has painted. The timeout is not a fallback for slowness — it is
-	 * for a renderer that fails before it gets there, where the alternative is an invisible window
-	 * swallowing every click on the screen with nothing to show for it.
-	 */
-	const reveal = () => {
-		if (win.isDestroyed() || win.isVisible()) return;
-		win.show();
-		win.focus();
-		/*
-		 * Now that it is on screen, the renderer can fade the dimming in.
-		 *
-		 * It cannot start that itself: until this line the page is hidden, a hidden page is not
-		 * composited, and a CSS transition started there has no frames to run in — it would jump
-		 * straight to its end state and the capture would appear fully dimmed, all at once, which
-		 * is exactly the abruptness being fixed.
-		 */
-		if (!win.webContents.isDestroyed()) win.webContents.send("screenshot:shown");
-	};
-	// Read now and kept, because `win.webContents` is not reachable from the `closed` handler that
-	// has to clean this up.
+	const base = { bounds, scaleFactor, settings };
+	let rendererReady = false;
+	let snapshotDataUrl: string | null = null;
+	let detectedWindows: Awaited<ReturnType<typeof detectVisibleWindows>> | undefined;
+	let initialized = false;
+	let revealed = false;
 	const webContentsId = win.webContents.id;
-	revealers.set(webContentsId, reveal);
-	const failsafe = setTimeout(reveal, 1500);
-	win.on("closed", () => {
-		clearTimeout(failsafe);
-		revealers.delete(webContentsId);
+
+	const reveal = () => {
+		if (revealed || !rendererReady || win.isDestroyed() || win.webContents.isDestroyed()) return;
+		// Showing without activation leaves the user's current application directly underneath.
+		win.showInactive();
+		revealed = true;
+	};
+	const initialize = () => {
+		if (initialized || !rendererReady || !snapshotDataUrl || win.isDestroyed() || win.webContents.isDestroyed()) return;
+		initialized = true;
+		win.webContents.send("screenshot:init", { ...base, snapshot: snapshotDataUrl, windows: detectedWindows });
+	};
+	screenshotRendererGate.whenReady(webContentsId, () => {
+		rendererReady = true;
+		reveal();
+		initialize();
 	});
 
-	win.webContents.once("did-finish-load", () => {
-		if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-		win.webContents.send("screenshot:init", {
-			snapshot: snapshot.dataUrl,
-			bounds,
-			scaleFactor: snapshot.scaleFactor,
-			settings: customSettings ?? currentSettingsProvider?.()?.screenshot,
-		});
-	});
-
-	if (devServer) {
-		void win.loadURL(overlayUrl);
-	} else {
-		void win.loadFile(join(import.meta.dirname, "../renderer/index.html"), {
-			hash: "/screenshot-overlay",
-		});
+	let excludeHwnd: bigint | undefined;
+	try {
+		excludeHwnd = hwndFromNativeHandle(win.getNativeWindowHandle());
+	} catch {
+		excludeHwnd = undefined;
 	}
+
+	void detectVisibleWindows({ excludeHwnd, excludeBounds: bounds }).then((windows) => {
+		detectedWindows = windows;
+		if (initialized && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+			win.webContents.send("screenshot:init", { ...base, snapshot: "", windows });
+		}
+	});
+
+	const snapshot = await snapshotPromise;
+	if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+	if (!snapshot) {
+		closeScreenshotOverlay({ restoreFocus: false });
+		return;
+	}
+	snapshotDataUrl = snapshot.dataUrl;
+	initialize();
 }
 
 /**
  * Handle save/finish from overlay renderer
  */
 export async function finishScreenshot(dataUrl: string, settings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }> {
-	closeScreenshotOverlay();
+	closeScreenshotOverlay({ prewarm: false });
+
+	// Broadcast before prewarming so a hidden overlay never receives the completed screenshot.
+	for (const w of BrowserWindow.getAllWindows()) {
+		if (!w.isDestroyed() && !w.webContents.isDestroyed()) {
+			w.webContents.send("screenshot:captured", dataUrl);
+		}
+	}
+	prewarmScreenshotOverlay();
 
 	const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
 	const buffer = Buffer.from(base64Data, "base64");
@@ -416,15 +470,11 @@ export async function finishScreenshot(dataUrl: string, settings?: ScreenshotSet
 /**
  * Register global shortcut
  */
-export function registerScreenshotShortcut(
-	getSettings: () => Settings | undefined,
-	onTrigger: () => void,
-): void {
+export function registerScreenshotShortcut(getSettings: () => Settings | undefined): void {
 	// No platform gate: `globalShortcut` and the capture behind it work on all three. This used to
 	// return early anywhere but macOS, which left the shortcut unregistered and the setting for it
 	// on screen — a key combination the settings page offered to change and nothing would answer.
 	currentSettingsProvider = getSettings;
-	onCaptureTriggered = onTrigger;
 
 	let shortcut = getSettings()?.screenshot?.shortcut?.trim();
 	if (shortcut) {
@@ -450,8 +500,11 @@ export function registerScreenshotShortcut(
 		// If user configured a shortcut that is used by external software (like WeChat Alt+A),
 		// let OS trigger it naturally while we handle trigger when available.
 		const success = globalShortcut.register(shortcut, () => {
+			if (hasActiveScreenshotOverlay()) {
+				closeScreenshotOverlay({ foreground: false });
+				return;
+			}
 			void startScreenshotSession();
-			onCaptureTriggered?.();
 		});
 		if (success) {
 			activeShortcut = shortcut;
@@ -462,11 +515,11 @@ export function registerScreenshotShortcut(
 }
 
 export function unregisterScreenshotShortcut(): void {
+	unregisterScreenshotEscape();
 	if (activeShortcut) {
 		try {
 			globalShortcut.unregister(activeShortcut);
 		} catch {}
 		activeShortcut = null;
 	}
-	onCaptureTriggered = null;
 }

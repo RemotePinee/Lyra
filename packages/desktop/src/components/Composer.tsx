@@ -489,10 +489,22 @@ export function Composer() {
 	}, [settings?.screenshot]);
 
 	useEffect(() => {
-		return window.lyra.screenshot.onTrigger?.(() => {
-			void takeScreenshot();
+		return window.lyra.screenshot.onCaptured?.((dataUrl: string) => {
+			if (settings?.screenshot?.insertIntoComposer) {
+				const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+				setAttachments((prev) => [
+					...prev,
+					{
+						id: `screenshot-${Date.now()}-${Math.random()}`,
+						name: `Screenshot ${new Date().toLocaleTimeString()}.png`,
+						mimeType: "image/png",
+						data: base64,
+						isText: false,
+					},
+				]);
+			}
 		});
-	}, [takeScreenshot]);
+	}, [settings?.screenshot?.insertIntoComposer]);
 
 	return (
 		<div className={`shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>

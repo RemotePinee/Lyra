@@ -12,6 +12,7 @@ import { test } from "node:test";
 
 import {
 	clampRect,
+	findSnapWindow,
 	handlePoint,
 	hitHandle,
 	insideRect,
@@ -19,6 +20,7 @@ import {
 	rectFromPoints,
 	resizeRect,
 	toolbarPosition,
+	windowToLocalRect,
 	HANDLES,
 } from "../src/components/image/screenshot-geometry.ts";
 
@@ -89,6 +91,41 @@ test("a selection larger than the screen is not pushed to a negative offset", ()
 test("clamping trims a resize that ran off the screen", () => {
 	const trimmed = clampRect({ x: -50, y: -50, width: 200, height: 200 }, screen);
 	assert.deepEqual(trimmed, { x: 0, y: 0, width: 150, height: 150 });
+});
+
+test("findSnapWindow matches top-most window in Z-order", () => {
+	const windows = [
+		{ id: 1, title: "Top Win", x: 100, y: 100, width: 300, height: 200 },
+		{ id: 2, title: "Bottom Win", x: 50, y: 50, width: 500, height: 400 },
+	];
+	const displayBounds = { x: 0, y: 0, width: 1920, height: 1080 };
+
+	// Hits both windows, but top-most is 1
+	const hit = findSnapWindow(windows, { x: 150, y: 150 }, displayBounds);
+	assert.equal(hit?.id, 1);
+
+	// Hits only bottom window
+	const hitBottom = findSnapWindow(windows, { x: 60, y: 60 }, displayBounds);
+	assert.equal(hitBottom?.id, 2);
+
+	// Outside
+	const hitNone = findSnapWindow(windows, { x: 10, y: 10 }, displayBounds);
+	assert.equal(hitNone, null);
+});
+
+test("windowToLocalRect maps global screen bounds to overlay local coordinates", () => {
+	const displayBounds = { x: 1920, y: 0, width: 1920, height: 1080 };
+	const win = { id: 1, title: "Second Display App", x: 2000, y: 100, width: 800, height: 600 };
+
+	const local = windowToLocalRect(win, displayBounds);
+	assert.deepEqual(local, { x: 80, y: 100, width: 800, height: 600 });
+});
+
+test("findSnapWindow converts overlay-local pointer into screen space", () => {
+	const windows = [{ id: 1, title: "App", x: 2000, y: 100, width: 400, height: 300 }];
+	const display = { x: 1920, y: 0, width: 1920, height: 1080 };
+	assert.equal(findSnapWindow(windows, { x: 100, y: 150 }, display)?.id, 1);
+	assert.equal(findSnapWindow(windows, { x: 10, y: 10 }, display), null);
 });
 
 test("a rectangle from two corners is the same whichever order they arrive in", () => {

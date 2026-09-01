@@ -134,6 +134,53 @@ export function clampRect(rect: Rect, within: { width: number; height: number })
 const TOOLBAR_GAP = 12;
 const SCREEN_MARGIN = 12;
 
+export interface SnappableWindow {
+	id: number | string;
+	title: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * Find the top-most window under the pointer for smart snapping.
+ * Windows are traversed in Z-order (first is top-most).
+ */
+export function findSnapWindow(windows: SnappableWindow[], at: Point, bounds: { x: number; y: number; width: number; height: number }): SnappableWindow | null {
+	// Offset pointer to screen-space coordinates
+	const screenPoint: Point = { x: at.x + bounds.x, y: at.y + bounds.y };
+	for (const win of windows) {
+		if (
+			screenPoint.x >= win.x &&
+			screenPoint.x <= win.x + win.width &&
+			screenPoint.y >= win.y &&
+			screenPoint.y <= win.y + win.height
+		) {
+			return win;
+		}
+	}
+	return null;
+}
+
+/**
+ * Transform a window's global screen rect into overlay local coordinate space,
+ * clamped within the current display's boundaries.
+ */
+export function windowToLocalRect(win: SnappableWindow, bounds: { x: number; y: number; width: number; height: number }): Rect {
+	const localX = win.x - bounds.x;
+	const localY = win.y - bounds.y;
+	return clampRect(
+		{
+			x: localX,
+			y: localY,
+			width: win.width,
+			height: win.height,
+		},
+		bounds,
+	);
+}
+
 /**
  * Where the toolbar goes: under the selection, aligned to its left edge.
  *

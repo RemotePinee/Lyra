@@ -244,6 +244,16 @@
     margin: 0;
   }
 
+  /*
+   * Screenshot snipping overlay must remain 100% transparent.
+   */
+  #root:has(> [data-screenshot-overlay]),
+  body:has(#root > [data-screenshot-overlay]),
+  html:has(body > #root > [data-screenshot-overlay]) {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+
   body {
     background: var(--color-shell);
     color: var(--color-ink);

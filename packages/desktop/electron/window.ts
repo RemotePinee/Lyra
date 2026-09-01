@@ -11,6 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { lyraHome, type Settings } from "@lyra/core";
 import { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } from "electron";
+import { applyThemeToWindows } from "./screenshot-window.ts";
 
 /**
  * Where the icon file is, packaged or not.
@@ -418,14 +419,8 @@ export function registerWindowIpc(): void {
 	});
 
 	ipcMain.on("window:theme", (_event, colors: { color: string; symbolColor: string }) => {
-		for (const window of BrowserWindow.getAllWindows()) {
-			if (window.isDestroyed()) continue;
-			window.setBackgroundColor(colors.color);
-			if (process.platform !== "darwin") {
-				try {
-					window.setTitleBarOverlay({ ...colors, height: 38 });
-				} catch {}
-			}
-		}
+		// Theme only application surfaces. Painting a transparent utility window's native backing
+		// store turns its untouched pixels into a display-sized block of the current theme colour.
+		applyThemeToWindows(BrowserWindow.getAllWindows(), colors, process.platform !== "darwin");
 	});
 }

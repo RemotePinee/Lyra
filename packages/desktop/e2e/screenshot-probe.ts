@@ -28,6 +28,7 @@ async function pngSize(path: string): Promise<{ width: number; height: number }>
 }
 
 interface Target {
+	id: string;
 	title: string;
 	type: string;
 	url: string;
@@ -154,7 +155,7 @@ const app = await startApp({
 		await mkdir(shots, { recursive: true });
 		await writeFile(
 			join(home, "settings.json"),
-			JSON.stringify({ screenshot: { saveLocation: shots, copyToClipboard: false, openEditor: false } }, null, 2),
+			JSON.stringify({ screenshot: { saveLocation: shots, copyToClipboard: false } }, null, 2),
 		);
 	},
 });
@@ -167,7 +168,7 @@ try {
 	note("• 主窗口已启动，请求打开截图浮层…");
 	await app.evaluate(`window.lyra.screenshot.start()`);
 
-	// The overlay only shows itself once its snapshot is painted, so give it a moment to appear.
+	// The prewarmed renderer is shown immediately; the snapshot arrives independently for export.
 	let overlay: Target | undefined;
 	for (let i = 0; i < 40 && !overlay; i++) {
 		await pause(250);
@@ -193,23 +194,6 @@ try {
 		await pause(100);
 	}
 
-	/*
-	 * Record the dimming's opacity every frame, starting now.
-	 *
-	 * `requestAnimationFrame` is exactly the right clock for this: a hidden window is not
-	 * composited, so nothing is recorded until the moment it is shown — which is when the fade
-	 * begins. Sampling over the debugger instead would race the 160ms transition and mostly miss it.
-	 */
-	await run(`(() => {
-		window.__fade = [];
-		const tick = () => {
-			const el = [...document.querySelectorAll("div")].find(d => d.style.opacity !== "" && String(d.style.transition).includes("opacity"));
-			if (el && window.__fade.length < 40) window.__fade.push(Number(getComputedStyle(el).opacity));
-			if (window.__fade.length < 40) requestAnimationFrame(tick);
-		};
-		requestAnimationFrame(tick);
-	})()`);
-
 	await run(`(() => {
 		window.__probeErrors = [];
 		window.addEventListener("error", (e) => window.__probeErrors.push(String(e.message)));
@@ -218,29 +202,58 @@ try {
 		console.error = (...a) => { window.__probeErrors.push(a.map(String).join(" ")); err(...a); };
 	})()`);
 
-	const painted = await run<{ w: number; h: number; blank: boolean; css: number; dpr: number }>(`(() => {
-		const c = document.querySelector("canvas");
-		if (!c) return { w: 0, h: 0, blank: true, css: 0, dpr: 0 };
-		const ctx = c.getContext("2d");
-		const d = ctx.getImageData(0, 0, Math.min(200, c.width), Math.min(200, c.height)).data;
-		let blank = true;
-		for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) { blank = false; break; }
-		return { w: c.width, h: c.height, blank, css: window.innerWidth, dpr: window.devicePixelRatio };
-	})()`);
-	note(`  背景画布 ${painted.w}×${painted.h}，${painted.blank ? "空白" : "已绘制屏幕快照"}`);
-	if (painted.blank) problems.push("背景快照没有画出来");
 	/*
-	 * The backdrop's bitmap has to be the capture's own pixel count, not the display's logical size.
-	 *
-	 * Sized logically, a Retina snapshot is squeezed to half resolution and stretched back over the
-	 * screen — the frozen desktop goes visibly soft the moment the overlay appears, which reads as
-	 * the capture itself being low quality.
+	 * Before a region or snap target exists, the overlay must not paint a solid veil over the whole
+	 * display. The BrowserWindow is transparent; this catches a renderer layer that defeats it.
 	 */
-	const wantBacking = Math.round(painted.css * painted.dpr);
-	note(`     位图 ${painted.w} vs 物理像素 ${wantBacking}（dpr ${painted.dpr}）`);
-	if (Math.abs(painted.w - wantBacking) > 1) {
-		problems.push(`背景画布不是物理分辨率：位图 ${painted.w}，屏幕 ${wantBacking}`);
-	}
+	const initialPaint = await run<{
+		html: string;
+		body: string;
+		root: string;
+		fullDim: number;
+		opacityTransitions: number;
+		snapshot: { complete: boolean; naturalWidth: number; width: number; height: number } | null;
+	}>(`(() => {
+		const alpha = color => {
+			if (color === "transparent") return 0;
+			const match = color.match(/rgba?\\(([^)]+)\\)/);
+			if (!match) return 1;
+			const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+			return parts.length > 3 ? parts[3] : 1;
+		};
+		const fullDim = [...document.querySelectorAll("div")].filter(el => {
+			const r = el.getBoundingClientRect();
+			return r.left <= 0 && r.top <= 0 && r.right >= innerWidth && r.bottom >= innerHeight &&
+				alpha(getComputedStyle(el).backgroundColor) > 0;
+		}).length;
+		const opacityTransitions = [...document.querySelectorAll("*")].filter(el => {
+			const style = getComputedStyle(el);
+			const properties = style.transitionProperty.split(",").map(value => value.trim());
+			return (properties.includes("opacity") || properties.includes("all")) &&
+				style.transitionDuration.split(",").some(value => parseFloat(value) > 0);
+		}).length;
+		const image = document.querySelector("[data-screenshot-overlay] > img");
+		const imageRect = image?.getBoundingClientRect();
+		return {
+			html: getComputedStyle(document.documentElement).backgroundColor,
+			body: getComputedStyle(document.body).backgroundColor,
+			root: getComputedStyle(document.getElementById("root")).backgroundColor,
+			fullDim,
+			opacityTransitions,
+			snapshot: image ? {
+				complete: image.complete,
+				naturalWidth: image.naturalWidth,
+				width: Math.round(imageRect.width),
+				height: Math.round(imageRect.height),
+			} : null,
+		};
+	})()`);
+	note(`  初始背景 → html ${initialPaint.html}，body ${initialPaint.body}，root ${initialPaint.root}`);
+	if (initialPaint.fullDim > 0) problems.push(`框选前有 ${initialPaint.fullDim} 层不透明背景覆盖整个屏幕`);
+	if (initialPaint.snapshot) problems.push("浮层仍把桌面快照绘制成了全屏背景");
+	else note("  首帧绘制 → 无桌面快照、无全屏背景");
+	if (initialPaint.opacityTransitions > 0) problems.push(`浮层仍有 ${initialPaint.opacityTransitions} 个 opacity 过渡`);
+	else note("  进入过渡 → 无");
 
 	// ---- 1. 拉出一个选区 -------------------------------------------------
 	/*
@@ -253,8 +266,8 @@ try {
 	/*
 	 * Wait for the window to actually be on screen, not merely to exist.
 	 *
-	 * The overlay is created with `show: false` and revealed only once the renderer says the
-	 * snapshot is painted, so its debugger target is listed well before it is visible. Pointer
+	 * The overlay is created with `show: false` and revealed once its prewarmed renderer is ready,
+	 * so its debugger target can be listed before it is visible. Pointer
 	 * events dispatched into a window that has not been shown go nowhere useful, which showed up
 	 * as the first drag intermittently producing no selection at all — a flaky probe reporting a
 	 * real feature as broken, and worse, sometimes reporting a broken one as fine.
@@ -267,17 +280,28 @@ try {
 	if (!visible) problems.push("浮层窗口一直没有显示出来");
 
 	/*
-	 * The way in is a fade, not a cut.
-	 *
-	 * Sampled the instant the window becomes visible, because that is when the transition starts —
-	 * the complaint is that capture mode arrives all at once. A dimming layer that reads 1 on the
-	 * very first sample never animated: it was already at its end state, which is what happens when
-	 * the transition is started while the page is still hidden and has no frames to run in.
+	 * A blue window target proves the native enumeration reached the renderer with usable screen
+	 * coordinates. Merely unit-testing the hit-test missed a UTF-16 decoder that returned an empty
+	 * title for every ordinary Windows window, which silently filtered the entire native list.
 	 */
-	const fade = await run<number[]>(`window.__fade ?? []`);
-	note(`     进入时的遮罩透明度 → ${fade.length ? fade.map((n) => n.toFixed(2)).join(" → ") : "(没采到)"}`);
-	if (fade.length === 0) problems.push("采不到遮罩的透明度，淡入无法验证");
-	else if (Math.min(...fade) >= 1) problems.push("浮层是直接跳到最终状态的，没有淡入过渡");
+	if (process.platform === "win32") {
+		const viewport = await run<{ width: number; height: number }>(`({ width: innerWidth, height: innerHeight })`);
+		let snap: { title: string; width: number; height: number } | null = null;
+		for (let y = 60; y < viewport.height && !snap; y += 100) {
+			for (let x = 60; x < viewport.width && !snap; x += 100) {
+				await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+				await pause(20);
+				snap = await run<{ title: string; width: number; height: number } | null>(`(() => {
+					const box = document.querySelector(".border-sky-400");
+					if (!box) return null;
+					const rect = box.getBoundingClientRect();
+					return { title: box.textContent.trim(), width: Math.round(rect.width), height: Math.round(rect.height) };
+				})()`);
+			}
+		}
+		if (snap) note(`  活动窗口识别 → ${snap.title}（${snap.width}×${snap.height}）`);
+		else problems.push("Windows 活动窗口枚举未产生任何可悬停目标");
+	}
 
 	let stable = 0;
 	let last = 0;
@@ -287,8 +311,6 @@ try {
 		last = tall;
 		await pause(100);
 	}
-	// And let the way-in finish, so nothing below is racing a transition.
-	await pause(250);
 	note(`  0. 窗口已显示，高度稳定在 ${last}`);
 	await drag(socket, [300, 220], [900, 620]);
 	await pause(150);
@@ -300,6 +322,14 @@ try {
 	})()`);
 	note(`  1. 拉选区 → ${drawn ? `${drawn.x},${drawn.y} ${drawn.w}×${drawn.h}` : "没有选区"}`);
 	if (!drawn || drawn.w < 500 || drawn.h < 300) problems.push("拖拽没有拉出预期大小的选区");
+	const cursorAfterSelection = drawn
+		? await run<string>(`(() => {
+			const el = document.elementFromPoint(${drawn.x + drawn.w / 2}, ${drawn.y + drawn.h / 2});
+			return el ? getComputedStyle(el).cursor : "unknown";
+		})()`)
+		: "unknown";
+	note(`     框选后的选区内光标 → ${cursorAfterSelection}`);
+	if (cursorAfterSelection === "crosshair") problems.push("框选结束后选区内仍然是十字光标");
 
 	// ---- 2. 八个手柄 -----------------------------------------------------
 	const handles = await run<number>(`document.querySelectorAll('[class*="border-white/90"] > div').length`);
@@ -354,14 +384,14 @@ try {
 	 * region being annotated is outside the frame. That is invisible to a typecheck and to every
 	 * other assertion in this file.
 	 */
-	const canvasFit = await run<{ x: number; y: number; w: number; h: number; bitmap: number; win: number; dpr: number } | null>(`(() => {
+	const canvasFit = await run<{ x: number; y: number; w: number; h: number; bitmap: number; win: number; dpr: number; ratio: number } | null>(`(() => {
 		const cs = document.querySelectorAll("canvas");
 		const c = cs[cs.length - 1];
-		if (!c || cs.length < 2) return null;
+		if (!c) return null;
 		const r = c.getBoundingClientRect();
 		return {
 			x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height),
-			bitmap: c.width, win: window.innerWidth, dpr: window.devicePixelRatio,
+			bitmap: c.width, win: window.innerWidth, dpr: window.devicePixelRatio, ratio: c.width / r.width,
 		};
 	})()`);
 	note(`  3b. 标注画布 → ${canvasFit ? `${canvasFit.x},${canvasFit.y} ${canvasFit.w}×${canvasFit.h}（位图 ${canvasFit.bitmap}，窗口 ${canvasFit.win}，dpr ${canvasFit.dpr}）` : "没有出现"}`);
@@ -373,8 +403,8 @@ try {
 		if (Math.abs(canvasFit.w - canvasFit.win) > 1) {
 			problems.push(`标注画布的显示尺寸不等于屏幕：${canvasFit.w} vs ${canvasFit.win}（dpr ${canvasFit.dpr}）`);
 		}
-		if (Math.abs(canvasFit.bitmap - canvasFit.win * canvasFit.dpr) > 1) {
-			problems.push(`标注画布的位图不是物理分辨率：${canvasFit.bitmap}`);
+		if (Math.abs(canvasFit.ratio - canvasFit.dpr) > 0.01) {
+			problems.push(`标注画布的位图比例不是设备比例：${canvasFit.ratio.toFixed(3)} vs ${canvasFit.dpr}`);
 		}
 	}
 
@@ -706,7 +736,7 @@ try {
 	const finished = await pressTool(socket, run, "完成");
 	if (!finished) problems.push("工具条上没有「完成」按钮");
 	await pause(700);
-	const overlayGone = !(await targets()).some((t) => t.type === "page" && t.url.includes("screenshot-overlay"));
+	const overlayGone = !(await targets()).some((t) => t.id === overlay.id);
 	note(`      点「完成」之后浮层${overlayGone ? "已关闭" : "还开着"}`);
 	if (!overlayGone) {
 		problems.push("点了完成之后浮层没有关闭——还停在截图状态");
@@ -761,11 +791,46 @@ try {
 	 * `closeScreenshotOverlay`, this reports whichever application happened to be behind the
 	 * overlay instead of Lyra.
 	 */
-	const alive = await app.evaluate<boolean>(`Boolean(document.querySelector(".ly-shell"))`);
+	const alive = await app.evaluate<boolean>(`Boolean(document.querySelector("textarea"))`);
 	if (!alive) problems.push("完成截图后主窗口没了");
 	await pause(600);
 	const front = await frontmostApp();
 	note(`  11. 主窗口 ${alive ? "仍在渲染" : "不见了"}，前台应用 → ${front ?? "(这个平台读不到)"}`);
+
+	// ---- 12. Escape destroys the active input window -------------------------
+	await app.evaluate(`window.lyra.screenshot.start()`);
+	let cancelOverlay: Target | undefined;
+	for (let i = 0; i < 40 && !cancelOverlay; i++) {
+		await pause(100);
+		cancelOverlay = (await targets()).find((t) => t.type === "page" && t.url.includes("screenshot-overlay"));
+	}
+	if (!cancelOverlay?.webSocketDebuggerUrl) {
+		problems.push("第二次截图浮层没有出现，无法验证 Escape");
+	} else {
+		if (process.platform === "win32") {
+			// The overlay is deliberately non-focusable. Send a real desktop key so this exercises the
+			// temporary global Escape registration rather than CDP's direct renderer injection.
+			await execFileAsync("powershell.exe", [
+				"-NoProfile",
+				"-Command",
+				"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{ESC}')",
+			]);
+		} else {
+			await call(cancelOverlay.webSocketDebuggerUrl, "Input.dispatchKeyEvent", {
+				type: "keyDown",
+				key: "Escape",
+				code: "Escape",
+				windowsVirtualKeyCode: 27,
+			});
+		}
+		let cancelled = false;
+		for (let i = 0; i < 30 && !cancelled; i++) {
+			await pause(100);
+			cancelled = !(await targets()).some((t) => t.id === cancelOverlay!.id);
+		}
+		note(`  12. 按 Escape → ${cancelled ? "活动浮层已销毁" : "活动浮层仍在"}`);
+		if (!cancelled) problems.push("按 Escape 后活动浮层没有销毁，仍会拦截输入");
+	}
 	/*
 	 * Reported, not asserted, and the reason is the point.
 	 *

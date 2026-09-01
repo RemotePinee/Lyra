@@ -180,6 +180,13 @@ export interface AnnotatorOptions {
 	initialTool?: Tool;
 	initialColour?: string;
 	initialWeight?: number;
+	/**
+	 * Known bitmap width before the source image has decoded.
+	 *
+	 * The overlay has `scaleFactor` immediately and must size strokes against it; waiting for the
+	 * snapshot would make the first marks a different weight from the rest.
+	 */
+	bitmapWidth?: number;
 }
 
 export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator {
@@ -192,14 +199,23 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 	const [history, setHistory] = useState<History>(emptyHistory);
 	const [selected, setSelected] = useState<number | null>(null);
 	const [ready, setReady] = useState(false);
-	const [width, setWidth] = useState(0);
+	const [decodedWidth, setDecodedWidth] = useState(0);
 	const [weight, setWeight] = useState(options?.initialWeight ?? 1);
+	const width = decodedWidth || options?.bitmapWidth || 0;
+	const previousSrc = useRef(src);
 
 	// Load once; every repaint draws this same decoded bitmap rather than re-decoding the data URL.
 	useEffect(() => {
+		const previous = previousSrc.current;
+		previousSrc.current = src;
 		setReady(false);
-		setHistory(emptyHistory());
-		setSelected(null);
+		// A real source replacing another real source is a different picture — marks on the old
+		// one do not belong. Empty → snapshot is the overlay receiving pixels after the user has
+		// already started selecting, and wiping that history would drop in-flight strokes.
+		if (previous && previous !== src) {
+			setHistory(emptyHistory());
+			setSelected(null);
+		}
 		// The viewer passes "" while it is only showing the picture. Setting an empty `src` on an
 		// Image resolves against the document URL and fetches the page itself, so it is not a
 		// harmless no-op — it has to be skipped rather than allowed to fail.
@@ -208,12 +224,12 @@ export function useAnnotator(src: string, options?: AnnotatorOptions): Annotator
 		img.onload = () => {
 			image.current = img;
 			const el = canvas.current;
-			if (el) {
+			if (el && (el.width !== img.naturalWidth || el.height !== img.naturalHeight)) {
 				el.width = img.naturalWidth;
 				el.height = img.naturalHeight;
 			}
 
-			setWidth(img.naturalWidth);
+			setDecodedWidth(img.naturalWidth);
 			setReady(true);
 		};
 		img.src = src;
@@ -334,11 +350,22 @@ export function AnnotateCanvas({
 	zoom,
 	className,
 	style,
+	paintBackdrop = true,
+	pixelSize,
 }: {
 	annotator: Annotator;
 	zoom: number;
 	className?: string;
 	style?: React.CSSProperties;
+	/**
+	 * Whether to blit the source image under the marks.
+	 *
+	 * The overlay paints the snapshot in a separate element, so its canvas is marks only; the viewer
+	 * uses the canvas itself as the picture surface and needs the backdrop here.
+	 */
+	paintBackdrop?: boolean;
+	/** Bitmap size to apply before the source image has decoded, so the first stroke is not on 300×150. */
+	pixelSize?: { width: number; height: number };
 }) {
 	const { canvas, image, pixels, ready, width, tool, colour, backdrop, weight, shapes, setHistory, selected, setSelected } =
 		annotator;
@@ -350,7 +377,7 @@ export function AnnotateCanvas({
 	const sizing = useRef<{ x: number; from: number; scale: number } | null>(null);
 	const carrying = useRef<{ x: number; y: number; from: Point; scale: number } | null>(null);
 
-	const base = strokeFor(width);
+	const base = strokeFor(width || pixelSize?.width || 0);
 	const stroke = Math.max(1, base * weight);
 	const typeSize = stroke * TEXT_SCALE;
 
@@ -375,13 +402,16 @@ export function AnnotateCanvas({
 	const attach = useCallback(
 		(el: HTMLCanvasElement | null) => {
 			canvas.current = el;
+			if (!el) return;
 			const img = image.current;
-			if (el && img && el.width !== img.naturalWidth) {
-				el.width = img.naturalWidth;
-				el.height = img.naturalHeight;
+			const w = img?.naturalWidth || pixelSize?.width || 0;
+			const h = img?.naturalHeight || pixelSize?.height || 0;
+			if (w > 0 && h > 0 && (el.width !== w || el.height !== h)) {
+				el.width = w;
+				el.height = h;
 			}
 		},
-		[canvas, image],
+		[canvas, image, pixelSize?.width, pixelSize?.height],
 	);
 
 	/**
@@ -410,12 +440,14 @@ export function AnnotateCanvas({
 	useEffect(() => {
 		const el = canvas.current;
 		const img = image.current;
-		if (!el || !img || !ready) return;
+		if (!el) return;
 		const ctx = el.getContext("2d");
 		if (!ctx) return;
 
 		ctx.clearRect(0, 0, el.width, el.height);
-		ctx.drawImage(img, 0, 0);
+		if (paintBackdrop && img && ready) {
+			ctx.drawImage(img, 0, 0);
+		}
 
 		// The grid comes from the annotator, which is also what `pixels` was averaged for — computing
 		// it again here is how the two drift apart.
@@ -425,7 +457,7 @@ export function AnnotateCanvas({
 			block: annotator.block,
 			brush: mosaicBrush(width) * weight,
 		});
-	}, [live, ready, width, stroke, weight, canvas, image, pixels, annotator.block]);
+	}, [live, ready, width, stroke, weight, canvas, image, pixels, annotator.block, paintBackdrop]);
 
 	/** Whether the field has been focused for the caption currently open in it. */
 	const entered = useRef(false);

@@ -81,7 +81,10 @@ export default defineConfig({
 		plugins: [externalizeDepsPlugin({ exclude: ["@lyra/core"] })],
 		build: {
 			rollupOptions: {
-				input: { index: resolve("electron/preload.ts") },
+				input: {
+					index: resolve("electron/preload.ts"),
+					screenshot: resolve("electron/screenshot-preload.ts"),
+				},
 				external: ["electron"],
 			},
 		},
@@ -94,7 +97,10 @@ export default defineConfig({
 		},
 		build: {
 			rollupOptions: {
-				input: { index: resolve("index.html") },
+				input: {
+					index: resolve("index.html"),
+					screenshotOverlay: resolve("screenshot-overlay.html"),
+				},
 			},
 		},
 	},
