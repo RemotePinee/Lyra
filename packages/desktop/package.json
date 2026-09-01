@@ -14,7 +14,7 @@
 		"build": "electron-vite build",
 		"preview": "electron-vite preview",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"test": "node --test --experimental-strip-types test/*.test.ts",
+		"test": "node --test --import ./test/setup.ts --experimental-strip-types test/*.test.ts",
 		"postinstall": "node scripts/rebuild-pty.mjs && node scripts/brand-dev-electron.mjs",
 		"rebuild:pty": "node scripts/rebuild-pty.mjs",
 		"package": "node scripts/brand-dev-electron.mjs --restore && electron-vite build && node scripts/package.mjs",

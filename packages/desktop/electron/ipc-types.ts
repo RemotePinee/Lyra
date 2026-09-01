@@ -20,6 +20,8 @@ import type {
 	WorkflowJobStep,
 	WorkflowRunStatus,
 	WorkflowRunSummary,
+	WorktreeCreateOptions,
+	WorktreeResult,
 } from "./git.ts";
 export type {
 	BranchList,
@@ -31,6 +33,8 @@ export type {
 	WorkflowJobStep,
 	WorkflowRunStatus,
 	WorkflowRunSummary,
+	WorktreeCreateOptions,
+	WorktreeResult,
 };
 /*
  * Re-exported under a name that means something on this side of the boundary.
@@ -568,16 +572,17 @@ export interface LyraApi {
 		): Promise<void>;
 	};
 	screenshot: {
-		capture(settings?: ScreenshotSettings): Promise<{
-			ok: boolean;
-			canceled?: boolean;
-			dataUrl?: string;
-			filePath?: string;
-			error?: string;
-		}>;
+		start(settings?: ScreenshotSettings): Promise<void>;
+		finish(dataUrl: string, settings?: ScreenshotSettings): Promise<{ ok: boolean; filePath?: string }>;
+		cancel(): Promise<void>;
 		pickDirectory(): Promise<string | null>;
 		validateShortcut(shortcut: string): Promise<{ ok: boolean; error?: string }>;
 		onTrigger(handler: () => void): () => void;
+		onInit(handler: (payload: { snapshot: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number; settings?: ScreenshotSettings }) => void): () => void;
+		/** Say the snapshot has been drawn, so the overlay can be shown without a blank frame. */
+		ready(): void;
+		/** The window is on screen — from here a fade has frames to run in. Returns an unsubscribe. */
+		onShown(handler: () => void): () => void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
@@ -690,7 +695,9 @@ export interface LyraApi {
 		/** Local and remote branches, for the composer's branch switcher. */
 		branches(cwd: string): Promise<BranchList>;
 		switchBranch(cwd: string, branch: string): Promise<{ ok: boolean; error?: string }>;
-		createWorktree(cwd: string, branch: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+		createWorktree(cwd: string, branch: string, options?: WorktreeCreateOptions): Promise<WorktreeResult>;
+		removeWorktree(cwd: string, worktreePath: string): Promise<{ ok: boolean; error?: string }>;
+		pruneWorktrees(cwd: string): Promise<{ ok: boolean; error?: string }>;
 		/**
 		 * How much is uncommitted, as three numbers.
 		 *

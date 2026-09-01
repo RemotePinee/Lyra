@@ -295,3 +295,10 @@ test("Brave sends its query in the URL and strips the bolding it adds", async ()
 	assert.equal(result.sources[0].title, "Node fs");
 	assert.equal(result.sources[0].snippet, "The fs module");
 });
+
+test("webSearchTool accepts pattern and search aliases", async () => {
+	const { webSearchTool } = await import("../src/tools/search.ts");
+	registerSearchProvider(fake("alias-test", true, 2));
+	const res = await webSearchTool.execute({ pattern: "test query" } as any, { cwd: "/tmp", sessionId: "s", state: new Map() });
+	assert.match(res.content[0].text, /alias-test\.example/);
+});

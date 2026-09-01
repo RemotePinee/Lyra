@@ -6,7 +6,6 @@
  * `from "./git.ts"` and does not have to know which file a function moved to.
  */
 
-import { basename, join } from "node:path";
 import { git } from "./git-exec.ts";
 
 export { git, run } from "./git-exec.ts";
@@ -40,7 +39,18 @@ export {
 	pullBranch,
 	pushBranch,
 } from "./git-history.ts";
-export { addWorktree, initRepo, listRepos, listWorktrees, type RepoRef } from "./git-repos.ts";
+export {
+	addWorktree,
+	createWorktree,
+	initRepo,
+	listRepos,
+	listWorktrees,
+	pruneWorktrees,
+	removeWorktree,
+	type RepoRef,
+	type WorktreeCreateOptions,
+	type WorktreeResult,
+} from "./git-repos.ts";
 export {
 	bumpSemver,
 	bumpVersionFiles,
@@ -56,10 +66,59 @@ export {
 	type WorkflowRunSummary,
 } from "./git-release.ts";
 
+/**
+ * Whether this directory is inside a working tree — and if git would not say, why not.
+ *
+ * The catch used to swallow everything, and that is a different claim than it looks: `git` missing
+ * from `PATH`, a directory that cannot be read, a repository git refuses to touch — all of them
+ * came back as `false`, and the window said 「不是 Git 仓库，这个目录还没有版本控制」 about a
+ * directory with a perfectly good `.git` in it. The one answer nobody could act on, because it
+ * describes a state that is not the one they are in.
+ *
+ * Naming it in a log was not enough either: the log is somewhere the user cannot see, so the window
+ * still showed the same wrong sentence with an 「初始化仓库」 button under it — offering to run
+ * `git init` inside a repository. So the reason comes back with the answer and is put on screen.
+ *
+ * Three of these are worth telling apart, because the fix for each is different:
+ *
+ *     fatal: detected dubious ownership in repository at '…'   — a checkout owned by another user
+ *     spawn git ENOENT                                          — no git on PATH at all
+ *     fatal: not a git repository                               — git answering the question
+ */
+export interface RepoProbe {
+	repo: boolean;
+	/** What stopped git from answering, in the user's language. Absent when it did answer. */
+	problem?: string;
+}
+
+export async function probeRepo(cwd: string): Promise<RepoProbe> {
+	try {
+		return { repo: (await git(cwd, ["rev-parse", "--is-inside-work-tree"])).trim() === "true" };
+	} catch (error) {
+		const said = String((error as { stderr?: string })?.stderr ?? (error as Error)?.message ?? error).trim();
+		const first = said.split("\n")[0] ?? said;
+
+		// git's own way of saying no — the only case where "not a repository" is the truth.
+		if (/not a git repository/i.test(said)) return { repo: false };
+
+		if (/ENOENT/.test(said) && /spawn git/i.test(said)) {
+			return { repo: false, problem: "找不到 git 命令。请确认已安装 git，并且它在系统 PATH 里。" };
+		}
+		if (/dubious ownership/i.test(said)) {
+			const match = /repository at '(.+?)'/.exec(said);
+			const where = match?.[1] ?? cwd;
+			return {
+				repo: false,
+				problem: `git 拒绝读取这个仓库，因为它属于另一个用户。可以执行：git config --global --add safe.directory ${where}`,
+			};
+		}
+		return { repo: false, problem: `git 没能读取这个目录：${first}` };
+	}
+}
+
+/** The same question, for the callers that only branch on the answer. */
 export async function isGitRepo(cwd: string): Promise<boolean> {
-	return git(cwd, ["rev-parse", "--is-inside-work-tree"])
-		.then((out) => out.trim() === "true")
-		.catch(() => false);
+	return (await probeRepo(cwd)).repo;
 }
 
 export async function gitBranch(cwd: string): Promise<string | null> {
@@ -160,36 +219,5 @@ export async function switchBranch(cwd: string, branch: string): Promise<{ ok: b
 	} catch (cause) {
 		const message = cause instanceof Error && "stderr" in cause ? String(cause.stderr) : String(cause);
 		return { ok: false, error: message.trim() || "切换分支失败" };
-	}
-}
-
-/**
- * Create a git worktree beside the repository.
- *
- * A worktree gets its own directory and its own branch, so an agent can work on one task
- * without disturbing whatever is checked out in the main tree. It is placed as a sibling —
- * inside the repo it would show up as an untracked directory in every diff.
- */
-export async function createWorktree(
-	cwd: string,
-	branch: string,
-): Promise<{ ok: boolean; path?: string; error?: string }> {
-	if (!(await isGitRepo(cwd))) return { ok: false, error: "当前项目不是 Git 仓库" };
-
-	const safe = branch.trim().replace(/[^\w.\-/]/g, "-");
-	if (!safe) return { ok: false, error: "分支名不能为空" };
-
-	const root = await git(cwd, ["rev-parse", "--show-toplevel"])
-		.then((out) => out.trim())
-		.catch(() => cwd);
-	const target = join(root, "..", `${basename(root)}-${safe.replace(/\//g, "-")}`);
-
-	try {
-		// `-B` so re-running with the same name resets rather than failing on "already exists".
-		await git(cwd, ["worktree", "add", "-B", safe, target]);
-		return { ok: true, path: target };
-	} catch (cause) {
-		const message = cause instanceof Error && "stderr" in cause ? String(cause.stderr) : String(cause);
-		return { ok: false, error: message.trim() || "创建工作树失败" };
 	}
 }

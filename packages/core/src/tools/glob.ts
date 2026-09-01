@@ -28,39 +28,56 @@ export const globTool: Tool<GlobArgs> = {
 		type: "object",
 		properties: {
 			pattern: { type: "string", description: "Glob pattern, relative to the search root." },
+			query: { type: "string", description: "Alias for pattern." },
+			search: { type: "string", description: "Alias for pattern." },
 			path: { type: "string", description: "Directory to search. Defaults to the workspace root." },
 			limit: { type: "number", description: "Maximum number of matches. Default 500." },
 		},
 		required: ["pattern"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
 	summarize: (args) => {
-		const pattern =
-			args.pattern ||
-			(args as unknown as { description?: string }).description ||
-			(args as unknown as { glob?: string }).glob ||
-			"";
-		return `Find ${pattern}`;
+		const raw = args as unknown as Record<string, unknown>;
+		const term = String(raw.pattern ?? raw.query ?? raw.search ?? raw.glob ?? raw.description ?? "");
+		return term ? `Find ${term}` : "Find";
 	},
 
 	async execute(args, ctx): Promise<ToolResult> {
-		let pattern = args.pattern;
-		if (!pattern && typeof (args as unknown as { description?: string }).description === "string") {
-			const desc = (args as unknown as { description: string }).description.trim();
+		const raw = args as unknown as Record<string, unknown>;
+		let pattern =
+			typeof raw.pattern === "string" && raw.pattern
+				? raw.pattern
+				: typeof raw.query === "string" && raw.query
+					? raw.query
+					: typeof raw.search === "string" && raw.search
+						? raw.search
+						: typeof raw.glob === "string" && raw.glob
+							? raw.glob
+							: "";
+
+		if (!pattern && typeof raw.description === "string") {
+			const desc = raw.description.trim();
 			const match = desc.match(/^(?:pattern|glob):\s*(.+)$/i);
 			pattern = match ? match[1] : desc;
 		}
-		if (!pattern && typeof (args as unknown as { glob?: string }).glob === "string") {
-			pattern = (args as unknown as { glob: string }).glob;
-		}
-		if (typeof pattern !== "string" || !pattern) return errorResult("`pattern` is required.");
+
+		const path =
+			typeof raw.path === "string"
+				? raw.path
+				: typeof raw.dir === "string"
+					? raw.dir
+					: typeof raw.cwd === "string"
+						? raw.cwd
+						: undefined;
 
 		let root: string;
 		try {
-			root = args.path ? resolveWorkspacePath(ctx.cwd, args.path) : ctx.cwd;
+			root = path ? resolveWorkspacePath(ctx.cwd, path) : ctx.cwd;
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
+
+		if (!pattern) return errorResult("`pattern` is required.");
 
 		const regex = globToRegExp(pattern);
 		const limit = Math.min(args.limit ?? MAX_RESULTS, MAX_RESULTS);

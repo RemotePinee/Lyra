@@ -163,19 +163,15 @@ test("a conversation with nothing oversized in it is still left alone", async ()
 	assert.equal(await compact(short, MODEL, PROVIDER, fakeStream("s") as never), null);
 });
 
-test("a summary that never arrives is not a reason to leave the window full", async () => {
+test("a summary that never arrives falls back to deterministic summary or drop with standing request", async () => {
 	/*
 	 * Summarising is a request, and requests fail — the relay is out of credentials, the key is
 	 * refused. This used to answer `null`, which the caller reads as "no compaction was needed",
-	 * and the turn goes out over the window. The next turn measures the same overfull history, asks
-	 * for the same summary, fails the same way: a conversation pinned at its limit, spending a
-	 * request per turn to stay there. From the outside it says it is compacting and nothing ever
-	 * changes.
+	 * and the turn goes out over the window.
 	 *
-	 * Losing the oldest turns outright is worse than condensing them and better than a turn that
-	 * cannot be sent. The transcript keeps everything either way.
+	 * With fallbackSummary, it extracts user goals and recent key actions mechanically.
 	 */
-	const messages = conversation(40, 1200);
+	const messages = [user("帮我排查程序坞图标消失原因并修复"), ...conversation(40, 1200)];
 	const empty = async function* () {
 		yield { type: "start" as const, partial: reply("") };
 		return reply("   ");
@@ -183,11 +179,11 @@ test("a summary that never arrives is not a reason to leave the window full", as
 
 	const result = await compact(messages, MODEL, PROVIDER, empty as never);
 	assert.ok(result, "it still came back with something sendable");
-	assert.ok(result.length < messages.length, "by dropping the oldest turns");
+	assert.ok(result.length < messages.length, "by compacting or dropping the oldest turns");
 	assert.ok(estimateTokens(result) < estimateTokens(messages), "and it weighs less");
 
 	const head = result[0].content.map((b) => (b.type === "text" ? b.text : "")).join("");
-	assert.ok(head.includes("dropped"), "and says so, rather than beginning mid-conversation in silence");
+	assert.ok(head.includes("帮我排查程序坞图标消失原因并修复"), "and preserves user intent and standing request");
 	assert.notEqual(result[1]?.role, "toolResult", "the survivors start on a whole unit");
 });
 

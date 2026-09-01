@@ -290,13 +290,31 @@ const api: LyraApi = {
 		dragGhost: (action, payload) => ipcRenderer.invoke("system:dragGhost", action, payload),
 	},
 	screenshot: {
-		capture: (settings) => ipcRenderer.invoke("screenshot:capture", settings),
+		start: (settings) => ipcRenderer.invoke("screenshot:start", settings),
+		finish: (dataUrl, settings) => ipcRenderer.invoke("screenshot:finish", dataUrl, settings),
+		cancel: () => ipcRenderer.invoke("screenshot:cancel"),
 		pickDirectory: () => ipcRenderer.invoke("screenshot:pickDirectory"),
 		validateShortcut: (shortcut) => ipcRenderer.invoke("screenshot:validateShortcut", shortcut),
 		onTrigger: (handler) => {
 			const listener = () => handler();
 			ipcRenderer.on("screenshot:trigger", listener);
 			return () => ipcRenderer.removeListener("screenshot:trigger", listener);
+		},
+		onInit: (handler) => {
+			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
+			ipcRenderer.on("screenshot:init", listener);
+			return () => ipcRenderer.removeListener("screenshot:init", listener);
+		},
+		// "The snapshot is on the canvas" — the overlay stays hidden until this arrives, so that
+		// what appears is the frozen screen rather than an empty window catching up to it.
+		ready: () => ipcRenderer.send("screenshot:ready"),
+		// The other half of that handshake: "you are on screen now", which is when a fade has
+		// frames to run in. A hidden page is not composited and a transition started there jumps
+		// straight to its end.
+		onShown: (handler: () => void) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:shown", listener);
+			return () => ipcRenderer.removeListener("screenshot:shown", listener);
 		},
 	},
 	index: {
@@ -331,7 +349,9 @@ const api: LyraApi = {
 			ipcRenderer.invoke("git:reviewPullRequest", accountId, repo, number, verdict, body),
 		branches: (cwd) => ipcRenderer.invoke("git:branches", cwd),
 		switchBranch: (cwd, branch) => ipcRenderer.invoke("git:switchBranch", cwd, branch),
-		createWorktree: (cwd, branch) => ipcRenderer.invoke("git:createWorktree", cwd, branch),
+		createWorktree: (cwd, branch, options) => ipcRenderer.invoke("git:createWorktree", cwd, branch, options),
+		removeWorktree: (cwd, worktreePath) => ipcRenderer.invoke("git:removeWorktree", cwd, worktreePath),
+		pruneWorktrees: (cwd) => ipcRenderer.invoke("git:pruneWorktrees", cwd),
 		stat: (cwd) => ipcRenderer.invoke("git:stat", cwd),
 		commit: (cwd, message) => ipcRenderer.invoke("git:commit", cwd, message),
 		status: (cwd) => ipcRenderer.invoke("git:status", cwd),

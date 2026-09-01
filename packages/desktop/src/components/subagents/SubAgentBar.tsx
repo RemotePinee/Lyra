@@ -93,6 +93,7 @@ export function SubAgentBar({ onOpen }: { onOpen: () => void }) {
 					onClick={() => {
 						const id = useApp.getState().activeSessionId;
 						if (id) void window.lyra.subAgents.dismissFinished(id);
+						useSubAgents.getState().clear();
 					}}
 					className="shrink-0 rounded-md p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover hover:text-ink"
 				>

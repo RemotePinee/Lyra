@@ -272,16 +272,34 @@ export async function runAgent(config: AgentRunConfig, emit: AgentEventSink): Pr
 			 */
 			const saidNothing = assistant.content.every((part) => part.type !== "text" || !part.text.trim());
 			const unfinished = readTodos(state).filter((todo) => todo.status !== "completed");
+			/*
+			 * Both tests are facts about the run, not readings of what the reply said.
+			 *
+			 * The tempting third case is a turn that describes a plan and stops without starting it,
+			 * and it cannot be decided here: whether a reply owed the user an action depends on what
+			 * they asked for, and that is not in the reply. Matching the wording instead catches
+			 * every polite sign-off on a finished answer and every question worth asking, and
+			 * answers them by demanding a tool call there is no work for. A plan the session should
+			 * hold on to goes in `todo_write`, where it becomes the first test above; one left in
+			 * prose is a sentence, and sentences are the user's to judge.
+			 */
 			if ((unfinished.length > 0 || saidNothing) && nudges < MAX_NUDGES) {
 				nudges += 1;
+				let nudgeText = "（自动继续）上一条回复是空的。请直接开始执行：说明你要做什么，并调用工具去做。";
+				if (!saidNothing && unfinished.length > 0) {
+					const inProgress = unfinished.find((t) => t.status === "in_progress") ?? unfinished[0];
+					const listStr = unfinished
+						.map((t, idx) => `  ${idx + 1}. [${t.status === "in_progress" ? "进行中" : "待处理"}] ${t.content}`)
+						.join("\n");
+					nudgeText = `（自动继续）清单里还有 ${unfinished.length} 项没有完成：\n${listStr}\n\n请直接执行【${inProgress.content}】，调用工具继续，不要只描述计划。`;
+				}
+
 				const nudge: Message = {
 					role: "user",
 					content: [
 						{
 							type: "text",
-							text: saidNothing
-								? "（自动继续）上一条回复是空的。请直接开始执行：说明你要做什么，并调用工具去做。"
-								: `（自动继续）清单里还有 ${unfinished.length} 项没有完成。直接执行下一项，不要只描述计划。`,
+							text: nudgeText,
 						},
 					],
 					timestamp: Date.now(),

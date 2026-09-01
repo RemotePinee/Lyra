@@ -46,6 +46,20 @@ const FILE = () => join(lyraHome(), "forges.json");
 let loaded: StoredFile | null = null;
 
 /**
+ * Whether what is in memory is the whole of what is on disk.
+ *
+ * False when the file could not be parsed, or when it held entries this build refused — a
+ * hand-edited file, one written by a newer version, an account whose `baseUrl` no longer passes
+ * validation. In every one of those cases the list in memory is *shorter than the truth*, and
+ * writing it back is not saving, it is deleting.
+ *
+ * That is not hypothetical. This file was found holding `{"version":1,"entries":[]}` — 35 bytes,
+ * where an account had been — because a read that came up empty was followed by an ordinary
+ * write, and the write believed it. Nothing warned, and there was nothing left to recover from.
+ */
+let intact = true;
+
+/**
  * Forget what was read, for tests that point `LYRA_HOME` somewhere else between cases.
  *
  * The cache is keyed on nothing — it assumes one home per process, which is true of the app and
@@ -53,12 +67,17 @@ let loaded: StoredFile | null = null;
  */
 export function resetForgeStore(): void {
 	loaded = null;
+	intact = true;
 }
 
 async function read(): Promise<StoredFile> {
 	if (loaded) return loaded;
 	const raw = await readFile(FILE(), "utf8").catch(() => null);
-	if (!raw) return (loaded = { version: 1, entries: [] });
+	// No file is an answer, not a failure: this profile has never signed in to anything.
+	if (raw === null) {
+		intact = true;
+		return (loaded = { version: 1, entries: [] });
+	}
 
 	try {
 		const parsed = JSON.parse(raw) as { entries?: unknown[] };
@@ -73,16 +92,41 @@ async function read(): Promise<StoredFile> {
 				kept.push({ account, token: entry.token, encrypted: entry.encrypted === true });
 			}
 		}
+		// Dropping a bad entry is right; forgetting that anything was dropped is what loses data.
+		intact = kept.length === entries.length;
+		if (!intact) {
+			console.warn(`[forge] ${entries.length - kept.length} account(s) in forges.json were not readable by this build`);
+		}
 		return (loaded = { version: 1, entries: kept });
 	} catch {
+		intact = false;
+		console.warn("[forge] forges.json could not be parsed; it will be preserved rather than overwritten");
 		return (loaded = { version: 1, entries: [] });
 	}
 }
 
 async function write(file: StoredFile): Promise<void> {
-	loaded = file;
 	const path = FILE();
 	await mkdir(lyraHome(), { recursive: true });
+
+	/*
+	 * Never overwrite a file we could not fully read.
+	 *
+	 * Signing one account in must not delete another that this build merely failed to parse. The
+	 * unreadable copy is moved aside instead of being replaced, so the tokens in it still exist —
+	 * recoverable by hand, which is the difference between an inconvenience and a loss.
+	 *
+	 * Kept, not deleted: it holds credentials, and the point of this branch is that we do not
+	 * understand its contents well enough to be sure they are worthless.
+	 */
+	if (!intact) {
+		const aside = `${path}.unreadable-${Date.now()}`;
+		await rename(path, aside).catch(() => {});
+		console.warn(`[forge] the previous forges.json was kept at ${aside} rather than being overwritten`);
+		intact = true;
+	}
+
+	loaded = file;
 	const tmp = `${path}.${process.pid}.tmp`;
 	await writeFile(tmp, JSON.stringify(file, null, 2), "utf8");
 	// Before the rename, so the file is never readable by anyone else even for an instant.

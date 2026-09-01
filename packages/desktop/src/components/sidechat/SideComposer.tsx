@@ -11,6 +11,7 @@ import { FileText, Plus, RotateCcw, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { findModel } from "../../models.ts";
 import { useApp } from "../../store.ts";
+import { openViewer } from "../image/viewer-store.ts";
 import { ComposerSend, ComposerShell } from "../ComposerShell.tsx";
 import { ModelIcon } from "../ModelIcon.tsx";
 
@@ -137,13 +138,28 @@ export function SideComposer({
 											<span className="text-[9.5px] text-ink-faint">文件附件</span>
 										</div>
 									) : (
-										<div className="h-14 w-20 overflow-hidden rounded-lg border border-line bg-card shadow-xs">
+										<button
+											type="button"
+											aria-label={`预览 ${attachment.name}`}
+											onClick={(event) => {
+												const images = attachments
+													.filter((a) => !a.isText && a.data)
+													.map((a) => ({
+														src: `data:${a.mimeType};base64,${a.data}`,
+														alt: a.name,
+													}));
+												const index = attachments.filter((a) => !a.isText).findIndex((a) => a.id === attachment.id);
+												const origin = event.currentTarget.getBoundingClientRect();
+												openViewer(images, index, origin, event.currentTarget);
+											}}
+											className="block h-14 w-20 overflow-hidden rounded-lg border border-line bg-card shadow-xs transition-opacity duration-[var(--ly-t-quick)] hover:opacity-85"
+										>
 											<img
 												src={`data:${attachment.mimeType};base64,${attachment.data}`}
 												alt={attachment.name}
 												className="h-full w-full object-cover"
 											/>
-										</div>
+										</button>
 									)}
 									<button
 										type="button"

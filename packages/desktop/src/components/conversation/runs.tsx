@@ -59,11 +59,22 @@ export function segments(content: AssistantContent[]): Segment[] {
 export function LiveToolCard({
   block,
   stopReason,
+  runs,
 }: {
   block: Extract<AssistantContent, { type: "toolCall" }>;
   stopReason: AssistantMessage["stopReason"];
+  /**
+   * Where to read this call's record, for a transcript that is not the main session's.
+   *
+   * A sub-agent's tool events never reach the app store — `runSubAgent` emits only the messages it
+   * produced — so a card left to look itself up there finds nothing, calls itself an error and
+   * shows the raw tool name. The sub-agent panel rebuilds the same records from its own transcript
+   * and passes them in.
+   */
+  runs?: Record<string, ToolRunState>;
 }) {
-  const run = useApp((s) => s.toolRuns[block.id]);
+  const stored = useApp((s) => s.toolRuns[block.id]);
+  const run = runs ? runs[block.id] : stored;
   /*
    * A preview replaces its own tool card.
    *
@@ -99,7 +110,16 @@ export function LiveToolCard({
  * unevenness — the same kind of work looked like two different things depending on how many
  * calls happened to fall together, and the boundary moved as the model chose to batch or not.
  */
-const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trailing?: boolean }) {
+const ToolRunGroup = function ToolRun({
+  calls,
+  trailing,
+  runs,
+}: {
+  calls: Call[];
+  trailing?: boolean;
+  /** Records for a transcript outside the main session — see `LiveToolCard`. */
+  runs?: Record<string, ToolRunState>;
+}) {
   /*
    * Primitives, not the map.
    *
@@ -132,11 +152,11 @@ const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trai
    */
   const summary = describeRun(calls.map(({ block }) => ({ toolName: block.name, subject: subjectOf(block) })));
   // Totals across the run, so a fold does not hide how much changed.
-  const added = useApp((s) => calls.reduce((n, { block }) => n + diffOf(s.toolRuns[block.id], "added"), 0));
-  const removed = useApp((s) => calls.reduce((n, { block }) => n + diffOf(s.toolRuns[block.id], "removed"), 0));
+  const added = useApp((s) => calls.reduce((n, { block }) => n + diffOf((runs ?? s.toolRuns)[block.id], "added"), 0));
+  const removed = useApp((s) => calls.reduce((n, { block }) => n + diffOf((runs ?? s.toolRuns)[block.id], "removed"), 0));
 
   const cards = calls.map(({ block, stopReason }) => (
-    <LiveToolCard key={block.id} block={block} stopReason={stopReason} />
+    <LiveToolCard key={block.id} block={block} stopReason={stopReason} runs={runs} />
   ));
 
   return (
@@ -165,6 +185,9 @@ const ToolRunGroup = function ToolRun({ calls, trailing }: { calls: Call[]; trai
  */
 export const ToolRun = memo(ToolRunGroup, (before, after) => {
 	if (before.trailing !== after.trailing) return false;
+	// Injected records are rebuilt whenever their transcript grows, and a new map is the only sign
+	// that a call in this group has finished — nothing here subscribes to them.
+	if (before.runs !== after.runs) return false;
 	if (before.calls.length !== after.calls.length) return false;
 	return before.calls.every(
 		(call, i) => call.block.id === after.calls[i].block.id && call.stopReason === after.calls[i].stopReason,

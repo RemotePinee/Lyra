@@ -8,7 +8,17 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { git } from "./git-exec.ts";
-import { createWorktree, gitBranch, isGitRepo } from "./git.ts";
+import { gitBranch, isGitRepo } from "./git.ts";
+import { canonicalPath } from "./path-key.ts";
+import {
+	createWorktree,
+	pruneWorktrees,
+	removeWorktree,
+	type WorktreeCreateOptions,
+	type WorktreeResult,
+} from "./git-worktrees.ts";
+
+export { createWorktree, pruneWorktrees, removeWorktree, type WorktreeCreateOptions, type WorktreeResult };
 
 /** Runs a git command for its effect, turning failure into readable text rather than a throw. */
 
@@ -87,7 +97,10 @@ export async function listWorktrees(cwd: string): Promise<RepoRef[]> {
 
 	const flush = (isMain: boolean) => {
 		if (!path) return;
-		trees.push({ path, label: basename(path), branch, worktree: !isMain });
+		// Canonical, so a caller can compare this against a path it built itself — git prints
+		// forward slashes even on Windows, where nothing else in the app does. See `path-key.ts`.
+		const at = canonicalPath(path);
+		trees.push({ path: at, label: basename(at), branch, worktree: !isMain });
 		path = null;
 		branch = null;
 	};

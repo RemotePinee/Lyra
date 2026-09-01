@@ -374,9 +374,16 @@ export function stepNumber(shapes: Shape[], index: number): number {
 // Mosaic
 // ---------------------------------------------------------------------------
 
-/** Mosaic block size for an image of this width — coarse enough to actually obscure a face or a token. */
-export function mosaicBlock(width: number): number {
-	return Math.max(8, Math.round(width / 90));
+/**
+ * Mosaic block size for an image of this width — coarse enough to actually obscure a face or a token.
+ *
+ * `scale` is the size control, so the grain is adjustable rather than fixed: redacting a line of
+ * text and redacting a whole window want visibly different squares, and one size does neither well.
+ * The base is finer than it used to be because the scale multiplies it — the middle setting lands
+ * where the old fixed value was.
+ */
+export function mosaicBlock(width: number, scale = 1): number {
+	return Math.max(6, Math.round((width / 110) * scale));
 }
 
 /** How wide the mosaic brush paints, in natural pixels. */

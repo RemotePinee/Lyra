@@ -32,6 +32,8 @@ export const grepTool: Tool<GrepArgs> = {
 		type: "object",
 		properties: {
 			pattern: { type: "string", description: "Regular expression to search for." },
+			query: { type: "string", description: "Alias for pattern." },
+			search: { type: "string", description: "Alias for pattern." },
 			path: { type: "string", description: "Directory or file to search. Defaults to the workspace root." },
 			glob: { type: "string", description: "Only search files matching this glob, e.g. `**/*.ts`." },
 			case_insensitive: { type: "boolean", description: "Ignore case." },
@@ -40,46 +42,78 @@ export const grepTool: Tool<GrepArgs> = {
 			limit: { type: "number", description: "Maximum matches to return. Default 200." },
 		},
 		required: ["pattern"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
 	summarize: (args) => {
-		const pattern =
-			args.pattern ||
-			(args as unknown as { description?: string }).description ||
-			(args as unknown as { query?: string }).query ||
-			"";
-		return `Search "${pattern}"`;
+		const raw = args as unknown as Record<string, unknown>;
+		const term = String(raw.pattern ?? raw.query ?? raw.search ?? raw.description ?? "");
+		return term ? `Search "${term}"` : "Search";
 	},
 
 	async execute(args, ctx): Promise<ToolResult> {
-		let pattern = args.pattern;
-		if (!pattern && typeof (args as unknown as { description?: string }).description === "string") {
-			const desc = (args as unknown as { description: string }).description.trim();
+		const raw = args as unknown as Record<string, unknown>;
+		let pattern =
+			typeof raw.pattern === "string" && raw.pattern
+				? raw.pattern
+				: typeof raw.query === "string" && raw.query
+					? raw.query
+					: typeof raw.search === "string" && raw.search
+						? raw.search
+						: "";
+
+		if (!pattern && typeof raw.description === "string") {
+			const desc = raw.description.trim();
 			const match = desc.match(/^(?:pattern|query|regex|search):\s*(.+)$/i);
 			pattern = match ? match[1] : desc;
 		}
-		if (!pattern && typeof (args as unknown as { query?: string }).query === "string") {
-			pattern = (args as unknown as { query: string }).query;
-		}
-		if (typeof pattern !== "string" || !pattern) return errorResult("`pattern` is required.");
-		const resolvedArgs: GrepArgs = { ...args, pattern };
+
+		if (!pattern) return errorResult("`pattern` is required.");
+		const normalizedArgs: GrepArgs = {
+			...args,
+			pattern,
+			path: typeof raw.path === "string" ? raw.path : typeof raw.dir === "string" ? raw.dir : typeof raw.cwd === "string" ? raw.cwd : undefined,
+		};
 
 		let root: string;
 		try {
-			root = resolvedArgs.path ? resolveWorkspacePath(ctx.cwd, resolvedArgs.path) : ctx.cwd;
+			root = normalizedArgs.path ? resolveWorkspacePath(ctx.cwd, normalizedArgs.path) : ctx.cwd;
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
 
-		const viaRipgrep = await runRipgrep(resolvedArgs, root, ctx);
+		const viaRipgrep = await runRipgrep(normalizedArgs, root, ctx);
 		if (viaRipgrep) return viaRipgrep;
-		return runFallback(resolvedArgs, root, ctx);
+
+		/*
+		 * A pattern that is not a regular expression is almost always meant as text.
+		 *
+		 * Models reach for this tool with things like `foo(bar` or `arr[0]` — a fragment of the code
+		 * being looked for, not an expression — and a search that fails on it teaches nothing except
+		 * to try again. Retried as a literal it finds exactly what was wanted. The retry goes through
+		 * ripgrep too: falling straight through to the built-in scanner would walk the whole tree in
+		 * JavaScript for a query ripgrep answers in milliseconds.
+		 */
+		if (!compiles(normalizedArgs.pattern)) {
+			const literally = await runRipgrep(normalizedArgs, root, ctx, true);
+			if (literally) return literally;
+		}
+		return runFallback(normalizedArgs, root, ctx);
 	},
 };
 
-async function runRipgrep(args: GrepArgs, root: string, ctx: ToolContext): Promise<ToolResult | null> {
+/** Whether the pattern is a regular expression at all, or only a piece of text that looks like one. */
+function compiles(pattern: string): boolean {
+	try {
+		return Boolean(new RegExp(pattern));
+	} catch {
+		return false;
+	}
+}
+
+async function runRipgrep(args: GrepArgs, root: string, ctx: ToolContext, literal = false): Promise<ToolResult | null> {
 	const limit = Math.min(args.limit ?? MAX_MATCHES, MAX_MATCHES);
 	const argv = ["--no-heading", "--line-number", "--color=never", "--max-count", String(limit)];
+	if (literal) argv.push("--fixed-strings");
 	if (args.case_insensitive) argv.push("-i");
 	if (args.files_only) argv.push("--files-with-matches");
 	if (args.context) argv.push("-C", String(args.context));
@@ -124,17 +158,25 @@ async function runRipgrep(args: GrepArgs, root: string, ctx: ToolContext): Promi
 					if (normalized.startsWith(normalizedRoot)) return normalized.slice(normalizedRoot.length).replace(/^\//, "");
 					return line;
 				});
-			resolve(formatMatches(lines, args, limit));
+			resolve(formatMatches(lines, args, limit, literal));
 		});
 	});
 }
 
 async function runFallback(args: GrepArgs, root: string, ctx: ToolContext): Promise<ToolResult> {
 	let regex: RegExp;
+	let literal = false;
 	try {
 		regex = new RegExp(args.pattern, args.case_insensitive ? "i" : "");
-	} catch (error) {
-		return errorResult(`Invalid regular expression: ${error instanceof Error ? error.message : String(error)}`);
+	} catch {
+		// Same reasoning as the ripgrep retry: a pattern that will not compile was meant as text.
+		literal = true;
+		try {
+			const escaped = args.pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			regex = new RegExp(escaped, args.case_insensitive ? "i" : "");
+		} catch (error) {
+			return errorResult(`Invalid regular expression: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	const limit = Math.min(args.limit ?? MAX_MATCHES, MAX_MATCHES);
@@ -179,20 +221,28 @@ async function runFallback(args: GrepArgs, root: string, ctx: ToolContext): Prom
 	};
 
 	await walk(root);
-	return formatMatches(lines, args, limit);
+	return formatMatches(lines, args, limit, literal);
 }
 
-function formatMatches(lines: string[], args: GrepArgs, limit: number): ToolResult {
+/**
+ * @param literal Whether the pattern was searched for as text because it is not a valid regular
+ *   expression. Said in the result rather than left silent: otherwise a search whose metacharacters
+ *   were quietly disarmed reads as a search that ran as written and found nothing.
+ */
+function formatMatches(lines: string[], args: GrepArgs, limit: number, literal = false): ToolResult {
+	const note = literal ? `\`${args.pattern}\` is not a valid regular expression, so it was searched for literally.` : "";
 	if (lines.length === 0) {
+		const text = literal ? `${note}\nNo matches.` : `No matches for /${args.pattern}/.`;
 		return {
-			content: [{ type: "text", text: `No matches for /${args.pattern}/.` }],
-			details: { kind: "grep", pattern: args.pattern, count: 0 },
+			content: [{ type: "text", text }],
+			details: { kind: "grep", pattern: args.pattern, count: 0, literal },
 		};
 	}
 	const shown = lines.slice(0, limit);
+	const header = literal ? `${note}\n\n` : "";
 	const footer = lines.length > shown.length ? `\n\n[truncated at ${limit} matches]` : "";
 	return {
-		content: [{ type: "text", text: shown.join("\n") + footer }],
-		details: { kind: "grep", pattern: args.pattern, count: lines.length, matches: shown },
+		content: [{ type: "text", text: header + shown.join("\n") + footer }],
+		details: { kind: "grep", pattern: args.pattern, count: lines.length, matches: shown, literal },
 	};
 }

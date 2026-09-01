@@ -18,7 +18,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
@@ -136,4 +136,65 @@ test("a sealed token written under a different key is null rather than wrong", a
 	module.resetForgeStore();
 
 	assert.equal(await tokenFor("acc-1"), null);
+});
+
+/*
+ * What happens to accounts this build cannot read.
+ *
+ * Written against a real loss: `forges.json` was found holding 35 bytes —
+ * `{"version":1,"entries":[]}` — where an account had been. A read that came up empty was
+ * followed by an ordinary write, and the write believed it. Nothing warned, and there was nothing
+ * left to recover from.
+ *
+ * Dropping an entry that cannot be validated is right. Writing the shortened list back over the
+ * file is what turns a parse failure into a deletion, and that is what these hold.
+ */
+
+test("a file that cannot be parsed is moved aside, not overwritten", async () => {
+	await writeFile(join(home, "forges.json"), "{ this is not json", "utf8");
+
+	// Signing a new account in must not be the thing that deletes whatever was there.
+	await saveAccount(account, "ghp_new_token");
+
+	const kept = (await readdir(home)).filter((name) => name.startsWith("forges.json.unreadable-"));
+	assert.equal(kept.length, 1, "the unreadable file was not preserved");
+	assert.equal(await readFile(join(home, kept[0]), "utf8"), "{ this is not json");
+
+	// And the new account is saved normally.
+	assert.equal(await tokenFor("acc-1"), "ghp_new_token");
+});
+
+test("an entry this build refuses does not take the rest of the file with it", async () => {
+	await writeFile(
+		join(home, "forges.json"),
+		JSON.stringify({
+			version: 1,
+			entries: [
+				{ account: { ...account, id: "acc-keep" }, token: await seal("ghp_keep"), encrypted: true },
+				// A shape this build cannot validate: a newer version's, or a hand edit.
+				{ account: { id: "acc-strange", kind: "github" }, token: "whatever", encrypted: true },
+			],
+		}),
+		"utf8",
+	);
+
+	// Reading is enough to notice; the write is what could have destroyed it.
+	assert.equal(await tokenFor("acc-keep"), "ghp_keep");
+	await saveAccount({ ...account, id: "acc-new" }, "ghp_new");
+
+	const aside = (await readdir(home)).filter((name) => name.startsWith("forges.json.unreadable-"));
+	assert.equal(aside.length, 1, "the file holding the unparseable entry was overwritten");
+
+	const preserved = JSON.parse(await readFile(join(home, aside[0]), "utf8")) as { entries: unknown[] };
+	assert.equal(preserved.entries.length, 2, "the preserved copy should still hold both entries");
+});
+
+test("an ordinary file is not moved aside — the guard only fires on damage", async () => {
+	await saveAccount(account, "ghp_one");
+	await saveAccount({ ...account, id: "acc-2" }, "ghp_two");
+
+	const aside = (await readdir(home)).filter((name) => name.includes("unreadable"));
+	assert.deepEqual(aside, [], "a healthy file was treated as damaged");
+	assert.equal(await tokenFor("acc-1"), "ghp_one");
+	assert.equal(await tokenFor("acc-2"), "ghp_two");
 });

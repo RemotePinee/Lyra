@@ -127,10 +127,13 @@ export function modelHistory(log: SessionLog, provider: ProviderConfig, model: M
 	const boundary = log.compaction;
 	if (!boundary) return log.messages;
 
-	const tail = log.messages.slice(boundary.keptFrom);
-	if (!boundary.summary) return [droppedMessage(), ...tail];
-
 	const older = log.messages.slice(0, boundary.keptFrom);
+	const tail = log.messages.slice(boundary.keptFrom);
+	if (!boundary.summary) {
+		const standing = lastRequest(older) ?? lastRequest(log.messages);
+		return [droppedMessage(standing), ...tail];
+	}
+
 	return [...summaryMessages(boundary.summary, lastRequest(older), provider, model), ...tail];
 }
 

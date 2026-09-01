@@ -12,6 +12,7 @@
 import { AgentSession, type AgentEvent, type SessionStorage, type Settings, type SideChat } from "@lyra/core";
 import { BrowserWindow } from "electron";
 import { createBrowserTools } from "./browser-tools.ts";
+import { autoCreateSessionWorktree, cleanOldWorktrees } from "./git-worktrees.ts";
 import type { SessionSnapshot } from "./ipc-types.ts";
 import { ensureSessionWorkspace } from "./scratch.ts";
 
@@ -73,12 +74,22 @@ export async function getOrCreateSession(cwd: string, _modelId: string): Promise
 	// be gone — swept by a version of this app that used to, or removed by hand. Put it back before
 	// a session is built around a working directory that is not there.
 	await ensureSessionWorkspace(cwd).catch(() => false);
+
+	const appSettings = deps.settings();
+	// Generate a temporary session id prefix for potential worktree naming
+	const tempId = Math.random().toString(36).slice(2, 10);
+	const worktreeResult = await autoCreateSessionWorktree(cwd, appSettings, tempId).catch(() => ({
+		cwd,
+		worktreeCreated: false,
+	}));
+	const sessionCwd = worktreeResult.cwd;
+
 	const browser = createBrowserTools();
 	// `emit` closes over `session`, which is only ever invoked after `initialize()` has
 	// assigned `meta`, so the self-reference is safe — but it needs an explicit type.
 	const session: AgentSession = new AgentSession({
-		cwd,
-		settings: deps.settings(),
+		cwd: sessionCwd,
+		settings: appSettings,
 		store: deps.store(),
 		extraTools: browser.tools,
 		emit: (event: AgentEvent) => broadcast(session.meta.id, event),
@@ -86,6 +97,13 @@ export async function getOrCreateSession(cwd: string, _modelId: string): Promise
 	await session.initialize();
 	sessions.set(session.meta.id, session);
 	browsers.set(session.meta.id, browser.dispose);
+
+	// Trigger async cleanup if enabled in settings
+	if (appSettings.worktrees?.autoCleanOld) {
+		const liveCwds = new Set(Array.from(sessions.values()).map((s) => s.cwd));
+		void cleanOldWorktrees(cwd, appSettings, liveCwds).catch(() => {});
+	}
+
 	return session;
 }
 

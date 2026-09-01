@@ -46,23 +46,40 @@ export const webSearchTool: Tool<SearchArgs> = {
 		type: "object",
 		properties: {
 			query: { type: "string", description: "What to search for." },
+			pattern: { type: "string", description: "Alias for query." },
+			search: { type: "string", description: "Alias for query." },
 		},
 		required: ["query"],
-		additionalProperties: false,
+		additionalProperties: true,
 	},
-	summarize: (args) => `Search ${args.query}`,
+	summarize: (args) => {
+		const raw = args as unknown as Record<string, unknown>;
+		const term = String(raw.query ?? raw.pattern ?? raw.search ?? "");
+		return term ? `Search ${term}` : "Search the web";
+	},
 
 	async execute(args, ctx): Promise<ToolResult> {
-		if (typeof args.query !== "string" || args.query.trim().length === 0) {
+		const raw = args as unknown as Record<string, unknown>;
+		const query = typeof raw.query === "string" && raw.query
+			? raw.query
+			: typeof raw.pattern === "string" && raw.pattern
+				? raw.pattern
+				: typeof raw.search === "string" && raw.search
+					? raw.search
+					: "";
+
+		if (!query || query.trim().length === 0) {
 			return errorResult("`query` is required.");
 		}
 
+		const cleanedQuery = query.trim();
+
 		try {
-			const result = await search({ query: args.query.trim(), maxResults: MAX_RESULTS, signal: ctx.signal });
+			const result = await search({ query: cleanedQuery, maxResults: MAX_RESULTS, signal: ctx.signal });
 			if (result.sources.length === 0) {
 				// An empty list is an answer, and saying so beats returning an empty block the model
 				// has to interpret.
-				return { content: [{ type: "text", text: `<search query="${args.query}">没有找到结果。</search>` }] };
+				return { content: [{ type: "text", text: `<search query="${cleanedQuery}">没有找到结果。</search>` }] };
 			}
 
 			const lines = result.sources.map((source, index) => {
@@ -76,9 +93,9 @@ export const webSearchTool: Tool<SearchArgs> = {
 
 			return {
 				content: [
-					{ type: "text", text: `<search query="${args.query}">\n${answer}${lines.join("\n")}${truncated}\n</search>` },
+					{ type: "text", text: `<search query="${cleanedQuery}">\n${answer}${lines.join("\n")}${truncated}\n</search>` },
 				],
-				details: { kind: "web_search", query: args.query, count: result.sources.length },
+				details: { kind: "web_search", query: cleanedQuery, count: result.sources.length },
 			};
 		} catch (error) {
 			// A search failure is usually configuration — no provider, no key, two providers and no

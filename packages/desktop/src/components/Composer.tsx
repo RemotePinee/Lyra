@@ -2,7 +2,7 @@ import type { UserContent } from "@lyra/core";
 // Through the browser-safe door: the main barrel reaches the filesystem, and this runs in a page.
 import { expandCommand, parseInvocation, rankCommands, type SlashCommand } from "@lyra/core/commands-view";
 import { Camera, CircleAlert, FileText, Folder, GitBranch, MessageSquare, Plus, X } from "lucide-react";
-import { openFromEvent, openViewer } from "./image/viewer-store.ts";
+import { openFromEvent } from "./image/viewer-store.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChangeBar } from "./ChangeBar.tsx";
 import { CommandMenu } from "./CommandMenu.tsx";
@@ -485,61 +485,11 @@ export function Composer() {
 	}
 
 	const takeScreenshot = useCallback(async () => {
-		const res = await window.lyra.screenshot.capture();
-		if (!res.ok) {
-			if (res.error) useApp.getState().notify(res.error, "warn");
-			return;
-		}
-		if (res.canceled || !res.dataUrl) return;
-
-		const screenshotSettings = settings?.screenshot;
-		const shouldInsert = screenshotSettings?.insertIntoComposer === true;
-		const shouldOpenEditor = screenshotSettings?.openEditor !== false;
-
-		const attachmentId = `screenshot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-		const match = /^data:([^;]+);base64,(.*)$/s.exec(res.dataUrl);
-		const mimeType = match ? match[1] : "image/png";
-		const data = match ? match[2] : "";
-
-		const newAttachment: Attachment = {
-			id: attachmentId,
-			name: "截屏.png",
-			mimeType,
-			data,
-			isText: false,
-		};
-
-		if (shouldInsert) {
-			setAttachments((prev) => [...prev, newAttachment]);
-		}
-
-		if (shouldOpenEditor) {
-			openViewer(
-				[
-					{
-						src: res.dataUrl,
-						alt: "截屏",
-						onReplace: (updatedDataUrl: string) => {
-							if (shouldInsert) {
-								setAttachments((prev) =>
-									prev.map((item) =>
-										item.id === attachmentId ? { ...item, ...fromDataUrl(updatedDataUrl, item) } : item,
-									),
-								);
-							}
-						},
-					},
-				],
-				0,
-				null,
-				null,
-				true,
-			);
-		}
+		await window.lyra.screenshot.start(settings?.screenshot);
 	}, [settings?.screenshot]);
 
 	useEffect(() => {
-		return window.lyra.screenshot.onTrigger(() => {
+		return window.lyra.screenshot.onTrigger?.(() => {
 			void takeScreenshot();
 		});
 	}, [takeScreenshot]);

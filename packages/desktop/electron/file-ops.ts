@@ -7,7 +7,7 @@
  * Kept out of the IPC file so `node --test` can import them without an Electron process.
  */
 
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 /**
  * The path, normalised, if it lies inside one of the roots — otherwise null.
@@ -20,7 +20,8 @@ import { isAbsolute, resolve, sep } from "node:path";
  * Absolute only. A relative path would be resolved against whatever the main process happens to
  * have as its cwd, which is not a location the renderer should be able to name at all.
  *
- * Compared with a trailing separator so `/work/app-secrets` cannot pass as `/work/app`.
+ * Checks containment via `path.relative()`: on Windows, raw prefix matching fails because
+ * separators (`\` vs `/`) and drive letter casing (`C:` vs `c:`) differ.
  */
 export function resolveInside(target: string, roots: readonly string[]): string | null {
 	if (typeof target !== "string" || target === "" || !isAbsolute(target)) return null;
@@ -31,7 +32,8 @@ export function resolveInside(target: string, roots: readonly string[]): string 
 	for (const root of roots) {
 		if (!root || !isAbsolute(root)) continue;
 		const base = resolve(root);
-		if (full === base || full.startsWith(base + sep)) return full;
+		const rel = relative(base, full);
+		if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return full;
 	}
 	return null;
 }
@@ -39,13 +41,13 @@ export function resolveInside(target: string, roots: readonly string[]): string 
 /**
  * Whether `child` lies below `parent`. Strict: a path is not its own descendant.
  *
- * What stops a directory being dropped into itself. Separator-aware for the same reason as above —
- * `/a/bc` must not count as being under `/a/b`.
+ * What stops a directory being dropped into itself. `relative` aware so `/a/bc` must not count as being under `/a/b`.
  */
 export function isDescendant(parent: string, child: string): boolean {
 	const from = resolve(parent);
 	const to = resolve(child);
-	return to !== from && to.startsWith(from + sep);
+	const rel = relative(from, to);
+	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
 /** Names Windows refuses whatever extension follows them; a file called `con.txt` cannot exist. */

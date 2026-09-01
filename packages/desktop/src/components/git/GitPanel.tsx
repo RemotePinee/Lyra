@@ -1,4 +1,4 @@
-import { Activity, ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Tag } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Sparkles, Tag } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveRefresh } from "../useLiveRefresh.ts";
 
@@ -279,24 +279,75 @@ export function GitPanel() {
     );
   }
 
-  if (!cwd) {
+  /*
+   * git could not answer, which is not the same as answering no.
+   *
+   * The panel used to draw the sentence below for both, so a repository git had refused to read —
+   * one owned by another user, or with no git on the path at all — was described as having no
+   * version control, under a button offering to initialise it. Two wrong claims and one dangerous
+   * suggestion. When the main process could not get an answer it now says what stopped it and
+   * offers to have the Agent diagnose/fix it rather than misleading the user.
+   */
+  if (workspace.gitProblem) {
     return (
-      <PanelEmpty icon={GitBranch} title="不是 Git 仓库">
-        <span className="block">这个目录还没有版本控制。</span>
+      <PanelEmpty icon={GitBranch} title="Git 仓库异常">
+        <span className="block text-ink-muted">{workspace.gitProblem}</span>
         <button
           type="button"
           disabled={busy}
           onClick={() => {
-            void act(() => window.lyra.git.init(workspace.path)).then((ok) => {
-              // Re-scan rather than assume: the new repository has to come back through the
-              // same path as any other, or the panel would be showing something it invented.
-              if (ok) setRescan((n) => n + 1);
-            });
+            useApp
+              .getState()
+              .setComposerDraft(
+                `当前项目的 Git 状态异常，无法正常读取仓库信息。\n报错详情：${workspace.gitProblem}\n\n请帮我分析原因并修复此 Git 问题（例如检查 PATH、目录安全配置 safe.directory、或者修复损坏的索引等）。`,
+                true,
+              );
           }}
-          className="mt-3 h-[26px] rounded-md bg-ink px-2.5 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="mt-3 flex h-[28px] items-center gap-1.5 rounded-md bg-ink px-3 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          初始化仓库
+          <Sparkles size={13} strokeWidth={2} />
+          让 Agent 诊断并修复
         </button>
+      </PanelEmpty>
+    );
+  }
+
+  if (!cwd) {
+    return (
+      <PanelEmpty icon={GitBranch} title="未检测到 Git 仓库">
+        <span className="block text-ink-muted">当前目录尚未建立 Git 版本控制。</span>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void act(() => window.lyra.git.init(workspace.path)).then((ok) => {
+                // Re-scan rather than assume: the new repository has to come back through the
+                // same path as any other, or the panel would be showing something it invented.
+                if (ok) setRescan((n) => n + 1);
+              });
+            }}
+            className="h-[28px] rounded-md bg-ink px-3 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            初始化仓库
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              useApp
+                .getState()
+                .setComposerDraft(
+                  `请帮我检查当前目录（${workspace.path}）的 Git 仓库状态，并协助我完成 Git 版本控制的初始化与初始提交配置。`,
+                  true,
+                );
+            }}
+            className="flex h-[28px] items-center gap-1.5 rounded-md border border-line bg-card px-3 text-detail font-medium text-ink transition-colors hover:bg-card-hover disabled:opacity-40"
+          >
+            <Sparkles size={13} strokeWidth={2} className="text-accent" />
+            让 Agent 处理
+          </button>
+        </div>
       </PanelEmpty>
     );
   }

@@ -54,6 +54,8 @@ jobs:
       # `release.yml`; see the comments there for why each line is needed.
       - name: Prepare the signing identity
         if: matrix.os == 'macos-latest'
+        # See `release.yml`: one of these can hang on a dialog rather than fail.
+        timeout-minutes: 5
         run: |
           if [ -z "$MAC_CERTIFICATE_P12" ]; then
             echo "::warning::MAC_CERTIFICATE_P12 is not set — this build will be ad-hoc signed"
@@ -72,7 +74,9 @@ jobs:
 
           openssl pkcs12 -legacy -in "$RUNNER_TEMP/certificate.p12" -passin "pass:$MAC_CERTIFICATE_PASSWORD" \
             -clcerts -nokeys -out "$RUNNER_TEMP/certificate.pem"
-          security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$RUNNER_TEMP/certificate.pem"
+          # sudo and the system keychain: the user domain waits on a dialog. See `release.yml`.
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/certificate.pem"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
 

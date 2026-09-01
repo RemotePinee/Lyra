@@ -17,17 +17,18 @@
  */
 
 import { Bot, CircleStop, FileText, Plus, RotateCcw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { SubAgentSummary } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { rosterOrder, useSubAgents } from "../../store/subAgents.ts";
+import { openViewer } from "../image/viewer-store.ts";
 import { ComposerSend, ComposerShell } from "../ComposerShell.tsx";
 import { Markdown } from "../Markdown.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
 import { Scroller } from "../Scroller.tsx";
 import { ranFor, statusTone, statusWord } from "./format.ts";
-import { SubAgentMessageRow, subAgentRuns } from "./SubAgentMessageRow.tsx";
+import { SubAgentTranscript } from "./SubAgentMessageRow.tsx";
 
 /** How close to the bottom still counts as "following along" — the side chat's own slack. */
 const PIN_SLACK = 60;
@@ -168,8 +169,6 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const pinned = useRef(true);
 
-	const toolRuns = useMemo(() => subAgentRuns(messages ?? []), [messages]);
-
 	// Follow along while it is working, unless you have scrolled up to read something.
 	useLayoutEffect(() => {
 		if (!pinned.current) return;
@@ -193,14 +192,7 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 						{loading || agent.status === "running" ? "刚开始，还没有输出。" : "这个子 Agent 没有留下内容。"}
 					</p>
 				) : (
-					messages.map((message, at) => (
-						<SubAgentMessageRow
-							key={`${agent.id}:${at}`}
-							message={message}
-							toolRuns={toolRuns}
-							isLive={agent.status === "running" && at === messages.length - 1}
-						/>
-					))
+					<SubAgentTranscript messages={messages} isLive={agent.status === "running"} />
 				)}
 				{/*
 				 * The answer, marked as the one thing the parent actually saw.
@@ -414,13 +406,28 @@ function Steer({ agent, sessionId }: { agent: SubAgentSummary; sessionId: string
 											<span className="text-[9.5px] text-ink-faint">文件附件</span>
 										</div>
 									) : (
-										<div className="h-14 w-20 overflow-hidden rounded-lg border border-line bg-card shadow-xs">
+										<button
+											type="button"
+											aria-label={`预览 ${attachment.name}`}
+											onClick={(event) => {
+												const images = attachments
+													.filter((a) => !a.isText && a.data)
+													.map((a) => ({
+														src: `data:${a.mimeType};base64,${a.data}`,
+														alt: a.name,
+													}));
+												const index = attachments.filter((a) => !a.isText).findIndex((a) => a.id === attachment.id);
+												const origin = event.currentTarget.getBoundingClientRect();
+												openViewer(images, index, origin, event.currentTarget);
+											}}
+											className="block h-14 w-20 overflow-hidden rounded-lg border border-line bg-card shadow-xs transition-opacity duration-[var(--ly-t-quick)] hover:opacity-85"
+										>
 											<img
 												src={`data:${attachment.mimeType};base64,${attachment.data}`}
 												alt={attachment.name}
 												className="h-full w-full object-cover"
 											/>
-										</div>
+										</button>
 									)}
 									<button
 										type="button"

@@ -149,9 +149,15 @@ export interface Settings {
 	pinnedSessionIds?: string[];
 	/** Worktrees configuration and auto-cleanup preferences. */
 	worktrees?: {
+		/** Managed worktrees root directory. Defaults to ~/.lyra/worktrees or sibling directory if empty. */
 		rootDir?: string;
+		/** Automatically create a dedicated worktree when starting a new session. */
+		autoCreateOnNewSession?: boolean;
+		/** Automatically fetch upstream remotes before creating a worktree. */
 		fetchUpstreamBeforeCreate?: boolean;
+		/** Auto clean unlinked or old worktrees exceeding limit or session deletion. */
 		autoCleanOld?: boolean;
+		/** Number of managed worktrees to retain before oldest are pruned. */
 		keepLimit?: number;
 	};
 	/** Update check frequency in hours (e.g. 4, 8, 12, 24). Default is 6. */

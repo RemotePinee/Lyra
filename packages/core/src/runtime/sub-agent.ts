@@ -17,8 +17,15 @@ import { join } from "node:path";
 import type { AgentEvent } from "../agent/events.ts";
 import type { AgentRunConfig } from "../agent/loop.ts";
 import { runTurn } from "../agent/runner.ts";
+import type { streamAssistant } from "../ai/index.ts";
 import type { Settings } from "../config/settings.ts";
 import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
+import { sandboxModeFor } from "../sandbox/mode-for.ts";
+import { lyraHome } from "../session/store.ts";
+import { compactWith } from "./compaction.ts";
+import { textTokens, toolTokens } from "./context.ts";
+import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
+import { writePreview } from "./previews.ts";
 import type { Skill } from "../skills/loader.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
@@ -45,6 +52,14 @@ export interface SubAgentOptions {
 	streamFn?: AgentRunConfig["streamFn"];
 	requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
 	emit(event: AgentEvent): Promise<void>;
+	/**
+	 * The session's stream override in the shape compaction expects, passed down so a delegated run
+	 * summarises through the same model call the parent does.
+	 *
+	 * Optional like `registry`: left off, compaction still runs — it falls back to a real provider
+	 * call, exactly as the parent's does when nothing is overriding it.
+	 */
+	summaryStream?: typeof streamAssistant;
 	/**
 	 * Where this run registers itself, so it can be watched and steered while it happens.
 	 *
@@ -134,6 +149,27 @@ export async function runSubAgent(
 					[AGENTS_KEY, options.agents],
 				]),
 				requestApproval: (request) => options.requestApproval(request),
+				/*
+				 * The session's policy, which does not stop applying because the work was delegated.
+				 *
+				 * Each of these was absent, and absent means "no restriction" rather than "inherit":
+				 * a sub-agent ran its commands outside the sandbox the permission mode had chosen,
+				 * reached hosts the allow-list excludes, and slipped past every configured hook — the
+				 * same `bash` call audited in the main conversation and unaudited one level down.
+				 * Delegation is a way of organising work, not a way around what the session decided.
+				 */
+				sandboxMode: sandboxModeFor(options.settings.permissionMode),
+				allowedHosts: options.settings.allowedHosts,
+				beforeToolCall: makeBeforeToolCall(options.settings.hooks, options.cwd, controller.signal),
+				afterToolCall: makeAfterToolCall(options.settings.hooks, options.cwd, controller.signal),
+				/*
+				 * Previews go under the parent's session, not this run's own id.
+				 *
+				 * They are thrown away with the conversation that produced them, and a delegated run
+				 * is part of that conversation — filed under an id that disappears when the sub-agent
+				 * finishes, the page would outlive nothing and be found by no one.
+				 */
+				writePreview: (input) => writePreview(lyraHome(), { ...input, sessionId: options.sessionId }),
 				// Inherited, so a host that replaced the provider call replaced it for the whole
 				// tree — a sub-agent quietly dialling out would defeat the point of overriding it.
 				streamFn: options.streamFn,
@@ -146,18 +182,28 @@ export async function runSubAgent(
 				 * queues it, the loop drains it, exactly as for the parent.
 				 */
 				drainSteering: registry ? () => registry.drainSteering(id) : undefined,
+				/*
+				 * The same context compaction the parent gets, for the same reason.
+				 *
+				 * A delegated run is the one most likely to need it: sixty turns of reading files is
+				 * exactly what it is dispatched to do, and its history is its own — the parent's
+				 * compaction cannot reach it. Without this a long search does not degrade, it stops,
+				 * with the provider refusing the request for being over the window; and because the
+				 * `task` tool turns that into a tool error, what the user sees is delegation that
+				 * mysteriously fails on the big jobs and works on the small ones.
+				 *
+				 * The overhead handed over is this run's own: its system prompt and its own subset of
+				 * the tools, which is not what the parent carries.
+				 */
+				compact: (messages, model) =>
+					compactWith(messages, model, provider, options.summaryStream, textTokens(subAgentPrompt) + toolTokens(allowed)),
 				maxTurns: 60,
 			},
 			(event) => {
-				// Surfaced as a notice for the live view, kept as a step for the log.
+				// Record activity in registry for live sub-agent status line without toast spamming
 				if (event.type === "tool_start") {
 					steps.push(event.summary);
 					registry?.activity(id, event.summary);
-					void options.emit({
-						type: "notice",
-						level: "info",
-						message: `[${definition.name}] ${event.summary}`,
-					});
 				}
 				/*
 				 * The transcript, as it is written.

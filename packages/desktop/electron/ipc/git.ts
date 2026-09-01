@@ -27,10 +27,13 @@ import {
 	listBranches,
 	listRepos,
 	listWorktrees,
+	pruneWorktrees,
 	pullBranch,
 	pushBranch,
+	removeWorktree,
 	stagePaths,
 	switchBranch,
+	type WorktreeCreateOptions,
 	discardPaths,
 	unstagePaths,
 	workspaceStat,
@@ -116,7 +119,13 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 
 	ipcMain.handle("git:switchBranch", async (_event, cwd: string, branch: string) => switchBranch(cwd, branch));
 
-	ipcMain.handle("git:createWorktree", async (_event, cwd: string, branch: string) => createWorktree(cwd, branch));
+	ipcMain.handle("git:createWorktree", async (_event, cwd: string, branch: string, options?: WorktreeCreateOptions) =>
+		createWorktree(cwd, branch, options),
+	);
+	ipcMain.handle("git:removeWorktree", async (_event, cwd: string, worktreePath: string) =>
+		removeWorktree(cwd, worktreePath),
+	);
+	ipcMain.handle("git:pruneWorktrees", async (_event, cwd: string) => pruneWorktrees(cwd));
 
 	ipcMain.handle("git:stat", async (_event, cwd: string) => workspaceStat(cwd));
 

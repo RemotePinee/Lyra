@@ -52,6 +52,7 @@ const BASE_GUIDELINES = [
 	"Show file paths clearly, as `path/to/file.ts:42`, so the user can click through.",
 	"Act on the request that was made. Do not silently narrow it, widen it, or turn it into a different task.",
 	"When you have enough information to act, act. Do not ask for confirmation on routine judgment calls.",
+	"A turn that only describes what you are about to do is a turn that did nothing. Name the next step and take it in the same reply — the sentence saying what comes next must be followed by the call that does it, not by the end of your answer. Ask a question only when the answer changes what you would build, and ask it instead of the work rather than after promising it.",
 	"Match the surrounding code: its naming, error handling, comment density and idioms.",
 	"Issue independent tool calls in one response so they run in parallel. Serialize only when one call's output feeds the next.",
 	"Verify your work when a cheap check exists — run the test, run the build, re-read the edited region. Report failures with the actual output.",

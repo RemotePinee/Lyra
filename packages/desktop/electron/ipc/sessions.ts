@@ -20,6 +20,7 @@ import {
 	type UserContent,
 } from "@lyra/core";
 import { BrowserWindow, ipcMain } from "electron";
+import { cleanOldWorktrees } from "../git-worktrees.ts";
 import type { AgentCapabilities } from "../ipc-types.ts";
 import {
 	activateSession,
@@ -153,9 +154,16 @@ export function registerSessionsIpc({
 	ipcMain.handle(
 		"sessions:remove",
 		async (_event, projectId: string, sessionId: string) => {
+			const sessionMeta = (await store.listSessions()).find((s) => s.id === sessionId);
 			await disposeSession(sessionId);
 			await store.delete(projectId, sessionId);
 			await removeSessionArtifacts(lyraHome(), sessionId);
+			// If session was running in a dedicated worktree and autoCleanOld is enabled, clean it up
+			const appSettings = readSettings();
+			if (sessionMeta?.cwd && appSettings.worktrees?.autoCleanOld) {
+				const liveCwds = new Set(Array.from(sessions.values()).map((s) => s.cwd));
+				void cleanOldWorktrees(sessionMeta.cwd, appSettings, liveCwds).catch(() => {});
+			}
 			void broadcastSessionsList();
 		},
 	);
