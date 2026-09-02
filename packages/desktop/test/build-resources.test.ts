@@ -18,7 +18,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const desktop = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -73,4 +74,9 @@ test("nothing under build/ is ignored, whatever a future rule says", () => {
 		// Exit 1: nothing is ignored. That is the passing case.
 	}
 	assert.equal(ignored.trim(), "", `这些构建资源被 .gitignore 挡住了：\n${ignored}`);
+});
+
+test("koffi native addon is explicitly unpacked in electron-builder asar configuration", () => {
+	const yml = readFileSync(join(desktop, "electron-builder.yml"), "utf8");
+	assert.match(yml, /-\s*["']?\*\*\/node_modules\/koffi\/\*\*["']?/, "electron-builder.yml 必须声明 asarUnpack 包含 koffi");
 });

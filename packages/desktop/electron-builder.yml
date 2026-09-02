@@ -30,10 +30,11 @@ files:
   - "!**/*.map"
   - "!**/*.ts"
 
-# node-pty is a native addon: it cannot live inside the asar, because the OS has to be able to
+# node-pty and koffi are native addons: they cannot live inside the asar, because the OS has to be able to
 # open the .node file by path.
 asarUnpack:
   - "**/node_modules/node-pty/**"
+  - "**/node_modules/koffi/**"
 
 # The status bar icons, which `Tray` loads by path at runtime and so cannot live in the asar.
 # `files` above covers only `out/`, so without this the tray comes up blank in a packaged build
