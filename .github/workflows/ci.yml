@@ -137,10 +137,29 @@ jobs:
           path: packages/desktop/out
           retention-days: 7
 
+  mobile-bundle:
+    # Does the phone app still bundle?
+    #
+    # `pnpm build` covers core and desktop; mobile had only a typecheck, and a typecheck cannot see
+    # the thing that actually breaks there. A React Native bump to 0.87 passed lint, typecheck and
+    # the tests on all three platforms, and `expo export` failed outright on it — `@expo/metro-config`
+    # still requires `react-native/rn-get-polyfills`, which 0.87 removed. Nothing in the package
+    # manager objects either: `expo`'s peer range for react-native is `*`, so the SDK's real version
+    # pairing is enforced by neither npm nor tsc. Only bundling says so.
+    #
+    # `export`, not a simulator: this is the JS bundle, so it needs no Xcode and no Android SDK and
+    # runs on the cheap platform in about a minute. The output is thrown away — the question being
+    # asked is whether Metro can resolve and transform the whole graph.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @lyra/mobile exec expo export --platform ios --output-dir /tmp/mobile-bundle
+
   # The single required check. Everything above must pass; `dead-code` is deliberately not here.
   all-green:
     if: always()
-    needs: [lint, typecheck, test, build, e2e, e2e-scope]
+    needs: [lint, typecheck, test, build, e2e, e2e-scope, mobile-bundle]
     runs-on: ubuntu-latest
     steps:
       - name: Verdict
@@ -149,4 +168,5 @@ jobs:
         run: |
           echo "lint=${{ needs.lint.result }} typecheck=${{ needs.typecheck.result }}"
           echo "test=${{ needs.test.result }} build=${{ needs.build.result }} e2e=${{ needs.e2e.result }} e2e-scope=${{ needs.e2e-scope.result }}"
+          echo "mobile-bundle=${{ needs.mobile-bundle.result }}"
           [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

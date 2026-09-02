@@ -59,6 +59,16 @@ updates:
       # needs an afternoon.
       - dependency-name: typescript
         update-types: [version-update:semver-major]
+      # React Native's version is chosen by the Expo SDK, not by npm. `expo` declares its peer
+      # range for it as `*`, so nothing in the package manager objects when the two drift apart —
+      # and 0.86 → 0.87, a *minor* by semver, is where they did: `@expo/metro-config` requires
+      # `react-native/rn-get-polyfills`, which 0.87 deleted, so `expo export` failed outright on a
+      # bump that had passed lint, typecheck and the tests on all three platforms.
+      #
+      # Minors are therefore off the table here; this moves when the Expo SDK moves, in that
+      # migration's own pull request. Patches still come through, which is where the fixes are.
+      - dependency-name: react-native
+        update-types: [version-update:semver-major, version-update:semver-minor]
       # `@types/node` majors track Node's, so this one has to track `.nvmrc` rather than chase
       # latest. A bump to 26 passed lint, typecheck, build and the tests on all three platforms —
       # and it still had to be turned down, because what it breaks is the typecheck itself. The
