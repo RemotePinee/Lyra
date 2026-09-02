@@ -73,6 +73,10 @@ export function SessionTabBar() {
 		if (!el) return;
 		updateFade();
 
+		// Update fade when container resizes (e.g. window resized / window narrowed)
+		const observer = new ResizeObserver(updateFade);
+		observer.observe(el);
+
 		let targetScrollLeft = el.scrollLeft;
 		let rafId: number | null = null;
 
@@ -104,6 +108,7 @@ export function SessionTabBar() {
 		};
 		el.addEventListener("wheel", onWheel, { passive: false });
 		return () => {
+			observer.disconnect();
 			el.removeEventListener("wheel", onWheel);
 			if (rafId !== null) cancelAnimationFrame(rafId);
 		};
@@ -259,7 +264,7 @@ export function SessionTabBar() {
 					["--ly-fade-left" as string]: fadeLeft ? "18px" : "0px",
 					["--ly-fade-right" as string]: fadeRight ? "18px" : "0px",
 				}}
-				className="ly-fade-edge relative no-drag flex h-full max-w-[calc(100vw-260px)] select-none items-center gap-1 overflow-x-auto no-scrollbar px-1 py-1"
+				className="ly-fade-edge relative no-drag flex h-full max-w-[calc(100vw-260px)] select-none items-center gap-0.5 overflow-x-auto no-scrollbar px-1 py-1"
 			>
 				{/* Drop indicator for cross-window merging */}
 				{externalDropX !== null && (
@@ -303,7 +308,7 @@ export function SessionTabBar() {
 									void closeTab(id);
 								}
 							}}
-							className={`group relative flex h-7 shrink-0 max-w-[220px] min-w-[90px] select-none items-center justify-between gap-1.5 rounded-md px-2.5 text-xs transition-all duration-150 ${
+							className={`group relative flex h-7 shrink-0 max-w-[190px] select-none items-center rounded-md px-2 text-xs transition-colors overflow-hidden ${
 								openTabs.length > 1 ? (isThisDragging ? "cursor-grabbing opacity-30 scale-95 border border-dashed border-accent" : "cursor-grab") : "cursor-pointer"
 							} ${
 								isActive
@@ -311,12 +316,22 @@ export function SessionTabBar() {
 									: "text-ink-muted hover:bg-card-hover hover:text-ink"
 							}`}
 						>
-							<div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden pointer-events-none">
+							{/* Regular text flow - full natural width at rest, mask/fade shifts left on hover */}
+							<div
+								className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden pointer-events-none group-hover:[mask-image:linear-gradient(to_right,black_0%,black_calc(100%-42px),transparent_calc(100%-36px))] group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0%,black_calc(100%-42px),transparent_calc(100%-36px))]"
+							>
 								<MessageSquare size={13} className={`shrink-0 opacity-70 ${isActive ? "text-accent" : ""}`} />
 								<span className="truncate">{title}</span>
 							</div>
 
-							<div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+							{/* Floating actions with smooth gradient backdrop matching tab background */}
+							<div
+								className={`absolute right-0 top-0 bottom-0 flex items-center gap-0.5 pl-6 pr-1 opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--ly-t-base)] ease-[var(--ly-e-out)] ${
+									isActive
+										? "bg-gradient-to-r from-transparent via-elevated to-elevated"
+										: "bg-gradient-to-r from-transparent via-card-hover to-card-hover"
+								}`}
+							>
 								<button
 									type="button"
 									aria-label="独立窗口打开"
@@ -326,9 +341,9 @@ export function SessionTabBar() {
 										e.stopPropagation();
 										handleTearOff(id);
 									}}
-									className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-all hover:bg-black/10 hover:text-ink dark:hover:bg-white/15"
+									className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink transition-colors hover:bg-card hover:text-ink active:scale-95"
 								>
-									<ExternalLink size={10} strokeWidth={2} />
+									<ExternalLink size={11} strokeWidth={2} />
 								</button>
 
 								<button
@@ -338,9 +353,9 @@ export function SessionTabBar() {
 										e.stopPropagation();
 										void closeTab(id);
 									}}
-									className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-all hover:bg-black/10 hover:text-ink dark:hover:bg-white/15"
+									className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink transition-colors hover:bg-card hover:text-ink active:scale-95"
 								>
-									<X size={11} strokeWidth={2} />
+									<X size={12} strokeWidth={2} />
 								</button>
 							</div>
 						</div>

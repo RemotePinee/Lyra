@@ -2991,7 +2991,9 @@
 .group\/session:hover .ly-fade-tail,
 .group\/session:has(:focus-visible) .ly-fade-tail,
 .group\/project:hover .ly-fade-tail,
-.group\/project:has(:focus-visible) .ly-fade-tail {
+.group\/project:has(:focus-visible) .ly-fade-tail,
+.group\/tab:hover .ly-fade-tail,
+.group\/tab:has(:focus-visible) .ly-fade-tail {
   /* As wide as the controls that are landing on it — the row says how many it has. */
   --ly-fade-right: var(--ly-row-controls, 30px);
 }

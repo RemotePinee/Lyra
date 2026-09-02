@@ -875,12 +875,12 @@ export function Composer() {
 								onClick={effortMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
-								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium")}`}
+								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium", model)}`}
 								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>
-								<RollingText>{effortLabel(settings?.thinking ?? "medium")}</RollingText>
+								<RollingText>{effortLabel(settings?.thinking ?? "medium", model)}</RollingText>
 							</button>
 
 							<ComposerSend

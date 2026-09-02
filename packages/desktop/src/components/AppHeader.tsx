@@ -30,8 +30,8 @@ export function AppHeader({
 		<header
 			className="drag-region relative z-50 flex h-[38px] w-full shrink-0 select-none items-center bg-sidebar pl-2 pr-0 text-ink-muted text-xs"
 		>
-			{/* Left section: Navigation toggle */}
-			<div className="no-drag flex items-center shrink-0 mr-1.5">
+			{/* Left section: Navigation toggle + Panel menu tools */}
+			<div className="no-drag flex items-center shrink-0 mr-1.5 gap-0.5">
 				<button
 					type="button"
 					aria-label={navOpen ? "收起侧边栏" : "展开侧边栏"}
@@ -42,8 +42,13 @@ export function AppHeader({
 						compact && navOpen ? "bg-card-hover text-ink" : "text-ink-muted"
 					}`}
 				>
-					<PanelLeft size={16} strokeWidth={1.9} />
+					<PanelLeft size={15} strokeWidth={1.8} />
 				</button>
+				{activeSessionId && (
+					<div className="flex items-center">
+						<PanelMenu />
+					</div>
+				)}
 			</div>
 
 			{/* Center-left section: Tabs Bar */}
@@ -52,13 +57,8 @@ export function AppHeader({
 			{/* Draggable space */}
 			<div className="flex-1 h-full min-w-[20px]" />
 
-			{/* Right section: Dock / Panel menu tools + Native window controls */}
+			{/* Right section: Native window controls */}
 			<div className="flex items-center gap-1 shrink-0">
-				{activeSessionId && (
-					<div className="no-drag flex items-center pr-1">
-						<PanelMenu />
-					</div>
-				)}
 				<WindowActionButtons />
 			</div>
 		</header>

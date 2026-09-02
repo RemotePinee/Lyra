@@ -14,7 +14,7 @@ import { usePanelDefinitions } from "../panels/definitions.tsx";
 import type { PanelKind } from "../sideStore.ts";
 import { useLayout } from "../layout.tsx";
 import { MenuBody, MenuItem, MenuLabel, Popover, usePopover } from "./Popover.tsx";
-import { TOOLBAR_BUTTON, ToolbarButton, WindowControls } from "./WindowControls.tsx";
+import { TOOLBAR_BUTTON, WindowControls } from "./WindowControls.tsx";
 
 /*
  * The update chip used to have a slot of its own here, just past the sidebar toggle.
@@ -91,21 +91,35 @@ export function PanelMenu() {
 					// lists them, with the reason.
 					if (!def || def.unavailable) return null;
 					return (
-						<ToolbarButton
+						<button
 							key={kind}
-							label={`${def.label} ${def.shortcut}`}
-							active={has(tree, kind)}
+							type="button"
+							data-ly-tip={`${def.label} ${def.shortcut}`}
+							aria-label={`${def.label} ${def.shortcut}`}
+							aria-pressed={has(tree, kind)}
 							onClick={() => toggle(kind)}
+							className={`no-drag flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-card-hover hover:text-ink ${
+								has(tree, kind) ? "bg-card-hover text-ink" : "text-ink-muted"
+							}`}
 						>
-							<def.icon size={13} strokeWidth={1.9} />
-						</ToolbarButton>
+							<def.icon size={14} strokeWidth={1.8} />
+						</button>
 					);
 				})}
 
 				{/* The overflow mark every toolbar uses for "the rest of it". */}
-				<ToolbarButton label="面板" onClick={menu.toggle} active={menu.open}>
-					<MoreVertical size={15} strokeWidth={2} />
-				</ToolbarButton>
+				<button
+					type="button"
+					data-ly-tip="面板"
+					aria-label="面板"
+					aria-pressed={menu.open}
+					onClick={menu.toggle}
+					className={`no-drag flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-card-hover hover:text-ink ${
+						menu.open ? "bg-card-hover text-ink" : "text-ink-muted"
+					}`}
+				>
+					<MoreVertical size={14} strokeWidth={1.8} />
+				</button>
 			</div>
 
 			{menu.open && (
