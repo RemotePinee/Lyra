@@ -496,6 +496,13 @@ export class AgentSession {
 		await this.emit({ type: "title", title });
 	}
 
+	async rename(title: string): Promise<void> {
+		const cleanTitle = title.trim();
+		if (!cleanTitle) return;
+		await this.log.append({ type: "title", title: cleanTitle });
+		await this.emit({ type: "title", title: cleanTitle });
+	}
+
 	async dispose(): Promise<void> {
 		this.abort();
 		await this.can.dispose();
