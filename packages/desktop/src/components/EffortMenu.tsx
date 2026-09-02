@@ -12,7 +12,6 @@ import { CircleHelp } from "lucide-react";
 import { useState } from "react";
 import { Popover, type Anchor } from "./Popover.tsx";
 import { RollingText } from "./RollingText.tsx";
-import { sessionThinking } from "./thinking-level.ts";
 import { useApp } from "../store.ts";
 
 export function effortLabel(level: ThinkingLevel, model?: ModelConfig | null): string {
@@ -23,7 +22,7 @@ export function effortLabel(level: ThinkingLevel, model?: ModelConfig | null): s
 
 export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => void }) {
 	const settings = useApp((s) => s.settings);
-	const setThinking = useApp((s) => s.setThinking);
+	const saveSettings = useApp((s) => s.saveSettings);
 	const meta = useApp((s) => s.meta);
 	const [showHelp, setShowHelp] = useState(false);
 
@@ -33,7 +32,7 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	const supported = model?.supportsThinking !== false;
 
 	const options: ThinkingOption[] = resolveModelThinkingOptions(model);
-	const level = sessionThinking(meta, settings);
+	const level = settings?.thinking ?? "medium";
 
 	let index = options.findIndex((l) => l.id === level);
 	if (index === -1) {
@@ -46,7 +45,13 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 
 	const set = (nextIndex: number) => {
 		if (!settings || options.length === 0) return;
-		void setThinking(options[Math.min(options.length - 1, Math.max(0, nextIndex))].id);
+		const next = options[Math.min(options.length - 1, Math.max(0, nextIndex))].id;
+		void saveSettings({
+			...settings,
+			thinking: next,
+			// Keep the last non-off level so fast mode can put it back.
+			...(next !== "off" ? { lastThinking: next } : {}),
+		});
 	};
 
 	return (

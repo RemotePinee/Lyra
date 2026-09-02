@@ -13,7 +13,6 @@ import { useDock } from "../dock/store.ts";
 import { companionOf } from "../panels/definitions.tsx";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { EffortMenu, effortLabel } from "./EffortMenu.tsx";
-import { sessionThinking } from "./thinking-level.ts";
 import { ModelIcon } from "./ModelIcon.tsx";
 import { RollingText, useRolled } from "./RollingText.tsx";
 import { ScrollText } from "./ScrollText.tsx";
@@ -817,12 +816,12 @@ export function Composer() {
 								onClick={effortMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
-								data-ly-tip={`推理强度：${effortLabel(sessionThinking(meta, settings), model)}`}
+								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium", model)}`}
 								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>
-								<RollingText>{effortLabel(sessionThinking(meta, settings), model)}</RollingText>
+								<RollingText>{effortLabel(settings?.thinking ?? "medium", model)}</RollingText>
 							</button>
 
 							<ComposerSend
