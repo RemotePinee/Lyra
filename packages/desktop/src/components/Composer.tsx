@@ -784,11 +784,14 @@ export function Composer() {
 								 * word for anyone unsure.
 								 *
 								 * Measured against the field rather than the window: with a sidebar
-								 * and a panel open, a roomy-looking window still leaves this row
-								 * about 350px, and the label has to go long before the layout is
-								 * "compact".
+								 * It was `@max-[420px]:hidden` — a width standing in for 「does this fit」,
+								 * which it cannot: what fits depends on how long the model's name is, and
+								 * those run from `gpt-5` to `claude-opus-4-6-thinking`. The words went at
+								 * 419px with clear air still in the row, and having gone they freed width
+								 * that nothing then claimed. The row is measured now, and this is the last
+								 * thing it gives up — see `composer/fit.ts`.
 								 */}
-								<span className="@max-[420px]:hidden">
+								<span data-ly-fit-drop="2" className="shrink-0 whitespace-nowrap">
 									<RollingText>{PERMISSION_LABEL[permissionMode]}</RollingText>
 								</span>
 							</button>
@@ -796,9 +799,15 @@ export function Composer() {
 					}
 					right={
 						<>
-							{/* Beside the model it is measured against — the window is a property of that model.
-							    Disappears gracefully on narrow composer widths to prevent overflowing tools. */}
-							<div className="@max-[480px]:hidden flex shrink-0 items-center">
+							{/*
+							 * Beside the model it is measured against — the window is a property of that model.
+							 *
+							 * The first thing the row gives up, and it used to be given up at a fixed
+							 * `@max-[480px]`: on a real window that dropped it while the two halves of the row
+							 * still had 54px of clear air between them. It costs about 24px, so it now goes
+							 * only when those 24px are the ones missing.
+							 */}
+							<div data-ly-fit-drop="1" className="flex shrink-0 items-center">
 								<ContextMeter messages={messages} settings={settings} modelId={modelId} sessionId={activeSessionId} />
 							</div>
 
@@ -820,7 +829,13 @@ export function Composer() {
 									name={modelName}
 									className={modelRolls ? "ly-roll" : ""}
 								/>
-								<RollingText className="min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
+								{/*
+								 * The one thing in the row that yields, so it is also what says the row is out of
+								 * room: everything else is `shrink-0`, and this truncating is exactly the moment
+								 * there was not enough width to go round. `fit.ts` reads this element — the class is the handle — which is why a short
+								 * name keeps its meter at any width.
+								 */}
+								<RollingText className="ly-fit-probe min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
 							</button>
 							<button
 								type="button"

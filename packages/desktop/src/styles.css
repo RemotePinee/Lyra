@@ -1012,6 +1012,24 @@
     0 14px 36px -14px rgb(0 0 0 / 0.22);
 }
 
+/*
+ * What the toolbar gives up when the row runs out of room.
+ *
+ * The level is measured rather than guessed from a breakpoint — see `composer/fit.ts` for why a
+ * width cannot answer this — and each part says which step it goes at. Written here rather than as
+ * a conditional class in the component because the parts live in `Composer` while the measuring
+ * lives in `ComposerShell`, and passing a number through `left`/`right` would mean turning two
+ * plain nodes into render props for the sake of one integer.
+ *
+ * `display: none` rather than visibility or opacity: this is about width, and a hidden element that
+ * still occupies its column would give back nothing.
+ */
+[data-ly-fit="1"] [data-ly-fit-drop="1"],
+[data-ly-fit="2"] [data-ly-fit-drop="1"],
+[data-ly-fit="2"] [data-ly-fit-drop="2"] {
+  display: none;
+}
+
 :root.dark .ly-composer {
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.35),
