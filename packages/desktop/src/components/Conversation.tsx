@@ -244,6 +244,12 @@ export const Conversation = memo(function Conversation() {
   const allRuns = useMemo(() => runs(messages, compactions), [messages, compactions]);
   const hidden = Math.max(0, allRuns.length - windowSize);
   const visibleRuns = hidden > 0 ? allRuns.slice(hidden) : allRuns;
+  /*
+   * The row whose highlight says the turn is still working: the last run of tools, not the last
+   * row. While a reply is being made its reasoning sits under the run it is driving (see
+   * `grouping.ts`), and that row taking the last position must not take the highlight off the run.
+   */
+  const lastRun = visibleRuns.reduce((found, run, at) => (run.kind === "tools" ? at : found), -1);
 
   return (
     <div ref={column} className="flex min-h-0 flex-1 flex-col">
@@ -368,7 +374,7 @@ export const Conversation = memo(function Conversation() {
                  * Only the last: an earlier group is finished no matter what the turn is doing,
                  * and gliding all of them would say several things are happening at once.
                  */
-                trailing={running && index === visibleRuns.length - 1}
+                trailing={running && index === lastRun}
               />
             ),
           )}

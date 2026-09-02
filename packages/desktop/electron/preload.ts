@@ -340,6 +340,7 @@ const api: LyraApi = {
 		unstage: (cwd, paths) => ipcRenderer.invoke("git:unstage", cwd, paths),
 		discard: (cwd, paths) => ipcRenderer.invoke("git:discard", cwd, paths),
 		commitStaged: (cwd, message) => ipcRenderer.invoke("git:commitStaged", cwd, message),
+		generateCommitMessage: (cwd) => ipcRenderer.invoke("git:generateCommitMessage", cwd),
 		createBranch: (cwd, name, from) => ipcRenderer.invoke("git:createBranch", cwd, name, from),
 		deleteBranch: (cwd, name, force) => ipcRenderer.invoke("git:deleteBranch", cwd, name, force),
 		push: (cwd) => ipcRenderer.invoke("git:push", cwd),

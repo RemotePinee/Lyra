@@ -36,3 +36,29 @@ export function BreatheLoader({ size = 14, className = "" }: { size?: number; cl
 		</span>
 	);
 }
+
+/**
+ * A faint track with a short arc travelling round it.
+ *
+ * For a button or a 13px slot that needs to say "working" without borrowing a refresh icon.
+ * Stroke weights were picked at 14px: thinner than 3.4 and the arc vanishes into the track.
+ */
+export function Spinner({ size = 14, className = "" }: { size?: number; className?: string }) {
+	const circumference = 2 * Math.PI * 9;
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className={`ly-spin shrink-0 ${className}`}>
+			<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3.4" className="text-ink-faint/25" />
+			<circle
+				cx="12"
+				cy="12"
+				r="9"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="3.4"
+				strokeLinecap="round"
+				strokeDasharray={`${circumference * 0.3} ${circumference}`}
+				className="text-ink-muted"
+			/>
+		</svg>
+	);
+}

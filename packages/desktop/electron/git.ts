@@ -66,6 +66,7 @@ export {
 	type WorkflowRunStatus,
 	type WorkflowRunSummary,
 } from "./git-release.ts";
+export { generateCommitMessage } from "./git-commit-message.ts";
 
 /**
  * Whether this directory is inside a working tree — and if git would not say, why not.

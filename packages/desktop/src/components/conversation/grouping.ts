@@ -167,6 +167,52 @@ export function computeTurnStats(messages: Message[], endMessageIndex: number): 
  * Whether the message is still streaming is deliberately not consulted. That answer changes
  * halfway through a turn, and any grouping derived from it changes with it.
  */
+/** Whether any reasoning has arrived — the live ticker's reason to have a row. */
+function reasoning(content: AssistantContent[]): boolean {
+	return content.some((block) => block.type === "thinking" && block.thinking.length > 0);
+}
+
+/**
+ * Which reply's reasoning the live row shows, or -1 for none.
+ *
+ * Not simply the last reply's. A reply begins as an empty message, and its reasoning follows a
+ * beat later — with a real model, often several hundred milliseconds later. Keyed to the last
+ * reply, the row emptied for exactly that beat at the start of every reply in the turn: the
+ * previous reasoning gone, the next not yet there, and everything below it flinching up and
+ * back. So the row shows the newest reasoning the turn actually has, walking back from the
+ * last reply past any that have none yet.
+ *
+ * The walk stops at the start of the turn (a real user message; the runtime's own are passed
+ * over), at a reply that has said something (its prose is the newest thing on screen, and
+ * older reasoning would be stale under it), and at a finished reply with no calls (that one
+ * has a row of its own already). Nothing is shown at all once the last reply has prose: the
+ * answer has arrived, and it carries its own reasoning.
+ */
+function liveReasoning(messages: Message[], live: number): number {
+	if (live < 0) return -1;
+	const last = messages[live];
+	if (last.role !== "assistant" || spoken(last.content) > 0) return -1;
+	for (let at = live; at >= 0; at--) {
+		const message = messages[at];
+		if (message.role === "user") {
+			if (message.synthetic || isNudge(message)) continue;
+			return -1;
+		}
+		if (message.role !== "assistant") continue;
+		if (spoken(message.content) > 0) return -1;
+		const calls = message.content.some((block) => block.type === "toolCall");
+		if (reasoning(message.content) && (calls || message.stopReason === "pending")) return at;
+		if (!calls && message.stopReason !== "pending") return -1;
+	}
+	return -1;
+}
+
+/** How many blocks come before the first call — the reasoning, which is the row's whole content. */
+function beforeCalls(content: AssistantContent[]): number {
+	const first = content.findIndex((block) => block.type === "toolCall");
+	return first < 0 ? content.length : first;
+}
+
 function spoken(content: AssistantContent[]): number {
 	let end = 0;
 	for (const [index, block] of content.entries()) {
@@ -186,6 +232,12 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 	// Sorted so the marks can be consumed in order as the transcript is walked.
 	const marks = [...compactions].map((c) => c.at).sort((a, b) => a - b);
 	let nextMark = 0;
+	/** The reply being made, if one is: the last assistant message, whatever state it is in. */
+	let live = -1;
+	for (let at = messages.length - 1; at >= 0 && live < 0; at--) {
+		if (messages[at].role === "assistant") live = at;
+	}
+	const reasoningRow = liveReasoning(messages, live);
 
 	/** Extend the run this lands in, or start one. Empty batches leave the transcript alone. */
 	const work = (calls: Call[]) => {
@@ -251,15 +303,34 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 			 * Nothing said, nothing done, and the turn is over.
 			 *
 			 * What is left is reasoning, or a failure with no output — this message's only chance
-			 * to show it, so it gets a row. While the same message is still streaming it gets
-			 * none: the one thing it could draw is a folded line of reasoning that the first call
-			 * to arrive would take away again, and a row that exists for two seconds and then
-			 * removes itself is the flicker this whole file is arranged to avoid.
+			 * to show it, so it gets a row. The same message still streaming is handled below.
 			 */
 			out.push({ kind: "message", message, index, upTo: message.content.length, turnStats: turn });
 		}
 
 		work(calls);
+
+		/*
+		 * The reasoning of the reply being made right now, under the run it is driving.
+		 *
+		 * Reasoning before a call is never shown once the reply is done — a turn of thirty calls
+		 * would otherwise be thirty lines of thinking with a run between each — so while the reply
+		 * is being made, its reasoning has nowhere of its own to go. Given a row above the run, it
+		 * vanished the moment its first call arrived and merged into the run above, and the next
+		 * reply's reasoning then appeared below: everything under it moved down and up with every
+		 * call in the turn.
+		 *
+		 * So it goes under the run instead, and stays there: still shown while its own call runs,
+		 * replaced in place by the next reply's reasoning once that has actually arrived, and taken
+		 * over by the answer when the prose finally starts — which lands in exactly the same place.
+		 * One row, one position, for the whole of the turn. Placed after the last reply rather than
+		 * after the reply it belongs to, so a call from a newer reply still joins the run above it,
+		 * and a message the user sends meanwhile still comes after it.
+		 */
+		if (index === live && reasoningRow >= 0) {
+			const shown = messages[reasoningRow] as AssistantMessage;
+			out.push({ kind: "message", message: shown, index: reasoningRow, upTo: beforeCalls(shown.content), turnStats: turn });
+		}
 	}
 
 	// A compaction recorded after the last message still belongs at the end.

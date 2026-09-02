@@ -429,6 +429,23 @@
     contain-intrinsic-size: auto 200px;
   }
 
+  /*
+   * Except the tail, which is where rows arrive.
+   *
+   * A row the browser has not sized yet gets the 200px above for its first frame and its real
+   * height the frame after — so every row that arrived at the bottom of a running turn landed as
+   * a 200px block and snapped to its 24px a frame later, with everything under it flinching by
+   * the difference. Measured at 177px on the running line, once per tool call.
+   *
+   * The last few children are the ones still arriving. They are on screen anyway, so skipping
+   * them saves nothing, and laying them out from their first frame is what lets a turn grow
+   * without a twitch. A row that later slides out of this window has been measured by then, and
+   * `auto` above keeps that measurement.
+   */
+  .ly-transcript > :nth-last-child(-n + 4) {
+    content-visibility: visible;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--color-info) 35%, transparent);
   }
@@ -2921,6 +2938,63 @@
 
 :root[data-reduce-motion="on"] .ly-scroll:hover .ly-marquee-track {
   animation: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * The thinking line's ticker
+ *
+ * Two motions on one box. While the reasoning is arriving the track is moved by hand — left by
+ * however much does not fit, so the newest word sits at the right edge, with a transition that
+ * turns each arrival into a slide. `ly-marquee` would be wrong for that: it loops a finished
+ * title past the eye at a steady pace, and this line is not finished. Once it is, hovering the
+ * line reads it back with exactly that marquee, and the track swaps classes to say so.
+ *
+ * The mask is the one `ly-fade-edge` draws, with both depths set by the component while text
+ * arrives: the fades exist only once there is text under them. A class of its own rather than
+ * `ly-fade-edge`, because that one is wired to `.ly-scroll:hover` for the read-back, and the
+ * live line must not change shape because a pointer crossed it.
+ * ------------------------------------------------------------------------- */
+.ly-think-ticker {
+  display: block;
+  min-width: 0;
+  max-width: 480px;
+  overflow: hidden;
+  white-space: nowrap;
+  /*
+   * Fades in without moving. `ly-enter` rises 4px into place, and this box is remounted the
+   * moment the reasoning finishes — right under a run of tools, in a transcript that is only
+   * allowed to grow downwards. A rise there reads as the line jumping.
+   */
+  animation: ly-fade-in var(--ly-t-quick) var(--ly-e-out);
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--ly-fade-left),
+    #000 calc(100% - var(--ly-fade-right)),
+    transparent 100%
+  );
+  transition:
+    --ly-fade-left 140ms ease-out,
+    --ly-fade-right 150ms ease-out;
+}
+
+/*
+ * The padding on the right keeps the newest word mostly clear of the fade — the fade says the
+ * line continues; it should not dim the one word actually being written.
+ */
+.ly-think-track {
+  display: inline-flex;
+  padding-right: 16px;
+  white-space: nowrap;
+  transition: transform 320ms var(--ly-e-out);
+  will-change: transform;
+}
+
+/* One run per line the model wrote, with a gap between them wide enough to read as a break. */
+.ly-think-runs {
+  display: inline-flex;
+  gap: 28px;
+  white-space: nowrap;
 }
 
 /* Lit columns breathe at the top effort level — the one setting worth flagging as costly. */

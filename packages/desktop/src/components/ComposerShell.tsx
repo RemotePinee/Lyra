@@ -87,11 +87,15 @@ export function ComposerShell({
   return (
     <div
       /*
-       * A container, so the controls along the bottom can drop labels when *this* runs out
-       * of room rather than when the window does. The two are not the same question: at
-       * 1100px wide with a sidebar and a panel open, this field is 350px.
+       * No fill of its own. `bg-input` is a grey well; on the conversation page it almost
+       * vanished into the shell, and in a dock panel it stacked into a slab. Border and the
+       * `.ly-composer` shadow are what lift it; the surface underneath shows through.
+       *
+       * `@container` so the controls along the bottom can drop labels when *this* runs out
+       * of room rather than when the window does. At 1100px wide with a sidebar and a panel
+       * open, this field is 350px.
        */
-      className="ly-composer @container rounded-[18px] border border-line-soft bg-input transition-[border-color,box-shadow] duration-[var(--ly-t-base)]"
+      className="ly-composer @container rounded-[18px] border border-line-soft bg-transparent transition-[border-color,box-shadow] duration-[var(--ly-t-base)]"
       onDragOver={onFiles ? (e) => e.preventDefault() : undefined}
       onDrop={
         onFiles
@@ -177,11 +181,14 @@ export function ComposerSend({
   disabled,
   onSend,
   onStop,
+  tip = "发送",
 }: {
   running: boolean;
   disabled?: boolean;
   onSend: () => void;
   onStop: () => void;
+  /** Tooltip and accessible name while idle. Stop is always 停止. */
+  tip?: string;
 }) {
   if (running) {
     return (
@@ -201,8 +208,8 @@ export function ComposerSend({
   return (
     <button
       type="button"
-      data-ly-tip="发送"
-      aria-label="发送"
+      data-ly-tip={tip}
+      aria-label={tip}
       disabled={disabled}
       onClick={onSend}
       className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-elevated text-ink transition-all duration-[var(--ly-t-quick)] enabled:hover:bg-ink enabled:hover:text-shell enabled: disabled:opacity-45"

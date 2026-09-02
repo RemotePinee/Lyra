@@ -817,6 +817,8 @@ export interface LyraApi {
 		discard(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }>;
 		/** Commits exactly what the panel shows as staged. */
 		commitStaged(cwd: string, message: string): Promise<{ ok: boolean; error?: string }>;
+		/** A commit message from the configured model, about the staged (or unstaged) patch. */
+		generateCommitMessage(cwd: string): Promise<{ ok: boolean; message?: string; error?: string }>;
 		createBranch(cwd: string, name: string, from?: string): Promise<{ ok: boolean; error?: string }>;
 		deleteBranch(cwd: string, name: string, force?: boolean): Promise<{ ok: boolean; error?: string }>;
 		push(cwd: string): Promise<{ ok: boolean; error?: string }>;

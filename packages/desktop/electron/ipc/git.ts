@@ -44,6 +44,7 @@ import {
 	getWorkflowRunStatus,
 	listWorkflowRuns,
 	publishReleaseTag,
+	generateCommitMessage,
 } from "../git.ts";
 import {
 	accounts,
@@ -175,6 +176,11 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	ipcMain.handle("git:commitStaged", async (_event, cwd: string, message: string) => {
 		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
 		return commitStaged(cwd, message);
+	});
+
+	ipcMain.handle("git:generateCommitMessage", async (_event, cwd: string) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return generateCommitMessage(cwd);
 	});
 
 	ipcMain.handle("git:createBranch", async (_event, cwd: string, name: string, from?: string) => {

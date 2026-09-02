@@ -146,13 +146,14 @@ function AssistantRow({
         if (segment.kind === "block") {
           const { block, index } = segment;
           if (block.type === "thinking") {
-            // Open while the turn is still producing it; folded away once it has finished.
+            // Ticking while it is the block being written: only the newest block of a reply that is
+            // still arriving can be, whatever the message as a whole is doing.
             return (
               <ThinkingBlock
                 key={index}
                 text={block.thinking}
                 redacted={block.redacted === true}
-                live={message.stopReason === "pending"}
+                live={message.stopReason === "pending" && index === message.content.length - 1}
               />
             );
           }

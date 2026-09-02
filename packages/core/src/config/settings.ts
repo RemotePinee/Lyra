@@ -249,6 +249,13 @@ export interface Settings {
 	retryAttempts: number;
 	/** Last level chosen above "off", restored when fast mode is switched back off. */
 	lastThinking?: ThinkingLevel;
+	/**
+	 * Language the Git panel's AI commit message is written in.
+	 *
+	 * Global, not per-repository: switching projects must not forget that you asked for English.
+	 * A BCP-47-ish id (`zh`, `en`, `ja`, …); unknown values fall back to Chinese.
+	 */
+	commitLanguage?: string;
 	appearance: AppearanceSettings;
 	formatting: FormattingSettings;
 	hooks: HookConfig[];
@@ -373,6 +380,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	defaultModelId: null,
 	permissionMode: "auto",
 	thinking: "medium",
+	commitLanguage: "zh",
 	retryAttempts: 5,
 	appearance: DEFAULT_APPEARANCE,
 	formatting: DEFAULT_FORMATTING,

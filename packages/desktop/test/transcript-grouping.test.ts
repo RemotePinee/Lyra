@@ -85,7 +85,8 @@ test("finishing a reply does not move its calls into a different row", () => {
 	const after = [...before.slice(0, 3), assistant([thinking("先读一下"), call("b"), call("c")], "toolUse")];
 
 	assert.deepEqual(shape(runs(before)), shape(runs(after)), "settling a message must not regroup the transcript");
-	assert.deepEqual(shape(runs(after)), ["message@0:1", "tools:a,b,c"]);
+	// The reply in progress keeps its reasoning under the run — see the test below.
+	assert.deepEqual(shape(runs(after)), ["message@0:1", "tools:a,b,c", "message@3:1"]);
 });
 
 test("a run grows call by call as the reply streams, in the row it started in", () => {
@@ -97,9 +98,65 @@ test("a run grows call by call as the reply streams, in the row it started in", 
 		[...opening, assistant([thinking("嗯"), call("b"), call("c")], "pending")],
 	];
 
-	assert.deepEqual(shape(runs(frames[0])), ["message@0:1", "tools:a"], "reasoning alone claims no row");
-	assert.deepEqual(shape(runs(frames[1])), ["message@0:1", "tools:a,b"]);
-	assert.deepEqual(shape(runs(frames[2])), ["message@0:1", "tools:a,b,c"]);
+	// The reasoning of the reply in progress sits under the run, and stays as the calls arrive.
+	assert.deepEqual(shape(runs(frames[0])), ["message@0:1", "tools:a", "message@3:1"], "live reasoning gets a row");
+	assert.deepEqual(shape(runs(frames[1])), ["message@0:1", "tools:a,b", "message@3:1"], "the first call leaves it there");
+	assert.deepEqual(shape(runs(frames[2])), ["message@0:1", "tools:a,b,c", "message@3:1"]);
+});
+
+test("the reasoning of the reply in progress stays under the run, and the next reply's replaces it in place", () => {
+	const first = assistant([thinking("先看"), call("a")], "toolUse");
+	// Each frame of a turn, as the renderer sees it: reason, call, wait, reason, call, answer.
+	const frames: Message[][] = [
+		[user("跑"), assistant([thinking("先看")], "pending")],
+		[user("跑"), assistant([thinking("先看"), call("a")], "pending")],
+		[user("跑"), first],
+		[user("跑"), first, answered("a")],
+		[user("跑"), first, answered("a"), assistant([thinking("再看")], "pending")],
+		[user("跑"), first, answered("a"), assistant([thinking("再看"), call("b")], "pending")],
+	];
+	assert.deepEqual(shape(runs(frames[0])), ["message@0:1", "message@1:1"]);
+	assert.deepEqual(shape(runs(frames[1])), ["message@0:1", "tools:a", "message@1:1"]);
+	assert.deepEqual(shape(runs(frames[2])), ["message@0:1", "tools:a", "message@1:1"], "still there while the tool runs");
+	assert.deepEqual(shape(runs(frames[3])), ["message@0:1", "tools:a", "message@1:1"], "and after it answers");
+	assert.deepEqual(shape(runs(frames[4])), ["message@0:1", "tools:a", "message@3:1"], "the next reply's reasoning takes the same row");
+	assert.deepEqual(shape(runs(frames[5])), ["message@0:1", "tools:a,b", "message@3:1"]);
+
+	// The answer lands where the reasoning was, and the earlier reasoning stays hidden.
+	const done = [...frames[5].slice(0, 3), assistant([thinking("再看"), call("b")], "toolUse"), answered("b"), assistant([thinking("好了"), text("完成")], "stop")];
+	assert.deepEqual(shape(runs(done)), ["message@0:1", "tools:a,b", "message@5:2"]);
+});
+
+test("a new reply that has not reasoned yet does not take the row away from the last one that did", () => {
+	const first = assistant([thinking("先看"), call("a")], "toolUse");
+	const base: Message[] = [user("跑"), first, answered("a")];
+	// The beat between a reply starting and its first word of reasoning, in the shapes it takes.
+	assert.deepEqual(shape(runs([...base, assistant([], "pending")])), ["message@0:1", "tools:a", "message@1:1"], "an empty reply");
+	assert.deepEqual(shape(runs([...base, assistant([thinking("")], "pending")])), ["message@0:1", "tools:a", "message@1:1"], "a reasoning block with nothing in it yet");
+	// A reply that calls without reasoning at all: its call joins the run, the older reasoning stays under it.
+	assert.deepEqual(shape(runs([...base, assistant([call("b")], "pending")])), ["message@0:1", "tools:a,b", "message@1:1"]);
+	// The runtime nudging the model along is not the start of a new turn.
+	assert.deepEqual(shape(runs([...base, nudge(), assistant([], "pending")])), ["message@0:1", "tools:a", "message@1:1"]);
+});
+
+test("the live reasoning stops at the turn's edges", () => {
+	const first = assistant([thinking("先看"), call("a")], "toolUse");
+	// A new question from the person: the old turn's reasoning does not follow it.
+	assert.deepEqual(shape(runs([user("跑"), first, answered("a"), user("等等"), assistant([], "pending")])), ["message@0:1", "tools:a", "message@3:1"]);
+	// A reply that already said something: nothing older than its prose is shown under the calls after it.
+	assert.deepEqual(
+		shape(runs([user("跑"), first, answered("a"), assistant([thinking("想"), text("先看这个："), call("b")], "toolUse"), answered("b"), assistant([], "pending")])),
+		["message@0:1", "tools:a", "message@3:2", "tools:b"],
+	);
+	// The user's next message, sent while the turn runs, still comes after the live reasoning.
+	assert.deepEqual(shape(runs([user("跑"), first, answered("a"), assistant([thinking("再看")], "pending"), user("顺便")])), ["message@0:1", "tools:a", "message@3:1", "message@4:1"]);
+	// Stopped mid-call: the reasoning stays rather than vanishing along with the turn.
+	assert.deepEqual(shape(runs([user("跑"), assistant([thinking("先看"), call("a")], "aborted")])), ["message@0:1", "tools:a", "message@1:1"]);
+});
+
+test("a finished reply's reasoning before its calls stays hidden", () => {
+	const rows = runs([user("跑"), assistant([thinking("想想"), call("a")], "toolUse"), answered("a"), assistant([text("好了")], "stop")]);
+	assert.deepEqual(shape(rows), ["message@0:1", "tools:a", "message@3:1"]);
 });
 
 test("text ends a run, and the calls after it start the one the next reply joins", () => {
