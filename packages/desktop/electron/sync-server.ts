@@ -42,14 +42,20 @@ export class SyncServer {
 	}
 
 	async start(port: number, token: string | null): Promise<SyncStatus> {
+		/*
+		 * Already serving what was asked for, so there is nothing to do.
+		 *
+		 * Turning the service on reaches here twice. The IPC handler writes `sync.enabled: true`
+		 * and *that* is what starts the server — the settings hook in `main.ts` watches the flag —
+		 * and then the handler starts it again itself. Without this, the second call tore down a
+		 * working listener to rebind an identical one.
+		 *
+		 * A token of `null` means "keep whatever you have", so it does not count as a change.
+		 */
+		if (this.http && this.port === port && (!token || this.token === token)) return this.status();
 		if (this.http) await this.stop();
 		this.port = port;
 		this.token = token ?? randomUUID().replace(/-/g, "");
-
-		if (!token) {
-			const settings = this.deps.getSettings();
-			await this.deps.saveSettings({ ...settings, sync: { ...settings.sync, token: this.token } });
-		}
 
 		const server = createServer((req, res) => void this.handleHttp(req, res));
 		this.wss = new WebSocketServer({ noServer: true });
@@ -88,6 +94,24 @@ export class SyncServer {
 		});
 
 		this.http = server;
+
+		/*
+		 * The generated token is stored *after* the socket is bound, and the order is load-bearing.
+		 *
+		 * Saving settings runs the settings hook, and that hook starts the sync server when it sees
+		 * `sync.enabled` — so persisting the token from in here re-enters this method. Do it before
+		 * binding and the re-entrant call finds `this.http` still null, sails past the check above,
+		 * binds the port itself, and then the original call reaches its own `listen` and fails with
+		 * `EADDRINUSE` on a port that nothing outside this process holds. Which is what the toggle
+		 * reported: "address already in use" about the service it had just started.
+		 *
+		 * Bound first, the re-entrant call sees a running server on the same port and returns.
+		 */
+		if (!token) {
+			const settings = this.deps.getSettings();
+			await this.deps.saveSettings({ ...settings, sync: { ...settings.sync, token: this.token } });
+		}
+
 		return this.status();
 	}
 
@@ -113,6 +137,7 @@ export class SyncServer {
 
 	status(): SyncStatus {
 		const addresses = localAddresses();
+		const sync = this.deps.getSettings().sync;
 		return {
 			running: this.running,
 			port: this.port,
@@ -123,6 +148,10 @@ export class SyncServer {
 				this.running && this.token && addresses[0]
 					? `lyra://pair?host=${addresses[0]}&port=${this.port}&token=${this.token}`
 					: null,
+			// Passed through rather than resolved here: which of the three a pairing code should
+			// carry is the person's choice in front of the picker, not this server's.
+			publicUrl: sync.publicUrl?.trim() || null,
+			relayUrl: sync.relayUrl?.trim() || null,
 		};
 	}
 
@@ -319,12 +348,63 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 	return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function localAddresses(): string[] {
-	const out: string[] = [];
-	for (const entries of Object.values(networkInterfaces())) {
+/**
+ * Interface names that belong to something other than the network the phone is on.
+ *
+ * A developer machine is full of these — Docker's bridge, VirtualBox's host-only adapter, WSL's
+ * vEthernet, a VPN's tun — and every one of them has a perfectly valid private IPv4 that the
+ * phone cannot reach. Listed first in the picker, they are what someone scans, and the failure
+ * is silent and confusing: the QR code is fine, the token is fine, the address is simply on a
+ * network that exists only inside this computer.
+ */
+const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|vmnet|vboxnet|utun|tun|tap|ppp|zt|wg|Loopback|vEthernet|Hyper-V|VMware|VirtualBox|Npcap|Bluetooth)/i;
+
+/**
+ * Ranked so the first one is the address most likely to work.
+ *
+ * `localAddresses()[0]` is what the pairing URL uses and what the picker preselects, so the order
+ * is the whole difference between "scan it and you are connected" and "scan it, wait, and try the
+ * next one". Ordinary home and office networks (192.168.x, 10.x) come first, then the rest of the
+ * private space, and anything on a virtual adapter goes last rather than being dropped — a machine
+ * whose only route to the phone genuinely is a bridge should still be able to pair, just not by
+ * default.
+ */
+function rank(address: string, name: string): number {
+	if (VIRTUAL_INTERFACE.test(name)) return 3;
+	if (address.startsWith("192.168.")) return 0;
+	if (address.startsWith("10.")) return 1;
+	return 2;
+}
+
+/** Just the fields the ranking reads, so a test can describe a machine without inventing one. */
+export interface InterfaceEntry {
+	address: string;
+	family: string;
+	internal: boolean;
+}
+
+/**
+ * The ranking, over a set of interfaces given to it.
+ *
+ * Takes the interfaces rather than reading them so the interesting half — which of a laptop's six
+ * addresses leads — can be tested against a described machine instead of whichever one the tests
+ * happen to run on.
+ */
+export function rankAddresses(interfaces: Record<string, InterfaceEntry[] | undefined>): string[] {
+	const found: { address: string; score: number }[] = [];
+	for (const [name, entries] of Object.entries(interfaces)) {
 		for (const entry of entries ?? []) {
-			if (entry.family === "IPv4" && !entry.internal) out.push(entry.address);
+			// `169.254.x` is what an interface gives itself when DHCP never answered: it is a
+			// symptom of no network, not an address anything can be reached on.
+			if (entry.family !== "IPv4" || entry.internal || entry.address.startsWith("169.254.")) continue;
+			found.push({ address: entry.address, score: rank(entry.address, name) });
 		}
 	}
-	return out;
+	found.sort((a, b) => a.score - b.score);
+	// Distinct: one adapter can hold the same address twice across aliases.
+	return [...new Set(found.map((entry) => entry.address))];
+}
+
+export function localAddresses(): string[] {
+	return rankAddresses(networkInterfaces());
 }
