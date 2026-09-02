@@ -520,7 +520,12 @@ export function Composer() {
 	}, [settings?.screenshot]);
 
 	return (
-		<div className={`shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
+		/*
+		 * `ly-composer-dock`: the strip along the bottom of the conversation, named so the phone can
+		 * find it. It is the one thing that has to move when a keyboard slides over the window —
+		 * the transcript above it stays put and keeps its scroll position. See `--ly-keyboard`.
+		 */
+		<div className={`ly-composer-dock shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
 			<div className="mx-auto w-full max-w-[var(--ly-content)]">
 				{/*
 				 * That work has been delegated, above everything else the composer says.

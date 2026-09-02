@@ -18,6 +18,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, storedWidth } from "./layout-widths.ts";
 import { freezeMotion } from "./motion-freeze.ts";
+import { useDrawerGesture, useKeyboardInset } from "./mobile/useMobileShell.ts";
 import { overlayReserved, titlebarInsets, type TitlebarInsets } from "./titlebar.ts";
 
 /** Below this the sidebar and a readable content column no longer fit side by side. */
@@ -196,6 +197,13 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 		if (compact) setDrawerOpen(false);
 		else setPushOpen(false);
 	}, [compact]);
+
+	/*
+	 * The phone's two additions to the shell, mounted here because this is where the drawer's state
+	 * lives. Both are inert in a window — see `onPhone` — so a narrow desktop window is unaffected.
+	 */
+	useKeyboardInset();
+	useDrawerGesture(compact && drawerOpen, setDrawerOpen);
 
 	const value = useMemo<LayoutValue>(
 		() => ({

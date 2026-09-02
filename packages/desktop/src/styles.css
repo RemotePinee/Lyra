@@ -3709,3 +3709,65 @@
   position: absolute;
   inset: -6px -4px;
 }
+
+/*
+ * ---------------------------------------------------------------------------------------------
+ * The drawer, while a finger is on it.
+ *
+ * `--ly-drawer` is set only during a drag (see `useMobileShell.ts`); the rest of the time the
+ * drawer and its scrim read the fallback in their own inline styles and animate between the two
+ * states normally. These rules cover the in-between: no transition while the finger is down, or
+ * the panel eases toward each frame's target and arrives behind the hand.
+ */
+[data-drawer-dragging] .ly-drawer,
+[data-drawer-dragging] .ly-drawer-scrim {
+  transition: none !important;
+}
+
+/*
+ * Landing after a drag that ends where it started.
+ *
+ * Releasing part-way changes no React state, so nothing would animate the drawer back — it would
+ * snap the moment the variable was removed. This carries it home over the same interval a state
+ * change would have taken.
+ */
+[data-drawer-settling] .ly-drawer,
+[data-drawer-settling] .ly-drawer-scrim {
+  transition:
+    transform var(--ly-t-base) ease-out,
+    opacity var(--ly-t-base) ease-out;
+}
+
+/*
+ * The drawer holds the whole screen's height and reaches under the status bar, so its own content
+ * has to keep clear of the notch and the home indicator rather than relying on the shell's padding.
+ */
+[data-lyra-host="mobile"] .ly-drawer {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/*
+ * ---------------------------------------------------------------------------------------------
+ * Room for the keyboard.
+ *
+ * `--ly-keyboard` is how much of the window the keyboard is covering. The composer is the only
+ * thing that has to move — the transcript stays where it is and keeps its scroll position, which
+ * is what stops the conversation jumping every time the keyboard opens.
+ */
+[data-lyra-host="mobile"] {
+  --ly-keyboard: 0px;
+}
+
+[data-lyra-host="mobile"] .ly-composer-dock {
+  padding-bottom: calc(var(--ly-keyboard) + env(safe-area-inset-bottom) + 8px);
+  transition: padding-bottom 180ms ease-out;
+}
+
+/*
+ * With the keyboard up, the home indicator is behind it and its inset is being reserved twice —
+ * once here and once by the keyboard itself, leaving a band of empty page under the composer.
+ */
+[data-lyra-host="mobile"][data-keyboard] .ly-composer-dock {
+  padding-bottom: calc(var(--ly-keyboard) + 8px);
+}

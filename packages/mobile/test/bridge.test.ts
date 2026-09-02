@@ -114,6 +114,43 @@ test("a method nobody wrote down still answers, rather than throwing", async () 
 	assert.equal(await lyra.aWholeNewGroup.aWholeNewMethod(), null);
 });
 
+test("an unlisted method on the root is callable, not just reachable", async () => {
+	/*
+	 * Found on a real phone, not here: the interface carries methods and groups side by side at the
+	 * top level — `setWindowTheme` is a method, `settings` is a group — and nothing in the name says
+	 * which. A floor that assumed "group" handed back an object, and the app died on the first
+	 * top-level method the desktop called, before anything had rendered.
+	 */
+	const lyra = install().lyra as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+	assert.equal(await lyra.setWindowTheme({ color: "#111", symbolColor: "#eee" }), null);
+});
+
+test("the same name works as a group if that is how it is used", async () => {
+	// The other half of the same problem: one floor has to answer both ways, because the caller
+	// decides which it is and the bridge finds out afterwards.
+	const lyra = install().lyra as unknown as Record<string, Record<string, () => Promise<unknown>>>;
+	assert.equal(await lyra.somethingNew.deeper.stillFine(), null);
+});
+
+test("awaiting something that fell through the floor settles", async () => {
+	/*
+	 * `await` looks for `.then`, and the floor answers every name — so without a carve-out it would
+	 * hand back a function, `await` would call it expecting a resolver, and the turn would hang
+	 * with no error to show for it.
+	 */
+	const lyra = install().lyra as unknown as Record<string, unknown>;
+	const reached = await (lyra.neverHeardOfIt as Promise<unknown>);
+	assert.equal(typeof reached, "function", "兜底节点本身是可调用的，await 它只会原样拿回来");
+});
+
+test("a subscription on the root still returns an unsubscribe", () => {
+	// `onFullScreenChange` is read at mount and its result is stored to be called on unmount.
+	const lyra = install().lyra as unknown as Record<string, (h: () => void) => unknown>;
+	const off = lyra.onFullScreenChange(() => {});
+	assert.equal(typeof off, "function");
+	assert.doesNotThrow(() => (off as () => void)());
+});
+
 test("subscribing to agent events hands back a working unsubscribe", () => {
 	const lyra = install().lyra as unknown as {
 		agent: { onEvent(handler: (payload: unknown) => void): () => void };

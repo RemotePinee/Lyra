@@ -118,26 +118,36 @@ export function bridgeScript(connection: Connection): string {
 	 * This is not the security boundary. The allowlist on the desktop is — a stub here that
 	 * resolves to null cannot reach the machine even if something calls it.
 	 */
-	const stub = (name) => (name.startsWith("on") && name.length > 2 && name[2] === name[2].toUpperCase()
-		? () => () => {}
-		: () => Promise.resolve(null));
+	const isSubscription = (name) => name.startsWith("on") && name.length > 2 && name[2] === name[2].toUpperCase();
+
+	/*
+	 * An unknown name has to work both ways, because nothing about the name says which it is.
+	 *
+	 * window.lyra carries methods and groups side by side — setWindowTheme is a method, settings is
+	 * a group — so a floor that guesses is wrong half the time, and being wrong either way is the
+	 * blank screen this exists to prevent. (It was: guessing "group" turned every unlisted
+	 * top-level *method* into a TypeError the moment the desktop called one.) So the floor is a
+	 * callable Proxy instead of a guess: call it and it resolves to null, reach through it and you
+	 * get another one, to any depth.
+	 */
+	const floorGet = (_target, prop) => {
+		if (typeof prop === "symbol") return undefined;
+		const name = String(prop);
+		// Without this, awaiting anything that fell through here would find a "then" that is a
+		// function, and the await would never settle.
+		if (name === "then") return undefined;
+		// An \`onSomething\` is subscribed to, and its return value is stored and later called to
+		// unsubscribe — a promise there is a TypeError one navigation later.
+		return isSubscription(name) ? () => () => {} : floorNode();
+	};
+	const floorNode = () => new Proxy(function () {}, { get: floorGet, apply: () => Promise.resolve(null) });
+
 	const withFloor = (group) => new Proxy(group, {
 		get(target, prop) {
 			if (prop in target) return target[prop];
-			if (typeof prop === "symbol") return undefined;
-			return stub(String(prop));
+			return floorGet(target, prop);
 		},
 	});
-	/*
-	 * The top level needs a different floor to the groups under it.
-	 *
-	 * A name like window.lyra.somethingNew is reached for as an object — the caller goes straight
-	 * on to .someMethod() — so answering with a stub function makes the second step a TypeError,
-	 * which is the blank screen this whole arrangement exists to avoid. A new *group* therefore
-	 * gets an empty object with the same floor beneath it, and a new *method* inside a known group
-	 * gets the stub.
-	 */
-	const groupFloor = () => withFloor({});
 
 	/*
 	 * Marked on the document too, so stylesheets can reach it.
@@ -248,17 +258,8 @@ export function bridgeScript(connection: Connection): string {
 	for (const key of Object.keys(api)) {
 		if (api[key] && typeof api[key] === "object") api[key] = withFloor(api[key]);
 	}
-	window.lyra = new Proxy(api, {
-		get(target, prop) {
-			if (prop in target) return target[prop];
-			if (typeof prop === "symbol") return undefined;
-			// A name that looks like a subscription is still a method on the root — onMainError
-			// lives there — so the shape of the name decides, as it does inside a group.
-			const name = String(prop);
-			return name.startsWith("on") && name.length > 2 && name[2] === name[2].toUpperCase()
-				? () => () => {}
-				: groupFloor();
-		},
-	});
+	// The root gets the same floor as the groups: it holds both kinds of name, and so does the
+	// floor. onFullScreenChange and setWindowTheme both live up here, and both used to throw.
+	window.lyra = withFloor(api);
 })();`;
 }
