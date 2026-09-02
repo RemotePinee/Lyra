@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bridgeScript } from "../src/bridge.ts";
+import { roomFor } from "../src/sha256.ts";
 import type { Connection } from "../src/client.ts";
 
 const LAN: Connection = { host: "192.168.1.5", port: 4517, token: "tok", platform: "darwin" };
@@ -24,15 +25,27 @@ const LAN: Connection = { host: "192.168.1.5", port: 4517, token: "tok", platfor
  * `WebSocket` and `fetch` are replaced so the script's own connect-on-load does not reach the
  * network; the calls it makes are recorded instead.
  */
-function install(connection: Connection = LAN) {
+function install(
+	connection: Connection = LAN,
+	/** How the desktop answers an RPC. Defaults to a plain success. */
+	reply: (body: { method?: string }) => unknown = () => ({ ok: true, value: "答案" }),
+) {
+	/** What the page sent down the socket, parsed. RPC goes this way now, not as a POST. */
 	const calls: { url: string; body: unknown }[] = [];
 	const sockets: string[] = [];
 
-	// The sockets the script opened, kept so a test can deliver a message down the live one.
-	const opened: { onmessage: ((event: { data: string }) => void) | null }[] = [];
+	// The sockets the script opened, kept so a test can drive the live one.
+	const opened: {
+		onopen: (() => void) | null;
+		onmessage: ((event: { data: string }) => void) | null;
+	}[] = [];
 	const scope = {
 		document: { documentElement: { setAttribute() {} }, addEventListener() {} },
 		WebSocket: class {
+			// 1 = OPEN. The script checks this before sending and queues if it is not open, which is
+			// the behaviour that makes the renderer's first frame work — so a fake that is never
+			// open would leave every call queued forever.
+			readyState = 1;
 			onopen: (() => void) | null = null;
 			onmessage: ((event: { data: string }) => void) | null = null;
 			onclose: (() => void) | null = null;
@@ -41,12 +54,21 @@ function install(connection: Connection = LAN) {
 				sockets.push(url);
 				opened.push(this);
 			}
+			send(frame: string) {
+				const body = JSON.parse(frame) as { type?: string; id?: string };
+				calls.push({ url: sockets[sockets.length - 1], body });
+				// Answer an RPC the way the desktop would, so the promise settles.
+				if (body.type === "rpc") {
+					const answer = reply(body as { method?: string }) as object;
+					queueMicrotask(() =>
+						this.onmessage?.({ data: JSON.stringify({ type: "rpc_result", id: body.id, ...answer }) }),
+					);
+				}
+			}
 			close() {}
 		},
-		fetch: async (url: string, init: { body: string }) => {
-			calls.push({ url, body: JSON.parse(init.body) });
-			return { ok: true, json: async () => ({ ok: true, value: "答案" }) };
-		},
+		// Kept only so the script has one if it ever reaches for it; RPC no longer goes this way.
+		fetch: async () => ({ ok: true, json: async () => ({ ok: true, value: null }) }),
 		setTimeout: () => 0,
 		navigator: { clipboard: { writeText() {} } },
 	} as Record<string, unknown>;
@@ -57,6 +79,15 @@ function install(connection: Connection = LAN) {
 	// Evaluated with `window` and the browser globals in scope, which is what a WebView provides.
 	const run = new Function("window", "document", "WebSocket", "fetch", "setTimeout", "navigator", bridgeScript(connection));
 	run(window, scope.document, scope.WebSocket, scope.fetch, scope.setTimeout, scope.navigator);
+
+	/*
+	 * The socket finishing its handshake, which the script waits for before sending anything.
+	 *
+	 * Done here rather than in the fake's constructor: at that point the script has not yet assigned
+	 * the socket to its own variable, so a hello sent from inside it would be queued rather than
+	 * sent — which is the very thing these tests are checking.
+	 */
+	opened.at(-1)?.onopen?.();
 
 	return {
 		lyra: window.lyra as Record<string, never>,
@@ -88,15 +119,41 @@ test("a TLS connection speaks wss and https", () => {
 	void (lyra as unknown as { settings: { get(): Promise<unknown> } }).settings.get();
 });
 
-test("a call becomes one RPC post, with the method and args intact", async () => {
-	const { lyra, calls } = install();
-	const api = lyra as unknown as { sessions: { transcript(a: string, b: string): Promise<unknown> } };
+test("a call becomes one frame on the socket, with the method and args intact", async () => {
+	/*
+	 * Over the socket rather than as a POST, and that is the point: a relay joins two WebSockets and
+	 * copies bytes between them, so an HTTP request has nowhere to go through one. Everything down
+	 * the same pipe is what lets the same bridge work on a local network and through a relay without
+	 * knowing which it is on.
+	 */
+	const page = install();
+	const api = page.lyra as unknown as { sessions: { transcript(a: string, b: string): Promise<unknown> } };
 	const answer = await api.sessions.transcript("p1", "s1");
 
-	assert.equal(calls.length, 1);
-	assert.equal(calls[0].url, "http://192.168.1.5:4517/api/rpc");
-	assert.deepEqual(calls[0].body, { method: "sessions.transcript", args: ["p1", "s1"] });
+	const sent = page.calls.map((c) => c.body as { type?: string; method?: string; args?: unknown[]; id?: string });
+	const rpc = sent.filter((frame) => frame.type === "rpc");
+	assert.equal(rpc.length, 1, "一次调用只发一帧");
+	assert.equal(rpc[0].method, "sessions.transcript");
+	assert.deepEqual(rpc[0].args, ["p1", "s1"]);
+	assert.equal(typeof rpc[0].id, "string", "要带一个 id，答复靠它对上");
 	assert.equal(answer, "答案");
+});
+
+test("two calls in flight at once do not answer each other", async () => {
+	// The id is what keeps them apart; without it the second answer would settle the first promise.
+	const answers = new Map([
+		["sessions.list", "列表"],
+		["settings.get", "设置"],
+	]);
+	const page = install(LAN, (body) => ({ ok: true, value: answers.get(body.method ?? "") ?? null }));
+	const lyra = page.lyra as unknown as {
+		sessions: { list(): Promise<unknown> };
+		settings: { get(): Promise<unknown> };
+	};
+
+	const [list, settings] = await Promise.all([lyra.sessions.list(), lyra.settings.get()]);
+	assert.equal(list, "列表");
+	assert.equal(settings, "设置");
 });
 
 test("every group the renderer reaches for is present", () => {
@@ -180,43 +237,15 @@ test("a refused method reads as nothing, not as an error", async () => {
 	 * Half of what the renderer calls has no meaning on a phone and is absent from the desktop's
 	 * allowlist. Throwing would turn a page that should quietly omit a feature into a crash.
 	 */
-	const calls: unknown[] = [];
-	const scope = {
-		document: { documentElement: { setAttribute() {} }, addEventListener() {} },
-		WebSocket: class {
-			close() {}
-		},
-		fetch: async () => ({ ok: true, json: async () => ({ ok: false, error: "method-not-allowed" }) }),
-		setTimeout: () => 0,
-		navigator: { clipboard: { writeText() {} } },
-	} as Record<string, unknown>;
-	const window: Record<string, unknown> = scope;
-	scope.window = window;
-	const run = new Function("window", "document", "WebSocket", "fetch", "setTimeout", "navigator", bridgeScript(LAN));
-	run(window, scope.document, scope.WebSocket, scope.fetch, scope.setTimeout, scope.navigator);
-
-	const lyra = window.lyra as unknown as { sessions: { transcript(a: string, b: string): Promise<unknown> } };
+	const page = install(LAN, () => ({ ok: false, error: "method-not-allowed" }));
+	const lyra = page.lyra as unknown as { sessions: { transcript(a: string, b: string): Promise<unknown> } };
 	// A method that does go over RPC, so the server's refusal is what is being read.
 	assert.equal(await lyra.sessions.transcript("p", "s"), null);
-	assert.equal(calls.length, 0);
 });
 
 test("a genuine failure does throw, so it is not mistaken for absence", async () => {
-	const scope = {
-		document: { documentElement: { setAttribute() {} }, addEventListener() {} },
-		WebSocket: class {
-			close() {}
-		},
-		fetch: async () => ({ ok: true, json: async () => ({ ok: false, error: "会话不存在" }) }),
-		setTimeout: () => 0,
-		navigator: { clipboard: { writeText() {} } },
-	} as Record<string, unknown>;
-	const window: Record<string, unknown> = scope;
-	scope.window = window;
-	const run = new Function("window", "document", "WebSocket", "fetch", "setTimeout", "navigator", bridgeScript(LAN));
-	run(window, scope.document, scope.WebSocket, scope.fetch, scope.setTimeout, scope.navigator);
-
-	const lyra = window.lyra as unknown as { sessions: { transcript(a: string, b: string): Promise<unknown> } };
+	const page = install(LAN, () => ({ ok: false, error: "会话不存在" }));
+	const lyra = page.lyra as unknown as { sessions: { transcript(a: string, b: string): Promise<unknown> } };
 	await assert.rejects(() => lyra.sessions.transcript("p", "s"), /会话不存在/);
 });
 
@@ -441,4 +470,65 @@ test("a message of a kind this version does not know is ignored", () => {
 	const page = install();
 	assert.doesNotThrow(() => page.receive({ type: "something_from_the_future", payload: 1 }));
 	assert.doesNotThrow(() => page.receive("not json at all"));
+});
+
+/*
+ * The relay path, which changes exactly one thing: where the socket goes.
+ *
+ * Direct, it carries the token in the query and the desktop checks it. Through a relay there is
+ * nothing to authenticate to — the relay joins two sockets by room and copies bytes — so the room
+ * is the address, and the room is the token's SHA-256. Everything after the hello is the same
+ * protocol on both paths, which is what keeps this to one bridge rather than two.
+ */
+
+const RELAY: Connection = { host: "relay.example.com", port: 9977, token: "tok", platform: "darwin", relay: true };
+
+test("a relayed connection dials the relay, not a desktop", () => {
+	const { sockets } = install(RELAY);
+	assert.equal(sockets.length, 1);
+	// No /ws path and no token in the URL: neither means anything to a relay, and the token must
+	// not be handed to one.
+	assert.equal(sockets[0], "ws://relay.example.com:9977");
+	assert.ok(!sockets[0].includes("tok"), "令牌不能出现在中转的地址里");
+});
+
+test("it claims the room before saying anything else", () => {
+	/*
+	 * The relay closes a socket that has not named a room within ten seconds, and refuses anything
+	 * that is not a well-formed hello.
+	 */
+	const page = install(RELAY);
+	const first = page.calls[0]?.body as { type?: string; room?: string };
+	assert.equal(first?.type, "hello");
+	assert.equal(first?.room, roomFor("tok"));
+	assert.match(String(first?.room), /^[a-f0-9]{64}$/);
+});
+
+test("calls wait for the far end to arrive", () => {
+	/*
+	 * A frame sent into a room of one is dropped by the relay, not held — so a call made before the
+	 * desktop joins would be lost, and the promise would sit until it timed out. The queue drains on
+	 * `ready` instead.
+	 */
+	const page = install(RELAY);
+	const lyra = page.lyra as unknown as { sessions: { list(): Promise<unknown> } };
+	void lyra.sessions.list();
+
+	const kinds = () => page.calls.map((c) => (c.body as { type?: string }).type);
+	assert.deepEqual(kinds(), ["hello"], "还没 ready，调用要压着");
+
+	page.receive({ type: "ready" });
+	assert.deepEqual(kinds(), ["hello", "rpc"], "对端到了，压着的调用就发出去");
+});
+
+test("a direct connection does not wait for anything", () => {
+	// There is no room and no far end to wait for; the desktop is already listening.
+	const page = install(LAN);
+	const lyra = page.lyra as unknown as { sessions: { list(): Promise<unknown> } };
+	void lyra.sessions.list();
+	assert.deepEqual(
+		page.calls.map((c) => (c.body as { type?: string }).type),
+		["rpc"],
+		"直连不发 hello，也不用等",
+	);
 });

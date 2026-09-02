@@ -16,6 +16,14 @@ export default function PairScreen() {
 	const [port, setPort] = useState(String(connection?.port ?? 4517));
 	const [token, setToken] = useState(connection?.token ?? "");
 	const [tls, setTls] = useState(Boolean(connection?.tls));
+	/*
+	 * Whether this address is a relay rather than the desktop itself.
+	 *
+	 * Only a pairing code can say so — the three fields below describe a host, and a relay is not
+	 * one. It is kept in state rather than derived because it changes what "connect" even means:
+	 * against a relay there is no sync server to ask, only a room to be let into.
+	 */
+	const [relay, setRelay] = useState(Boolean(connection?.relay));
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
@@ -32,7 +40,11 @@ export default function PairScreen() {
 		setPort(String(parsed.connection.port));
 		setToken(parsed.connection.token);
 		setTls(Boolean(parsed.connection.tls));
-		setMessage({ tone: "ok", text: "已从剪贴板读取配对信息" });
+		setRelay(Boolean(parsed.connection.relay));
+		setMessage({
+			tone: "ok",
+			text: parsed.connection.relay ? "已从剪贴板读取配对信息（经中转）" : "已从剪贴板读取配对信息",
+		});
 	}
 
 	async function testAndSave() {
@@ -45,12 +57,25 @@ export default function PairScreen() {
 				return;
 			}
 
-			if (!(await SyncClient.ping(host.trim(), parsedPort, tls))) {
-				setMessage({ tone: "error", text: `无法连接到 ${host}:${port}，请确认电脑和手机在同一网络，且同步服务已启用。` });
+			/*
+			 * A relay is checked differently, because it is not a sync server: it answers none of
+			 * the app's routes and has no opinion about the token. All it can say is whether the
+			 * room opened, which is the only thing worth knowing before saving.
+			 */
+			const reachable = relay
+				? await SyncClient.pingRelay(host.trim(), parsedPort, tls, token.trim())
+				: await SyncClient.ping(host.trim(), parsedPort, tls);
+			if (!reachable) {
+				setMessage({
+					tone: "error",
+					text: relay
+						? `连不上中转 ${host}:${port}，请确认地址无误、服务在运行。`
+						: `无法连接到 ${host}:${port}，请确认电脑和手机在同一网络，且同步服务已启用。`,
+				});
 				return;
 			}
 
-			const ok = await pair({ host: host.trim(), port: parsedPort, token: token.trim(), tls });
+			const ok = await pair({ host: host.trim(), port: parsedPort, token: token.trim(), tls, relay });
 			if (ok) router.replace("/desk");
 			else setMessage({ tone: "error", text: "令牌不正确，请在桌面端重新复制。" });
 		} finally {

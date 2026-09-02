@@ -6,6 +6,7 @@
  * sequence number it saw, so a dropped connection never loses a turn.
  */
 
+import { roomFor } from "./sha256.ts";
 import type { AgentEvent, RemoteSettings, SessionMeta, SessionRecord, UserContent } from "./protocol";
 
 export interface Connection {
@@ -84,6 +85,59 @@ export class SyncClient {
 		} catch {
 			return false;
 		}
+	}
+
+	/**
+	 * Whether a relay is reachable and will let us into our room.
+	 *
+	 * Not `ping`: a relay is not a sync server. It answers no HTTP route the app knows and has no
+	 * opinion about the token, so the question it *can* answer is whether the desktop is in the room
+	 * — which is `ready`, and is a stronger answer than either half alone. It says the relay works,
+	 * that the desktop is dialled in, and that both ends derived the same room, which they can only
+	 * do from the same token. That last part is why this doubles as the token check on this path.
+	 *
+	 * `waiting` is not enough: it means the room opened and nobody else is in it, which is equally
+	 * what a wrong token looks like — a room of one, belonging to nobody.
+	 */
+	static pingRelay(host: string, port: number, tls: boolean, token: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			let socket: WebSocket;
+			try {
+				socket = new WebSocket(`${tls ? "wss" : "ws"}://${host}:${port}`);
+			} catch {
+				resolve(false);
+				return;
+			}
+
+			const done = (ok: boolean) => {
+				clearTimeout(timer);
+				try {
+					socket.close();
+				} catch {
+					/* already gone */
+				}
+				resolve(ok);
+			};
+			// Longer than the direct ping: this crosses the internet twice, and the relay itself
+			// allows ten seconds before it hangs up on a socket that has said nothing.
+			const timer = setTimeout(() => done(false), 8000);
+
+			socket.onopen = () => socket.send(JSON.stringify({ type: "hello", room: roomFor(token) }));
+			socket.onerror = () => done(false);
+			socket.onclose = () => done(false);
+			socket.onmessage = (event) => {
+				let message: { type?: string };
+				try {
+					message = JSON.parse(String(event.data)) as typeof message;
+				} catch {
+					return;
+				}
+				if (message.type === "ready") done(true);
+				// `waiting` is not an answer yet — the desktop may still be dialling in — so it is
+				// left to the timeout. `refused` (room-full, bad hello) is a definite no.
+				else if (message.type === "refused") done(false);
+			};
+		});
 	}
 
 	async verify(): Promise<boolean> {

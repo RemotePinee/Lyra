@@ -96,6 +96,39 @@ export default function DeskScreen() {
 	const scheme = connection.tls ? "https" : "http";
 	const origin = `${scheme}://${connection.host}:${connection.port}`;
 
+	/*
+	 * A relay carries frames, and the interface is not frames.
+	 *
+	 * The desktop hosts its own renderer over HTTP — a 4MB entry chunk and fifty-odd more it loads
+	 * on demand — and a relay joins two WebSockets and copies bytes between them. There is nowhere
+	 * for those requests to go. The data path works through one (calls, events, the transcript);
+	 * the page itself has to come from somewhere the phone can actually reach.
+	 *
+	 * Said plainly rather than left as the 404 the WebView would otherwise show, which names the
+	 * relay's address and reads as the desktop being broken.
+	 */
+	if (connection.relay) {
+		return (
+			<View
+				className="flex-1 items-center justify-center bg-shell px-8"
+				style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+			>
+				<StatusBar style="light" />
+				<Text className="text-center text-[15px] font-medium text-ink">中转只负责转发数据</Text>
+				<Text className="mt-3 text-center text-[13px] leading-6 text-ink-muted">
+					桌面端的界面要从它本机加载，而中转转发的是消息，不是网页。请在与电脑同一网络时配对，或在桌面端的「移动端同步」里填一个手机能直接访问的公网地址。
+				</Text>
+				<Text className="mt-2 text-center text-[12px] text-ink-faint">{origin}</Text>
+				<Pressable
+					onPress={() => router.replace("/pair")}
+					className="mt-6 rounded-xl bg-ink px-5 py-3 active:opacity-85"
+				>
+					<Text className="text-[14px] font-medium text-shell">换一种方式连接</Text>
+				</Pressable>
+			</View>
+		);
+	}
+
 	return (
 		<View
 			className="flex-1"

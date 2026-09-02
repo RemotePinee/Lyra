@@ -99,7 +99,17 @@ async function seed(home: string): Promise<void> {
 			 * A fixed token, so a phone paired once stays paired across restarts of this probe.
 			 * Re-pairing by hand between every check is most of the time a manual test takes.
 			 */
-			sync: { enabled: true, port: PORT, token: "1111111111111111111111111111abcd" },
+			/*
+			 * A relay can be named on the command line, which is the only way to exercise that path
+			 * by hand: it needs a server, and the point of the path is that neither end can reach the
+			 * other directly.
+			 */
+			sync: {
+				enabled: true,
+				port: PORT,
+				token: "1111111111111111111111111111abcd",
+				...(process.argv[3] ? { relayUrl: process.argv[3] } : {}),
+			},
 			editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
 			appearance: { theme: "dark" },
 		}),

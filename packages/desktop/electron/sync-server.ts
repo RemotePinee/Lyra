@@ -16,7 +16,8 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent, AgentSession, SessionStorage, Settings, ThinkingLevel, UserContent } from "@lyra/core";
 import type { SyncStatus } from "./ipc-types.ts";
-import { callRpc } from "./sync-rpc.ts";
+import { callRpc, type RpcDeps } from "./sync-rpc.ts";
+import { RelayLink, relaySocketUrl } from "./sync-relay.ts";
 import { serveApp } from "./sync-app.ts";
 
 export interface SyncServerDeps {
@@ -45,6 +46,8 @@ export class SyncServer {
 	private deps: SyncServerDeps;
 	private http: Server | null = null;
 	private wss: WebSocketServer | null = null;
+	/** The outbound half, when a relay is configured. See `sync-relay.ts`. */
+	private relay: RelayLink | null = null;
 	private clients = new Set<WebSocket>();
 	private token: string | null = null;
 	private port = 4517;
@@ -99,6 +102,8 @@ export class SyncServer {
 				this.clients.add(ws);
 				ws.on("close", () => this.clients.delete(ws));
 				ws.on("error", () => this.clients.delete(ws));
+				// Calls can arrive here as well as over HTTP — see `onSocketMessage`.
+				ws.on("message", (data) => void this.onSocketMessage(ws, data));
 				ws.send(JSON.stringify({ type: "hello", version: 1 }));
 			});
 		});
@@ -110,6 +115,7 @@ export class SyncServer {
 		});
 
 		this.http = server;
+		this.linkRelay();
 
 		/*
 		 * The generated token is stored *after* the socket is bound, and the order is load-bearing.
@@ -134,6 +140,8 @@ export class SyncServer {
 	async stop(): Promise<void> {
 		for (const client of this.clients) client.close();
 		this.clients.clear();
+		this.relay?.stop();
+		this.relay = null;
 		this.wss?.close();
 		this.wss = null;
 		await new Promise<void>((resolve) => {
@@ -141,6 +149,78 @@ export class SyncServer {
 			this.http.close(() => resolve());
 		});
 		this.http = null;
+	}
+
+	/**
+	 * Open the outbound link, if one is configured, and treat it as another client.
+	 *
+	 * A relayed phone is added to `clients` exactly like a direct one, so `broadcast` reaches it
+	 * without knowing the difference and calls arriving through it go to the same allowlist. The
+	 * only asymmetry is who dialled.
+	 */
+	private linkRelay(): void {
+		this.relay?.stop();
+		this.relay = null;
+
+		const configured = this.deps.getSettings().sync.relayUrl;
+		const url = configured ? relaySocketUrl(configured) : null;
+		if (!url || !this.token) return;
+
+		this.relay = new RelayLink(url, this.token, {
+			joined: (socket) => {
+				this.clients.add(socket);
+				socket.send(JSON.stringify({ type: "hello", version: 1 }));
+			},
+			left: (socket) => this.clients.delete(socket),
+			message: (socket, data) => void this.onSocketMessage(socket, JSON.stringify(data)),
+		});
+		this.relay.start();
+	}
+
+	/** What the allowlist needs, in one place: it is asked for from two transports now. */
+	private rpcDeps(): RpcDeps {
+		return {
+			store: () => this.deps.store,
+			settings: () => this.deps.getSettings(),
+			saveSettings: (next) => this.deps.saveSettings(next),
+			workspaceInfo: (path) => this.deps.workspaceInfo(path),
+			live: (id) => this.deps.live(id),
+			activate: (projectId, id) => this.deps.activate(projectId, id),
+			getOrCreate: (cwd, modelId) => this.deps.getOrCreate(cwd, modelId),
+			snapshot: (session) => this.deps.snapshot(session),
+			touch: (id) => this.deps.touch(id),
+		};
+	}
+
+	/**
+	 * A call that arrived over the socket rather than as a POST.
+	 *
+	 * The two are the same call — same allowlist, same handlers — and the socket exists because a
+	 * relay can only carry frames. A relay joins two WebSockets and copies bytes; an HTTP request
+	 * has nowhere to go through one. So everything the phone needs has to fit down this pipe, and
+	 * `/api/rpc` stays for the direct case and for anything already speaking it.
+	 *
+	 * Errors answer rather than throw, for the same reason the HTTP route returns 200 on a refusal:
+	 * this connection is the phone's only one, and an exception in a message handler takes it down.
+	 */
+	private async onSocketMessage(ws: WebSocket, raw: unknown): Promise<void> {
+		let message: { type?: unknown; id?: unknown; method?: unknown; args?: unknown };
+		try {
+			message = JSON.parse(String(raw)) as typeof message;
+		} catch {
+			return;
+		}
+		if (message.type !== "rpc" || typeof message.id !== "string") return;
+
+		const method = typeof message.method === "string" ? message.method : "";
+		const args = Array.isArray(message.args) ? message.args : [];
+		let result: Awaited<ReturnType<typeof callRpc>>;
+		try {
+			result = await callRpc(this.rpcDeps(), method, args);
+		} catch (error) {
+			result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+		}
+		if (ws.readyState === 1) ws.send(JSON.stringify({ type: "rpc_result", id: message.id, ...result }));
 	}
 
 	broadcast(sessionId: string, event: AgentEvent): void {
@@ -270,21 +350,7 @@ export class SyncServer {
 				const body = (await readJson(req)) as { method?: unknown; args?: unknown };
 				const method = typeof body.method === "string" ? body.method : "";
 				const args = Array.isArray(body.args) ? body.args : [];
-				const result = await callRpc(
-					{
-						store: () => this.deps.store,
-						settings: () => this.deps.getSettings(),
-						saveSettings: (next) => this.deps.saveSettings(next),
-						workspaceInfo: (path) => this.deps.workspaceInfo(path),
-						live: (id) => this.deps.live(id),
-						activate: (projectId, id) => this.deps.activate(projectId, id),
-						getOrCreate: (cwd, modelId) => this.deps.getOrCreate(cwd, modelId),
-						snapshot: (session) => this.deps.snapshot(session),
-						touch: (id) => this.deps.touch(id),
-					},
-					method,
-					args,
-				);
+				const result = await callRpc(this.rpcDeps(), method, args);
 				// 200 either way: a refused method is an answer, not a transport failure, and the
 				// phone keeps one long-lived connection that a 4xx would make it re-examine.
 				send(200, result);
