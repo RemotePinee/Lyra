@@ -128,6 +128,16 @@ export function bridgeScript(connection: Connection): string {
 			return stub(String(prop));
 		},
 	});
+	/*
+	 * The top level needs a different floor to the groups under it.
+	 *
+	 * A name like window.lyra.somethingNew is reached for as an object — the caller goes straight
+	 * on to .someMethod() — so answering with a stub function makes the second step a TypeError,
+	 * which is the blank screen this whole arrangement exists to avoid. A new *group* therefore
+	 * gets an empty object with the same floor beneath it, and a new *method* inside a known group
+	 * gets the stub.
+	 */
+	const groupFloor = () => withFloor({});
 
 	/*
 	 * Marked on the document too, so stylesheets can reach it.
@@ -238,6 +248,17 @@ export function bridgeScript(connection: Connection): string {
 	for (const key of Object.keys(api)) {
 		if (api[key] && typeof api[key] === "object") api[key] = withFloor(api[key]);
 	}
-	window.lyra = withFloor(api);
+	window.lyra = new Proxy(api, {
+		get(target, prop) {
+			if (prop in target) return target[prop];
+			if (typeof prop === "symbol") return undefined;
+			// A name that looks like a subscription is still a method on the root — onMainError
+			// lives there — so the shape of the name decides, as it does inside a group.
+			const name = String(prop);
+			return name.startsWith("on") && name.length > 2 && name[2] === name[2].toUpperCase()
+				? () => () => {}
+				: groupFloor();
+		},
+	});
 })();`;
 }
