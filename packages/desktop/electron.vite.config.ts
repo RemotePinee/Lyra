@@ -93,7 +93,16 @@ export default defineConfig({
 		root: ".",
 		plugins: [react(), tailwindcss(), katexWoff2Only()],
 		resolve: {
-			alias: { "@": resolve("src") },
+			alias: {
+				"@": resolve("src"),
+				"@lyra/core/thinking-options": resolve("../core/src/ai/thinking-options.ts"),
+				"@lyra/core/activity": resolve("../core/src/activity.ts"),
+				"@lyra/core/commands-view": resolve("../core/src/commands-view.ts"),
+				"@lyra/core/tokens": resolve("../core/src/tokens.ts"),
+				"@lyra/core/trajectory-view": resolve("../core/src/trajectory-view.ts"),
+				"@lyra/core/schedule": resolve("../core/src/config/schedule.ts"),
+				"@lyra/core/install-record": resolve("../core/src/plugins/install-record.ts"),
+			},
 		},
 		build: {
 			rollupOptions: {

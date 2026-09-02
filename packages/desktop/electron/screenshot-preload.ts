@@ -15,7 +15,7 @@ function keepDocumentTransparent(): void {
 
 keepDocumentTransparent();
 
-type ScreenshotBridge = Pick<LyraApi["screenshot"], "finish" | "cancel" | "copyColor" | "onInit" | "ready">;
+type ScreenshotBridge = Pick<LyraApi["screenshot"], "finish" | "cancel" | "copyColor" | "onInit" | "ready" | "painted">;
 
 const screenshot: ScreenshotBridge = {
 	finish: (dataUrl, settings) => ipcRenderer.invoke("screenshot:finish", dataUrl, settings),
@@ -27,6 +27,7 @@ const screenshot: ScreenshotBridge = {
 		return () => ipcRenderer.removeListener("screenshot:init", listener);
 	},
 	ready: () => ipcRenderer.send("screenshot:ready"),
+	painted: () => ipcRenderer.send("screenshot:painted"),
 };
 
 // The capture renderer gets no workspace, session, shell, settings, or filesystem capabilities.

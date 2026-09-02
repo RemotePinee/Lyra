@@ -57,6 +57,7 @@ interface ScreenshotInit {
 	scaleFactor: number;
 	settings?: ScreenshotSettings;
 	windows?: SnappableWindow[];
+	renderMode?: "live" | "snapshot";
 }
 
 type DragMode =
@@ -117,6 +118,9 @@ export function ScreenshotOverlay() {
 			canvas.height = decoded.height;
 		}
 		canvas.getContext("2d")?.drawImage(decoded.source, 0, 0);
+
+		// For macOS snapshot presentation mode: tell main process the canvas frame is composited
+		window.lyra?.screenshot?.painted?.();
 	}, [annotator.image, annotator.ready, annotator.width]);
 
 	useEffect(() => {

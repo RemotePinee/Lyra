@@ -8,6 +8,7 @@ import {
 	checkShortcutAvailable,
 	closeScreenshotOverlay,
 	finishScreenshot,
+	overlayPainted,
 	revealScreenshotOverlay,
 	startScreenshotSession,
 } from "../screenshot.ts";
@@ -49,16 +50,16 @@ export function registerScreenshotIpc(deps: ScreenshotIpcDeps): void {
 	});
 
 	/*
-	 * The overlay reporting that its page is mounted.
-	 *
-	 * `on`, not `handle`: the renderer is telling, not asking. Readiness is retained by webContents
-	 * id when a prewarmed window reports it before a capture session exists, so its first init event
-	 * cannot be sent before React has subscribed. The sender identifies which overlay.
+	 * The overlay reporting that its page is mounted or painted.
 	 */
 	ipcMain.on("screenshot:ready", (event) => {
 		if (event.sender && !event.sender.isDestroyed()) {
 			revealScreenshotOverlay(event.sender.id);
 		}
+	});
+
+	ipcMain.on("screenshot:painted", () => {
+		overlayPainted();
 	});
 
 	ipcMain.handle("screenshot:pickDirectory", async (): Promise<string | null> => {

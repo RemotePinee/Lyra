@@ -608,6 +608,8 @@ export interface LyraApi {
 		}) => void): () => void;
 		/** Say the overlay page is mounted. A prewarmed window already did this while hidden. */
 		ready(): void;
+		/** Say the overlay snapshot has been drawn into the canvas. */
+		painted?(): void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

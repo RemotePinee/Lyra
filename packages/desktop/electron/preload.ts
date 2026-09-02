@@ -316,6 +316,7 @@ const api: LyraApi = {
 		},
 		// A prewarmed overlay reports mounting before a capture session exists; main retains it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
+		painted: () => ipcRenderer.send("screenshot:painted"),
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),
