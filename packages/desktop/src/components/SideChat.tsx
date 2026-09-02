@@ -11,18 +11,18 @@
 
 import { MessageCirclePlus } from "lucide-react";
 import type { Message } from "@lyra/core";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSide } from "../sideStore.ts";
+import { BackToLatest } from "./BackToLatest.tsx";
 import { PanelEmpty } from "./PanelEmpty.tsx";
 import { Scroller } from "./Scroller.tsx";
+import { useFollowBottom } from "./scroll/useFollowBottom.ts";
+import { tailSignature } from "./scroll/signature.ts";
 import { ThinkingLine } from "./message/ThinkingLine.tsx";
 import { moodFor, phraseFor } from "./thinking-words.ts";
 import { lastIsSettled, MessageRow, rowKey } from "./sidechat/MessageRow.tsx";
 import { SideComposer } from "./sidechat/SideComposer.tsx";
 import { TaskStrip } from "./sidechat/TaskStrip.tsx";
-
-/** Within this far of the bottom counts as "following along", so new messages keep scrolling. */
-const PIN_SLACK = 60;
 
 export function SideChat() {
 	const messages = useSide((s) => s.messages);
@@ -32,14 +32,21 @@ export function SideChat() {
 	const abort = useSide((s) => s.abort);
 	const reset = useSide((s) => s.reset);
 
-	const scrollRef = useRef<HTMLDivElement>(null);
-	const pinned = useRef(true);
-
-	useLayoutEffect(() => {
-		const el = scrollRef.current;
-		if (!el || !pinned.current) return;
-		el.scrollTop = el.scrollHeight;
-	}, [messages]);
+	/*
+	 * The same rule the main transcript follows, from the same place.
+	 *
+	 * This panel used to keep its own: a lone `pinned` ref, a 60px slack where the conversation had
+	 * 80, no reaction to the panel being resized, and no way back down once you had scrolled up. The
+	 * ref was the worst of it — it never reset, so scrolling up here and then switching the main
+	 * conversation left the incoming session's side chat parked at an offset that belonged to the
+	 * one before it.
+	 */
+	const follow = useFollowBottom({
+		surfaceId: sessionId,
+		namespace: "sidechat",
+		count: messages.length,
+		tail: tailSignature(messages, running ? "run" : ""),
+	});
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -54,13 +61,13 @@ export function SideChat() {
 					它看得见主会话聊了什么，但说的话不会写进主会话；需要动手的事，它会交给主会话排队执行。这里的对话会保留，随时回来接着聊。
 				</PanelEmpty>
 			) : (
+				<div className="relative flex min-h-0 flex-1 flex-col">
 				<Scroller
 					className="flex-1"
-					scrollRef={scrollRef}
+					scrollRef={follow.scrollRef}
 					contentClassName="px-3"
-					onScroll={(el) => {
-						pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_SLACK;
-					}}
+					onScroll={follow.onScroll}
+					onResize={follow.onResize}
 				>
 					{/*
 					 * Capped and centred, exactly as the main transcript is.
@@ -83,8 +90,20 @@ export function SideChat() {
 						 * the main session's to report — this one has nothing to count.
 						 */}
 						{running && lastIsSettled(messages) && <SideThinking messages={messages} />}
+						{/* The end of it, so that having seen the newest reply is a fact rather than a
+						    guess made from how far down you are. See `useFollowBottom`. */}
+						<div ref={follow.tailRef} aria-hidden className="h-px w-full shrink-0" />
 					</div>
 				</Scroller>
+				{/*
+				 * The way back, which this panel never had.
+				 *
+				 * It streams like the main transcript does, so scrolling up to read something while a
+				 * reply is arriving leaves you with no route back to it but dragging — and "back" keeps
+				 * moving while the reply is still being written.
+				 */}
+				<BackToLatest show={follow.away} unread={follow.unread} onClick={follow.returnToBottom} />
+				</div>
 			)}
 
 			<TaskStrip />

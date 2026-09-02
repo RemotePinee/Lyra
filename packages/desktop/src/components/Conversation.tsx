@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApprovalOverlay } from "./ApprovalOverlay.tsx";
 import { BackToLatest } from "./BackToLatest.tsx";
 import { Composer } from "./Composer.tsx";
@@ -9,6 +9,8 @@ import { Scroller } from "./Scroller.tsx";
 import { isNudge, runs } from "./conversation/grouping.ts";
 import { ToolRun as ToolRunGroup, WINDOW_STEP } from "./conversation/runs.tsx";
 import { MessageRow, messageKey } from "./conversation/rows.tsx";
+import { useFollowBottom } from "./scroll/useFollowBottom.ts";
+import { tailSignature } from "./scroll/signature.ts";
 import { useLayout } from "../layout.tsx";
 import { useApp } from "../store.ts";
 
@@ -29,9 +31,17 @@ export const Conversation = memo(function Conversation() {
   const compactions = useApp((s) => s.compactions);
   const toolRunCount = useApp((s) => Object.keys(s.toolRuns).length);
   const activeSessionId = useApp((s) => s.activeSessionId);
-  /** How many messages are mounted. Grows when asked, resets with the conversation. */
-  const [windowSize, setWindowSize] = useState(WINDOW_STEP);
-  useEffect(() => setWindowSize(WINDOW_STEP), [activeSessionId]);
+  /**
+   * How many messages are mounted. Grows when asked, resets with the conversation.
+   *
+   * Derived during render rather than reset in an effect, and the difference is not cosmetic. As an
+   * effect it ran *after* paint, so a conversation opened while the previous one had been expanded
+   * to 180 rows was laid out at 180, had its scroll position restored against that height, and only
+   * then dropped back to 60 — at which point the browser clamped the offset it had just been given.
+   * Reading the size from the session it belongs to means the first frame is already right.
+   */
+  const [expanded, setExpanded] = useState<{ id: string | null; size: number }>({ id: activeSessionId, size: WINDOW_STEP });
+  const windowSize = expanded.id === activeSessionId ? expanded.size : WINDOW_STEP;
   const { compact } = useLayout();
   /*
    * The floating card needs its own width plus a readable column left over beside it.
@@ -65,8 +75,6 @@ export const Conversation = memo(function Conversation() {
       observer.disconnect();
     };
   }, []);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pinnedToBottom = useRef(true);
   /**
    * True for the first frame after a session change.
    *
@@ -76,13 +84,6 @@ export const Conversation = memo(function Conversation() {
    * animate normally.
    */
   const [swapping, setSwapping] = useState(false);
-  /**
-   * Whether the newest message is off the bottom of the view.
-   *
-   * `pinnedToBottom` is a ref because following the bottom happens in a layout effect and must not
-   * cost a render. This is the same fact in state, because a button has to be drawn from it. They
-   * are set together and read in different places rather than one deriving the other.
-   */
   /**
    * The final answer has started arriving.
    *
@@ -96,99 +97,30 @@ export const Conversation = memo(function Conversation() {
     return last.content.some((block) => block.type === "text" && block.text.trim().length > 0);
   }, [messages]);
 
-  const [away, setAway] = useState(false);
-  /** Something arrived while scrolled up, which is the difference between "go down" and "new". */
-  const [missed, setMissed] = useState(false);
-
-  const updateScrollState = useCallback(
-    (el: HTMLDivElement) => {
-      // Every frame of `glideToBottom` fires this; letting it decide anything mid-flight is
-      // what made the button flicker and the pin land early.
-      if (gliding.current) return;
-      const atBottom = el.scrollHeight - el.clientHeight <= 1 || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      pinnedToBottom.current = atBottom;
-      setAway(!atBottom);
-      if (atBottom) setMissed(false);
-
-      if (activeSessionId) {
-        const cache = useApp.getState().sessionCache;
-        const currentEntry = cache[activeSessionId];
-        if (currentEntry) {
-          currentEntry.scrollTop = el.scrollTop;
-          currentEntry.pinnedToBottom = atBottom;
-        }
-      }
-    },
-    [activeSessionId],
-  );
-
-	/*
-	 * Before paint, not after.
-	 *
-	 * A remounted list starts at scrollTop 0, so setting the position in a `useEffect` means
-	 * the browser paints the top of the transcript once and the bottom on the next frame. That
-	 * flash is indistinguishable from a jump. `scrollTop = scrollHeight` forces a synchronous
-	 * layout either way, so doing it before paint costs nothing extra.
-	 */
-	useLayoutEffect(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-		if (pinnedToBottom.current) {
-			el.scrollTop = el.scrollHeight;
-		}
-		// Synchronize scroll & pinned state in case message/tool changes altered content height
-		updateScrollState(el);
-		/*
-		 * A cheap stand-in for "output arrived".
-		 *
-		 * Following the bottom used to depend on the whole `toolRuns` map, which meant subscribing
-		 * to every streamed chunk here as well. A count of finished calls changes when a card
-		 * appears or completes — the moments that actually change the page height.
-		 */
-		setMissed(false);
-	}, [messages, toolRunCount, updateScrollState]);
-
-  /**
-   * Ride down to the newest message, on a curve, without being interrupted on the way.
+  /*
+   * Following the bottom, and everything that decides whether to.
    *
-   * `scrollTo({ behavior: "smooth" })` was two problems. It aims at a fixed offset, and a reply
-   * still streaming grows the page underneath it — so it arrived somewhere that was no longer the
-   * bottom. And `pinnedToBottom` was set on the click, which let the layout effect below snap
-   * `scrollTop` to the end mid-flight: the jump the button exists to avoid, performed by the
-   * button. Both are fixed by owning the animation: the target is re-read every frame, and being
-   * pinned is the *result* of arriving rather than a decision taken up front.
-   *
-   * The curve is the same shape as `--ly-e-out`, which everything else in the app decelerates on.
+   * All of it used to be here: a `pinnedToBottom` ref recomputed from `scrollTop` on every event, a
+   * hand-rolled glide, a `missed` flag set from the fact that the messages array had been
+   * reassigned. Three surfaces had their own copy of it and none of them agreed. See
+   * `scroll/follow.ts` for the rule and `docs/2026-09-02-scroll-follow-design.md` for the four
+   * reported bugs that came out of deriving the reader's intention from pixels the program also
+   * writes.
    */
-  const glide = useRef(0);
-  const gliding = useRef(false);
-  const glideToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    cancelAnimationFrame(glide.current);
-    const from = el.scrollTop;
-    const started = performance.now();
-    const DURATION = 420;
-    gliding.current = true;
-
-    const step = (now: number) => {
-      const progress = Math.min(1, (now - started) / DURATION);
-      const eased = 1 - (1 - progress) ** 3;
-      const target = el.scrollHeight - el.clientHeight;
-      el.scrollTop = from + (target - from) * eased;
-      if (progress < 1) {
-        glide.current = requestAnimationFrame(step);
-        return;
-      }
-      gliding.current = false;
-      pinnedToBottom.current = true;
-      setAway(false);
-      setMissed(false);
-    };
-    glide.current = requestAnimationFrame(step);
-  }, []);
-
-  useEffect(() => () => cancelAnimationFrame(glide.current), []);
+  const follow = useFollowBottom({
+    surfaceId: activeSessionId,
+    namespace: "transcript",
+    count: messages.length,
+    /*
+     * What "something arrived" means here.
+     *
+     * `toolRunCount` is folded in for the same reason it was a dependency before: a card appearing
+     * or completing changes the page without touching a message. It is a count of settled calls
+     * rather than the map itself, so a streamed chunk does not re-run this.
+     */
+    tail: tailSignature(messages, toolRunCount),
+  });
+  const scrollRef = follow.scrollRef;
 
   /*
    * Sending puts you back at the bottom, wherever you had scrolled to.
@@ -198,35 +130,15 @@ export const Conversation = memo(function Conversation() {
    * appears to happen. Your own message is the one thing you can be certain you want to see.
    */
   const pending = useApp((s) => s.pendingUserMessage);
+  const { returnToBottom } = follow;
   useLayoutEffect(() => {
     if (!pending) return;
-    glideToBottom();
-  }, [pending, glideToBottom]);
+    returnToBottom();
+  }, [pending, returnToBottom]);
 
-  /*
-   * Arrived while away. Separate from the effect above because that one returns early when not
-   * pinned — which is exactly the case this needs to notice.
-   */
   useLayoutEffect(() => {
-    if (!pinnedToBottom.current) setMissed(true);
-  }, [messages, toolRunCount]);
-
-	// Restore cached scroll position or default to bottom.
-	useLayoutEffect(() => {
-		const el = scrollRef.current;
-		const cached = activeSessionId ? useApp.getState().sessionCache[activeSessionId] : undefined;
-		if (cached && typeof cached.scrollTop === "number") {
-			pinnedToBottom.current = cached.pinnedToBottom ?? false;
-			if (el) el.scrollTop = cached.scrollTop;
-			setAway(!pinnedToBottom.current);
-		} else {
-			pinnedToBottom.current = true;
-			if (el) el.scrollTop = el.scrollHeight;
-			setAway(false);
-		}
-		setMissed(false);
-		setSwapping(true);
-	}, [activeSessionId]);
+    setSwapping(true);
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!swapping) return;
@@ -283,8 +195,8 @@ export const Conversation = memo(function Conversation() {
         className="flex-1"
         scrollRef={scrollRef}
         contentClassName={compact ? "px-4" : "px-8"}
-        onScroll={updateScrollState}
-        onResize={updateScrollState}
+        onScroll={follow.onScroll}
+        onResize={follow.onResize}
       >
         {/*
          * Keyed on the session so switching plays a short fade rather than swapping one
@@ -326,7 +238,7 @@ export const Conversation = memo(function Conversation() {
           {hidden > 0 && (
             <button
               type="button"
-              onClick={() => setWindowSize((n) => n + WINDOW_STEP)}
+              onClick={() => setExpanded({ id: activeSessionId, size: windowSize + WINDOW_STEP })}
               className="mb-4 flex h-7 w-full items-center justify-center rounded-md text-detail text-ink-faint transition-colors hover:bg-card-hover hover:text-ink-muted"
             >
               显示更早的 {Math.min(hidden, WINDOW_STEP)} 条（共 {hidden} 条）
@@ -402,6 +314,16 @@ export const Conversation = memo(function Conversation() {
           </div>
           {/* Where the running indicator would have been, saying why it is not there. */}
           <ResumeRow />
+          {/*
+           * The end of the transcript, as an element.
+           *
+           * Marking the newest message read is the one question that cannot be answered by
+           * arithmetic: someone who scrolls up two screens, reads the paragraphs that arrived and
+           * stops there has caught up, and no distance-from-bottom test tells that apart from
+           * someone who has not. This entering the viewport is the fact itself. Zero height, so it
+           * changes nothing about the layout it reports on.
+           */}
+          <div ref={follow.tailRef} aria-hidden className="h-px w-full shrink-0" />
         </div>
       </Scroller>
 
@@ -413,9 +335,9 @@ export const Conversation = memo(function Conversation() {
        * it is about.
        */}
       <BackToLatest
-        show={away}
-        unread={missed}
-        onClick={glideToBottom}
+        show={follow.away}
+        unread={follow.unread}
+        onClick={follow.returnToBottom}
       />
       </div>
 

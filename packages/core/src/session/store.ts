@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AgentEvent } from "../agent/events.ts";
-import type { Message, Usage } from "../types.ts";
+import type { Message, ThinkingLevel, Usage } from "../types.ts";
 import type { SessionStorage } from "./storage.ts";
 import { addUsage, emptyUsage } from "../types.ts";
 
@@ -42,6 +42,19 @@ export interface SessionMeta {
 	 * as before.
 	 */
 	modelSwitchedAt?: number;
+	/**
+	 * How hard this conversation asks the model to think, when it differs from the app default.
+	 *
+	 * Per session because that is the unit the decision belongs to: one conversation is a long
+	 * refactor worth paying `high` for and the next is "what does this flag do". Held globally,
+	 * turning one up turned all of them up — including the ones already running somewhere else,
+	 * which is a bill nobody agreed to.
+	 *
+	 * Absent means "whatever the settings say", which is what every session written before this
+	 * existed means, and what a session nobody has expressed an opinion about should go on meaning
+	 * as the default moves.
+	 */
+	thinking?: ThinkingLevel;
 	/** Highest sequence number written. Sync clients compare against this. */
 	seq: number;
 }
@@ -304,8 +317,16 @@ export class SessionStore implements SessionStorage {
 		const all = await this.listSessions();
 		const next = [meta, ...all.filter((s) => s.id !== meta.id)].sort((a, b) => b.updatedAt - a.updatedAt);
 		await mkdir(this.root, { recursive: true });
-		// Write-then-rename so a crash cannot leave a truncated index.
-		const tmp = `${this.indexPath}.${process.pid}.tmp`;
+		/*
+		 * Write-then-rename so a crash cannot leave a truncated index.
+		 *
+		 * The temporary name carries more than the pid. Two writes racing inside one process — two
+		 * conversations created at once, which the desktop does whenever a window restores several
+		 * — both wrote to the same path, and the first rename took the file out from under the
+		 * second: `ENOENT ... index.json.NNN.tmp -> index.json`, and the session that lost is not
+		 * in the index at all.
+		 */
+		const tmp = `${this.indexPath}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
 		await writeFile(tmp, JSON.stringify(next, null, 2), "utf8");
 		await rename(tmp, this.indexPath);
 	}

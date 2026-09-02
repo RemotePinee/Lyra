@@ -84,6 +84,7 @@ import {
 } from "./window.ts";
 import { MEDIA_SCHEME, PREVIEW_SCHEME, registerPreviewProtocols } from "./preview-protocol.ts";
 import { registerGitIpc } from "./ipc/git.ts";
+import { registerUsageIpc } from "./ipc/usage.ts";
 import { registerSideChatIpc } from "./ipc/side-chat.ts";
 import { registerUpdateIpc } from "./ipc/updates.ts";
 import { registerTerminalIpc, type LiveTerminal } from "./ipc/terminal.ts";
@@ -687,4 +688,5 @@ function registerIpc(): void {
 	});
 
 	registerGitIpc({ insideAProject });
+	registerUsageIpc();
 }

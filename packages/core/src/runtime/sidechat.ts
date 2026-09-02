@@ -171,7 +171,13 @@ export class SideChat {
 					systemPrompt: this.systemPrompt(),
 					tools: [dispatchTaskTool(this.main), controlMainTool(this.main)],
 					messages: this.messages,
-					thinking: options.thinking ?? this.settings.thinking,
+					/*
+					 * The main conversation's level, for the same reason it is that conversation's
+					 * model: this panel is a second reader of one transcript, and a reader given
+					 * less thought than the one it is checking will disagree with it for reasons
+					 * that have nothing to do with the transcript.
+					 */
+					thinking: options.thinking ?? this.main.meta.thinking ?? this.settings.thinking,
 					retryAttempts: this.settings.retryAttempts,
 					signal: this.controller.signal,
 					maxTurns: 12,

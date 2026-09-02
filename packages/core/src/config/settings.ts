@@ -58,6 +58,19 @@ export interface AppearanceSettings {
 	codeLetterSpacing?: number;
 	/** 0–100. Scales the distance between surface layers and text. */
 	contrast: number;
+	/**
+	 * How wide the conversation column may get, in pixels. `0` means "as wide as the window".
+	 *
+	 * A measure is a reading decision, not a layout constant: 640px is close to the line length
+	 * prose is easiest to read at, and it is also the width at which a wide table in a reply gets
+	 * cut off and a 27" display shows two empty margins wider than the text between them. Which of
+	 * those matters more depends on what someone spends their day reading, so it is theirs to say.
+	 *
+	 * Every column that is part of the conversation reads this — the transcript, the composer, the
+	 * approval card — so they cannot drift apart. Optional: a settings file written before this
+	 * existed keeps the 640 it has always rendered at.
+	 */
+	contentWidth?: number;
 	pointerCursor: boolean;
 	reduceMotion: "system" | "on" | "off";
 	/** Whether diffs are shown by colour or by leading +/- markers. */
@@ -93,6 +106,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 	codeLineHeight: 1.6,
 	codeLetterSpacing: 0,
 	contrast: 60,
+	// What the app has always rendered at; see `contentWidth`.
+	contentWidth: 640,
 	pointerCursor: false,
 	reduceMotion: "system",
 	diffMarkers: "color",
@@ -233,6 +248,18 @@ export interface Settings {
 	updateCheckIntervalHours?: number;
 	/** `${providerId}/${modelId}` of the model used for new sessions. */
 	defaultModelId: string | null;
+	/**
+	 * Models pinned to the top of the picker, in the order they were starred.
+	 *
+	 * A relay can serve thirty models and most people use three. Ordering the list by anything
+	 * automatic — recency, frequency — makes the position of a row depend on what you did last,
+	 * which is the one thing a list you aim at by muscle memory must not do. So it is stated
+	 * rather than inferred, and it is stated once.
+	 *
+	 * Ids that no longer resolve are ignored rather than pruned: a provider switched off for the
+	 * afternoon should not silently empty the shortlist.
+	 */
+	favoriteModelIds?: string[];
 	permissionMode: PermissionMode;
 	thinking: ThinkingLevel;
 	/**

@@ -20,7 +20,7 @@
 
 import { ArrowDown } from "lucide-react";
 
-export function BackToLatest({ show, unread, onClick }: { show: boolean; unread: boolean; onClick: () => void }) {
+export function BackToLatest({ show, unread, onClick }: { show: boolean; unread: number; onClick: () => void }) {
 	return (
 		<div
 			className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center"
@@ -50,6 +50,9 @@ export function BackToLatest({ show, unread, onClick }: { show: boolean; unread:
 				type="button"
 				tabIndex={show ? 0 : -1}
 				aria-hidden={!show}
+				/* Stated on the element so a probe can read the count while the button is hidden —
+				   asking the label is no good, because a hidden button says nothing either way. */
+				data-unread={unread}
 				onClick={onClick}
 				className={`ly-composer flex h-8 items-center gap-1.5 rounded-full border border-line-soft bg-float px-3.5 text-detail text-ink-muted transition-colors duration-[var(--ly-t-quick)] hover:text-ink ${
 					show ? "pointer-events-auto" : ""
@@ -59,9 +62,9 @@ export function BackToLatest({ show, unread, onClick }: { show: boolean; unread:
 				 * Says "new" only when something actually arrived while you were up here. Otherwise
 				 * this is navigation, not a notification, and a dot on it would be crying wolf.
 				 */}
-				{unread && <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />}
+				{unread > 0 && <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />}
 				<ArrowDown size={13} strokeWidth={2} />
-				{unread ? "有新内容" : "回到最新"}
+				{unread > 0 ? "有新内容" : "回到最新"}
 			</button>
 		</div>
 	);

@@ -14,6 +14,7 @@
 import type { AppearanceSettings } from "@lyra/core";
 import { sharedHighlightStyle } from "./components/highlight.ts";
 import { findCodeTheme } from "./components/code-themes.ts";
+import { contentMeasure } from "./content-width.ts";
 
 interface Rgb {
 	r: number;
@@ -112,6 +113,14 @@ export function applyAppearance(appearance: AppearanceSettings): void {
 		"--ly-code-font": appearance.codeFont,
 		"--ly-ui-size": `${appearance.uiFontSize}px`,
 		"--ly-code-size": `${appearance.codeFontSize}px`,
+		/*
+		 * The conversation's measure, read by every column that is part of it.
+		 *
+		 * One variable rather than one number per component: the transcript, the composer and the
+		 * approval card have to agree, and they are three files that would otherwise be changed
+		 * separately and eventually not.
+		 */
+		"--ly-content": contentMeasure(appearance.contentWidth),
 		/*
 		 * How code is set, beyond the family.
 		 *

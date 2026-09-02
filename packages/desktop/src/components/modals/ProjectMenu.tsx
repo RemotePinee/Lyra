@@ -1,8 +1,9 @@
-import { Archive, ArrowRight, FolderOpen, GitBranch, Pencil, PinOff, Pin, X } from "lucide-react";
+import { Archive, ArrowRight, FolderOpen, GitBranch, Pencil, PinOff, Pin, SquarePen, X } from "lucide-react";
 import { useState } from "react";
 import { Confirm } from "../Confirm.tsx";
 import { MenuBody, MenuItem, MenuSeparator, Popover, type Anchor } from "../Popover.tsx";
 import { useRevealLabel } from "../../openTargets.ts";
+import { startProjectSession } from "../sidebar/newSession.ts";
 import { useApp } from "../../store.ts";
 
 /**
@@ -155,12 +156,22 @@ export function ProjectMenu({
 		<Popover anchor={anchor} onClose={onClose} placement="right" width="compact" label={`${name} 的操作`}>
 			<MenuBody>
 				{/*
-				 * Switching to the project, which used to be what clicking its name did.
+				 * The two ways of going somewhere, before the ways of changing something.
 				 *
-				 * The name now folds the group — that is what a heading in a long list is for — so
-				 * this needs somewhere to live. First in the menu because it is the one item that is
-				 * about going somewhere rather than about changing something.
+				 * Starting a conversation is first because it is what the row is usually pressed
+				 * for; the button on the row does the same thing, and this is the keyboard and
+				 * right-click path to it. Switching without starting one is the rarer intent — the
+				 * project name folds the group now, so it needs a home here.
 				 */}
+				<MenuItem
+					icon={<SquarePen size={13} strokeWidth={1.8} />}
+					onClick={() => {
+						void startProjectSession(path);
+						onClose();
+					}}
+				>
+					在这里新建会话
+				</MenuItem>
 				<MenuItem
 					icon={<ArrowRight size={13} strokeWidth={1.8} />}
 					onClick={() => {

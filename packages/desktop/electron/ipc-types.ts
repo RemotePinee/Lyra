@@ -54,6 +54,7 @@ import type { DownloadPhase } from "./ipc/update-download.ts";
 import type { TrayCommand } from "./tray-menu.ts";
 export type { DocumentData, DocumentSheet } from "./documents.ts";
 import type { DocumentData } from "./documents.ts";
+import type { UsageScan } from "./usage-scan.ts";
 export type { DocumentKind } from "./document-kind.ts";
 export type { OpenTarget } from "./open-targets.ts";
 import type { OpenTarget } from "./open-targets.ts";
@@ -77,6 +78,7 @@ import type {
 	SlashCommand,
 	SubAgentDetail,
 	SubAgentSummary,
+	ThinkingLevel,
 	UserContent,
 } from "@lyra/core";
 
@@ -157,6 +159,15 @@ export interface LyraApi {
 		 */
 		onChanged(handler: (settings: Settings) => void): () => void;
 	};
+	usage: {
+		/**
+		 * Everything spent, by day and by model, read from the session logs.
+		 *
+		 * Cached between calls against each log's size and mtime, so this is expensive once and
+		 * cheap afterwards. The page does its own slicing; see `usage-aggregate.ts`.
+		 */
+		scan(): Promise<UsageScan>;
+	};
 	workspace: {
 		/** Show the project directory in the OS file manager. */
 		reveal(path: string): Promise<void>;
@@ -196,6 +207,11 @@ export interface LyraApi {
 		abort(sessionId: string): Promise<void>;
 		approve(sessionId: string, requestId: string, decision: ApprovalDecision): Promise<void>;
 		setModel(sessionId: string, modelId: string): Promise<void>;
+		/**
+		 * The reasoning level for this conversation, from here on. `null` returns it to the app
+		 * default — which is not the same as pinning it to whatever that default is today.
+		 */
+		setThinking(sessionId: string, thinking: ThinkingLevel | null): Promise<void>;
 		onEvent(handler: (payload: { sessionId: string; event: AgentEvent }) => void): () => void;
 	};
 	/**

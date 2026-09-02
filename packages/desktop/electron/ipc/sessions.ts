@@ -15,8 +15,10 @@ import {
 	type AgentSession,
 	type ApprovalDecision,
 	type ContextBreakdown,
+	type SessionMeta,
 	type SessionStorage,
 	type Settings,
+	type ThinkingLevel,
 	type UserContent,
 } from "@lyra/core";
 import { ipcMain } from "electron";
@@ -383,6 +385,32 @@ export function registerSessionsIpc({
 			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
 			if (meta && meta.messageCount === 0)
 				await store.append(meta, { type: "meta", meta: { ...meta, modelId } });
+		},
+	);
+
+	/*
+	 * The conversation's own reasoning level.
+	 *
+	 * Unlike the model there is nothing to settle: no stored message carries a handle that a
+	 * different level would invalidate, so this is accepted at any point in any conversation —
+	 * including one that has not been started yet, where the choice is written straight to the log
+	 * rather than booting an agent to hold it.
+	 *
+	 * `null` hands the conversation back to the app default. See `Session.setThinking`.
+	 */
+	ipcMain.handle(
+		"agent:setThinking",
+		async (_event, sessionId: string, thinking: ThinkingLevel | null) => {
+			const live = sessions.get(sessionId);
+			if (live) {
+				await live.setThinking(thinking);
+				return;
+			}
+			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
+			if (!meta) return;
+			// Present-and-undefined rather than absent; see the note in `Session.setThinking`.
+			const next: SessionMeta = { ...meta, thinking: thinking ?? undefined };
+			await store.append(meta, { type: "meta", meta: next });
 		},
 	);
 }

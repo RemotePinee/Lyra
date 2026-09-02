@@ -3,6 +3,7 @@ import type {
   Message,
   SessionMeta,
   Settings,
+  ThinkingLevel,
   ToolResult,
   UserContent,
 } from "@lyra/core";
@@ -345,7 +346,15 @@ export interface AppState {
     id: string,
     decision: "once" | "always" | "reject",
   ): Promise<void>;
-  setModel(modelId: string): Promise<void>;
+  /**
+   * Run this conversation on a different model.
+   *
+   * `asDefault` additionally makes it what new conversations start on — a separate decision, and
+   * one that used to be taken silently on every pick. See the note in `turn-slice`.
+   */
+  setModel(modelId: string, options?: { asDefault?: boolean }): Promise<void>;
+  /** How hard this conversation asks the model to think. Falls back to the app default. */
+  setThinking(thinking: ThinkingLevel): Promise<void>;
   refreshSync(): Promise<void>;
   dismissNotice(id: string): void;
   notify(message: string, level?: "info" | "warn" | "error"): void;

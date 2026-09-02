@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { networkInterfaces } from "node:os";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { AgentEvent, AgentSession, SessionStorage, Settings, UserContent } from "@lyra/core";
+import type { AgentEvent, AgentSession, SessionStorage, Settings, ThinkingLevel, UserContent } from "@lyra/core";
 import type { SyncStatus } from "./ipc-types.ts";
 
 export interface SyncServerDeps {
@@ -227,6 +227,21 @@ export class SyncServer {
 						return;
 					}
 					send(200, { ok: true });
+					return;
+				}
+
+				/*
+				 * The conversation's reasoning level, from the phone.
+				 *
+				 * Unlike the model this is never refused: no stored message carries a handle that
+				 * a different level invalidates. `null` hands the conversation back to the app
+				 * default rather than pinning it to today's value.
+				 */
+				if (req.method === "POST" && action === "thinking") {
+					const body = (await readJson(req)) as { thinking?: string | null };
+					const level = body.thinking == null ? null : (String(body.thinking) as ThinkingLevel);
+					await session.setThinking(level);
+					send(200, { ok: true, meta: session.meta });
 					return;
 				}
 

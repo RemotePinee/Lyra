@@ -6,7 +6,7 @@
  * is created reads as broken — and the stored copy replaces it when the runtime confirms it.
  */
 
-import type { ApprovalDecision, Message, Usage, UserContent } from "@lyra/core";
+import type { ApprovalDecision, Message, ThinkingLevel, Usage, UserContent } from "@lyra/core";
 import { without } from "./derive.ts";
 import type { AppState } from "../store.ts";
 
@@ -233,13 +233,21 @@ export function turnSlice(set: Set, get: Get) {
    * is lost is the earlier reasoning context, which the warning below says plainly — the visible
    * transcript, and everything the new model reads, is unchanged.
    */
-  async setModel(modelId: string) {
+  async setModel(modelId: string, options: { asDefault?: boolean } = {}) {
     const { activeSessionId, settings, meta } = get();
     const midConversation = get().messages.length > 0 && meta?.modelId !== modelId;
     if (activeSessionId)
       await window.lyra.agent.setModel(activeSessionId, modelId);
     if (meta) set({ meta: { ...meta, modelId } });
-    if (settings)
+    /*
+     * The app default is a separate decision, and used to be made for you.
+     *
+     * Every pick wrote `defaultModelId`, so trying a cheaper model on one question silently
+     * re-aimed every conversation started afterwards. A conversation with no session yet is the
+     * exception: there is nothing else for the choice to land on, and it is about to become the
+     * model the new session is created with.
+     */
+    if (settings && (options.asDefault || !activeSessionId))
       await get().saveSettings({ ...settings, defaultModelId: modelId });
     if (midConversation) {
       get().notify(
@@ -247,6 +255,25 @@ export function turnSlice(set: Set, get: Get) {
         "warn",
       );
     }
+  },
+
+  /**
+   * The reasoning level for the conversation on screen.
+   *
+   * With no session yet there is nothing to write it to, so it lands on the app default — which
+   * is also what that conversation will be created with, so the control means the same thing in
+   * both cases. `meta` is updated straight away rather than waiting for the round trip: this is
+   * read by the composer's label, and a control that lags a frame behind the press reads as one
+   * that did not take.
+   */
+  async setThinking(thinking: ThinkingLevel) {
+    const { activeSessionId, meta, settings } = get();
+    if (activeSessionId) {
+      if (meta) set({ meta: { ...meta, thinking } });
+      await window.lyra.agent.setThinking(activeSessionId, thinking);
+      return;
+    }
+    if (settings) await get().saveSettings({ ...settings, thinking });
   },
 
   async refreshSync() {

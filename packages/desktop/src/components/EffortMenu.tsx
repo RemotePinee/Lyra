@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Popover, type Anchor } from "./Popover.tsx";
 import { RollingText } from "./RollingText.tsx";
 import { useApp } from "../store.ts";
+import { sessionThinking } from "../thinking.ts";
 
 export function effortLabel(level: ThinkingLevel, model?: ModelConfig | null): string {
 	const options = resolveModelThinkingOptions(model);
@@ -22,7 +23,7 @@ export function effortLabel(level: ThinkingLevel, model?: ModelConfig | null): s
 
 export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => void }) {
 	const settings = useApp((s) => s.settings);
-	const saveSettings = useApp((s) => s.saveSettings);
+	const setThinking = useApp((s) => s.setThinking);
 	const meta = useApp((s) => s.meta);
 	const [showHelp, setShowHelp] = useState(false);
 
@@ -32,7 +33,7 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	const supported = model?.supportsThinking !== false;
 
 	const options: ThinkingOption[] = resolveModelThinkingOptions(model);
-	const level = settings?.thinking ?? "medium";
+	const level = sessionThinking(meta, settings);
 
 	let index = options.findIndex((l) => l.id === level);
 	if (index === -1) {
@@ -46,12 +47,18 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	const set = (nextIndex: number) => {
 		if (!settings || options.length === 0) return;
 		const next = options[Math.min(options.length - 1, Math.max(0, nextIndex))].id;
-		void saveSettings({
-			...settings,
-			thinking: next,
-			// Keep the last non-off level so fast mode can put it back.
-			...(next !== "off" ? { lastThinking: next } : {}),
-		});
+		void setThinking(next);
+		/*
+		 * The last level above 「关闭」, so fast mode has something to put back.
+		 *
+		 * Still global while the level itself is per conversation: it is not a setting anyone
+		 * chose, it is a memory of the last thing they did, and remembering it per session would
+		 * mean the switch has nothing to restore in the conversation where it matters most — a
+		 * fresh one.
+		 */
+		if (next !== "off" && settings.lastThinking !== next) {
+			void useApp.getState().saveSettings({ ...settings, lastThinking: next });
+		}
 	};
 
 	return (
@@ -95,6 +102,15 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 						{supported && current ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
 					</RollingText>
 				</p>
+
+				{/*
+				 * What this press reaches, said where the press happens.
+				 *
+				 * The control looks exactly as it did when the level was global, and now means
+				 * something narrower — anyone who turned it up expecting every conversation to
+				 * follow has no way to find that out except by discovering it later.
+				 */}
+				<p className="text-caption text-ink-faint">{meta ? "只作用于当前会话" : "作为新会话的默认档位"}</p>
 
 				{/*
 				 * Kept mounted and unfolded, so it closes the same way it opens. Rendered

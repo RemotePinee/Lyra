@@ -10,9 +10,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { dayKey, heatLevel, heatmapWeeks, monthLabels } from "../src/components/settings/usage-heatmap.ts";
 
-const at = (iso: string, input = 0, output = 0, cost = 0) => ({
-	updatedAt: new Date(iso).getTime(),
-	usage: { input, output, cost: { total: cost } },
+/**
+ * One already-totalled day, as the log scan hands them over.
+ *
+ * The grid stopped binning sessions by `updatedAt` — that put every token of a three-day refactor
+ * on the third day — so what arrives here is a day, not a conversation.
+ */
+const day = (key: string, sessions = 1, tokens = 0, cost = 0, messages = sessions * 2) => ({
+	day: key,
+	sessions,
+	messages,
+	tokens,
+	cost,
 });
 
 test("the grid is weeks of seven, oldest first, ending on this week", () => {
@@ -31,27 +40,23 @@ test("the grid is weeks of seven, oldest first, ending on this week", () => {
 	assert.ok(last.some((d) => d.key === dayKey(now)), "today is in the final week");
 });
 
-test("a session counts on the local day it happened, including late at night", () => {
+test("a day lands on its own square, and adjacent days do not bleed into each other", () => {
 	const now = new Date(2026, 7, 13, 12, 0);
-	const grid = heatmapWeeks([at("2026-08-12T23:30:00"), at("2026-08-13T00:10:00")], now, 2);
+	const grid = heatmapWeeks([day("2026-08-12"), day("2026-08-13", 2)], now, 2);
 	const days = grid.flat();
 
-	assert.equal(days.find((d) => d.key === "2026-08-12")?.sessions, 1, "23:30 belongs to the 12th");
-	assert.equal(days.find((d) => d.key === "2026-08-13")?.sessions, 1, "00:10 belongs to the 13th");
+	assert.equal(days.find((d) => d.key === "2026-08-12")?.sessions, 1);
+	assert.equal(days.find((d) => d.key === "2026-08-13")?.sessions, 2);
 });
 
-test("several sessions on one day add up", () => {
+test("a day carries its totals through to the square", () => {
 	const now = new Date(2026, 7, 13, 12, 0);
-	const grid = heatmapWeeks(
-		[at("2026-08-11T09:00:00", 100, 20, 0.5), at("2026-08-11T14:00:00", 300, 80, 1.5)],
-		now,
-		2,
-	);
-	const day = grid.flat().find((d) => d.key === "2026-08-11");
-	assert.equal(day?.sessions, 2);
-	assert.equal(day?.input, 400);
-	assert.equal(day?.output, 100);
-	assert.equal(day?.cost, 2);
+	const grid = heatmapWeeks([day("2026-08-11", 2, 500, 2, 9)], now, 2);
+	const cell = grid.flat().find((d) => d.key === "2026-08-11");
+	assert.equal(cell?.sessions, 2);
+	assert.equal(cell?.tokens, 500);
+	assert.equal(cell?.messages, 9);
+	assert.equal(cell?.cost, 2);
 });
 
 test("days with nothing on them are present and empty, not missing", () => {
@@ -59,13 +64,19 @@ test("days with nothing on them are present and empty, not missing", () => {
 	const grid = heatmapWeeks([], now, 3);
 	const days = grid.flat();
 	assert.equal(days.length, 21);
-	assert.ok(days.every((d) => d.sessions === 0 && d.input === 0), "a rectangle of zeroes, not holes");
+	assert.ok(days.every((d) => d.sessions === 0 && d.tokens === 0), "a rectangle of zeroes, not holes");
 });
 
-test("sessions older than the window are simply not shown", () => {
+test("days older than the window are simply not shown", () => {
 	const now = new Date(2026, 7, 13, 12, 0);
-	const grid = heatmapWeeks([at("2020-01-01T10:00:00", 999)], now, 2);
-	assert.ok(grid.flat().every((d) => d.input === 0));
+	const grid = heatmapWeeks([day("2020-01-01", 1, 999)], now, 2);
+	assert.ok(grid.flat().every((d) => d.tokens === 0));
+});
+
+test("a malformed day key is dropped rather than placed on the epoch", () => {
+	const now = new Date(2026, 7, 13, 12, 0);
+	const grid = heatmapWeeks([{ day: "not-a-date", sessions: 3, messages: 3, tokens: 5, cost: 0 }], now, 2);
+	assert.ok(grid.flat().every((d) => d.sessions === 0));
 });
 
 test("shading ranks days against the busiest, so one huge day does not flatten the rest", () => {

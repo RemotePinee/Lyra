@@ -150,6 +150,14 @@ export function SessionRow({
 				type="button"
 				onClick={onOpen}
 				/*
+				 * Which conversation you are in, stated rather than only drawn.
+				 *
+				 * The row says so with a fill, which a screen reader cannot see — so the open
+				 * conversation was indistinguishable from the forty above it to anyone not looking
+				 * at the colour.
+				 */
+				aria-current={active ? "page" : undefined}
+				/*
 				 * The room made for the buttons is made on exactly the conditions that show them.
 				 *
 				 * It used to be `group-focus-within`, which is any focus anywhere in the row — and

@@ -16,7 +16,8 @@ import { EffortMenu, effortLabel } from "./EffortMenu.tsx";
 import { ModelIcon } from "./ModelIcon.tsx";
 import { RollingText, useRolled } from "./RollingText.tsx";
 import { ScrollText } from "./ScrollText.tsx";
-import { ModelMenu } from "./ModelMenu.tsx";
+import { ModelMenu, formatWindow } from "./ModelMenu.tsx";
+import { modelIdentity, modelTooltip } from "../modelGrouping.ts";
 import { usePopover } from "./Popover.tsx";
 import { BranchMenu } from "./modals/BranchMenu.tsx";
 import { PermissionPicker } from "./modals/PermissionPicker.tsx";
@@ -26,6 +27,7 @@ import { findModel } from "../models.ts";
 import { fileKind, isReadableAsText, KIND_LABEL, looksBinary, type FileKind } from "./attachments/file-kind.ts";
 import { FileKindIcon } from "./attachments/FileKindIcon.tsx";
 import { useApp } from "../store.ts";
+import { sessionThinking } from "../thinking.ts";
 
 const PERMISSION_LABEL: Record<string, string> = {
 	ask: "请求批准",
@@ -334,7 +336,16 @@ export function Composer() {
 	// The whole record, not just its name: the mark beside it is chosen from the id the provider
 	// knows the model by, which is not the same string as the label somebody typed for it.
 	const model = findModel(settings, modelId);
-	const modelName = model?.name ?? null;
+	/*
+	 * Which house this model is from, and whether the strip has to say so.
+	 *
+	 * With one provider the name is the whole answer and the extra word is noise. With two relays
+	 * offering the same `grok-4.6`, the name is not an answer at all — so the provider is folded
+	 * into the label exactly when it is what tells them apart. Either way the tooltip has room for
+	 * all of it.
+	 */
+	const identity = modelIdentity(settings, modelId);
+	const modelName = identity?.ambiguous ? `${identity.provider.name} · ${identity.model.name}` : (model?.name ?? null);
 	// The mark rolls with the name it belongs to, on the same terms — never on the first paint.
 	const modelRolls = useRolled(modelId ?? "");
 	const permissionMode = settings?.permissionMode ?? "auto";
@@ -794,7 +805,7 @@ export function Composer() {
 							<button
 								type="button"
 								onClick={modelMenu.toggle}
-								data-ly-tip={modelName ?? "选择模型"}
+								data-ly-tip={modelTooltip(identity, formatWindow)}
 								aria-haspopup="menu"
 								aria-expanded={modelMenu.open}
 								className={`flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
@@ -816,12 +827,12 @@ export function Composer() {
 								onClick={effortMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
-								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium", model)}`}
+								data-ly-tip={`推理强度：${effortLabel(sessionThinking(meta, settings), model)}`}
 								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>
-								<RollingText>{effortLabel(settings?.thinking ?? "medium", model)}</RollingText>
+								<RollingText>{effortLabel(sessionThinking(meta, settings), model)}</RollingText>
 							</button>
 
 							<ComposerSend

@@ -6,6 +6,13 @@ import { findCodeTheme, LIGHT_CODE_THEMES, DARK_CODE_THEMES } from "../code-them
 import { CodeAppearancePreview } from "./CodeAppearancePreview.tsx";
 import { CODE_DEFAULTS } from "./code-defaults.ts";
 import { CODE_FONTS, fontAvailable, matchCodeFont } from "./code-fonts.ts";
+import {
+	CONTENT_DEFAULT,
+	CONTENT_FILL,
+	CONTENT_MAX,
+	CONTENT_MIN,
+	contentPreset,
+} from "../../content-width.ts";
 
 /** The sentinel the font menu uses for 「自定义…」; never stored as a font stack. */
 const CUSTOM_FONT = "__custom__";
@@ -31,6 +38,7 @@ const FACTORY_APPEARANCE: Appearance = {
 	uiFontSize: 13,
 	codeFontSize: 12,
 	contrast: 60,
+	contentWidth: 640,
 	pointerCursor: false,
 	reduceMotion: "system",
 	diffMarkers: "color",
@@ -382,6 +390,41 @@ export function AppearanceSettings() {
 							onChange={(uiFontSize) => patch({ uiFontSize })}
 							label="UI 字号"
 						/>
+					}
+				/>
+				{/*
+				 * The measure, as four choices and a number.
+				 *
+				 * Presets first because almost nobody wants a specific pixel count — they want
+				 * "wider than this". The field is for the person who does, and it is hidden under
+				 * 铺满 rather than disabled: a number that has no effect is worse than one that is
+				 * not offered.
+				 */}
+				<Row
+					title="对话宽度"
+					detail="正文和输入框的最大宽度。窗口很宽时，加宽可以少一些两侧留白"
+					control={
+						<div className="flex items-center gap-2">
+							<Segmented
+								value={contentPreset(appearance.contentWidth)}
+								onChange={(choice) => patch({ contentWidth: Number(choice) })}
+								options={[
+									{ value: String(CONTENT_DEFAULT), label: "标准" },
+									{ value: "800", label: "宽" },
+									{ value: "960", label: "超宽" },
+									{ value: String(CONTENT_FILL), label: "铺满" },
+								]}
+							/>
+							{appearance.contentWidth !== CONTENT_FILL && (
+								<PixelField
+									value={appearance.contentWidth ?? CONTENT_DEFAULT}
+									min={CONTENT_MIN}
+									max={CONTENT_MAX}
+									onChange={(contentWidth) => patch({ contentWidth })}
+									label="对话宽度"
+								/>
+							)}
+						</div>
 					}
 				/>
 				<Row

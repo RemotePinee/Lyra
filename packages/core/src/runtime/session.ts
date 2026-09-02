@@ -230,6 +230,33 @@ export class AgentSession {
 		return true;
 	}
 
+	/**
+	 * How hard this conversation asks the model to think, from here on.
+	 *
+	 * Written into the log like the model is, for the same reason: it is a property of the
+	 * conversation rather than of the window that happens to be showing it, so it has to survive a
+	 * restart, reach the phone through the same sync every other change reaches it through, and
+	 * apply to a turn started from anywhere.
+	 *
+	 * `null` gives the conversation back to the app default rather than pinning it to whatever the
+	 * default happens to be right now — a distinction that only shows itself later, when the
+	 * default moves and a session that was never given an opinion should move with it.
+	 */
+	async setThinking(thinking: ThinkingLevel | null): Promise<void> {
+		/*
+		 * `undefined`, not `delete`.
+		 *
+		 * A `meta` record is merged over the store's copy (`Object.assign` in `appendExclusive`),
+		 * so a key that is simply missing leaves the previous value standing — clearing the level
+		 * by deleting the field wrote a record that changed nothing. Present-and-undefined
+		 * overwrites, and `JSON.stringify` drops it on the way to disk, so the reloaded log has no
+		 * level at all, which is what was meant.
+		 */
+		const meta: SessionMeta = { ...this.log.meta, thinking: thinking ?? undefined };
+		this.log.meta = meta;
+		await this.log.append({ type: "meta", meta });
+	}
+
 	// -------------------------------------------------------------------------
 	// Running a turn
 	// -------------------------------------------------------------------------
@@ -325,7 +352,19 @@ export class AgentSession {
 		await this.run(options.thinking);
 	}
 
-	private async run(thinking?: ThinkingLevel): Promise<void> {
+	/**
+	 * What this turn asks for: the caller's word, then the conversation's, then the app's.
+	 *
+	 * Resolved here rather than at each entry point so every way of starting a turn — the desktop,
+	 * the phone through sync, a scheduled task, 「继续」 — reads the conversation's own level
+	 * without each of them having to remember to.
+	 */
+	private thinkingFor(requested?: ThinkingLevel): ThinkingLevel | undefined {
+		return requested ?? this.log.meta.thinking ?? undefined;
+	}
+
+	private async run(requested?: ThinkingLevel): Promise<void> {
+		const thinking = this.thinkingFor(requested);
 		const resolved = resolveModel(this.settings, this.log.meta.modelId || this.settings.defaultModelId);
 		if (!resolved) {
 			await this.emit({

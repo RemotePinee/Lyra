@@ -16,8 +16,17 @@ export interface DayUsage {
 	key: string;
 	date: Date;
 	sessions: number;
-	input: number;
-	output: number;
+	messages: number;
+	tokens: number;
+	cost: number;
+}
+
+/** What the caller knows about one day, before it is placed in the grid. */
+export interface DayTotals {
+	day: string;
+	sessions: number;
+	messages: number;
+	tokens: number;
 	cost: number;
 }
 
@@ -28,11 +37,6 @@ export function dayKey(date: Date): string {
 	return `${date.getFullYear()}-${month}-${day}`;
 }
 
-interface Countable {
-	updatedAt: number;
-	usage: { input: number; output: number; cost: { total: number } };
-}
-
 /**
  * The last `weeks` weeks as columns of seven days, oldest first, ending on the week containing
  * `now`.
@@ -41,18 +45,24 @@ interface Countable {
  * is padded to the end of the current week so the grid is a rectangle rather than a staircase.
  * Padding days are real days in the future and carry zeroes — they are drawn faintly rather than
  * left as holes, which would make the last column look like missing data.
+ *
+ * Takes days that are already totalled, rather than sessions. It used to bin conversations by
+ * `updatedAt`, which put every token of a three-day refactor on the third day; the totals now
+ * arrive from the log scan, where a turn belongs to the day it happened.
  */
-export function heatmapWeeks(sessions: Countable[], now: Date, weeks: number): DayUsage[][] {
+export function heatmapWeeks(totalled: DayTotals[], now: Date, weeks: number): DayUsage[][] {
 	const totals = new Map<string, DayUsage>();
-	for (const session of sessions) {
-		const date = new Date(session.updatedAt);
-		const key = dayKey(date);
-		const day = totals.get(key) ?? { key, date, sessions: 0, input: 0, output: 0, cost: 0 };
-		day.sessions += 1;
-		day.input += session.usage.input;
-		day.output += session.usage.output;
-		day.cost += session.usage.cost.total;
-		totals.set(key, day);
+	for (const each of totalled) {
+		const [y, m, d] = each.day.split("-").map(Number);
+		if (!y || !m || !d) continue;
+		totals.set(each.day, {
+			key: each.day,
+			date: new Date(y, m - 1, d),
+			sessions: each.sessions,
+			messages: each.messages,
+			tokens: each.tokens,
+			cost: each.cost,
+		});
 	}
 
 	// Monday of the current week, then back `weeks - 1` weeks for the first column.
@@ -67,7 +77,7 @@ export function heatmapWeeks(sessions: Countable[], now: Date, weeks: number): D
 		for (let d = 0; d < 7; d++) {
 			const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + d);
 			const key = dayKey(date);
-			column.push(totals.get(key) ?? { key, date, sessions: 0, input: 0, output: 0, cost: 0 });
+			column.push(totals.get(key) ?? { key, date, sessions: 0, messages: 0, tokens: 0, cost: 0 });
 		}
 		grid.push(column);
 	}
