@@ -230,6 +230,22 @@ export class AgentSession {
 		return true;
 	}
 
+	/**
+	 * Set how hard this conversation thinks, at any point in it.
+	 *
+	 * Persisted into the session log, so it survives a reload and follows the conversation rather
+	 * than the window it happens to be open in. Unlike a model change this needs no repair work on
+	 * the history: effort decides how much reasoning the *next* turn does, and says nothing about
+	 * the reasoning already in the transcript.
+	 */
+	async setThinking(thinking: ThinkingLevel): Promise<boolean> {
+		if (this.log.meta.thinking === thinking) return false;
+		const meta: SessionMeta = { ...this.log.meta, thinking };
+		this.log.meta = meta;
+		await this.log.append({ type: "meta", meta });
+		return true;
+	}
+
 	// -------------------------------------------------------------------------
 	// Running a turn
 	// -------------------------------------------------------------------------
@@ -347,7 +363,12 @@ export class AgentSession {
 				provider: resolved.provider,
 				model: resolved.model,
 				signal: this.controller.signal,
-				thinking,
+				/*
+				 * What this turn was asked for, then what the conversation settled on, then the
+				 * global default. The caller's argument wins because it is a decision about this one
+				 * turn — the side chat asks for `off` regardless of what the conversation runs at.
+				 */
+				thinking: thinking ?? this.log.meta.thinking,
 				streamFn: this.streamFn,
 				scratchDir: scratchDir(this.log.meta.id),
 				requestApproval: (request) => this.requestApproval(request),

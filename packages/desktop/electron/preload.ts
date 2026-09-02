@@ -90,6 +90,7 @@ const api: LyraApi = {
 		abort: (sessionId) => ipcRenderer.invoke("agent:abort", sessionId),
 		approve: (sessionId, requestId, decision) => ipcRenderer.invoke("agent:approve", sessionId, requestId, decision),
 		setModel: (sessionId, modelId) => ipcRenderer.invoke("agent:setModel", sessionId, modelId),
+		setThinking: (sessionId, thinking) => ipcRenderer.invoke("agent:setThinking", sessionId, thinking),
 		onEvent: (handler) => {
 			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
 			ipcRenderer.on("agent:event", listener);

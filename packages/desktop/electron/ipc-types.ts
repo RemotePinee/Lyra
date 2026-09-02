@@ -71,6 +71,7 @@ import type {
 	SlashCommand,
 	SubAgentDetail,
 	SubAgentSummary,
+	ThinkingLevel,
 	UserContent,
 } from "@lyra/core";
 
@@ -190,6 +191,13 @@ export interface LyraApi {
 		abort(sessionId: string): Promise<void>;
 		approve(sessionId: string, requestId: string, decision: ApprovalDecision): Promise<void>;
 		setModel(sessionId: string, modelId: string): Promise<void>;
+		/**
+		 * How hard this conversation thinks, stored on the conversation.
+		 *
+		 * Separate from `settings.thinking`, which is now what a session starts at rather than what
+		 * every session runs at. See `SessionMeta.thinking`.
+		 */
+		setThinking(sessionId: string, thinking: ThinkingLevel): Promise<void>;
 		onEvent(handler: (payload: { sessionId: string; event: AgentEvent }) => void): () => void;
 	};
 	/**

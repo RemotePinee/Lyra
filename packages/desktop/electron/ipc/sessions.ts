@@ -17,6 +17,7 @@ import {
 	type ContextBreakdown,
 	type SessionStorage,
 	type Settings,
+	type ThinkingLevel,
 	type UserContent,
 } from "@lyra/core";
 import { ipcMain } from "electron";
@@ -383,6 +384,29 @@ export function registerSessionsIpc({
 			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
 			if (meta && meta.messageCount === 0)
 				await store.append(meta, { type: "meta", meta: { ...meta, modelId } });
+		},
+	);
+
+	ipcMain.handle(
+		"agent:setThinking",
+		async (_event, sessionId: string, thinking: ThinkingLevel) => {
+			const live = sessions.get(sessionId);
+			if (live) {
+				await live.setThinking(thinking);
+				return;
+			}
+			/*
+			 * Not warm: write the choice straight to the log rather than starting an agent for it.
+			 *
+			 * No `messageCount` guard, unlike the model. Changing the model of a conversation that
+			 * has already run is the thing that needs care — the reasoning handles in its history
+			 * belong to the old provider. Effort has no such history to invalidate: it decides what
+			 * the next turn does, so setting it on a cold session with fifty messages is exactly as
+			 * safe as setting it on an empty one.
+			 */
+			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
+			if (meta && meta.thinking !== thinking)
+				await store.append(meta, { type: "meta", meta: { ...meta, thinking } });
 		},
 	);
 }
