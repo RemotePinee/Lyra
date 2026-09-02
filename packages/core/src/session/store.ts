@@ -56,6 +56,15 @@ export interface SessionMeta {
 	 * when the default moves.
 	 */
 	thinking?: ThinkingLevel;
+	/**
+	 * Someone typed this title, so nothing else gets to replace it.
+	 *
+	 * The first prompt names the conversation after itself, which is the right default for the
+	 * conversations nobody names — and wrong for every one somebody did. Naming a session before
+	 * asking anything is the ordinary way to use it, and the automatic title landed on top of the
+	 * name a moment later: the rename looked like it had worked, right up until the first message.
+	 */
+	titleSetByUser?: boolean;
 	/** Highest sequence number written. Sync clients compare against this. */
 	seq: number;
 }
