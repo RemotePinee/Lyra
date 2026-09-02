@@ -28,6 +28,8 @@ function install(connection: Connection = LAN) {
 	const calls: { url: string; body: unknown }[] = [];
 	const sockets: string[] = [];
 
+	// The sockets the script opened, kept so a test can deliver a message down the live one.
+	const opened: { onmessage: ((event: { data: string }) => void) | null }[] = [];
 	const scope = {
 		document: { documentElement: { setAttribute() {} }, addEventListener() {} },
 		WebSocket: class {
@@ -37,6 +39,7 @@ function install(connection: Connection = LAN) {
 			onerror: (() => void) | null = null;
 			constructor(url: string) {
 				sockets.push(url);
+				opened.push(this);
 			}
 			close() {}
 		},
@@ -55,7 +58,15 @@ function install(connection: Connection = LAN) {
 	const run = new Function("window", "document", "WebSocket", "fetch", "setTimeout", "navigator", bridgeScript(connection));
 	run(window, scope.document, scope.WebSocket, scope.fetch, scope.setTimeout, scope.navigator);
 
-	return { lyra: window.lyra as Record<string, never>, calls, sockets };
+	return {
+		lyra: window.lyra as Record<string, never>,
+		calls,
+		sockets,
+		/** Deliver a message as the desktop's sync server would, down the most recent socket. */
+		receive(message: unknown) {
+			opened.at(-1)?.onmessage?.({ data: JSON.stringify(message) });
+		},
+	};
 }
 
 test("the script parses and installs an object", () => {
@@ -243,11 +254,17 @@ test("the generated script has no stray backtick in it", () => {
 /** A document with a mutable set of elements, and a MutationObserver that fires on demand. */
 function pageWith(elements: { attrs: string[] }[]) {
 	const posted: string[] = [];
-	let observer: (() => void) | null = null;
+	// Every observer the script installs, fired together: which one is which is the script's
+	// business, and both of them already ignore a change that did not change their own answer.
+	const observers: (() => void)[] = [];
 	const listeners: Record<string, (() => void)[]> = {};
 
 	const element = (el: { attrs: string[] }) => ({ hasAttribute: (name: string) => el.attrs.includes(name) });
-	const documentElement = { setAttribute() {} };
+	let dark = true;
+	const documentElement = {
+		setAttribute() {},
+		classList: { contains: (name: string) => (name === "dark" ? dark : !dark) },
+	};
 	const document = {
 		documentElement,
 		body: {},
@@ -269,6 +286,7 @@ function pageWith(elements: { attrs: string[] }[]) {
 		fetch: async () => ({ ok: true, json: async () => ({ ok: true, value: null }) }),
 		setTimeout: () => 0,
 		navigator: {},
+		getComputedStyle: () => ({ getPropertyValue: () => (dark ? "#171717" : "#ffffff") }),
 		KeyboardEvent: class {
 			type: string;
 			constructor(type: string) {
@@ -277,7 +295,7 @@ function pageWith(elements: { attrs: string[] }[]) {
 		},
 		MutationObserver: class {
 			constructor(handler: () => void) {
-				observer = handler;
+				observers.push(handler);
 			}
 			observe() {}
 		},
@@ -294,6 +312,7 @@ function pageWith(elements: { attrs: string[] }[]) {
 		"fetch",
 		"setTimeout",
 		"navigator",
+		"getComputedStyle",
 		"KeyboardEvent",
 		"MutationObserver",
 		bridgeScript(LAN),
@@ -305,30 +324,41 @@ function pageWith(elements: { attrs: string[] }[]) {
 		scope.fetch,
 		scope.setTimeout,
 		scope.navigator,
+		scope.getComputedStyle,
 		scope.KeyboardEvent,
 		scope.MutationObserver,
 	);
 
+	/** Messages of one kind, in order — the page reports more than one thing down this channel. */
+	const of = (type: string) =>
+		posted.map((raw) => JSON.parse(raw) as { type: string }).filter((message) => message.type === type);
+
 	return {
 		window,
 		posted,
-		/** Change what is on the page, then let the observer notice. */
+		of,
+		/** Change what is on the page, then let the observers notice. */
 		change(next: { attrs: string[] }[]) {
 			elements = next;
-			observer?.();
+			for (const fire of observers) fire();
+		},
+		/** Switch the page's theme, as the desktop's settings would. */
+		setDark(next: boolean) {
+			dark = next;
+			for (const fire of observers) fire();
 		},
 	};
 }
 
 test("the page reports how many layers it has open", () => {
 	const page = pageWith([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
-	assert.deepEqual(JSON.parse(page.posted[0]), { type: "layers", depth: 0 }, "关着的抽屉不算一层");
+	assert.deepEqual(page.of("layers")[0], { type: "layers", depth: 0 }, "关着的抽屉不算一层");
 
 	page.change([{ attrs: ["data-pane", "aria-modal"] }]);
-	assert.deepEqual(JSON.parse(page.posted[1]), { type: "layers", depth: 1 }, "抽屉打开了要报上去");
+	assert.deepEqual(page.of("layers")[1], { type: "layers", depth: 1 }, "抽屉打开了要报上去");
 
 	page.change([{ attrs: ["data-pane", "aria-modal"] }, { attrs: ["aria-modal"] }]);
-	assert.deepEqual(JSON.parse(page.posted[2]), { type: "layers", depth: 2 });
+	assert.deepEqual(page.of("layers")[2], { type: "layers", depth: 2 });
 });
 
 test("an unchanged depth is not reported again", () => {
@@ -337,10 +367,10 @@ test("an unchanged depth is not reported again", () => {
 	 * on every mutation would put a message across the bridge for every token.
 	 */
 	const page = pageWith([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
-	const before = page.posted.length;
+	const before = page.of("layers").length;
 	page.change([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
 	page.change([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
-	assert.equal(page.posted.length, before, "层数没变就不该再发");
+	assert.equal(page.of("layers").length, before, "层数没变就不该再发");
 });
 
 test("closing a layer is offered as a function the native side can call", () => {
@@ -348,4 +378,67 @@ test("closing a layer is offered as a function the native side can call", () => 
 	const page = pageWith([]);
 	assert.equal(typeof page.window.__lyraBack, "function");
 	assert.doesNotThrow(() => (page.window.__lyraBack as () => void)());
+});
+
+test("the page reports its theme, so the phone's own chrome can match", () => {
+	/*
+	 * The status bar and the strips behind the notch and home indicator are painted natively, and
+	 * nothing tells them the page went light. Left alone that is white status text on a white page,
+	 * with a dark border around it.
+	 */
+	const page = pageWith([]);
+	assert.deepEqual(page.of("theme")[0], { type: "theme", dark: true, shell: "#171717" });
+
+	page.setDark(false);
+	assert.deepEqual(page.of("theme")[1], { type: "theme", dark: false, shell: "#ffffff" });
+});
+
+test("a class change that is not a theme change is not reported", () => {
+	// The observer fires on any class change to the root, and the renderer toggles several.
+	const page = pageWith([]);
+	const before = page.of("theme").length;
+	page.setDark(true);
+	assert.equal(page.of("theme").length, before, "主题没变就不该再发");
+});
+
+/*
+ * The names on the wire, which are a contract between two files that never import each other.
+ *
+ * `sync-server.ts` picks them and this picks them again, and nothing checks that the two agree —
+ * they did not. The desktop broadcast `settings_changed` and the phone listened for `settings`, so
+ * every settings change was sent, received, and silently dropped: switch the desktop to a light
+ * theme with a phone in your hand and it stayed dark, with no error anywhere to say why.
+ */
+
+test("a settings change from the desktop reaches whoever subscribed", () => {
+	const page = install();
+	const lyra = page.lyra as unknown as { settings: { onChanged(fn: (s: unknown) => void): () => void } };
+
+	const seen: unknown[] = [];
+	lyra.settings.onChanged((next) => seen.push(next));
+
+	// Exactly the shape `SyncServer.broadcastSettings` puts on the wire.
+	page.receive({ type: "settings_changed", settings: { appearance: { theme: "light" } } });
+
+	assert.deepEqual(seen, [{ appearance: { theme: "light" } }]);
+});
+
+test("an agent event still reaches its own subscribers", () => {
+	// The other half of the same contract, and the one that was already right.
+	const page = install();
+	const lyra = page.lyra as unknown as { agent: { onEvent(fn: (e: unknown) => void): () => void } };
+
+	const seen: unknown[] = [];
+	lyra.agent.onEvent((event) => seen.push(event));
+	page.receive({ type: "agent_event", sessionId: "s1", event: { type: "text", text: "嗨" } });
+
+	assert.deepEqual(seen, [{ sessionId: "s1", event: { type: "text", text: "嗨" } }]);
+});
+
+test("a message of a kind this version does not know is ignored", () => {
+	// The desktop may be newer than the phone; an unknown type is not a reason to throw inside a
+	// socket handler, where nothing would catch it.
+	const page = install();
+	assert.doesNotThrow(() => page.receive({ type: "something_from_the_future", payload: 1 }));
+	assert.doesNotThrow(() => page.receive("not json at all"));
 });

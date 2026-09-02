@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Platform, Pressable, Text, ToastAndroid, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+import { StatusBar } from "expo-status-bar";
 import { backPress, type BackState } from "../src/back";
 import { bridgeScript } from "../src/bridge";
 import { useMobile } from "../src/store";
@@ -27,6 +28,16 @@ export default function DeskScreen() {
 
 	const [loading, setLoading] = useState(true);
 	const [failed, setFailed] = useState<string | null>(null);
+	/*
+	 * The page's theme, mirrored so the phone's own chrome can match it.
+	 *
+	 * Everything outside the WebView is painted here — the status bar, and the strips behind the
+	 * notch and the home indicator. The page can be switched to a light theme from the desktop, and
+	 * nothing would otherwise tell this side: white status text over a white page, in a dark frame.
+	 *
+	 * Starts dark because that is what the app declares, so there is no flash on the way in.
+	 */
+	const [theme, setTheme] = useState<{ dark: boolean; shell: string }>({ dark: true, shell: "#171717" });
 	/*
 	 * `WebView<object>`, not `WebView`.
 	 *
@@ -86,7 +97,13 @@ export default function DeskScreen() {
 	const origin = `${scheme}://${connection.host}:${connection.port}`;
 
 	return (
-		<View className="flex-1 bg-shell" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
+		<View
+			className="flex-1"
+			// The page's own background, so the safe areas read as part of it rather than as a frame
+			// around it. `bg-shell` was right for exactly one of the two themes.
+			style={{ backgroundColor: theme.shell, paddingTop: insets.top, paddingBottom: insets.bottom }}
+		>
+			<StatusBar style={theme.dark ? "light" : "dark"} />
 			<WebView<object>
 				ref={webview}
 				source={{ uri: `${origin}/app` }}
@@ -97,6 +114,28 @@ export default function DeskScreen() {
 				 * an interface that was not there yet.
 				 */
 				injectedJavaScriptBeforeContentLoaded={bridgeScript(connection)}
+				/*
+				 * What the page tells us about itself: how many layers it has open, for the back
+				 * button, and which theme it is in, for the status bar and the safe areas.
+				 *
+				 * Anything else is from a newer bridge than this build knows and is ignored
+				 * rather than thrown — an unrecognised message is not a reason to take down a
+				 * socket handler.
+				 */
+				onMessage={({ nativeEvent }) => {
+					let message: { type?: string; depth?: number; dark?: boolean; shell?: string };
+					try {
+						message = JSON.parse(nativeEvent.data) as typeof message;
+					} catch {
+						return;
+					}
+					if (message.type === "layers" && typeof message.depth === "number") {
+						back.current = { ...back.current, depth: message.depth };
+					}
+					if (message.type === "theme" && typeof message.dark === "boolean") {
+						setTheme({ dark: message.dark, shell: message.shell || (message.dark ? "#171717" : "#ffffff") });
+					}
+				}}
 				onLoadEnd={() => setLoading(false)}
 				onError={({ nativeEvent }) => {
 					setLoading(false);
@@ -133,7 +172,7 @@ export default function DeskScreen() {
 			/>
 
 			{loading && (
-				<View className="absolute inset-0 items-center justify-center bg-shell">
+				<View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: theme.shell }}>
 					<ActivityIndicator color="#9a9a9a" />
 					<Text className="mt-3 text-[12.5px] text-ink-faint">正在加载桌面端界面…</Text>
 				</View>

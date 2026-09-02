@@ -60,7 +60,7 @@ export function bridgeScript(connection: Connection): string {
 			try { message = JSON.parse(event.data); } catch { return; }
 			if (message.type === "agent_event") {
 				for (const fn of subscribers.agent) fn({ sessionId: message.sessionId, event: message.event });
-			} else if (message.type === "settings") {
+			} else if (message.type === "settings_changed") {
 				for (const fn of subscribers.settings) fn(message.settings);
 			}
 		};
@@ -197,9 +197,35 @@ export function bridgeScript(connection: Connection): string {
 		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
 	};
 
+	/*
+	 * The page's own theme, reported outward so the phone's chrome can match it.
+	 *
+	 * The interface can be switched between light and dark from the desktop, and the parts of the
+	 * screen that are not the WebView — the status bar, the strips behind the notch and the home
+	 * indicator — are painted by the native side, which has no way to know. Left alone they stay
+	 * dark: white status text on a white page, and a dark border around a light one.
+	 */
+	let lastTheme = "";
+	const reportTheme = () => {
+		const root = document.documentElement;
+		if (!root) return;
+		const dark = root.classList.contains("dark");
+		// The variable rather than a hardcoded pair, so a new theme is carried across without this
+		// needing to know about it.
+		const shell = getComputedStyle(root).getPropertyValue("--color-shell").trim();
+		const theme = JSON.stringify({ type: "theme", dark, shell });
+		if (theme === lastTheme) return;
+		lastTheme = theme;
+		window.ReactNativeWebView?.postMessage(theme);
+	};
+
 	const watchLayers = () => {
 		if (!document.body) return;
 		reportDepth();
+		reportTheme();
+		// Only this element and only its class: the theme is one attribute in one place, and
+		// watching the subtree for it would fire on every row that toggles a class.
+		new MutationObserver(reportTheme).observe(document.documentElement, { attributeFilter: ["class"] });
 		// Attributes only: inert going on and off a drawer is the signal, and watching characterData
 		// as well would fire this on every token of a streaming reply.
 		new MutationObserver(reportDepth).observe(document.documentElement, {

@@ -16,6 +16,7 @@
  */
 
 import type { AgentSession, SessionStorage, Settings } from "@lyra/core";
+import { settingsFromPhone } from "./phone-settings.ts";
 
 /**
  * Everything a call may reach, handed in rather than imported.
@@ -158,8 +159,15 @@ export const RPC: Record<string, Handler> = {
 		await deps.store().delete(s(projectId), s(sessionId));
 		return null;
 	},
+	/*
+	 * Merged onto what the desktop has, rather than replacing it — see `phone-settings.ts`.
+	 *
+	 * Taking the object as sent meant two things at once: a phone could write `hooks`, which is a
+	 * list of shell commands the desktop runs, and a phone one version behind could drop every
+	 * field it did not know about.
+	 */
 	"settings.save": async (deps, [next]) => {
-		await deps.saveSettings(next as never);
+		await deps.saveSettings(settingsFromPhone(deps.settings(), next));
 		return deps.settings();
 	},
 

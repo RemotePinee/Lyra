@@ -144,8 +144,27 @@ export class SyncServer {
 	}
 
 	broadcast(sessionId: string, event: AgentEvent): void {
+		this.send(JSON.stringify({ type: "agent_event", sessionId, event }));
+	}
+
+	/**
+	 * Tell the phone the settings changed.
+	 *
+	 * Without this the two halves agree only until someone changes something: the phone reads the
+	 * settings once at boot and would go on showing the old model, the old theme and the old
+	 * permission mode until it was restarted. The renderer already subscribes — this is the end that
+	 * was missing.
+	 *
+	 * The whole object, not a diff. It is small, it is sent rarely, and a diff would need the two
+	 * ends to agree on how to apply one.
+	 */
+	broadcastSettings(settings: Settings): void {
+		this.send(JSON.stringify({ type: "settings_changed", settings }));
+	}
+
+	/** To every client still connected. A closing socket is not an error worth reporting. */
+	private send(payload: string): void {
 		if (this.clients.size === 0) return;
-		const payload = JSON.stringify({ type: "agent_event", sessionId, event });
 		for (const client of this.clients) {
 			if (client.readyState === 1) client.send(payload);
 		}
