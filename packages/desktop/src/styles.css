@@ -3771,3 +3771,44 @@
 [data-lyra-host="mobile"][data-keyboard] .ly-composer-dock {
   padding-bottom: calc(var(--ly-keyboard) + 8px);
 }
+
+/*
+ * ---------------------------------------------------------------------------------------------
+ * Controls that only appear on hover, on a device that has no hover.
+ *
+ * Twenty-odd places in the interface hide a control until the pointer is over its row and reveal
+ * it with `group-hover`. On a phone the pointer never arrives, so those controls are not merely
+ * hard to reach — they do not exist. That includes copying or editing a message, and renaming,
+ * archiving or deleting a session: not decoration, but most of what you would pick up a phone to
+ * do.
+ *
+ * `[class~="opacity-0"]` matches the *whole* class name, which is the entire point. A substring
+ * match would also catch `group-hover/project:opacity-0` — the reverse case, where something is
+ * shown and hidden on hover — and forcing both halves of such a pair to full opacity stacks two
+ * absolutely-positioned elements on top of each other. See `hover-reveal.test.ts`.
+ *
+ * Under `(hover: none)` rather than the host attribute alone, so a phone connected to a mouse
+ * keeps the quieter behaviour it can actually use.
+ */
+@media (hover: none) {
+  [data-lyra-host="mobile"] [class~="opacity-0"][class*="group-hover"] {
+    opacity: 1;
+  }
+
+  /*
+   * Quieter than on the desktop, where they are only ever seen deliberately.
+   *
+   * Permanently visible, a full-strength row of icons under every message competes with the
+   * message. Dimmed, they stay legible and findable without becoming the loudest thing on a
+   * screen that is mostly conversation — and they go to full strength while being pressed, which
+   * is the only feedback a finger gets.
+   */
+  [data-lyra-host="mobile"] [data-ly-hover-reveal] {
+    opacity: 0.55;
+  }
+
+  [data-lyra-host="mobile"] [data-ly-hover-reveal]:active,
+  [data-lyra-host="mobile"] [data-ly-hover-reveal]:has(:active) {
+    opacity: 1;
+  }
+}
