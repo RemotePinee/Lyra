@@ -19,6 +19,8 @@ packages/core/dist/
 
 # Wrangler's local state: the simulated D1 database, R2 objects and KV entries `wrangler dev`
 # writes. Machine-local scratch, and large.
+expo-env.d.ts
+*.expo-env.d.ts
 .wrangler/
 # Secrets for local development — the GitHub client secret, the session signing key, a GitHub
 # token. The deployed Worker gets these from `wrangler secret put`; nothing goes in the repo.
