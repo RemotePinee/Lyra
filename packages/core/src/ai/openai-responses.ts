@@ -17,7 +17,6 @@ import type {
 	ProviderConfig,
 	RequestOptions,
 	StreamEvent,
-	ThinkingLevel,
 	Usage,
 } from "../types.ts";
 import { emptyUsage } from "../types.ts";
@@ -25,14 +24,7 @@ import { computeCost } from "../utils/pricing.ts";
 import { fetchWithRetry, isRetryableError, retryStream, toolCallId } from "./retry.ts";
 import { parseToolArguments, readSse } from "../utils/sse.ts";
 import { describeFetchError, joinUrl, truncate } from "./anthropic-messages.ts";
-
-const REASONING_EFFORT: Record<Exclude<ThinkingLevel, "off">, string> = {
-	minimal: "minimal",
-	low: "low",
-	medium: "medium",
-	high: "high",
-	max: "high",
-};
+import { resolveReasoningEffort } from "./thinking-options.ts";
 
 export const openaiResponsesProvider: Provider = {
 	api: "openai-responses",
@@ -58,6 +50,7 @@ async function* streamResponses(
 	};
 
 	const thinkingEnabled = model.supportsThinking && options.thinking && options.thinking !== "off";
+	const reasoningEffort = thinkingEnabled ? resolveReasoningEffort(options.thinking, model) : undefined;
 
 	const body: Record<string, unknown> = {
 		model: model.modelId,
@@ -71,10 +64,10 @@ async function* streamResponses(
 		// Omitting `reasoning` does not disable thinking — several providers still reason by
 		// default, so "off" has to say so explicitly. `effort: "none"` is the documented way.
 		...(model.supportsThinking
-			? thinkingEnabled
+			? thinkingEnabled && reasoningEffort
 				? {
 						reasoning: {
-							effort: REASONING_EFFORT[options.thinking as Exclude<ThinkingLevel, "off">],
+							effort: reasoningEffort,
 							summary: "auto",
 						},
 						include: ["reasoning.encrypted_content"],

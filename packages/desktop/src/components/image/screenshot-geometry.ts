@@ -130,10 +130,6 @@ export function clampRect(rect: Rect, within: { width: number; height: number })
 	return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
-/** How far the toolbar sits from the selection, and from the edge of the screen. */
-const TOOLBAR_GAP = 12;
-const SCREEN_MARGIN = 12;
-
 export interface SnappableWindow {
 	id: number | string;
 	title: string;
@@ -181,6 +177,10 @@ export function windowToLocalRect(win: SnappableWindow, bounds: { x: number; y: 
 	);
 }
 
+/** How far the toolbar sits from the selection, and from the edge of the screen. */
+const TOOLBAR_GAP = 12;
+const SCREEN_MARGIN = 12;
+
 /**
  * Where the toolbar goes: under the selection, aligned to its left edge.
  *
@@ -192,22 +192,70 @@ export function windowToLocalRect(win: SnappableWindow, bounds: { x: number; y: 
  * it. Both are ordinary; what is not is a selection at the very bottom of a short screen, where
  * neither side fits — there it goes inside, at the bottom, which is the only place left.
  */
+/**
+ * Where the toolbar goes, and which side of the region it ended up on.
+ *
+ * The side is not decoration: anything the bar opens — the size and colour bubble, for one — has to
+ * open *away* from the region, or it covers the very thing being annotated. Only the caller of this
+ * function knows which way that is, so it is returned rather than guessed at downstream.
+ */
+export interface ToolbarPlacement extends Point {
+	/** `over` means neither side fits and the bar is on top of the region. */
+	side: "below" | "above" | "over";
+}
+
 export function toolbarPosition(
 	rect: Rect,
 	viewport: { width: number; height: number },
 	toolbar: { width: number; height: number },
-): Point {
+	/**
+	 * How tall the bubble the bar opens is, if it opens one.
+	 *
+	 * The bar was placed as though it were the only thing that had to fit, and the size-and-colour
+	 * bubble opens *further* from the region than the bar — so a selection reaching the bottom of
+	 * the screen put the bar in the last strip that fitted and the bubble below that, off the
+	 * screen entirely. All that was visible of it was a row of pixels along the bottom edge.
+	 *
+	 * Counted as part of the stack on both sides: a side only counts as fitting if the bar *and*
+	 * whatever it opens both land on screen there.
+	 */
+	bubble: { height: number } = { height: 0 },
+): ToolbarPlacement {
+	const extra = bubble.height > 0 ? TOOLBAR_GAP + bubble.height : 0;
+	const stack = toolbar.height + extra;
 	const below = rect.y + rect.height + TOOLBAR_GAP;
 	const above = rect.y - toolbar.height - TOOLBAR_GAP;
 
 	let y: number;
-	if (below + toolbar.height <= viewport.height - SCREEN_MARGIN) y = below;
-	else if (above >= SCREEN_MARGIN) y = above;
-	else y = Math.max(SCREEN_MARGIN, viewport.height - toolbar.height - SCREEN_MARGIN);
+	let side: ToolbarPlacement["side"];
+	if (below + stack <= viewport.height - SCREEN_MARGIN) {
+		y = below;
+		side = "below";
+	} else if (above - extra >= SCREEN_MARGIN) {
+		y = above;
+		side = "above";
+	} else {
+		/*
+		 * Neither side fits the whole stack, so the bar sits over the region — high enough that the
+		 * bubble, which opens upward in this state, still has somewhere to go.
+		 */
+		y = Math.max(SCREEN_MARGIN, viewport.height - toolbar.height - SCREEN_MARGIN);
+		// Neither side fits, so the bar is over the region itself and there is no "away from the
+		// selection" left to be on.
+		side = "over";
+	}
 
+	/*
+	 * Right-aligned to the selection, then kept on screen.
+	 *
+	 * The bar ends with the two controls that finish the job — cancel and confirm — and lining its
+	 * right edge up with the region's puts those under the hand that just released the drag, which
+	 * usually ended at the bottom-right corner. Left-aligned, the same two buttons are a whole bar's
+	 * width away from where the gesture ended.
+	 */
 	const x = Math.min(
-		Math.max(SCREEN_MARGIN, rect.x),
+		Math.max(SCREEN_MARGIN, rect.x + rect.width - toolbar.width),
 		Math.max(SCREEN_MARGIN, viewport.width - toolbar.width - SCREEN_MARGIN),
 	);
-	return { x, y };
+	return { x, y, side };
 }

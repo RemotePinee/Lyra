@@ -81,10 +81,9 @@ export function turnSlice(set: Set, get: Get) {
       ),
     });
 
-    // Optimistically mark this conversation as running so the activity dot updates immediately in this window
-    if (sessionId) {
-      set({ activity: { ...get().activity, [sessionId]: "running" } });
-    } else {
+    // This is where a blank conversation becomes a real one — the first message is the
+    // first thing worth storing, so it is also the first thing that creates a session.
+    if (!sessionId) {
       try {
         const snapshot = await window.lyra.sessions.create(
           cwd!,
@@ -112,7 +111,6 @@ export function turnSlice(set: Set, get: Get) {
         };
         set({
           activeSessionId: sessionId,
-          openTabs: get().openTabs.includes(sessionId) ? get().openTabs : [...get().openTabs, sessionId],
           meta: listed,
           toolRuns: {},
           approvals: [],
@@ -222,32 +220,33 @@ export function turnSlice(set: Set, get: Get) {
   },
 
   /**
-   * Choose the model for the conversation about to start.
+   * Choose the model this conversation runs on, at any point in it.
    *
-   * Refused once one has started, and not as a matter of taste. Stored messages carry
-   * provider-specific handles — the Responses `responseId` that chains a conversation, the
-   * `signature` on a thinking or tool-call block, the encrypted reasoning payload replayed on
-   * the next turn. None of it survives a change of model: at best the reasoning context is
-   * silently dropped, at worst the next request is rejected outright. Across API formats the
-   * whole history would have to be re-translated, and thinking blocks cannot be.
+   * This used to refuse once a conversation had started, because stored messages carry
+   * provider-specific handles — the `signature` on a thinking block, the encrypted reasoning
+   * payload replayed on the next turn — and handing one provider's handle to another is rejected
+   * outright rather than ignored. That is a real hazard, but refusing the switch was the wrong
+   * answer to it: the handles are droppable, and what they buy is continuity of the model's own
+   * chain of thought, not the conversation itself.
    *
-   * So the model is settled by the first message. Wanting a different one means wanting a
-   * different conversation.
+   * So the switch goes through and `stripStaleHandles` clears the handles written before it. What
+   * is lost is the earlier reasoning context, which the warning below says plainly — the visible
+   * transcript, and everything the new model reads, is unchanged.
    */
   async setModel(modelId: string) {
     const { activeSessionId, settings, meta } = get();
-    if (get().messages.length > 0) {
-      get().notify(
-        "对话开始后不能更换模型，历史里的推理上下文无法跨模型使用。新建对话即可换。",
-        "warn",
-      );
-      return;
-    }
+    const midConversation = get().messages.length > 0 && meta?.modelId !== modelId;
     if (activeSessionId)
       await window.lyra.agent.setModel(activeSessionId, modelId);
     if (meta) set({ meta: { ...meta, modelId } });
     if (settings)
       await get().saveSettings({ ...settings, defaultModelId: modelId });
+    if (midConversation) {
+      get().notify(
+        "已切换模型。之前的推理上下文无法跨模型沿用，接下来的回答可能变差；重开一个对话效果最好。",
+        "warn",
+      );
+    }
   },
 
   async refreshSync() {

@@ -360,6 +360,7 @@ const api: LyraApi = {
 		init: (cwd) => ipcRenderer.invoke("git:init", cwd),
 		log: (cwd, limit, ref) => ipcRenderer.invoke("git:log", cwd, limit, ref),
 		commitDiff: (cwd, sha) => ipcRenderer.invoke("git:commitDiff", cwd, sha),
+		commitDiffSummary: (cwd, sha) => ipcRenderer.invoke("git:commitDiffSummary", cwd, sha),
 		diffRefs: (cwd, base, head) => ipcRenderer.invoke("git:diffRefs", cwd, base, head),
 		stage: (cwd, paths) => ipcRenderer.invoke("git:stage", cwd, paths),
 		unstage: (cwd, paths) => ipcRenderer.invoke("git:unstage", cwd, paths),

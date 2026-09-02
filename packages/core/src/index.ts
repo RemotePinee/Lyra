@@ -213,3 +213,12 @@ export {
 
 export type { SubAgentDetail, SubAgentStatus, SubAgentSummary } from "./runtime/sub-agents.ts";
 export { collectSkills } from "./runtime/session-setup.ts";
+export {
+	resolveModelThinkingOptions,
+	resolveReasoningEffort,
+	STANDARD_3_LEVEL_OPTIONS,
+	STANDARD_5_LEVEL_OPTIONS,
+	GPT_5_6_STANDARD_OPTIONS,
+	GPT_5_6_SOL_OPTIONS,
+	FAST_3_LEVEL_OPTIONS,
+} from "./ai/thinking-options.ts";

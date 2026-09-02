@@ -1,22 +1,23 @@
-import type { ThinkingLevel } from "@lyra/core";
+import type { ModelConfig, ThinkingLevel, ThinkingOption } from "@lyra/core";
+/*
+ * From the leaf, not the barrel.
+ *
+ * `@lyra/core`'s index reaches the provider transports, which load koffi — a native module the
+ * renderer cannot bundle, and the build fails on it rather than warning. Types from the barrel are
+ * free (they vanish at compile time); a *value* is not. `thinking-options.ts` has one type import
+ * and nothing else.
+ */
+import { resolveModelThinkingOptions } from "@lyra/core/thinking-options";
 import { CircleHelp } from "lucide-react";
 import { useState } from "react";
 import { Popover, type Anchor } from "./Popover.tsx";
 import { RollingText } from "./RollingText.tsx";
 import { useApp } from "../store.ts";
 
-/** Ordered low to high; the slider index maps straight onto this. */
-const EFFORT_LEVELS: { value: ThinkingLevel; label: string; detail: string }[] = [
-	{ value: "off", label: "关闭", detail: "不推理，直接作答。最快。" },
-	{ value: "minimal", label: "极简", detail: "只做最低限度的思考。" },
-	{ value: "low", label: "低", detail: "简单任务够用。" },
-	{ value: "medium", label: "中", detail: "日常编码的默认档。" },
-	{ value: "high", label: "高", detail: "复杂重构、疑难排查。" },
-	{ value: "max", label: "最高", detail: "把预算拉满，最慢也最稳。" },
-];
-
-export function effortLabel(level: ThinkingLevel): string {
-	return EFFORT_LEVELS.find((l) => l.value === level)?.label ?? "中";
+export function effortLabel(level: ThinkingLevel, model?: ModelConfig | null): string {
+	const options = resolveModelThinkingOptions(model);
+	if (options.length === 0) return "关闭";
+	return options.find((l: ThinkingOption) => l.id === level)?.label ?? options.find((l: ThinkingOption) => l.isDefault)?.label ?? "中";
 }
 
 export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () => void }) {
@@ -25,19 +26,26 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	const meta = useApp((s) => s.meta);
 	const [showHelp, setShowHelp] = useState(false);
 
-	const level = settings?.thinking ?? "medium";
-	const index = Math.max(0, EFFORT_LEVELS.findIndex((l) => l.value === level));
-	const current = EFFORT_LEVELS[index];
-	const atMax = index === EFFORT_LEVELS.length - 1;
-
 	const model = settings?.providers
 		.flatMap((p) => p.models)
 		.find((m) => m.id === (meta?.modelId ?? settings.defaultModelId));
 	const supported = model?.supportsThinking !== false;
 
+	const options: ThinkingOption[] = resolveModelThinkingOptions(model);
+	const level = settings?.thinking ?? "medium";
+
+	let index = options.findIndex((l) => l.id === level);
+	if (index === -1) {
+		const defaultIdx = options.findIndex((l) => l.isDefault);
+		index = defaultIdx !== -1 ? defaultIdx : 0;
+	}
+
+	const current = options[index];
+	const atMax = options.length > 0 && index === options.length - 1;
+
 	const set = (nextIndex: number) => {
-		if (!settings) return;
-		const next = EFFORT_LEVELS[Math.min(EFFORT_LEVELS.length - 1, Math.max(0, nextIndex))].value;
+		if (!settings || options.length === 0) return;
+		const next = options[Math.min(options.length - 1, Math.max(0, nextIndex))].id;
 		void saveSettings({
 			...settings,
 			thinking: next,
@@ -47,25 +55,12 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 	};
 
 	return (
-		/*
-		 * The ordinary menu width, not a bespoke one.
-		 *
-		 * It was 232 — picked because it has to sit inside the conversation column, 458px wide at
-		 * the default window with the side panel open. Every size below that satisfies the same
-		 * constraint, so the constraint does not need its own number; `group` because this is a
-		 * slider and a paragraph, and nothing on it is a thing to pick.
-		 */
 		<Popover anchor={anchor} onClose={onClose} placement="top" align="center" width="default" role="group" label="推理强度">
 			<div className="px-3 py-2.5">
 				<div className="flex items-center gap-1.5">
 					<span className="text-label text-ink-muted">推理强度</span>
-					{/*
-					 * The colour turns violet at the top level along with the track — the name and the
-					 * bar are saying the same thing, and only one of them changing looked like a bug.
-					 * The roll itself is `RollingText`, the same one every other changing label uses.
-					 */}
 					<span className="text-label font-medium" style={{ color: atMax ? "var(--color-violet)" : "var(--color-info)" }}>
-						<RollingText>{current.label}</RollingText>
+						<RollingText>{supported && current ? current.label : "不支持"}</RollingText>
 					</span>
 					<div className="flex-1" />
 					<button
@@ -83,15 +78,21 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 					<span>更聪明</span>
 				</div>
 
-				<DotSlider value={index} max={EFFORT_LEVELS.length - 1} disabled={!supported} atMax={atMax} onChange={set} />
+				<DotSlider
+					value={index}
+					max={Math.max(0, options.length - 1)}
+					disabled={!supported || options.length <= 1}
+					atMax={atMax}
+					onChange={set}
+				/>
 
 				{/*
 				 * Fixed height, so a one-line description replacing a two-line one does not resize the
 				 * popover mid-drag — the control you are dragging would move out from under the pointer.
 				 */}
 				<p className="mt-2 h-[34px] text-detail leading-relaxed text-ink-faint">
-					<RollingText rollKey={supported ? current.value : "unsupported"} className="block">
-						{supported ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
+					<RollingText rollKey={supported && current ? current.id : "unsupported"} className="block">
+						{supported && current ? current.detail : "当前模型不支持推理，这项设置不会生效。"}
 					</RollingText>
 				</p>
 
@@ -103,15 +104,15 @@ export function EffortMenu({ anchor, onClose }: { anchor: Anchor; onClose: () =>
 				<div className="ly-reveal" data-open={showHelp} aria-hidden={!showHelp}>
 					<div>
 						<div className="mt-2.5 space-y-1 border-t border-line-soft pt-2.5 text-caption leading-relaxed text-ink-faint">
-							{EFFORT_LEVELS.map((entry) => (
-								<div key={entry.value} className="flex gap-2">
-									<span className={`w-7 shrink-0 transition-colors ${entry.value === level ? "text-ink" : ""}`}>
+							{options.map((entry) => (
+								<div key={entry.id} className="flex gap-2">
+									<span className={`w-7 shrink-0 transition-colors ${entry.id === level ? "text-ink" : ""}`}>
 										{entry.label}
 									</span>
 									<span className="flex-1">{entry.detail}</span>
 								</div>
 							))}
-							<p className="pt-1">供应商对中间档位的处理不一，有的只区分开与关；「关闭」始终显式要求不要推理。</p>
+							<p className="pt-1">供应商对推理档位的支持不一；「关闭」始终显式要求不要推理。</p>
 						</div>
 					</div>
 				</div>

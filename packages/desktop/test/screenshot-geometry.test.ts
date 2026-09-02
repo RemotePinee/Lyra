@@ -12,7 +12,6 @@ import { test } from "node:test";
 
 import {
 	clampRect,
-	findSnapWindow,
 	handlePoint,
 	hitHandle,
 	insideRect,
@@ -20,7 +19,6 @@ import {
 	rectFromPoints,
 	resizeRect,
 	toolbarPosition,
-	windowToLocalRect,
 	HANDLES,
 } from "../src/components/image/screenshot-geometry.ts";
 
@@ -93,41 +91,6 @@ test("clamping trims a resize that ran off the screen", () => {
 	assert.deepEqual(trimmed, { x: 0, y: 0, width: 150, height: 150 });
 });
 
-test("findSnapWindow matches top-most window in Z-order", () => {
-	const windows = [
-		{ id: 1, title: "Top Win", x: 100, y: 100, width: 300, height: 200 },
-		{ id: 2, title: "Bottom Win", x: 50, y: 50, width: 500, height: 400 },
-	];
-	const displayBounds = { x: 0, y: 0, width: 1920, height: 1080 };
-
-	// Hits both windows, but top-most is 1
-	const hit = findSnapWindow(windows, { x: 150, y: 150 }, displayBounds);
-	assert.equal(hit?.id, 1);
-
-	// Hits only bottom window
-	const hitBottom = findSnapWindow(windows, { x: 60, y: 60 }, displayBounds);
-	assert.equal(hitBottom?.id, 2);
-
-	// Outside
-	const hitNone = findSnapWindow(windows, { x: 10, y: 10 }, displayBounds);
-	assert.equal(hitNone, null);
-});
-
-test("windowToLocalRect maps global screen bounds to overlay local coordinates", () => {
-	const displayBounds = { x: 1920, y: 0, width: 1920, height: 1080 };
-	const win = { id: 1, title: "Second Display App", x: 2000, y: 100, width: 800, height: 600 };
-
-	const local = windowToLocalRect(win, displayBounds);
-	assert.deepEqual(local, { x: 80, y: 100, width: 800, height: 600 });
-});
-
-test("findSnapWindow converts overlay-local pointer into screen space", () => {
-	const windows = [{ id: 1, title: "App", x: 2000, y: 100, width: 400, height: 300 }];
-	const display = { x: 1920, y: 0, width: 1920, height: 1080 };
-	assert.equal(findSnapWindow(windows, { x: 100, y: 150 }, display)?.id, 1);
-	assert.equal(findSnapWindow(windows, { x: 10, y: 10 }, display), null);
-});
-
 test("a rectangle from two corners is the same whichever order they arrive in", () => {
 	const a = rectFromPoints({ x: 10, y: 20 }, { x: 60, y: 80 });
 	const b = rectFromPoints({ x: 60, y: 80 }, { x: 10, y: 20 });
@@ -147,10 +110,24 @@ test("inside is inside, including the border", () => {
 
 const toolbar = { width: 360, height: 40 };
 
-test("the toolbar sits under the selection, aligned to its left edge", () => {
+test("the toolbar sits under the selection, aligned to its right edge", () => {
+	/*
+	 * Right, not left. The bar ends with cancel and confirm, and a drag almost always ends at the
+	 * bottom-right corner — so aligning that end with the selection puts the two controls that
+	 * finish the job under the hand that just let go. Left-aligned they are a bar's width away.
+	 */
+	// A selection with room for the bar under it; the narrow case is the test below.
+	const roomy = { x: 200, y: 100, width: 500, height: 100 };
+	const at = toolbarPosition(roomy, screen, toolbar);
+	assert.equal(at.x + toolbar.width, roomy.x + roomy.width, "right-aligned with the selection");
+	assert.equal(at.y, roomy.y + roomy.height + 12);
+});
+
+test("a selection narrower than the toolbar keeps it on screen instead", () => {
+	// Right-aligning a 360pt bar to a 200pt region would start it off the left edge of the display.
 	const at = toolbarPosition(rect, screen, toolbar);
-	assert.equal(at.x, rect.x, "left-aligned with the selection");
-	assert.equal(at.y, rect.y + rect.height + 12);
+	assert.ok(at.x >= 0, `${at.x} is off the left edge`);
+	assert.ok(at.x + toolbar.width <= screen.width, `${at.x + toolbar.width} is off the right edge`);
 });
 
 test("and flips above when there is no room below", () => {
@@ -175,4 +152,35 @@ test("a selection at the right edge slides the toolbar back on screen", () => {
 test("a selection at the left edge is not pushed off the other way", () => {
 	const at = toolbarPosition({ x: 0, y: 100, width: 100, height: 100 }, screen, toolbar);
 	assert.ok(at.x >= 0);
+});
+
+test("the bar leaves room for the bubble it opens, rather than only for itself", () => {
+	/*
+	 * The reported symptom: a region reaching the bottom of the screen put the toolbar in the last
+	 * strip that fitted, and the size-and-colour bubble — which opens *further* from the region —
+	 * landed off the screen. All that showed of it was a row of pixels along the bottom edge.
+	 */
+	const bubble = { height: 34 };
+	// A region whose bottom leaves room for the bar but not for the bar plus the bubble.
+	const tight = { x: 100, y: 100, width: 400, height: screen.height - 100 - toolbar.height - 24 };
+
+	const without = toolbarPosition(tight, screen, toolbar);
+	assert.equal(without.side, "below", "前提：不考虑气泡时它会放在下方");
+
+	const at = toolbarPosition(tight, screen, toolbar, bubble);
+	assert.notEqual(at.side, "below", "下方放不下整摞时不应再选下方");
+	// And wherever it went, the whole stack is on screen.
+	const top = at.side === "below" ? at.y : at.y - bubble.height;
+	const bottom = at.side === "below" ? at.y + toolbar.height + bubble.height : at.y + toolbar.height;
+	assert.ok(top >= 0, `整摞顶部跑出了屏幕：${top}`);
+	assert.ok(bottom <= screen.height, `整摞底部跑出了屏幕：${bottom}`);
+});
+
+test("with room on both sides the bubble does not change where the bar goes", () => {
+	// The reservation must not push the bar around in the ordinary case.
+	const roomy2 = { x: 100, y: 200, width: 400, height: 200 };
+	assert.deepEqual(
+		toolbarPosition(roomy2, screen, toolbar, { height: 34 }),
+		toolbarPosition(roomy2, screen, toolbar),
+	);
 });

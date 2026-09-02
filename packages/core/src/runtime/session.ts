@@ -27,6 +27,7 @@ import { compactIfNeeded } from "./compaction.ts";
 import { driveTurn, modelHistory, summaryStream } from "./session-turn.ts";
 import { SubAgentRegistry } from "./sub-agents.ts";
 import { sessionTaskQueue, type TaskQueue } from "./task-queue.ts";
+import { stripStaleHandles } from "./model-switch.ts";
 
 export interface AgentSessionOptions {
 	cwd: string;
@@ -108,7 +109,14 @@ export class AgentSession {
 	 * summary it paid for last time.
 	 */
 	restore(messages: Message[], compaction: Boundary | null = null): void {
-		this.log.restore(messages, compaction);
+		/*
+		 * Handles from before a model change are dropped on the way in, not at the point of use.
+		 *
+		 * The log on disk is append-only, so a switch cannot edit what is already written — which
+		 * means the stale handles come back every time the session is opened. Cleaning here covers
+		 * both ways in, from the session hub and from sync, and leaves the encoders unchanged.
+		 */
+		this.log.restore(stripStaleHandles(messages, this.log.meta?.modelSwitchedAt), compaction);
 	}
 
 	get running(): boolean {
@@ -200,23 +208,25 @@ export class AgentSession {
 	}
 
 	/**
-	 * Pick the model, before there is any history to be incompatible with.
+	 * Pick or change the model this session runs on, at any point.
 	 *
-	 * Refused once the conversation has started, and the reason is mechanical rather than
-	 * stylistic. Stored messages carry provider-specific handles: the Responses `responseId`
-	 * that chains a conversation, the `signature` on a thinking or tool-call block, the
-	 * encrypted reasoning payload replayed on the following turn. Handed to a different model
-	 * these are at best ignored — losing the reasoning context the turn was built on — and at
-	 * worst rejected. Across API formats the history cannot be re-expressed at all.
-	 *
-	 * Enforced here rather than in the UI so every caller is bound by it: the phone and the
-	 * scheduler drive this same object.
+	 * Persisted into the session log so subsequent turns use the new model. Changing it partway
+	 * through also records where that happened: the reasoning handles written before it belong to
+	 * the previous provider and cannot be replayed to this one. See `stripStaleHandles`.
 	 */
 	async setModel(modelId: string): Promise<boolean> {
-		if (this.log.messages.length > 0) return false;
-		const meta = { ...this.log.meta, modelId };
+		const switching = this.log.messages.length > 0 && this.log.meta.modelId !== modelId;
+		const meta: SessionMeta = {
+			...this.log.meta,
+			modelId,
+			...(switching ? { modelSwitchedAt: this.log.messages.length } : {}),
+		};
 		this.log.meta = meta;
 		await this.log.append({ type: "meta", meta });
+		// The running session holds the same messages the next turn will encode, so clean those too.
+		if (switching) {
+			this.log.restore(stripStaleHandles(this.log.messages, meta.modelSwitchedAt), this.log.compaction);
+		}
 		return true;
 	}
 

@@ -16,6 +16,7 @@ import {
 	type DiffBlob,
 	commitAll,
 	commitDiff,
+	commitDiffSummary,
 	commitStaged,
 	createBranch,
 	createWorktree,
@@ -147,6 +148,8 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 	ipcMain.handle("git:log", async (_event, cwd: string, limit?: number, ref?: string) => gitLog(cwd, limit, ref));
 
 	ipcMain.handle("git:commitDiff", async (_event, cwd: string, sha: string) => commitDiff(cwd, sha));
+	// The same commit, listed but not read — see `diffSummary`.
+	ipcMain.handle("git:commitDiffSummary", async (_event, cwd: string, sha: string) => commitDiffSummary(cwd, sha));
 
 	ipcMain.handle("git:diffRefs", async (_event, cwd: string, base: string, head: string | null) =>
 		diffRefs(cwd, base, head),

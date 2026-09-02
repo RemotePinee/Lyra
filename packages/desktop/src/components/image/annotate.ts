@@ -134,7 +134,15 @@ export function shapeBounds(shape: Shape, stroke: number): { x: number; y: numbe
 		return {
 			x: first.x,
 			y: first.y,
-			w: shape.width ?? size * 6,
+			/*
+			 * Only reached for a caption saved before widths were measured.
+			 *
+			 * `fitWidth` measures the real one against the canvas; there is no canvas here, so this
+			 * estimates from the character count — a shade over half an em each, which sits between
+			 * latin and CJK. Better than a constant either way round: a fixed six characters is far
+			 * too wide for a two-word caption and far too narrow for a sentence.
+			 */
+			w: shape.width ?? Math.max(size * 1.6, (shape.text?.length ?? 4) * size * 0.6 + size * 0.56),
 			h: shape.height ?? size * 1.9,
 		};
 	}
@@ -192,7 +200,16 @@ function hits(shape: Shape, at: Point, tolerance: number): boolean {
 	const last = shape.points[shape.points.length - 1] ?? first;
 
 	if (shape.tool === "text" || shape.tool === "step") {
-		const box = shapeBounds(shape, tolerance);
+		/*
+		 * The badge's own box, plus one allowance — not two, and not the wrong one.
+		 *
+		 * `shapeBounds` takes a *stroke*, and a step badge sizes itself from it: `max(12, stroke *
+		 * 4.5)`. Handing it the tolerance instead inflated the badge's radius by whatever the
+		 * forgiveness happened to be, and then the comparison below added the tolerance a second
+		 * time — so the grab area came out a good deal larger than the circle anyone can see, and
+		 * badges got picked up by presses that visibly missed them.
+		 */
+		const box = shapeBounds(shape, shape.stroke ?? tolerance);
 		return (
 			at.x >= box.x - tolerance &&
 			at.x <= box.x + box.w + tolerance &&
@@ -237,6 +254,28 @@ function hits(shape: Shape, at: Point, tolerance: number): boolean {
 	const radius = Math.hypot((at.x - cx) / rx, (at.y - cy) / ry);
 	if (radius === 0) return false;
 	return Math.abs(radius - 1) * Math.min(rx, ry) <= tolerance;
+}
+
+/**
+ * Whether a point is inside a mark's own box — the frame that is drawn around it when selected.
+ *
+ * Used *only* for the mark that is already selected. Once something carries a visible frame, the
+ * frame is what you reach for: pressing inside it and finding you have started drawing a second
+ * rectangle instead of moving the first is the single most jarring thing about the outline-only
+ * rule. Aiming at a 2px edge to move a shape you can plainly see is not a reasonable ask.
+ *
+ * Deliberately not used for unselected marks. That is what keeps `hitShape`'s promise intact — a
+ * rectangle drawn *around* something is drawn around it to leave it visible, and if its interior
+ * swallowed presses there would be no way to annotate inside one.
+ */
+export function insideBounds(shape: Shape, at: Point, stroke: number, tolerance: number): boolean {
+	const box = shapeBounds(shape, stroke);
+	return (
+		at.x >= box.x - tolerance &&
+		at.x <= box.x + box.w + tolerance &&
+		at.y >= box.y - tolerance &&
+		at.y <= box.y + box.h + tolerance
+	);
 }
 
 const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y);
