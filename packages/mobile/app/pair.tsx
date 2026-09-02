@@ -51,7 +51,7 @@ export default function PairScreen() {
 			}
 
 			const ok = await pair({ host: host.trim(), port: parsedPort, token: token.trim(), tls });
-			if (ok) router.back();
+			if (ok) router.replace("/desk");
 			else setMessage({ tone: "error", text: "令牌不正确，请在桌面端重新复制。" });
 		} finally {
 			setBusy(false);

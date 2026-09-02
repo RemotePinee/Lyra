@@ -81,7 +81,7 @@ export default function ScanScreen() {
 				return;
 			}
 
-			router.replace("/");
+			router.replace("/desk");
 		},
 		[pair, router],
 	);

@@ -17,6 +17,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent, AgentSession, SessionStorage, Settings, ThinkingLevel, UserContent } from "@lyra/core";
 import type { SyncStatus } from "./ipc-types.ts";
 import { callRpc } from "./sync-rpc.ts";
+import { serveApp } from "./sync-app.ts";
 
 export interface SyncServerDeps {
 	getSettings(): Settings;
@@ -191,6 +192,34 @@ export class SyncServer {
 			return;
 		}
 
+		/*
+		 * The interface itself, served before the token check.
+		 *
+		 * A browser loading `<script src>` and `<link href>` attaches no Authorization header, so
+		 * gating these would leave the page unable to fetch the things it is made of. They are safe
+		 * to serve openly because they carry none of your data: it is the same bundle anyone can
+		 * build from this repository. Everything under `/api/` still needs the token, and that is
+		 * where the sessions are.
+		 */
+		if (req.method === "GET" && (url.pathname === "/app" || url.pathname.startsWith("/app/"))) {
+			/*
+			 * The trailing slash is load-bearing.
+			 *
+			 * The page references its bundle as `./assets/…`, and a browser resolves that against
+			 * the *directory* of the current URL. At `/app` that directory is `/`, so every asset
+			 * is requested from `/assets/…` — which is not this route, falls through to the token
+			 * check, and comes back 401. The page then renders as a blank screen with no error on
+			 * it, because the HTML loaded perfectly and nothing inside it did.
+			 */
+			if (url.pathname === "/app") {
+				res.writeHead(302, { location: "/app/" });
+				res.end();
+				return;
+			}
+			if (await serveApp(url.pathname, res)) return;
+			send(404, { error: "not-found" });
+			return;
+		}
 		// Unauthenticated: lets the phone confirm it found a Lyra host before pairing.
 		if (url.pathname === "/api/ping") {
 			send(200, { app: "lyra", version: 1, requiresToken: true });
