@@ -24,6 +24,89 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(fileURLToPath(import.meta.url), "..", "..");
 const BOOT_TIMEOUT_MS = 90_000;
 
+/**
+ * Kill a detached Electron (or any child) and wait until it is actually gone.
+ *
+ * SIGTERM-and-forget is how a suite that had already passed hung CI for six hours: the mock
+ * model server's `close()` waits for keep-alive sockets, those sockets belong to Electron, and
+ * Electron was still alive. The test runner's stdio pipes to that process then keep the event
+ * loop open, so the next file never starts (`--test-concurrency=1`) and GitHub's default job
+ * timeout is 360 minutes.
+ */
+export async function stopProcessGroup(
+	child: ChildProcess | undefined,
+	graceMs = 3_000,
+): Promise<void> {
+	if (!child?.pid) return;
+	const pid = child.pid;
+	const exited = new Promise<void>((resolve) => {
+		if (child.exitCode !== null || child.signalCode !== null) {
+			resolve();
+			return;
+		}
+		child.once("exit", () => resolve());
+	});
+	const signal = (sig: NodeJS.Signals) => {
+		try {
+			if (process.platform === "win32") child.kill(sig);
+			else process.kill(-pid, sig);
+		} catch {
+			try {
+				child.kill(sig);
+			} catch {
+				try {
+					process.kill(pid, sig);
+				} catch {
+					/* already gone */
+				}
+			}
+		}
+	};
+	signal("SIGTERM");
+	await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, graceMs))]);
+	signal("SIGKILL");
+	await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 1_000))]);
+	// If it still has not exited, drop the pipes so this process can finish anyway.
+	child.stdout?.destroy();
+	child.stderr?.destroy();
+	child.unref();
+}
+
+/**
+ * Close a mock HTTP server without waiting forever for Electron's keep-alive sockets.
+ *
+ * `server.close()` does not return until every connection is gone. Combined with a leaked
+ * Electron that is the last client, that wait is unbounded — which is the hang `--test-timeout`
+ * cannot see, because it lives in `after()`, not in a test.
+ */
+export async function closeListeningServer(
+	server: {
+		close: (cb?: (err?: Error) => void) => void;
+		closeAllConnections?: () => void;
+		unref?: () => void;
+	} | undefined,
+	ms = 2_000,
+): Promise<void> {
+	if (!server) return;
+	try {
+		server.closeAllConnections?.();
+	} catch {
+		/* already closing */
+	}
+	await Promise.race([
+		new Promise<void>((resolve) => {
+			server.close(() => resolve());
+		}),
+		new Promise<void>((resolve) => setTimeout(resolve, ms)),
+	]);
+	// Returning from the race is not enough: an unclosed server still holds the event loop.
+	try {
+		server.unref?.();
+	} catch {
+		/* already closed */
+	}
+}
+
 export interface RunningApp {
 	/** The profile directory the app was given, so a test can seed or inspect it. */
 	home: string;
@@ -143,13 +226,7 @@ export async function startApp({
 		evaluate,
 		send: <T>(method: string, params?: Record<string, unknown>) => call<T>(target, method, params ?? {}),
 		stop: async () => {
-			if (app.pid) {
-				try {
-					process.kill(-app.pid, "SIGTERM");
-				} catch {
-					app.kill("SIGKILL");
-				}
-			}
+			await stopProcessGroup(app);
 			await rm(home, { recursive: true, force: true }).catch(() => {});
 		},
 	};
@@ -200,21 +277,40 @@ async function waitForShell(evaluate: <T>(expression: string) => Promise<T>): Pr
 async function call<T>(target: string, method: string, params: Record<string, unknown>): Promise<T> {
 	const socket = new WebSocket(target);
 	try {
-		await new Promise((resolve, reject) => {
-			socket.addEventListener("open", resolve, { once: true });
-			socket.addEventListener("error", reject, { once: true });
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				socket.close();
+				reject(new Error(`${method} open timed out`));
+			}, 10_000);
+			socket.addEventListener(
+				"open",
+				() => {
+					clearTimeout(timer);
+					resolve();
+				},
+				{ once: true },
+			);
+			socket.addEventListener(
+				"error",
+				() => {
+					clearTimeout(timer);
+					reject(new Error(`${method} socket error`));
+				},
+				{ once: true },
+			);
 		});
 		const answer = new Promise<T>((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error(`${method} timed out`)), 40_000);
 			socket.addEventListener("message", (event) => {
 				const message = JSON.parse(String(event.data));
 				if (message.id !== 1) return;
+				clearTimeout(timer);
 				if (message.error) reject(new Error(`${method}: ${message.error.message}`));
 				else resolve(message.result as T);
 			});
 			// Generous, because a test that waits out a toast's lifetime is one expression that
 			// deliberately takes ten seconds — and a timeout shorter than that would call it a
 			// failure rather than a wait.
-			setTimeout(() => reject(new Error(`${method} timed out`)), 40_000);
 		});
 		socket.send(JSON.stringify({ id: 1, method, params }));
 		return await answer;

@@ -18,7 +18,7 @@
 		"postinstall": "node scripts/rebuild-pty.mjs && node scripts/brand-dev-electron.mjs",
 		"rebuild:pty": "node scripts/rebuild-pty.mjs",
 		"package": "node scripts/brand-dev-electron.mjs --restore && electron-vite build && node scripts/package.mjs",
-		"test:e2e": "node --test --test-concurrency=1 --experimental-strip-types e2e/*.test.ts",
+		"test:e2e": "node --test --test-concurrency=1 --test-timeout=120000 --experimental-strip-types e2e/*.test.ts",
 		"brand:dev": "node scripts/brand-dev-electron.mjs",
 		"brand:restore": "node scripts/brand-dev-electron.mjs --restore",
 		"tray:icons": "node scripts/make-tray-icons.mjs"

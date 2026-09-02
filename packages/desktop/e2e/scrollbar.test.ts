@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { stopProcessGroup } from "./app.ts";
 
 const ROOT = join(fileURLToPath(import.meta.url), "..", "..");
 const PORT = 9445;
@@ -51,13 +52,7 @@ before(async () => {
 });
 
 after(async () => {
-	if (app?.pid) {
-		try {
-			process.kill(-app.pid, "SIGTERM");
-		} catch {
-			app.kill("SIGKILL");
-		}
-	}
+	await stopProcessGroup(app);
 	await rm(home, { recursive: true, force: true }).catch(() => {});
 });
 
