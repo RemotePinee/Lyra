@@ -3573,3 +3573,139 @@
   box-shadow: 0 2px 14px rgb(0 0 0 / 28%);
   border-radius: 2px;
 }
+
+/* ---------------------------------------------------------------------------
+ * On a phone
+ *
+ * The same interface, held in a hand instead of pointed at. What changes is not the layout — the
+ * narrow layout already exists and is the one a dragged-in desktop window uses — but the things a
+ * mouse implies and a thumb does not: hit areas measured for a cursor, states that depend on
+ * hovering, and the browser's own idea of what a tap should look like.
+ *
+ * Scoped to `[data-lyra-host="mobile"]`, which the bridge sets before the app boots. Nothing here
+ * reaches the desktop, and a narrow desktop window stays a desktop window — it still has a mouse.
+ * ------------------------------------------------------------------------ */
+
+[data-lyra-host="mobile"] {
+  /*
+   * The grey flash iOS paints over anything tapped.
+   *
+   * It lands on whatever element the touch resolved to, which is rarely the one that looks
+   * pressed — a rectangle over half a row, in a colour from no palette here. Every control in this
+   * app already says it was pressed, in its own way.
+   */
+  -webkit-tap-highlight-color: transparent;
+
+  /*
+   * Text selection off by default, on where text is.
+   *
+   * A long press on a phone selects, and on a page built out of buttons and labels that means the
+   * magnifier and a selection handle appear when someone meant to scroll. Restored for the parts
+   * that are prose — a transcript you cannot copy from would be worse than the alternative.
+   */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+[data-lyra-host="mobile"] .ly-md,
+[data-lyra-host="mobile"] pre,
+[data-lyra-host="mobile"] code,
+[data-lyra-host="mobile"] textarea,
+[data-lyra-host="mobile"] input,
+[data-lyra-host="mobile"] [data-ly-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/*
+ * Thumb-sized hit areas, without moving anything.
+ *
+ * The toolbar marks are 28px squares, which is right for a cursor and small for a thumb — Apple's
+ * own guidance is 44pt. Grown with a pseudo-element rather than by resizing the button: the icons
+ * are aligned against the row and against each other, and enlarging the boxes would push them
+ * apart into a row that no longer reads as one group. The target grows; the drawing does not move.
+ */
+[data-lyra-host="mobile"] [data-ly-toolbar-button] {
+  position: relative;
+}
+
+[data-lyra-host="mobile"] [data-ly-toolbar-button]::after {
+  content: "";
+  position: absolute;
+  /* (44 - 28) / 2 = 8 in each direction. */
+  inset: -8px;
+}
+
+/*
+ * Icons in that row, one step up.
+ *
+ * 13px is legible at arm's length on a laptop and small at phone distance with a bright screen.
+ * Scaled rather than re-authored per icon, because they are drawn on a shared grid and changing
+ * some of the sizes would break the optical alignment between them.
+ */
+[data-lyra-host="mobile"] [data-ly-toolbar-button] > svg {
+  width: 17px;
+  height: 17px;
+}
+
+/*
+ * Hover states, which a touch screen fakes and then leaves behind.
+ *
+ * A tap makes iOS deliver a hover before the click, and nothing takes it away afterwards — so the
+ * last thing tapped stays lit until something else is. On a row of toggles that reads as a
+ * selection, which is exactly what those particular buttons use their background to mean.
+ */
+@media (hover: none) {
+  [data-lyra-host="mobile"] .hover\:bg-card-hover:hover,
+  [data-lyra-host="mobile"] .hover\:bg-card:hover,
+  [data-lyra-host="mobile"] .hover\:bg-elevated:hover {
+    background-color: transparent;
+  }
+
+  [data-lyra-host="mobile"] [aria-pressed="true"].hover\:bg-card-hover:hover {
+    /* Except where it is state rather than hover: a pressed toggle stays lit. */
+    background-color: var(--color-card-hover);
+  }
+}
+
+/*
+ * Momentum scrolling, and no rubber-banding of the page under it.
+ *
+ * The transcript and the sidebar are their own scroll regions; the document behind them has
+ * nowhere to go, and letting it bounce makes the whole interface feel like a web page that
+ * happens to be open rather than the app it is.
+ */
+[data-lyra-host="mobile"] .ly-scroll,
+[data-lyra-host="mobile"] [data-ly-scroll] {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/*
+ * Tooltips off.
+ *
+ * They are attached to hover, so on a phone they either never appear or appear stuck after a tap.
+ * The labels they carry are already on the buttons as `aria-label`, which is what a screen reader
+ * reads either way.
+ */
+[data-lyra-host="mobile"] [data-ly-tip]::before,
+[data-lyra-host="mobile"] [data-ly-tip]::after {
+  display: none;
+}
+
+/*
+ * The composer's own controls, given the same treatment as the toolbar.
+ *
+ * These sit in a row along the bottom edge — the most-used strip in the app and the hardest to
+ * hit accurately, because a thumb approaches it from below and covers what it is aiming at.
+ */
+[data-lyra-host="mobile"] .ly-composer-control {
+  position: relative;
+  min-height: 32px;
+}
+
+[data-lyra-host="mobile"] .ly-composer-control::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
+}

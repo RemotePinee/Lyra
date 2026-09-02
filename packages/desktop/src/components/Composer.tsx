@@ -764,7 +764,7 @@ export function Composer() {
 								onClick={permissionMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={permissionMenu.open}
-								className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-label transition-colors duration-[var(--ly-t-quick)] ${
+								className={`ly-composer-control flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-label transition-colors duration-[var(--ly-t-quick)] ${
 									permissionMode === "full"
 										? // Red, not the accent: this is the one mode that hands over the machine.
 											`text-danger ${permissionMenu.open ? "bg-danger/10" : "hover:bg-danger/10"}`
@@ -808,7 +808,7 @@ export function Composer() {
 								data-ly-tip={modelTooltip(identity, formatWindow)}
 								aria-haspopup="menu"
 								aria-expanded={modelMenu.open}
-								className={`flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
+								className={`ly-composer-control flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
 									modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
 								}`}
 							>
@@ -828,7 +828,7 @@ export function Composer() {
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
 								data-ly-tip={`推理强度：${effortLabel(sessionThinking(meta, settings), model)}`}
-								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
+								className={`ly-composer-control mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
 								}`}
 							>

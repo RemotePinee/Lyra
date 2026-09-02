@@ -260,7 +260,7 @@ function useTitlebar(nativeFullScreen: boolean): TitlebarInsets {
 	}, [overlay]);
 
 	return useMemo(
-		() => titlebarInsets(window.lyra?.platform ?? "darwin", nativeFullScreen, reserved),
+		() => titlebarInsets(window.lyra?.platform ?? "darwin", nativeFullScreen, reserved, window.lyra?.host !== "mobile"),
 		[nativeFullScreen, reserved],
 	);
 }

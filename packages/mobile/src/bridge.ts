@@ -129,8 +129,20 @@ export function bridgeScript(connection: Connection): string {
 		},
 	});
 
+	/*
+	 * Marked on the document too, so stylesheets can reach it.
+	 *
+	 * The touch adjustments below are CSS, not props: they are about hit areas and hover states,
+	 * which are the stylesheet's business, and threading a flag through fifty components to say
+	 * the same thing would be fifty places to forget it.
+	 */
+	const markHost = () => document.documentElement?.setAttribute("data-lyra-host", "mobile");
+	markHost();
+	if (!document.documentElement) document.addEventListener("readystatechange", markHost, { once: true });
+
 	const api = {
 		platform: ${JSON.stringify(connection.platform ?? "darwin")},
+		host: "mobile",
 
 		settings: {
 			get: call("settings.get"),
