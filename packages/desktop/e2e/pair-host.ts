@@ -33,7 +33,11 @@ async function seed(home: string): Promise<void> {
 			scheduledTasks: [],
 			disabledPlugins: [],
 			alwaysAllow: [],
-			sync: { enabled: true, port: PORT, token: null },
+			/*
+			 * A fixed token, so a phone paired once stays paired across restarts of this probe.
+			 * Re-pairing by hand between every check is most of the time a manual test takes.
+			 */
+			sync: { enabled: true, port: PORT, token: "1111111111111111111111111111abcd" },
 			editor: { defaultOpenTarget: "Zed", showBottomPanel: true },
 			appearance: { theme: "dark" },
 		}),

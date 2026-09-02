@@ -12,7 +12,7 @@
  */
 
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { ServerResponse } from "node:http";
 
@@ -73,6 +73,31 @@ export async function serveApp(pathname: string, res: ServerResponse): Promise<b
 		await stat(file);
 	} catch {
 		return false;
+	}
+
+	/*
+	 * The shell gets a viewport of its own, and it is not cosmetic.
+	 *
+	 * iOS zooms the page whenever a focused input has a font smaller than 16px — a readability
+	 * rule that predates apps like this one. The composer is 14px (`--text-body`), so tapping it
+	 * scaled everything up, and a scaled viewport is a wider one: the right-hand cards and the send
+	 * button slid off the screen, and they stayed off after the keyboard closed.
+	 *
+	 * Fixed here rather than by enlarging the composer, because the type scale is the desktop's and
+	 * this is a phone's quirk. Only this route is touched — the desktop window loads the same file
+	 * over `loadFile`, never through this server, so its own zooming is untouched.
+	 *
+	 * `viewport-fit=cover` so the page may paint under the notch; the insets are applied outside
+	 * the WebView, see `desk.tsx`.
+	 */
+	if (file.endsWith("index.html")) {
+		const html = (await readFile(file, "utf8")).replace(
+			/<meta name="viewport"[^>]*>/,
+			'<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />',
+		);
+		res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+		res.end(html);
+		return true;
 	}
 
 	res.writeHead(200, {

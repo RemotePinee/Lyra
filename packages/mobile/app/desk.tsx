@@ -77,6 +77,16 @@ export default function DeskScreen() {
 					setLoading(false);
 					setFailed(`桌面端返回 ${nativeEvent.statusCode}`);
 				}}
+				/*
+				 * Belt and braces against the focus zoom.
+				 *
+				 * The page it loads already asks for `maximum-scale=1`, but iOS has honoured that
+				 * inconsistently across versions — and when it does zoom, the damage outlives the
+				 * keyboard: the viewport stays wide and the send button stays off-screen. These two
+				 * settle it at the WebView rather than relying on the page being obeyed.
+				 */
+				scalesPageToFit={false}
+				setBuiltInZoomControls={false}
 				// The renderer manages its own scrolling regions; a bouncing page underneath them
 				// makes the whole interface feel detached from the phone.
 				bounces={false}
