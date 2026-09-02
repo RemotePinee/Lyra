@@ -345,7 +345,9 @@ export class AgentSession {
 		await this.emit({ type: "message_start", message });
 		await this.emit({ type: "message_end", message });
 
-		if (this.log.messages.filter((m) => m.role === "user").length === 1) {
+		// Names the conversation after its opening line — unless it already has a name someone
+		// chose, which this must not overwrite. See `SessionMeta.titleSetByUser`.
+		if (!this.log.meta.titleSetByUser && this.log.messages.filter((m) => m.role === "user").length === 1) {
 			await this.setTitleFromPrompt(content);
 		}
 
@@ -512,6 +514,26 @@ export class AgentSession {
 		const title = text.replace(/\s+/g, " ").trim().slice(0, 60) || "New session";
 		await this.log.append({ type: "title", title });
 		await this.emit({ type: "title", title });
+	}
+
+	/**
+	 * Name the conversation by hand, and have it stay named.
+	 *
+	 * The title record is what the store already understands, so this is only the writing half.
+	 * The other half is `titleSetByUser`: without it the first prompt renames the session after
+	 * itself and the name typed a moment earlier is gone. Recorded through a `meta` write of its
+	 * own so a phone syncing with `?since=N` learns it too.
+	 */
+	async rename(title: string): Promise<void> {
+		const cleanTitle = title.trim();
+		if (!cleanTitle) return;
+		await this.log.append({ type: "title", title: cleanTitle });
+		if (!this.log.meta.titleSetByUser) {
+			const meta: SessionMeta = { ...this.log.meta, titleSetByUser: true };
+			this.log.meta = meta;
+			await this.log.append({ type: "meta", meta });
+		}
+		await this.emit({ type: "title", title: cleanTitle });
 	}
 
 	async dispose(): Promise<void> {

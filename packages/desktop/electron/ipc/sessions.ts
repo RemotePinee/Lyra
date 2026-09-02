@@ -160,6 +160,29 @@ export function registerSessionsIpc({
 	);
 
 	ipcMain.handle(
+		"sessions:rename",
+		async (_event, projectId: string, sessionId: string, title: string) => {
+			const cleanTitle = title.trim();
+			if (!cleanTitle) return null;
+			const live = sessions.get(sessionId);
+			if (live) {
+				await live.rename(cleanTitle);
+				return live.meta;
+			}
+			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
+			if (!meta) return null;
+			const renamed = await store.append(meta, { type: "title", title: cleanTitle });
+			// Same flag the live path sets, or the name is lost to the first prompt after this
+			// session is woken up. See `SessionMeta.titleSetByUser`.
+			const updated = renamed.titleSetByUser
+				? renamed
+				: await store.append(renamed, { type: "meta", meta: { ...renamed, titleSetByUser: true } });
+			broadcast(sessionId, { type: "title", title: cleanTitle });
+			return updated;
+		},
+	);
+
+	ipcMain.handle(
 		"sessions:setArchived",
 		async (_event, projectId: string, sessionId: string, archived: boolean) => {
 			// An archived session has no reason to keep its MCP servers and browser alive.

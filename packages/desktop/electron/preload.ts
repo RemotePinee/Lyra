@@ -83,6 +83,7 @@ const api: LyraApi = {
 			ipcRenderer.invoke("sessions:setArchived", projectId, sessionId, archived),
 		removeArchived: () => ipcRenderer.invoke("sessions:removeArchived"),
 		capabilities: (sessionId) => ipcRenderer.invoke("sessions:capabilities", sessionId),
+		rename: (projectId, sessionId, title) => ipcRenderer.invoke("sessions:rename", projectId, sessionId, title),
 		compact: (sessionId) => ipcRenderer.invoke("sessions:compact", sessionId),
 		contextBreakdown: (sessionId) => ipcRenderer.invoke("sessions:contextBreakdown", sessionId),
 	},
