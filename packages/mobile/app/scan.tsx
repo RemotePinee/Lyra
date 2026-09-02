@@ -62,7 +62,7 @@ export default function ScanScreen() {
 			}
 
 			setState({ kind: "checking", text: "正在连接…" });
-			const { host, port, token, tls } = parsed.connection;
+			const { host, port, tls } = parsed.connection;
 			if (!(await SyncClient.ping(host, port, tls))) {
 				setState({ kind: "error", text: `连不上 ${host}:${port}，检查两台设备是否在同一网络` });
 				setTimeout(() => {
