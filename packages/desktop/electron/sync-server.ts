@@ -16,6 +16,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent, AgentSession, SessionStorage, Settings, ThinkingLevel, UserContent } from "@lyra/core";
 import type { SyncStatus } from "./ipc-types.ts";
+import { callRpc } from "./sync-rpc.ts";
 
 export interface SyncServerDeps {
 	getSettings(): Settings;
@@ -23,6 +24,20 @@ export interface SyncServerDeps {
 	store: SessionStorage;
 	resolveSession(projectId: string, sessionId: string): Promise<AgentSession | null>;
 	createSession(cwd: string, modelId: string): Promise<AgentSession>;
+	/**
+	 * What the renderer asks about a project directory.
+	 *
+	 * Injected rather than imported: it reaches Electron's `BrowserWindow` through its own imports,
+	 * and this server is otherwise plain Node — importing it here made the whole module unloadable
+	 * outside Electron, which is where its tests run.
+	 */
+	workspaceInfo(path: string): Promise<unknown>;
+	/** The session hub's own functions, handed in for the same reason; see `sync-rpc.ts`. */
+	live(sessionId: string): AgentSession | undefined;
+	activate(projectId: string, sessionId: string): Promise<AgentSession | null>;
+	getOrCreate(cwd: string, modelId: string): Promise<AgentSession>;
+	snapshot(session: AgentSession): Promise<unknown>;
+	touch(sessionId: string): void;
 }
 
 export class SyncServer {
@@ -193,6 +208,38 @@ export class SyncServer {
 
 			if (req.method === "GET" && url.pathname === "/api/sessions") {
 				send(200, { sessions: await this.deps.store.listSessions() });
+				return;
+			}
+
+			/*
+			 * One endpoint for everything the phone's renderer asks of the desktop.
+			 *
+			 * It runs the desktop's own React app, which talks to `window.lyra` — 177 methods. A
+			 * route per method would be 177 routes that drift; an allowlist in one file is both the
+			 * dispatch and the security boundary. See `sync-rpc.ts` for what is on it and why.
+			 */
+			if (req.method === "POST" && url.pathname === "/api/rpc") {
+				const body = (await readJson(req)) as { method?: unknown; args?: unknown };
+				const method = typeof body.method === "string" ? body.method : "";
+				const args = Array.isArray(body.args) ? body.args : [];
+				const result = await callRpc(
+					{
+						store: () => this.deps.store,
+						settings: () => this.deps.getSettings(),
+						saveSettings: (next) => this.deps.saveSettings(next),
+						workspaceInfo: (path) => this.deps.workspaceInfo(path),
+						live: (id) => this.deps.live(id),
+						activate: (projectId, id) => this.deps.activate(projectId, id),
+						getOrCreate: (cwd, modelId) => this.deps.getOrCreate(cwd, modelId),
+						snapshot: (session) => this.deps.snapshot(session),
+						touch: (id) => this.deps.touch(id),
+					},
+					method,
+					args,
+				);
+				// 200 either way: a refused method is an answer, not a transport failure, and the
+				// phone keeps one long-lived connection that a 4xx would make it re-examine.
+				send(200, result);
 				return;
 			}
 

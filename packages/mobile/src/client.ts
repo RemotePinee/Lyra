@@ -28,6 +28,13 @@ export interface Connection {
 	 * explains both the extra hop of latency and why it still works away from home.
 	 */
 	relay?: boolean;
+	/**
+	 * The desktop's platform, learned when pairing.
+	 *
+	 * The renderer reads it before its first paint to decide where the window controls go and which
+	 * shortcut glyphs to print. It describes the machine the session runs on, not this phone.
+	 */
+	platform?: string;
 }
 
 export class SyncClient {

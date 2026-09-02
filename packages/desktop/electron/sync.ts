@@ -7,9 +7,10 @@
  */
 
 import { AgentSession, type SessionStorage } from "@lyra/core";
+import { workspaceInfo } from "./workspace-info.ts";
 import { applySettings, settings } from "./app-settings.ts";
 import type { SyncStatus } from "./ipc-types.ts";
-import { broadcast, getOrCreateSession, sessions } from "./session-hub.ts";
+import { activateSession, broadcast, getOrCreateSession, sessions, snapshot, touchSession } from "./session-hub.ts";
 import { SyncServer } from "./sync-server.ts";
 
 let syncServer: SyncServer | null = null;
@@ -37,6 +38,12 @@ export async function startSync(): Promise<SyncStatus> {
 			getSettings: settings,
 			saveSettings: async (next) => void (await applySettings(next)),
 			store: readStore(),
+			workspaceInfo: (path) => workspaceInfo(path),
+			live: (id) => sessions.get(id),
+			activate: (projectId, id) => activateSession(projectId, id),
+			getOrCreate: (cwd, modelId) => getOrCreateSession(cwd, modelId),
+			snapshot: (session) => snapshot(session),
+			touch: (id) => touchSession(id),
 			resolveSession: async (projectId, sessionId) => {
 				const existing = sessions.get(sessionId);
 				if (existing) return existing;
