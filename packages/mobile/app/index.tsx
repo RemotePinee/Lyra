@@ -59,29 +59,29 @@ export default function SessionListScreen() {
 			contentContainerStyle={{ padding: 16, paddingTop: 6, paddingBottom: 40 }}
 			refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9a9a9a" />}
 		>
-			<View className="mb-4 flex-row items-center gap-2">
+			<View className="mb-4 flex-row items-center gap-2 px-1">
 				<View
 					className={`h-2 w-2 rounded-full ${
 						socketState === "open" ? "bg-ok" : socketState === "connecting" ? "bg-accent" : "bg-danger"
 					}`}
 				/>
-				<Text className="text-[13px] text-ink-muted">
-					{socketState === "open" ? "已连接" : socketState === "connecting" ? "连接中…" : "已断开，正在重试"}
+				<Text className="text-[12.5px] font-medium text-ink-muted">
+					{socketState === "open" ? "已连接" : socketState === "connecting" ? "连接中…" : "已断开"}
 				</Text>
-				<Text className="text-[13px] text-ink-faint">
+				<Text className="text-[12px] font-mono text-ink-faint">
 					{connection.host}:{connection.port}
 				</Text>
 				<View className="flex-1" />
 				<Link href="/pair" asChild>
-					<Pressable className="rounded-lg border border-line px-2.5 py-1">
-						<Text className="text-[12px] text-ink-muted">设置</Text>
+					<Pressable className="rounded-lg bg-card/60 px-3 py-1.5 active:bg-card-hover">
+						<Text className="text-[12px] font-medium text-ink-muted">设置</Text>
 					</Pressable>
 				</Link>
 			</View>
 
 			{projects.length > 0 && (
-				<View className="mb-5">
-					<Text className="mb-2 px-1 text-[12px] text-ink-faint">新建会话</Text>
+				<View className="mb-6">
+					<Text className="mb-2.5 px-1 text-[12px] font-medium tracking-wide text-ink-faint">新建会话</Text>
 					<View className="flex-row flex-wrap gap-2">
 						{projects.map((project) => (
 							<Pressable
@@ -99,9 +99,9 @@ export default function SessionListScreen() {
 										setCreating(null);
 									}
 								}}
-								className="flex-row items-center gap-1.5 rounded-xl border border-line bg-card/40 px-3 py-2 active:bg-card-hover"
+								className="flex-row items-center gap-2 rounded-xl bg-card px-3.5 py-2.5 active:bg-card-hover"
 							>
-								<Text className="text-[13px] text-ink">+ {project.name}</Text>
+								<Text className="text-[13px] font-medium text-ink">+ {project.name}</Text>
 								{creating === project.path && <ActivityIndicator size="small" color="#9a9a9a" />}
 							</Pressable>
 						))}
@@ -110,7 +110,7 @@ export default function SessionListScreen() {
 			)}
 
 			{error && (
-				<View className="mb-4 rounded-xl border border-danger/40 bg-danger/10 px-3.5 py-3">
+				<View className="mb-4 rounded-xl bg-danger/10 px-4 py-3">
 					<Text className="text-[13px] text-danger">{error}</Text>
 				</View>
 			)}
@@ -125,8 +125,8 @@ export default function SessionListScreen() {
 
 			{grouped.map((group) => (
 				<View key={group.projectId} className="mb-6">
-					<Text className="mb-2 px-1 text-[12px] text-ink-faint">{group.projectName}</Text>
-					<View className="overflow-hidden rounded-xl border border-line bg-card/40">
+					<Text className="mb-2.5 px-1 text-[12px] font-medium tracking-wide text-ink-faint">{group.projectName}</Text>
+					<View className="overflow-hidden rounded-2xl bg-card">
 						{group.sessions.map((session, index) => {
 							const isNavigating = navigatingId === session.id;
 							return (
@@ -136,22 +136,23 @@ export default function SessionListScreen() {
 										setNavigatingId(session.id);
 										void openSession(session);
 										router.push(`/session/${session.id}`);
-										// Reset active press feedback shortly after route transition triggers
 										setTimeout(() => setNavigatingId(null), 500);
 									}}
-									className={`px-3.5 py-3 ${isNavigating ? "bg-card-hover/90" : "active:bg-card-hover"} ${index > 0 ? "border-t border-line-soft" : ""}`}
+									className={`px-4 py-3.5 ${isNavigating ? "bg-card-hover" : "active:bg-card-hover"} ${
+										index > 0 ? "border-t border-line-soft/40" : ""
+									}`}
 								>
 									<View className="flex-row items-center justify-between gap-2">
-										<Text className="flex-1 text-[14px] text-ink" numberOfLines={1}>
+										<Text className="flex-1 text-[14.5px] font-medium text-ink" numberOfLines={1}>
 											{session.title}
 										</Text>
 										{isNavigating && <ActivityIndicator size="small" color="#9a9a9a" />}
 									</View>
-									<View className="mt-1 flex-row items-center gap-3">
-										<Text className="text-[11.5px] text-ink-faint">{session.messageCount} 条消息</Text>
-										<Text className="text-[11.5px] text-ink-faint">{formatTime(session.updatedAt)}</Text>
+									<View className="mt-1.5 flex-row items-center gap-3">
+										<Text className="text-[12px] text-ink-faint">{session.messageCount} 条消息</Text>
+										<Text className="text-[12px] text-ink-faint">{formatTime(session.updatedAt)}</Text>
 										{session.usage.cost.total > 0 && (
-											<Text className="text-[11.5px] text-ink-faint">${session.usage.cost.total.toFixed(4)}</Text>
+											<Text className="text-[12px] font-mono text-ink-faint">${session.usage.cost.total.toFixed(4)}</Text>
 										)}
 									</View>
 								</Pressable>

@@ -151,15 +151,15 @@ export default function PairScreen() {
 
 				<Pressable
 					onPress={() => void pastePairingUrl()}
-					className="mt-3 items-center rounded-xl border border-dashed border-line py-3 active:bg-card-hover"
+					className="mt-3 items-center rounded-xl bg-card py-3 active:bg-card-hover"
 				>
 					<Text className="text-[13px] text-ink-muted">从剪贴板粘贴配对链接</Text>
 				</Pressable>
 
 				<View className="mt-6 mb-2 flex-row items-center gap-3">
-					<View className="h-[1px] flex-1 bg-line-soft" />
+					<View className="h-[1px] flex-1 bg-card" />
 					<Text className="text-[11.5px] text-ink-faint">或手动输入</Text>
-					<View className="h-[1px] flex-1 bg-line-soft" />
+					<View className="h-[1px] flex-1 bg-card" />
 				</View>
 
 				<Field label="局域网地址 / 公网域名">
@@ -171,7 +171,7 @@ export default function PairScreen() {
 						autoCapitalize="none"
 						autoCorrect={false}
 						keyboardType="numbers-and-punctuation"
-						className="h-11 rounded-xl border border-line bg-input px-3.5 text-[14px] text-ink"
+						className="h-11 rounded-xl bg-input px-3.5 text-[14px] text-ink"
 					/>
 				</Field>
 
@@ -182,7 +182,7 @@ export default function PairScreen() {
 						placeholder="4517"
 						placeholderTextColor="#6e6e6e"
 						keyboardType="number-pad"
-						className="h-11 rounded-xl border border-line bg-input px-3.5 text-[14px] text-ink"
+						className="h-11 rounded-xl bg-input px-3.5 text-[14px] text-ink"
 					/>
 				</Field>
 
@@ -194,7 +194,7 @@ export default function PairScreen() {
 						placeholderTextColor="#6e6e6e"
 						autoCapitalize="none"
 						autoCorrect={false}
-						className="h-11 rounded-xl border border-line bg-input px-3.5 text-[14px] text-ink"
+						className="h-11 rounded-xl bg-input px-3.5 text-[14px] text-ink"
 					/>
 				</Field>
 
@@ -202,9 +202,8 @@ export default function PairScreen() {
 					<View
 						style={{
 							backgroundColor: message.tone === "ok" ? "#14281f" : "#2d1618",
-							borderColor: message.tone === "ok" ? "#22593d" : "#5c2427",
 						}}
-						className="mt-4 rounded-xl border px-3.5 py-3"
+						className="mt-4 rounded-xl px-3.5 py-3"
 					>
 						<Text className={`text-[13px] leading-5 ${message.tone === "ok" ? "text-ok" : "text-danger"}`}>
 							{message.text}
@@ -226,7 +225,7 @@ export default function PairScreen() {
 							void unpair();
 							router.back();
 						}}
-						className="mt-3 h-12 items-center justify-center rounded-xl border border-line active:bg-card-hover"
+						className="mt-3 h-12 items-center justify-center rounded-xl bg-card active:bg-card-hover"
 					>
 						<Text className="text-[14px] text-danger">断开连接</Text>
 					</Pressable>

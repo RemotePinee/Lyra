@@ -52,6 +52,8 @@ interface MobileState {
 	toolRuns: Record<string, ToolRun>;
 	approvals: PendingApproval[];
 	running: boolean;
+	turnTokens: number;
+	turnStartedAt: number | null;
 	/** Highest record seq applied, so a reconnect can resume instead of re-reading everything. */
 	seq: number;
 	loadingSessionId: string | null;
@@ -88,6 +90,8 @@ export const useMobile = create<MobileState>((set, get) => ({
 	toolRuns: {},
 	approvals: [],
 	running: false,
+	turnTokens: 0,
+	turnStartedAt: null,
 	seq: 0,
 	loadingSessionId: null,
 	loadingEarlier: false,
@@ -281,7 +285,12 @@ export const useMobile = create<MobileState>((set, get) => ({
 		];
 
 		// Show it immediately (optimistic UI update)
-		set({ messages: [...get().messages, { role: "user", content, timestamp: Date.now() }], running: true });
+		set({
+			messages: [...get().messages, { role: "user", content, timestamp: Date.now() }],
+			running: true,
+			turnTokens: 0,
+			turnStartedAt: Date.now(),
+		});
 		// Send over network in background so UI doesn't block
 		client.prompt(activeSession.projectId, activeSession.id, content).catch((error) => {
 			set({ error: error instanceof Error ? error.message : String(error), running: false });
@@ -416,7 +425,11 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 
 	switch (event.type) {
 		case "agent_start":
-			set({ running: true });
+			set({
+				running: true,
+				turnTokens: 0,
+				turnStartedAt: get().turnStartedAt ?? Date.now(),
+			});
 			break;
 
 		case "message_start": {
@@ -444,7 +457,13 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			const index = findSlot(messages, event.message);
 			if (index >= 0) messages[index] = event.message;
 			else if (!isDuplicateUserEcho(messages, event.message)) messages.push(event.message);
-			set({ messages });
+			set({
+				messages,
+				turnTokens:
+					event.message.role === "assistant" && event.message.usage?.total
+						? state.turnTokens + event.message.usage.total
+						: state.turnTokens,
+			});
 			break;
 		}
 
@@ -575,8 +594,9 @@ function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
 	return runs;
 }
 
-export function assistantText(message: AssistantMessage): string {
-	return message.content
+export function assistantText(message: AssistantMessage, upTo?: number): string {
+	const slice = upTo !== undefined ? message.content.slice(0, upTo) : message.content;
+	return slice
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("");

@@ -93,7 +93,9 @@ function formatDurationBadge(durationMs?: number, sseDurationMs?: number, tokens
 	// Use pure streaming time (sseDurationMs) if available to compute TPS accurately, eliminating network wait and thinking TTFT
 	const tpsSecs = (sseDurationMs && sseDurationMs > 0 ? sseDurationMs : durationMs) / 1000;
 	if (tokens && tokens > 0 && tpsSecs > 0) {
-		const tps = (tokens / tpsSecs).toFixed(1);
+		// Cap TPS at realistic threshold to avoid misleading extreme values when pure sseDurationMs is tiny
+		const tpsVal = tokens / tpsSecs;
+		const tps = tpsVal > 9999 ? ">9k" : tpsVal.toFixed(1);
 		return `${durationText} · ${tps} tok/s`;
 	}
 	return durationText;
