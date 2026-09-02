@@ -1,8 +1,9 @@
 import { useRouter } from "expo-router";
-import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, BackHandler, Platform, Pressable, Text, ToastAndroid, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+import { backPress, type BackState } from "../src/back";
 import { bridgeScript } from "../src/bridge";
 import { useMobile } from "../src/store";
 
@@ -40,6 +41,34 @@ export default function DeskScreen() {
 		setFailed(null);
 		setLoading(true);
 		webview.current?.reload();
+	}, []);
+
+	/*
+	 * Android's back button.
+	 *
+	 * `BackHandler` wants an answer synchronously — it cannot wait for a round trip into the WebView
+	 * — so the page reports how many layers it has open and this keeps a mirror of that number. A
+	 * ref rather than state: it is read inside the handler and never drawn, and re-rendering the
+	 * WebView every time a drawer opens would be a reload.
+	 */
+	const back = useRef<BackState>({ depth: 0 });
+
+	useEffect(() => {
+		if (Platform.OS !== "android") return;
+		const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+			const action = backPress(back.current, Date.now());
+			if (action.do === "close") {
+				webview.current?.injectJavaScript("window.__lyraBack && window.__lyraBack(); true;");
+				return true;
+			}
+			if (action.do === "warn") {
+				back.current = action.state;
+				ToastAndroid.show("再按一次退出", ToastAndroid.SHORT);
+				return true;
+			}
+			return false;
+		});
+		return () => subscription.remove();
 	}, []);
 
 	if (!connection) {

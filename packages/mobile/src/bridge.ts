@@ -160,6 +160,58 @@ export function bridgeScript(connection: Connection): string {
 	markHost();
 	if (!document.documentElement) document.addEventListener("readystatechange", markHost, { once: true });
 
+	/*
+	 * How many layers are open, reported outward for Android's back button.
+	 *
+	 * The native side has to answer BackHandler on the spot and cannot wait for a round trip in
+	 * here, so it keeps a mirror of this number instead of asking. Read off attributes the renderer
+	 * already maintains — see layerDepth in back.ts, which this is the other half of.
+	 */
+	const layerDepth = () => {
+		let depth = 0;
+		for (const el of document.querySelectorAll('[data-pane="drawer"]')) {
+			if (!el.hasAttribute("inert")) depth++;
+		}
+		for (const el of document.querySelectorAll('[aria-modal="true"]')) {
+			// The drawer is itself aria-modal while it is one, and must not be counted twice.
+			if (!el.hasAttribute("inert") && !el.hasAttribute("data-pane")) depth++;
+		}
+		return depth;
+	};
+
+	let lastDepth = -1;
+	const reportDepth = () => {
+		const depth = layerDepth();
+		if (depth === lastDepth) return;
+		lastDepth = depth;
+		window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "layers", depth }));
+	};
+
+	/**
+	 * Close one layer, by pressing Escape on the page's behalf.
+	 *
+	 * The renderer already closes its topmost layer on Escape — the drawer, a dialog, a menu — so
+	 * back reuses that rather than reaching into React state it has no handle on.
+	 */
+	window.__lyraBack = () => {
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+	};
+
+	const watchLayers = () => {
+		if (!document.body) return;
+		reportDepth();
+		// Attributes only: inert going on and off a drawer is the signal, and watching characterData
+		// as well would fire this on every token of a streaming reply.
+		new MutationObserver(reportDepth).observe(document.documentElement, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ["inert", "aria-modal"],
+		});
+	};
+	if (document.body) watchLayers();
+	else document.addEventListener("DOMContentLoaded", watchLayers, { once: true });
+
 	const api = {
 		platform: ${JSON.stringify(connection.platform ?? "darwin")},
 		host: "mobile",

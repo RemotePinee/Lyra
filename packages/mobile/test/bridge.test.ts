@@ -213,3 +213,139 @@ test("the token is escaped into the socket URL", () => {
 	const { sockets } = install({ ...LAN, token: "a b&c" });
 	assert.match(sockets[0], /token=a%20b%26c$/);
 });
+
+test("the generated script has no stray backtick in it", () => {
+	/*
+	 * The bridge is one long template literal, so a backtick anywhere inside it — including inside a
+	 * comment, which is where it keeps happening — ends the string early and the whole module stops
+	 * parsing. It has cost two rounds of "why is the file failing rather than the test", both times
+	 * from writing `inert` in prose out of habit.
+	 *
+	 * Checked on the *output* rather than the source, because that is what has to survive: an
+	 * escaped backtick in the source is fine and appears here as a plain one.
+	 */
+	const script = bridgeScript(LAN);
+	assert.doesNotThrow(() => new Function(script), "生成的脚本本身要能解析");
+
+	// And it really is one template literal in the source, which is what makes the above a risk
+	// rather than a curiosity.
+	assert.ok(script.startsWith("(() => {"), "脚本应当是一整段立即执行函数");
+});
+
+/*
+ * The half of Android's back button that lives in the page.
+ *
+ * There is no Android emulator on this machine, so this is the closest thing to running it: the
+ * script is evaluated with a document that can be changed underneath it, and what it reports is
+ * read back. `back.test.ts` covers what the native side does with those numbers.
+ */
+
+/** A document with a mutable set of elements, and a MutationObserver that fires on demand. */
+function pageWith(elements: { attrs: string[] }[]) {
+	const posted: string[] = [];
+	let observer: (() => void) | null = null;
+	const listeners: Record<string, (() => void)[]> = {};
+
+	const element = (el: { attrs: string[] }) => ({ hasAttribute: (name: string) => el.attrs.includes(name) });
+	const documentElement = { setAttribute() {} };
+	const document = {
+		documentElement,
+		body: {},
+		querySelectorAll(selector: string) {
+			const wanted = selector === '[data-pane="drawer"]' ? "data-pane" : "aria-modal";
+			return elements.filter((el) => el.attrs.includes(wanted)).map(element);
+		},
+		addEventListener(type: string, handler: () => void) {
+			(listeners[type] ??= []).push(handler);
+		},
+		dispatchEvent: () => true,
+	};
+
+	const scope = {
+		document,
+		WebSocket: class {
+			close() {}
+		},
+		fetch: async () => ({ ok: true, json: async () => ({ ok: true, value: null }) }),
+		setTimeout: () => 0,
+		navigator: {},
+		KeyboardEvent: class {
+			type: string;
+			constructor(type: string) {
+				this.type = type;
+			}
+		},
+		MutationObserver: class {
+			constructor(handler: () => void) {
+				observer = handler;
+			}
+			observe() {}
+		},
+	} as Record<string, unknown>;
+
+	const window: Record<string, unknown> = scope;
+	scope.window = window;
+	window.ReactNativeWebView = { postMessage: (data: string) => posted.push(data) };
+
+	const run = new Function(
+		"window",
+		"document",
+		"WebSocket",
+		"fetch",
+		"setTimeout",
+		"navigator",
+		"KeyboardEvent",
+		"MutationObserver",
+		bridgeScript(LAN),
+	);
+	run(
+		window,
+		document,
+		scope.WebSocket,
+		scope.fetch,
+		scope.setTimeout,
+		scope.navigator,
+		scope.KeyboardEvent,
+		scope.MutationObserver,
+	);
+
+	return {
+		window,
+		posted,
+		/** Change what is on the page, then let the observer notice. */
+		change(next: { attrs: string[] }[]) {
+			elements = next;
+			observer?.();
+		},
+	};
+}
+
+test("the page reports how many layers it has open", () => {
+	const page = pageWith([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
+	assert.deepEqual(JSON.parse(page.posted[0]), { type: "layers", depth: 0 }, "关着的抽屉不算一层");
+
+	page.change([{ attrs: ["data-pane", "aria-modal"] }]);
+	assert.deepEqual(JSON.parse(page.posted[1]), { type: "layers", depth: 1 }, "抽屉打开了要报上去");
+
+	page.change([{ attrs: ["data-pane", "aria-modal"] }, { attrs: ["aria-modal"] }]);
+	assert.deepEqual(JSON.parse(page.posted[2]), { type: "layers", depth: 2 });
+});
+
+test("an unchanged depth is not reported again", () => {
+	/*
+	 * The observer watches the whole document, and a streaming reply changes it constantly. Posting
+	 * on every mutation would put a message across the bridge for every token.
+	 */
+	const page = pageWith([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
+	const before = page.posted.length;
+	page.change([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
+	page.change([{ attrs: ["data-pane", "aria-modal", "inert"] }]);
+	assert.equal(page.posted.length, before, "层数没变就不该再发");
+});
+
+test("closing a layer is offered as a function the native side can call", () => {
+	// Android's back button reaches the page through this and nothing else.
+	const page = pageWith([]);
+	assert.equal(typeof page.window.__lyraBack, "function");
+	assert.doesNotThrow(() => (page.window.__lyraBack as () => void)());
+});
