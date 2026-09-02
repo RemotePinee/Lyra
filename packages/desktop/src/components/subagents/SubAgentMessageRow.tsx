@@ -26,12 +26,6 @@ export const SubAgentTranscript = memo(function SubAgentTranscript({
 }) {
 	const transcriptRuns = useMemo(() => runs(messages), [messages]);
 	const toolRuns = useMemo(() => subAgentRuns(messages), [messages]);
-	/*
-	 * The run whose highlight says the delegate is still working: the last run of tools, not the
-	 * last row. While a reply is being made its reasoning sits under the run it is driving (see
-	 * `grouping.ts`), and that row taking the last position must not take the highlight off the run.
-	 */
-	const lastRun = transcriptRuns.reduce((found, run, at) => (run.kind === "tools" ? at : found), -1);
 
 	return (
 		<div className="flex flex-col">
@@ -39,8 +33,9 @@ export const SubAgentTranscript = memo(function SubAgentTranscript({
 				if (run.kind === "compaction") return null;
 
 				if (run.kind === "tools") {
-					const isTrailing = Boolean(isLive && idx === lastRun);
-					return <ToolRun key={`sub-run-${idx}`} calls={run.calls} trailing={isTrailing} runs={toolRuns} />;
+					// Which run is being worked on is `grouping.ts`'s answer; whether anyone is working on
+					// it at all is this panel's. The same pair as in `Conversation`.
+					return <ToolRun key={`sub-run-${idx}`} calls={run.calls} live={Boolean(isLive && run.live)} runs={toolRuns} />;
 				}
 
 				const { message, upTo } = run;

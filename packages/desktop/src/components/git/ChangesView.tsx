@@ -18,6 +18,7 @@ import { FileDiffTree } from "./FileDiffTree.tsx";
 
 import { GroupHeader } from "./GroupHeader.tsx";
 import { SkeletonList } from "../Skeleton.tsx";
+import type { SyncPlan } from "./syncPlan.ts";
 import type { Act } from "./types.ts";
 
 /**
@@ -33,6 +34,9 @@ export function ChangesView({
   busy,
   loading,
   act,
+  plan,
+  onPush,
+  onPull,
 }: {
   status: GitStatus | null;
   cwd: string;
@@ -40,6 +44,10 @@ export function ChangesView({
   /** The checkout moved and this is being re-read; see `switching` in `GitPanel`. */
   loading?: boolean;
   act: Act;
+  /** What a clean tree should say, and what to offer doing about it. Computed in `GitPanel`. */
+  plan: SyncPlan;
+  onPush: () => void;
+  onPull: () => void;
 }) {
   const [treeView, setTreeView] = useState(false);
   const confirm = useConfirmer();
@@ -109,9 +117,30 @@ export function ChangesView({
   }
 
   if (nothing) {
+    /*
+     * Clean, and what that leaves you with.
+     *
+     * 「没有未提交的改动」 was the only thing this ever said, and for the commit you have just made
+     * it is an answer to a question nobody asked: the tree is clean *and* the work has not left the
+     * machine. What follows from a clean tree depends entirely on where the branch stands with its
+     * remote, so the sentence comes from `syncPlan` — the same one the sync row is drawn from, so
+     * the two cannot disagree.
+     */
     return (
-      <PanelEmpty icon={Check} title="工作区干净">
-        没有未提交的改动。
+      <PanelEmpty
+        icon={Check}
+        title="工作区干净"
+        action={
+          plan.empty.action
+            ? {
+                label: plan.empty.action.label,
+                onClick: plan.empty.action.kind === "push" ? onPush : onPull,
+                disabled: busy,
+              }
+            : undefined
+        }
+      >
+        {plan.empty.body}
       </PanelEmpty>
     );
   }

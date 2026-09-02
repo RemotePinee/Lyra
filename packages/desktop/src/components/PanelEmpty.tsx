@@ -14,16 +14,39 @@ export function PanelEmpty({
 	icon: Icon,
 	title,
 	children,
+	action,
 }: {
 	icon: LucideIcon;
 	title: string;
 	children: React.ReactNode;
+	/**
+	 * The one thing to do from here, when there is one.
+	 *
+	 * An empty panel is not always the end of a road: a clean working tree with an unpushed commit
+	 * is a state with an obvious next step, and having to go and find it in the toolbar is how that
+	 * step gets missed. Optional because most empty states genuinely are the end — nothing to do is
+	 * a perfectly good answer, and inventing a button for it would be worse than the silence.
+	 *
+	 * Styled as the panel's own primary button, the same as 「初始化仓库」, and deliberately not as
+	 * anything resembling the composer's send key.
+	 */
+	action?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
 	return (
 		<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-7 pb-6 text-center">
 			<Icon size={30} strokeWidth={1.35} className="text-ink-faint" />
 			<h2 className="mt-3.5 text-title font-medium text-ink">{title}</h2>
 			<p className="mt-2 max-w-[290px] text-label leading-relaxed text-ink-muted">{children}</p>
+			{action && (
+				<button
+					type="button"
+					disabled={action.disabled}
+					onClick={action.onClick}
+					className="mt-4 h-[28px] rounded-md bg-ink px-3 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+				>
+					{action.label}
+				</button>
+			)}
 		</div>
 	);
 }

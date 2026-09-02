@@ -10,6 +10,8 @@ import { execFile } from "node:child_process";
 import { delimiter } from "node:path";
 import { promisify } from "node:util";
 
+import { explainGitFailure } from "./git-errors.ts";
+
 const execFileAsync = promisify(execFile);
 
 /**
@@ -143,5 +145,68 @@ export async function run(cwd: string, args: string[]): Promise<{ ok: boolean; e
 		const detail = error as { stderr?: string; stdout?: string; message?: string };
 		const text = (detail.stderr || detail.stdout || detail.message || "").trim();
 		return { ok: false, error: text.split("\n").slice(0, 3).join("\n") || "操作失败" };
+	}
+}
+
+export interface RemoteResult {
+	ok: boolean;
+	error?: string;
+	/** The caller stopped it. Not a failure, and nothing should be said about it. */
+	cancelled?: boolean;
+	/** Killed for taking too long. Distinguished because git leaves nothing on stderr when it is. */
+	timedOut?: boolean;
+}
+
+/**
+ * Run a git command that talks to a remote.
+ *
+ * Separate from `run` because everything about it is different once a network is involved.
+ *
+ * **It has to be able to stop.** `run` has no timeout, which is correct for reading the index and
+ * wrong for `fetch`: a host that neither answers nor refuses holds the process until TCP gives up,
+ * and the panel disables its other buttons while one of these is in flight. Without a bound, and
+ * without a way to cancel, that is a panel someone is locked inside.
+ *
+ * **It must not wait for a person.** `GIT_TERMINAL_PROMPT=0` turns git's own prompt into an
+ * immediate failure with a clear reason. Worth knowing what this is *not* protecting against:
+ * missing credentials never hang here — a process with no tty fails in milliseconds either way.
+ * What the variable buys is the wording. Without it git reports `Device not configured`, which
+ * describes the tty rather than the problem.
+ *
+ * Deliberately does not set `GIT_ASKPASS`. Pointing it at a helper that answers with nothing makes
+ * git complete an authentication attempt using an empty username, and the failure changes from
+ * "there was nowhere to ask you" to "your credentials were rejected" — the same red bar, now naming
+ * the wrong cause.
+ */
+export async function runRemote(
+	cwd: string,
+	args: string[],
+	{ timeoutMs, signal }: { timeoutMs: number; signal?: AbortSignal },
+): Promise<RemoteResult> {
+	try {
+		await execFileAsync("git", args, {
+			cwd,
+			maxBuffer: 32 * 1024 * 1024,
+			env: { ...GIT_ENV, GIT_TERMINAL_PROMPT: "0" },
+			timeout: timeoutMs,
+			signal,
+		});
+		return { ok: true };
+	} catch (error) {
+		const detail = error as { stderr?: string; message?: string; killed?: boolean; name?: string };
+		/*
+		 * Three ways to end, and they are told apart by the error rather than by the output.
+		 *
+		 * Cancelled first: an aborted child is also a killed child, so asking `killed` first would
+		 * report every cancellation as a timeout.
+		 */
+		if (detail.name === "AbortError") return { ok: false, cancelled: true };
+		/*
+		 * A timeout kills the process, so stderr is empty and `message` is `Command failed: git …`.
+		 * Left to the generic path that string becomes the error the panel shows, which says what
+		 * was run and nothing about what went wrong.
+		 */
+		if (detail.killed) return { ok: false, timedOut: true, error: "连接远端超时" };
+		return { ok: false, error: explainGitFailure(detail.stderr ?? detail.message ?? "") };
 	}
 }

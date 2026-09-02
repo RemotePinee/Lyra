@@ -8,8 +8,9 @@
 import { computeDiff } from "@lyra/core";
 import type { GitCommit, WorkspaceDiffFile } from "./ipc-types.ts";
 import { readBlobs, type BlobRead } from "./git-blobs.ts";
-import { git, run, MAX_FILES } from "./git-exec.ts";
+import { git, run, runRemote, MAX_FILES, type RemoteResult } from "./git-exec.ts";
 import { capHunks, classify } from "./git-diff.ts";
+import { defaultRemote } from "./git-remote-state.ts";
 import { EMPTY_TREE, LOG_FORMAT } from "./git-status.ts";
 import { gitBranch, isGitRepo } from "./git.ts";
 
@@ -247,17 +248,81 @@ export async function deleteBranch(cwd: string, name: string, force = false) {
 	return run(cwd, ["branch", force ? "-D" : "-d", name]);
 }
 
-export async function pushBranch(cwd: string): Promise<{ ok: boolean; error?: string }> {
-	const branch = await gitBranch(cwd);
-	if (!branch) return { ok: false, error: "当前不在任何分支上" };
-	// `-u` on the first push, so the branch gains an upstream instead of failing for want of one.
-	const hasUpstream = await git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).then(() => true).catch(() => false);
-	return run(cwd, hasUpstream ? ["push"] : ["push", "-u", "origin", branch]);
+/**
+ * How long each remote call may take.
+ *
+ * A silent fetch is a background nicety and must never be felt, so it gives up quickly. A fetch
+ * someone pressed a button for is allowed to be slow, because they are watching it and can cancel.
+ * Push and pull can legitimately take minutes on a large repository, so their bound is only there
+ * to stop the panel being held forever by a host that never answers.
+ */
+export const QUIET_FETCH_TIMEOUT_MS = 8_000;
+export const FETCH_TIMEOUT_MS = 20_000;
+export const PUSH_PULL_TIMEOUT_MS = 120_000;
+
+/** The remotes this repository has, in config order. */
+async function remoteNames(cwd: string): Promise<string[]> {
+	const out = await git(cwd, ["remote"]).catch(() => "");
+	return out.split("\n").map((name) => name.trim()).filter(Boolean);
 }
 
-export async function pullBranch(cwd: string): Promise<{ ok: boolean; error?: string }> {
+export async function pushBranch(cwd: string, { signal }: { signal?: AbortSignal } = {}): Promise<RemoteResult> {
+	/*
+	 * `gitBranch` is `symbolic-ref` now, so this guard finally means what it says.
+	 *
+	 * It used to be `rev-parse --abbrev-ref HEAD`, which answers with the string "HEAD" on a
+	 * detached checkout rather than failing — so this ran `push -u origin HEAD`, and git refused it
+	 * with `The destination you provided is not a full refname`. Every rebase in progress and every
+	 * checked-out tag hit that.
+	 */
+	const branch = await gitBranch(cwd);
+	if (!branch) return { ok: false, error: "当前不在任何分支上" };
+
+	// `-u` on the first push, so the branch gains an upstream instead of failing for want of one.
+	const hasUpstream = await git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).then(() => true).catch(() => false);
+	if (hasUpstream) return runRemote(cwd, ["push"], { timeoutMs: PUSH_PULL_TIMEOUT_MS, signal });
+
+	/*
+	 * Not `origin`, whichever remote this repository actually has.
+	 *
+	 * Hardcoding `origin` fails outright on a repository whose remote is called anything else, and
+	 * the failure is a git error about a remote that does not exist rather than anything the panel
+	 * could have said up front.
+	 */
+	const remotes = await remoteNames(cwd);
+	const remote = defaultRemote(remotes);
+	if (!remote) {
+		return {
+			ok: false,
+			error: remotes.length === 0 ? "仓库没有配置远端" : "有多个远端，请先设置上游分支",
+		};
+	}
+	return runRemote(cwd, ["push", "-u", remote, branch], { timeoutMs: PUSH_PULL_TIMEOUT_MS, signal });
+}
+
+export async function pullBranch(cwd: string, { signal }: { signal?: AbortSignal } = {}): Promise<RemoteResult> {
 	// `--ff-only`: a merge commit, or worse a conflict, is not something to start from a button.
-	return run(cwd, ["pull", "--ff-only"]);
+	return runRemote(cwd, ["pull", "--ff-only"], { timeoutMs: PUSH_PULL_TIMEOUT_MS, signal });
+}
+
+/**
+ * Ask the remote what it has, so `ahead` and `behind` are about the present.
+ *
+ * Without this they are computed against whatever the remote-tracking refs last recorded, which for
+ * a panel that never fetched is whenever the repository was last cloned or pulled by hand. `behind`
+ * in particular could not become non-zero at all.
+ *
+ * A repository with no remotes returns ok rather than running anything: `git fetch` there exits 0
+ * having done nothing, and reporting that as a successful refresh invites the reasonable conclusion
+ * that the numbers on screen were just confirmed.
+ */
+export async function fetchRemotes(
+	cwd: string,
+	{ signal, timeoutMs = FETCH_TIMEOUT_MS }: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<RemoteResult> {
+	const remotes = await remoteNames(cwd);
+	if (remotes.length === 0) return { ok: true };
+	return runRemote(cwd, ["fetch", "--prune"], { timeoutMs, signal });
 }
 
 /**

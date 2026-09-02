@@ -244,12 +244,6 @@ export const Conversation = memo(function Conversation() {
   const allRuns = useMemo(() => runs(messages, compactions), [messages, compactions]);
   const hidden = Math.max(0, allRuns.length - windowSize);
   const visibleRuns = hidden > 0 ? allRuns.slice(hidden) : allRuns;
-  /*
-   * The row whose highlight says the turn is still working: the last run of tools, not the last
-   * row. While a reply is being made its reasoning sits under the run it is driving (see
-   * `grouping.ts`), and that row taking the last position must not take the highlight off the run.
-   */
-  const lastRun = visibleRuns.reduce((found, run, at) => (run.kind === "tools" ? at : found), -1);
 
   return (
     <div ref={column} className="flex min-h-0 flex-1 flex-col">
@@ -369,12 +363,19 @@ export const Conversation = memo(function Conversation() {
                 key={`run-${run.calls[0]?.block.id ?? index}`}
                 calls={run.calls}
                 /*
-                 * The last run of a turn still in progress keeps its highlight moving.
+                 * The run being worked on keeps its highlight moving — and only that one, so the
+                 * transcript never claims two things are happening at once.
                  *
-                 * Only the last: an earlier group is finished no matter what the turn is doing,
-                 * and gliding all of them would say several things are happening at once.
+                 * Which run that is comes from `grouping.ts`, because it is a question about the
+                 * shape of the turn rather than about the position of a row. Asking it here, as
+                 * "the last run on screen", is what left a finished run gliding through the whole
+                 * of the next reply: a new question does not move the last run, so the highlight
+                 * simply stayed where the previous turn had left it.
+                 *
+                 * `running` is still asked separately: the newest work in a turn that has ended is
+                 * still the newest work, and nothing should glide once the turn is over.
                  */
-                trailing={running && index === lastRun}
+                live={running && Boolean(run.live)}
               />
             ),
           )}

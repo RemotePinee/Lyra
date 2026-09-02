@@ -25,6 +25,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 /** The name in the certificate `make-signing-cert.sh` generates. */
 const DEFAULT_IDENTITY = "Lyra Code Signing";
@@ -83,4 +84,27 @@ if (restore.status !== 0) {
 	console.warn("[package] 原生模块没能恢复成本机架构，开发运行前请手动执行 npm run rebuild:pty");
 }
 
-process.exit(result.status ?? 1);
+if (result.status !== 0) {
+	process.exit(result.status ?? 1);
+}
+
+/*
+ * Whether what was just built carries native binaries for the architecture it claims to be.
+ *
+ * Packaging cannot tell on its own. Prebuilt per-platform modules are copied in as found, so a
+ * build takes whatever the *build machine* happened to need — which is how 0.8.35's arm64 Windows
+ * installer came to hold an x64 `koffi.node`. Nothing failed: it packaged, it installed, it
+ * launched, and the mismatch waited for a user on that architecture to reach the one code path that
+ * loads it. `pnpm-workspace.yaml` now installs every platform's copy, and this is what confirms the
+ * right one arrived — the fix and its check, rather than the fix alone.
+ *
+ * Only after a successful package: there is nothing to inspect otherwise, and a second failure
+ * stacked on the first only buries it.
+ *
+ * `fileURLToPath`, not `.pathname` as above: on Windows the latter yields `/C:/…`, and this one
+ * decides an exit code — a path that fails to resolve would block a release over nothing.
+ */
+const arch = spawnSync(process.execPath, [fileURLToPath(new URL("check-native-arch.mjs", import.meta.url))], {
+	stdio: "inherit",
+});
+process.exit(arch.status ?? 1);

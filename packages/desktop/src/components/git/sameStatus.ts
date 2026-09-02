@@ -38,6 +38,19 @@ export function sameStatus(a: GitStatus | null, b: GitStatus | null): boolean {
 		a.upstream === b.upstream &&
 		a.ahead === b.ahead &&
 		a.behind === b.behind &&
+		/*
+		 * The remote standing, which changes with no file moving at all.
+		 *
+		 * This is exactly the shape of change the comparison above would miss: publish a branch and
+		 * the tree is as clean afterwards as it was before, the counts are all still zero, and every
+		 * file list is still empty — the only thing that moved is that the branch now has an
+		 * upstream. Left out of here, the panel would go on offering 「发布分支」 for a branch that
+		 * had just been published, until something unrelated happened to change a file.
+		 */
+		a.remoteState === b.remoteState &&
+		a.remote === b.remote &&
+		a.operation === b.operation &&
+		a.unpushed === b.unpushed &&
 		sameFiles(a.staged, b.staged) &&
 		sameFiles(a.unstaged, b.unstaged)
 	);

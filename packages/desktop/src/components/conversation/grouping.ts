@@ -34,7 +34,14 @@ export type Run =
 	 * identity changes exactly when the transcript does.
 	 */
 	| { kind: "message"; message: Message; index: number; upTo: number; turnStats?: TurnStats }
-	| { kind: "tools"; calls: Call[] };
+	/**
+	 * A stretch of tool work, and whether it is the stretch being worked on right now.
+	 *
+	 * `live` is set on at most one run in the transcript — see `liveWork` for which. It is a fact
+	 * about the shape of the conversation, not about whether the agent is currently running, so the
+	 * caller still asks that separately: a run can be the newest work in a turn that has since ended.
+	 */
+	| { kind: "tools"; calls: Call[]; live?: boolean };
 
 /** The runtime's "carry on" message, recognised by what it says as well as by its flag. */
 export function isNudge(message: Message | undefined): boolean {
@@ -207,6 +214,51 @@ function liveReasoning(messages: Message[], live: number): number {
 	return -1;
 }
 
+/**
+ * The run of tool work being pushed forward right now, or -1 for none.
+ *
+ * Not "the last run in the transcript", which is what this used to be and is a different claim
+ * entirely. The two agree for as long as a turn keeps calling tools, and part company the moment
+ * you ask something else: the newest run is then a piece of finished work from the turn before,
+ * and calling it current lit it back up — a line describing work that ended minutes ago, gliding
+ * for the whole of a reply that never touched a tool.
+ *
+ * So it is answered from the replies rather than from the rows. Walking back from the newest one:
+ *
+ * - a reply that made calls is the answer, and the row those calls landed in is the run;
+ * - a reply that has *said* something and made no calls ends the search — the answer is being
+ *   written, and the work above it is over;
+ * - a reply that has done neither yet is passed over, which is the beat between `message_start`
+ *   and the first block of a new reply. Stopping there would drop the highlight for a few hundred
+ *   milliseconds between every batch of a turn, which reads as a flicker rather than as an end;
+ * - anything the person actually said ends the search. Their question is the boundary: whatever
+ *   was done before it belongs to what they asked before it.
+ *
+ * Where the walk *starts* is what separates two transcripts that look identical — a person's
+ * message at the end, a reply before it. If that reply is still `pending` the message is
+ * steering typed into a turn that is running, and the work it is doing goes on; if it has settled,
+ * the message is a new question and there is nothing in flight to point at.
+ */
+function liveWork(messages: Message[], live: number, rowOfCalls: Map<number, number>): number {
+	if (live < 0) return -1;
+	const latest = messages[live];
+	const inFlight = latest.role === "assistant" && latest.stopReason === "pending";
+	for (let at = inFlight ? live : messages.length - 1; at >= 0; at--) {
+		const message = messages[at];
+		if (message.role === "user") {
+			// The runtime's own messages are not the person speaking; see `opensTurn`.
+			if (message.synthetic || isNudge(message)) continue;
+			return -1;
+		}
+		// A tool result is the contents of a card, not a step of its own.
+		if (message.role !== "assistant") continue;
+		const row = rowOfCalls.get(at);
+		if (row !== undefined) return row;
+		if (spoken(message.content) > 0) return -1;
+	}
+	return -1;
+}
+
 /** How many blocks come before the first call — the reasoning, which is the row's whole content. */
 function beforeCalls(content: AssistantContent[]): number {
 	const first = content.findIndex((block) => block.type === "toolCall");
@@ -219,6 +271,34 @@ function spoken(content: AssistantContent[]): number {
 		if (block.type === "text" && block.text.trim()) end = index + 1;
 	}
 	return end;
+}
+
+/**
+ * Whether a drawn run has anything new to show — the memo comparison behind `ToolRun`.
+ *
+ * It lives here, in a file the tests can load, rather than inline in the component. That is not
+ * tidiness: the rule this guards was verified twice against a *copy* of itself written into the
+ * test, and a copy agrees with whatever it was copied from, including the mistakes. The component
+ * cannot be imported by the unit tests at all (they strip types, they do not compile JSX), so the
+ * only way for a test to check the real comparison is for the real comparison to be plain data.
+ *
+ * Structural on purpose: `runs` is a store type, and nothing in this file should know about the
+ * store. Identity is all that is asked of it.
+ *
+ * Returns true when React may skip the render.
+ */
+export function sameRun(
+	before: { calls: Call[]; live?: boolean; runs?: object },
+	after: { calls: Call[]; live?: boolean; runs?: object },
+): boolean {
+	if (before.live !== after.live) return false;
+	// Injected records are rebuilt whenever their transcript grows, and a new map is the only sign
+	// that a call in this group has finished — nothing there subscribes to them.
+	if (before.runs !== after.runs) return false;
+	if (before.calls.length !== after.calls.length) return false;
+	return before.calls.every(
+		(call, i) => call.block.id === after.calls[i].block.id && call.stopReason === after.calls[i].stopReason,
+	);
 }
 
 /**
@@ -239,12 +319,22 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 	}
 	const reasoningRow = liveReasoning(messages, live);
 
+	/**
+	 * Which row each reply's calls ended up in.
+	 *
+	 * A run gathers calls from several replies, so "the row this reply is working in" is not
+	 * something the rows can be asked afterwards — it is only known here, as they are placed.
+	 * `liveWork` walks back through the replies and reads it off.
+	 */
+	const rowOfCalls = new Map<number, number>();
+
 	/** Extend the run this lands in, or start one. Empty batches leave the transcript alone. */
-	const work = (calls: Call[]) => {
+	const work = (calls: Call[], from: number) => {
 		if (calls.length === 0) return;
 		const last = out[out.length - 1];
 		if (last?.kind === "tools") last.calls.push(...calls);
 		else out.push({ kind: "tools", calls });
+		rowOfCalls.set(from, out.length - 1);
 	};
 
 	/*
@@ -308,7 +398,7 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 			out.push({ kind: "message", message, index, upTo: message.content.length, turnStats: turn });
 		}
 
-		work(calls);
+		work(calls, index);
 
 		/*
 		 * The reasoning of the reply being made right now, under the run it is driving.
@@ -337,6 +427,18 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 	while (nextMark < marks.length) {
 		out.push({ kind: "compaction" });
 		nextMark++;
+	}
+
+	/*
+	 * Marked last, on the row rather than on the calls.
+	 *
+	 * Rows are only ever appended, so the indices `work` recorded still point where they did — and
+	 * the answer depends on the whole transcript, which is not known until the walk above is done.
+	 */
+	const working = liveWork(messages, live, rowOfCalls);
+	if (working >= 0) {
+		const row = out[working];
+		if (row.kind === "tools") row.live = true;
 	}
 	return out;
 }

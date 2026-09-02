@@ -13,8 +13,11 @@ import type { ForgeAccount, ForgeKind, ForgeKindInfo } from "./forge/types.ts";
 import type {
 	BranchList,
 	GitCommit,
+	GitOperation,
 	GitStatus,
 	ReleaseInfo,
+	RemoteResult,
+	RemoteState,
 	RepoRef,
 	WorkflowJob,
 	WorkflowJobStep,
@@ -26,8 +29,11 @@ import type {
 export type {
 	BranchList,
 	GitCommit,
+	GitOperation,
 	GitStatus,
 	ReleaseInfo,
+	RemoteResult,
+	RemoteState,
 	RepoRef,
 	WorkflowJob,
 	WorkflowJobStep,
@@ -821,8 +827,23 @@ export interface LyraApi {
 		generateCommitMessage(cwd: string): Promise<{ ok: boolean; message?: string; error?: string }>;
 		createBranch(cwd: string, name: string, from?: string): Promise<{ ok: boolean; error?: string }>;
 		deleteBranch(cwd: string, name: string, force?: boolean): Promise<{ ok: boolean; error?: string }>;
-		push(cwd: string): Promise<{ ok: boolean; error?: string }>;
-		pull(cwd: string): Promise<{ ok: boolean; error?: string }>;
+		/**
+		 * The three calls that touch a remote.
+		 *
+		 * Each takes a `token` the renderer makes up, and `cancelRemote` stops whichever call is
+		 * holding it. An `AbortSignal` cannot cross the IPC boundary, so the identity of the running
+		 * operation has to, and the renderer is the side that knows which button was pressed twice.
+		 *
+		 * They answer with `cancelled` and `timedOut` alongside `error` because the panel treats the
+		 * three differently: a cancellation says nothing, a timeout says so plainly, and a failure
+		 * gets whatever `explainGitFailure` made of git's own words.
+		 */
+		push(cwd: string, token?: string): Promise<RemoteResult>;
+		pull(cwd: string, token?: string): Promise<RemoteResult>;
+		/** `fetch --prune`, so `ahead` / `behind` describe the remote as it is now. */
+		fetch(cwd: string, token?: string, quiet?: boolean): Promise<RemoteResult>;
+		/** Stop the push / pull / fetch running under this token. Unknown tokens are ignored. */
+		cancelRemote(token: string): Promise<void>;
 
 		/* Release workflow operations */
 		releaseInfo(cwd: string): Promise<ReleaseInfo | null>;

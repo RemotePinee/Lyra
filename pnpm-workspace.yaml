@@ -20,3 +20,30 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - '@cloudflare/workers-types@5.20260818.1'
+
+# Which platforms to install optional dependencies for, rather than just this machine's.
+#
+# Prebuilt native modules ship as one package per platform, and pnpm installs only the one the
+# installing machine needs. Every release job then packages architectures that machine is not: the
+# Windows runner is x64 and builds x64 *and* arm64, the macOS runner is arm64 and builds both, the
+# Linux runner is x64 and builds both. So `koffi` went into the arm64 Windows installer as
+# `@koromix/koffi-win32-x64`, and into the x64 macOS build as `@koromix/koffi-darwin-arm64` — the
+# wrong architecture in every non-native artifact, in every release up to 0.8.35.
+#
+# It stayed invisible because nothing announces it. The build succeeds, the app launches, and
+# `koffi` is `require`d lazily from the Windows sandbox path alone — so the only way to meet it is
+# to run that path on an arm64 Windows machine. `node-pty` is not affected: it is compiled rather
+# than downloaded, and electron-builder rebuilds it for the architecture being packaged.
+#
+# `current` stays in both lists so that a machine outside these combinations still installs what it
+# needs to run the app.
+supportedArchitectures:
+  os:
+    - current
+    - win32
+    - darwin
+    - linux
+  cpu:
+    - current
+    - x64
+    - arm64

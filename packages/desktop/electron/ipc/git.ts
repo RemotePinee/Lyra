@@ -31,6 +31,9 @@ import {
 	pruneWorktrees,
 	pullBranch,
 	pushBranch,
+	fetchRemotes,
+	FETCH_TIMEOUT_MS,
+	QUIET_FETCH_TIMEOUT_MS,
 	removeWorktree,
 	stagePaths,
 	switchBranch,
@@ -60,6 +63,7 @@ import {
 } from "../forge/index.ts";
 
 import { FORGE_KINDS, type ForgeKind, type ReviewVerdict } from "../forge/types.ts";
+import { RemoteCalls } from "../remote-calls.ts";
 
 export interface GitIpcDeps {
 	/** Whether a path lies inside a project the user has opened. */
@@ -193,14 +197,28 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 		return deleteBranch(cwd, name, force);
 	});
 
-	ipcMain.handle("git:push", async (_event, cwd: string) => {
+	/** The push / pull / fetch currently in flight, addressable by the token that started them. */
+	const remoteCalls = new RemoteCalls();
+
+	ipcMain.handle("git:push", async (_event, cwd: string, token?: string) => {
 		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return pushBranch(cwd);
+		return remoteCalls.run(token, (signal) => pushBranch(cwd, { signal }));
 	});
 
-	ipcMain.handle("git:pull", async (_event, cwd: string) => {
+	ipcMain.handle("git:pull", async (_event, cwd: string, token?: string) => {
 		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
-		return pullBranch(cwd);
+		return remoteCalls.run(token, (signal) => pullBranch(cwd, { signal }));
+	});
+
+	ipcMain.handle("git:fetch", async (_event, cwd: string, token?: string, quiet?: boolean) => {
+		if (!insideAProject(cwd)) return { ok: false, error: "该目录不在已打开的项目内" };
+		return remoteCalls.run(token, (signal) =>
+			fetchRemotes(cwd, { signal, timeoutMs: quiet ? QUIET_FETCH_TIMEOUT_MS : FETCH_TIMEOUT_MS }),
+		);
+	});
+
+	ipcMain.handle("git:cancelRemote", async (_event, token: string) => {
+		remoteCalls.cancel(token);
 	});
 
 	ipcMain.handle("diff:workspace", async (_event, cwd: string) => collectWorkspaceDiff(cwd));
