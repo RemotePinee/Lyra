@@ -23,7 +23,18 @@ updates:
       expo:
         patterns: ["expo", "expo-*", "react-native", "react-native-*"]
       tooling:
-        patterns: ["typescript", "knip", "lefthook", "vite", "@vitejs/*", "tailwindcss"]
+        patterns: ["typescript", "knip", "lefthook", "vite", "@vitejs/*"]
+      # Also on its own, and for a reason the checks cannot state themselves: nothing here
+      # verifies mobile at runtime. `pnpm build` covers core and desktop; mobile gets a typecheck
+      # and nothing else. So a Tailwind bump that breaks every style in the app goes green.
+      #
+      # Which is live rather than hypothetical. Desktop is on 4.x, mobile is still on 3.x behind
+      # nativewind 4.2.6 — whose peer range reads `tailwindcss: ">3.3.0"` and therefore accepts 4
+      # on paper, while nativewind 4 is written against 3's engine and config format. Grouped with
+      # knip and vite, that upgrade rides in on a green tick attached to four unrelated patches.
+      # Alone, it is a pull request someone has to open Expo to answer.
+      tailwind:
+        patterns: ["tailwindcss"]
       # On its own, because a linter release is not like the others: it ships rules, and a new
       # rule is a pile of findings in code that has not changed. 1.78 → 1.80 arrived with
       # `Cannot access refs during render` and 112 errors behind it — all of them worth reading,
@@ -62,14 +73,14 @@ updates:
       - dependency-name: "@types/node"
         update-types: [version-update:semver-major]
       #
-      # `tailwindcss` is deliberately NOT here, and the reason is worth keeping. Ignoring its
-      # majors looks like the same call — desktop is on 4.x, mobile is still on 3.x behind
-      # nativewind, and 3 → 4 is a genuine migration. But Dependabot resolves one version per
-      # package across the workspace, so with majors ignored the only version satisfying both is
-      # a 3.x one: it proposed **downgrading desktop from 4.3.3 to 3.4.19**, and the build failed
-      # on `Can't resolve 'tailwindcss'` because 4.x is what the desktop stylesheet is written
-      # against. A guard that drags the package that already migrated back across the line is
-      # worse than no guard. Mobile moves to 4 when nativewind does, and that is a real PR.
+      # `tailwindcss` is deliberately NOT here, and the reason is worth keeping, because ignoring
+      # its majors is the obvious move and it is wrong. Dependabot resolves one version per
+      # package across the workspace; desktop is on 4.x and mobile on 3.x, so with majors ignored
+      # the only version satisfying both is a 3.x one — it proposed **downgrading desktop from
+      # 4.3.3 to 3.4.19**, and the build failed on `Can't resolve 'tailwindcss'` because 4.x is
+      # what the desktop stylesheet is written against. A guard that drags the package which
+      # already migrated back across the line is worse than no guard. It gets a group of its own
+      # instead; see `tailwind` above.
 
   - package-ecosystem: github-actions
     directory: /
