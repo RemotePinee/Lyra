@@ -17,6 +17,7 @@ import { resolveSaveDirectory } from "./screenshot-path.ts";
 import {
 	closeWin32Screenshot,
 	hasActiveWin32Screenshot,
+	overlayPaintedWin32,
 	prewarmWin32Screenshot,
 	revealWin32ScreenshotOverlay,
 	startWin32Screenshot,
@@ -69,6 +70,8 @@ export function revealScreenshotOverlay(webContentsId: number): void {
 export function overlayPainted(): void {
 	if (process.platform === "darwin") {
 		overlayPaintedDarwin();
+	} else if (process.platform === "win32") {
+		overlayPaintedWin32();
 	}
 }
 

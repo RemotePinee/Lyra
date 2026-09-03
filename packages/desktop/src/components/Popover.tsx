@@ -405,20 +405,8 @@ export function Popover({
 				origin = `${clamp(a.left + a.width / 2 - left, 0, w)}px ${resolved === "top" ? "100%" : "0px"}`;
 			}
 
-			setPlaced(true);
-			setStyle({
-				left,
-				...anchorEdge,
-				// Leave intrinsic width intrinsic; only cap it, so content changes still reflow.
-				width: fixed,
-				maxWidth: limit,
-				transformOrigin: origin,
-				// Capped at the gap it was placed in, so content arriving later scrolls inside the
-				// card rather than pushing its far edge off the screen. A caller's own ceiling
-				// only ever lowers it further.
-				maxHeight: Math.min(
-					// Shifted into place, the ceiling is the window rather than the gap it started from
-					// — the gap is precisely what it stopped being bound by.
+			setStyle((prev) => {
+				const nextMaxHeight = Math.min(
 					shifted
 						? window.innerHeight - MARGIN * 2
 						: resolved === "top"
@@ -427,9 +415,33 @@ export function Popover({
 								? Math.max(0, window.innerHeight - a.bottom - GAP - MARGIN)
 								: Math.max(0, window.innerHeight - MARGIN * 2),
 					maxHeight ?? Infinity,
-				),
-				opacity: 1,
+				);
+				const edgeChanged =
+					"top" in anchorEdge
+						? prev.top !== anchorEdge.top || prev.bottom !== undefined
+						: prev.bottom !== anchorEdge.bottom || prev.top !== undefined;
+				if (
+					prev.left === left &&
+					!edgeChanged &&
+					prev.width === fixed &&
+					prev.maxWidth === limit &&
+					prev.transformOrigin === origin &&
+					prev.maxHeight === nextMaxHeight &&
+					prev.opacity === 1
+				) {
+					return prev;
+				}
+				return {
+					left,
+					...anchorEdge,
+					width: fixed,
+					maxWidth: limit,
+					transformOrigin: origin,
+					maxHeight: nextMaxHeight,
+					opacity: 1,
+				};
 			});
+			setPlaced(true);
 		};
 
 		measure();

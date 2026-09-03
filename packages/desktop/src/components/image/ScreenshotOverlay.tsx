@@ -12,7 +12,7 @@
  * marks stay put when the frame is moved afterwards.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ScreenshotSettings } from "@lyra/core";
 import {
 	AnnotateCanvas,
@@ -23,12 +23,15 @@ import { ScreenshotLoupe, type LoupeReading } from "./ScreenshotLoupe.tsx";
 import {
 	clampRect,
 	findSnapWindow,
+	finishCaptureGesture,
 	handlePoint,
 	hitHandle,
 	insideRect,
+	isDragFrom,
 	moveRect,
 	rectFromPoints,
 	resizeRect,
+	snapshotCssZoom,
 	toolbarPosition,
 	windowToLocalRect,
 	HANDLES,
@@ -41,7 +44,6 @@ import {
 
 const HANDLE_GRAB = 10;
 const TOOLBAR_SIZE = { width: 660, height: 48 };
-const MIN_SELECTION = 10;
 /**
  * How wide the band around the selection's edge is that picks the whole region up.
  *
@@ -58,11 +60,13 @@ interface ScreenshotInit {
 	settings?: ScreenshotSettings;
 	windows?: SnappableWindow[];
 	renderMode?: "live" | "snapshot";
+	cursor?: Point;
 }
 
 type DragMode =
 	| { kind: "none" }
-	| { kind: "creating"; from: Point }
+	| { kind: "pending"; from: Point; snap: SnappableWindow | null }
+	| { kind: "creating"; from: Point; snap: SnappableWindow | null }
 	| { kind: "moving"; from: Point; origin: Rect }
 	| { kind: "resizing"; handle: Handle; origin: Rect };
 
@@ -77,15 +81,27 @@ function onEdge(rect: Rect, at: Point, tolerance: number): boolean {
 	);
 }
 
+function sampleLoupeReading(source: HTMLCanvasElement | null, pt: Point | null, boundsWidth: number): LoupeReading | null {
+	if (!source || !pt || !boundsWidth) return null;
+	const pixelScale = source.width / boundsWidth;
+	const x = Math.round(pt.x * pixelScale);
+	const y = Math.round(pt.y * pixelScale);
+	if (x < 0 || y < 0 || x >= source.width || y >= source.height) return null;
+	const ctx = source.getContext("2d", { willReadFrequently: true });
+	const sample = ctx?.getImageData(x, y, 1, 1).data;
+	if (!sample) return null;
+	const hex = `#${[sample[0], sample[1], sample[2]].map((v) => v!.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+	return { x, y, hex };
+}
+
 export function ScreenshotOverlay() {
 	const [initData, setInitData] = useState<ScreenshotInit | null>(null);
 	const [selection, setSelection] = useState<Rect | null>(null);
 	const [hoveredWindow, setHoveredWindow] = useState<SnappableWindow | null>(null);
 	const [dragMode, setDragMode] = useState<DragMode>({ kind: "none" });
-	const [cursor, setCursor] = useState("crosshair");
+	const [cursor, setCursor] = useState("default");
 	const [isAnnotating, setIsAnnotating] = useState(false);
 	const [pointer, setPointer] = useState<Point | null>(null);
-	const [loupeHeld, setLoupeHeld] = useState(false);
 	const [reading, setReading] = useState<LoupeReading | null>(null);
 	const [copied, setCopied] = useState(false);
 
@@ -103,13 +119,19 @@ export function ScreenshotOverlay() {
 	}, []);
 
 	const initRef = useRef<ScreenshotInit | null>(null);
+	const leavingRef = useRef(false);
+	const finishPendingRef = useRef(false);
+	const selectionRef = useRef<Rect | null>(null);
+	selectionRef.current = selection;
+	const pointerRef = useRef<Point | null>(null);
+	pointerRef.current = pointer;
 	const loupeSourceRef = useRef<HTMLCanvasElement | null>(null);
 	const displayBounds = initData?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 	const scale = initData?.scaleFactor || window.devicePixelRatio || 1;
 	const bitmapWidth = Math.round(displayBounds.width * scale);
 	const annotator = useAnnotator(initData?.snapshot ?? null, { session: initData?.session });
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const decoded = annotator.image.current;
 		const canvas = loupeSourceRef.current;
 		if (!decoded || !canvas || !annotator.ready) return;
@@ -117,55 +139,115 @@ export function ScreenshotOverlay() {
 			canvas.width = decoded.width;
 			canvas.height = decoded.height;
 		}
-		canvas.getContext("2d")?.drawImage(decoded.source, 0, 0);
+		const ctx = canvas.getContext("2d");
+		if (ctx) {
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(decoded.source, 0, 0);
+		}
 
-		// For macOS snapshot presentation mode: tell main process the canvas frame is composited
+		// Synchronously take initial reading under pointer before notifying paint
+		const cur = pointerRef.current;
+		if (!selectionRef.current && cur) {
+			const initialSample = sampleLoupeReading(canvas, cur, initRef.current?.bounds.width ?? window.innerWidth);
+			if (initialSample) setReading(initialSample);
+		}
+
+		// For macOS and Windows snapshot presentation: notify main process first paint is composited
 		window.lyra?.screenshot?.painted?.();
 	}, [annotator.image, annotator.ready, annotator.width]);
 
 	useEffect(() => {
-		if (!loupeHeld || selection || !pointer) {
+		if (selection || !pointer) {
 			setReading(null);
 			return;
 		}
-		const source = loupeSourceRef.current;
-		const latest = initRef.current;
-		if (!source || !latest?.bounds.width) return;
-		const pixelScale = source.width / latest.bounds.width;
-		const x = Math.round(pointer.x * pixelScale);
-		const y = Math.round(pointer.y * pixelScale);
-		if (x < 0 || y < 0 || x >= source.width || y >= source.height) return;
-		const sample = source.getContext("2d", { willReadFrequently: true })?.getImageData(x, y, 1, 1).data;
-		if (!sample) return;
-		const hex = `#${[sample[0], sample[1], sample[2]].map((value) => value!.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-		setReading({ x, y, hex });
-	}, [annotator.ready, loupeHeld, pointer, selection]);
+		const sample = sampleLoupeReading(loupeSourceRef.current, pointer, initRef.current?.bounds.width ?? window.innerWidth);
+		if (sample) setReading(sample);
+	}, [annotator.ready, pointer, selection]);
 
 	useEffect(() => {
-		const cleanup = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
-			setInitData((prev) => {
-				const sameSession = prev?.session === data.session;
-				const next: ScreenshotInit = {
-					session: data.session,
-					bounds: data.bounds ?? prev?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
-					scaleFactor: data.scaleFactor ?? prev?.scaleFactor ?? 1,
-					settings: data.settings ?? prev?.settings,
-					// IPC clones Uint8Array payloads. Keep the first snapshot for later window updates, or
-					// the persistent overlay would decode the same screen and erase its marks repeatedly.
-					snapshot: data.snapshot === null
-						? null
-						: data.snapshot !== undefined && (!sameSession || !prev?.snapshot)
-							? data.snapshot
-							: prev?.snapshot ?? null,
-					windows: data.windows ?? prev?.windows,
-				};
-				initRef.current = next;
-				return next;
-			});
+		const cleanupInit = window.lyra?.screenshot?.onInit((data: ScreenshotInit) => {
+			const prev = initRef.current;
+			const sameSession = prev?.session === data.session;
+			const next: ScreenshotInit = {
+				session: data.session,
+				bounds: data.bounds ?? prev?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+				scaleFactor: data.scaleFactor ?? prev?.scaleFactor ?? 1,
+				settings: data.settings ?? prev?.settings,
+				// IPC clones Uint8Array payloads. Keep the first snapshot for later window updates, or
+				// the persistent overlay would decode the same screen and erase its marks repeatedly.
+				snapshot: data.snapshot === null
+					? null
+					: data.snapshot !== undefined && (!sameSession || !prev?.snapshot)
+						? data.snapshot
+						: prev?.snapshot ?? null,
+				windows: data.windows ?? prev?.windows,
+				renderMode: data.renderMode ?? prev?.renderMode,
+				cursor: data.cursor ?? prev?.cursor,
+			};
+			initRef.current = next;
+			setInitData(next);
+
+			if (!sameSession) {
+				leavingRef.current = false;
+				finishPendingRef.current = false;
+				setSelection(null);
+				setDragMode({ kind: "none" });
+				setIsAnnotating(false);
+				setCopied(false);
+				setReading(null);
+				setCursor("default");
+				const cursor = data.cursor ?? null;
+				setPointer(cursor);
+				setHoveredWindow(
+					cursor && next.windows?.length
+						? findSnapWindow(next.windows, cursor, next.bounds)
+						: null,
+				);
+			} else if (!prev?.windows?.length && next.windows?.length && !selectionRef.current) {
+				const cur = pointerRef.current ?? data.cursor ?? null;
+				if (cur) {
+					setHoveredWindow(findSnapWindow(next.windows, cur, next.bounds));
+				}
+			}
 		});
+
+		const cleanupReset = window.lyra?.screenshot?.onReset?.(() => {
+			leavingRef.current = true;
+			initRef.current = null;
+			setInitData(null);
+			setSelection(null);
+			setHoveredWindow(null);
+			setReading(null);
+			setPointer(null);
+			setIsAnnotating(false);
+			setDragMode({ kind: "none" });
+			setCursor("default");
+			setCopied(false);
+			const canvas = loupeSourceRef.current;
+			if (canvas) {
+				const ctx = canvas.getContext("2d");
+				ctx?.clearRect(0, 0, canvas.width, canvas.height);
+				canvas.width = 0;
+				canvas.height = 0;
+			}
+		});
+
 		window.lyra?.screenshot?.ready?.();
-		return cleanup;
+		return () => {
+			cleanupInit?.();
+			cleanupReset?.();
+		};
 	}, []);
+
+	const snapWindows = initData?.windows;
+	const snapBounds = initData?.bounds;
+	useEffect(() => {
+		if (selection || dragMode.kind !== "none") return;
+		if (!snapWindows?.length || !pointer || !snapBounds) return;
+		const matched = findSnapWindow(snapWindows, pointer, snapBounds);
+		setHoveredWindow((prev) => (prev?.id === matched?.id ? prev : matched));
+	}, [snapWindows, snapBounds, pointer, selection, dragMode.kind]);
 
 	/**
 	 * Guard teardown without delaying it.
@@ -174,8 +256,6 @@ export function ScreenshotOverlay() {
 	 * before asking the main process to destroy it can leave the whole desktop trapped if that timer
 	 * or IPC path stalls; the main process owns the window, so teardown is requested immediately.
 	 */
-	const leavingRef = useRef(false);
-	const finishPendingRef = useRef(false);
 	const beginLeaving = useCallback(() => {
 		if (leavingRef.current) return false;
 		leavingRef.current = true;
@@ -185,6 +265,19 @@ export function ScreenshotOverlay() {
 	// Releasing the always-on-top input window cannot depend on an animation timer.
 	const handleCancel = useCallback(() => {
 		if (!beginLeaving()) return;
+		setSelection(null);
+		setHoveredWindow(null);
+		setReading(null);
+		setPointer(null);
+		setIsAnnotating(false);
+		setDragMode({ kind: "none" });
+		const canvas = loupeSourceRef.current;
+		if (canvas) {
+			const ctx = canvas.getContext("2d");
+			ctx?.clearRect(0, 0, canvas.width, canvas.height);
+			canvas.width = 0;
+			canvas.height = 0;
+		}
 		void window.lyra.screenshot.cancel();
 	}, [beginLeaving]);
 
@@ -195,23 +288,20 @@ export function ScreenshotOverlay() {
 				handleCancel();
 				return;
 			}
-			if (e.key === "Alt") setLoupeHeld(true);
-			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && reading && !selection) {
+			if ((e.metaKey || e.ctrlKey || e.key.toLowerCase() === "c") && reading && !selection) {
 				e.preventDefault();
 				void window.lyra.screenshot.copyColor(reading.hex);
 				setCopied(true);
 			}
 		};
-		const handleKeyUp = (e: KeyboardEvent) => {
-			if (e.key !== "Alt") return;
-			setLoupeHeld(false);
+		const handleBlur = () => {
 			setCopied(false);
 		};
 		window.addEventListener("keydown", handleKeyDown);
-		window.addEventListener("keyup", handleKeyUp);
+		window.addEventListener("blur", handleBlur);
 		return () => {
 			window.removeEventListener("keydown", handleKeyDown);
-			window.removeEventListener("keyup", handleKeyUp);
+			window.removeEventListener("blur", handleBlur);
 		};
 	}, [handleCancel, reading, selection]);
 
@@ -232,20 +322,29 @@ export function ScreenshotOverlay() {
 		out.height = Math.max(1, Math.round(selection.height * outScale));
 		const ctx = out.getContext("2d");
 		if (!ctx) return;
-		ctx.drawImage(
-			source,
-			Math.round(selection.x * outScale),
-			Math.round(selection.y * outScale),
-			out.width,
-			out.height,
-			0,
-			0,
-			out.width,
-			out.height,
-		);
+
+		const sx = Math.round(selection.x * outScale);
+		const sy = Math.round(selection.y * outScale);
+
+		// First, render the crystal-clear baseline desktop capture
+		const bgSource = annotator.image.current?.source ?? loupeSourceRef.current;
+		if (bgSource) {
+			ctx.drawImage(bgSource, sx, sy, out.width, out.height, 0, 0, out.width, out.height);
+		}
+
+		// Second, blend on top the transparent annotation marks (drawings, arrows, text)
+		ctx.drawImage(source, sx, sy, out.width, out.height, 0, 0, out.width, out.height);
 
 		if (!beginLeaving()) return;
-		void window.lyra.screenshot.finish(out.toDataURL("image/png"), latest.settings);
+		const outDataUrl = out.toDataURL("image/png");
+		const outSettings = latest.settings;
+		setSelection(null);
+		setHoveredWindow(null);
+		setReading(null);
+		setPointer(null);
+		setIsAnnotating(false);
+		setDragMode({ kind: "none" });
+		void window.lyra.screenshot.finish(outDataUrl, outSettings);
 	}, [annotator, selection, beginLeaving]);
 
 	useEffect(() => {
@@ -254,7 +353,7 @@ export function ScreenshotOverlay() {
 
 	const handlePointerDown = (e: React.PointerEvent) => {
 		if ((e.target as HTMLElement).closest?.("[data-screenshot-ui]")) return;
-		if (e.button === 2 && loupeHeld && reading) {
+		if (e.button === 2 && reading && !selection) {
 			e.preventDefault();
 			e.stopPropagation();
 			void window.lyra.screenshot.copyColor(reading.hex);
@@ -286,8 +385,7 @@ export function ScreenshotOverlay() {
 		}
 
 		setIsAnnotating(false);
-		setDragMode({ kind: "creating", from: pt });
-		setSelection({ x: pt.x, y: pt.y, width: 0, height: 0 });
+		setDragMode({ kind: "pending", from: pt, snap: hoveredWindow });
 		take();
 	};
 
@@ -295,11 +393,17 @@ export function ScreenshotOverlay() {
 		const pt: Point = { x: e.clientX, y: e.clientY };
 		if (!selection) {
 			setPointer(pt);
-			setLoupeHeld(e.altKey);
+			const sample = sampleLoupeReading(loupeSourceRef.current, pt, initData?.bounds.width ?? window.innerWidth);
+			if (sample) setReading(sample);
 		}
 		const bounds = initData?.bounds ?? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 
-		if (dragMode.kind === "creating") {
+		if (dragMode.kind === "pending") {
+			if (!isDragFrom(dragMode.from, pt)) return;
+			setDragMode({ kind: "creating", from: dragMode.from, snap: dragMode.snap });
+			setHoveredWindow(null);
+			setSelection(clampRect(rectFromPoints(dragMode.from, pt), bounds));
+		} else if (dragMode.kind === "creating") {
 			const rect = clampRect(rectFromPoints(dragMode.from, pt), bounds);
 			setSelection(rect);
 		} else if (dragMode.kind === "moving") {
@@ -325,14 +429,9 @@ export function ScreenshotOverlay() {
 				setCursor(onEdge(selection, pt, EDGE_GRAB) ? "move" : "default");
 				return;
 			}
-			setCursor("crosshair");
+			setCursor("default");
 		} else {
-			setCursor("crosshair");
-			// When there is no active selection, smart-detect hovered window for snapping
-			if (initData?.windows && initData.windows.length > 0) {
-				const matched = findSnapWindow(initData.windows, pt, bounds);
-				setHoveredWindow(matched);
-			}
+			setCursor("default");
 		}
 	};
 
@@ -345,19 +444,17 @@ export function ScreenshotOverlay() {
 			// Ignore DOMException if capture was already released
 		}
 
-		if (dragMode.kind === "creating" && selection) {
-			// A single click without dragging: if we were hovering a window, snap directly to that window
-			if (selection.width < MIN_SELECTION || selection.height < MIN_SELECTION) {
-				if (hoveredWindow && initData) {
-					const snapped = windowToLocalRect(hoveredWindow, initData.bounds);
-					setSelection(snapped);
-					setIsAnnotating(true);
-					setHoveredWindow(null);
-					setCursor("default");
-				} else {
-					setSelection(null);
-				}
-			} else {
+		if (dragMode.kind === "pending" || dragMode.kind === "creating") {
+			const next = initData
+				? finishCaptureGesture(
+					dragMode.kind === "pending"
+						? { kind: "pending", snap: dragMode.snap }
+						: { kind: "creating", snap: dragMode.snap, draft: selection },
+					initData.bounds,
+				)
+				: null;
+			setSelection(next);
+			if (next) {
 				setIsAnnotating(true);
 				setHoveredWindow(null);
 				setCursor("default");
@@ -368,8 +465,11 @@ export function ScreenshotOverlay() {
 
 	const bounds = displayBounds;
 	const physicalWidth = annotator.width || bitmapWidth;
-	// Snapshot pixels → screen pixels, which is the scale the annotator's hit tolerances are in.
-	const zoom = physicalWidth > 0 ? bounds.width / physicalWidth : 1;
+	const physicalHeight = annotator.image.current?.height || Math.round(bounds.height * scale);
+	// 1:1 pixel mapping: width in CSS DIP that exactly matches physical bitmap resolution when scaled by DPR
+	const canvasWidth = annotator.width > 0 && scale > 0 ? annotator.width / scale : bounds.width;
+	const canvasHeight = physicalHeight > 0 && scale > 0 ? physicalHeight / scale : bounds.height;
+	const zoom = snapshotCssZoom(physicalWidth, bounds.width, scale);
 	const hoverRect =
 		!selection && hoveredWindow && initData ? windowToLocalRect(hoveredWindow, initData.bounds) : null;
 	/*
@@ -383,6 +483,8 @@ export function ScreenshotOverlay() {
 	 */
 	const toolbarAt = selection ? toolbarPosition(selection, bounds, { ...TOOLBAR_SIZE, ...toolbarSize }) : null;
 
+	if (!initData) return null;
+
 	return (
 		<div
 			data-screenshot-overlay
@@ -393,7 +495,40 @@ export function ScreenshotOverlay() {
 			onPointerUp={handlePointerUp}
 			onContextMenu={(e) => e.preventDefault()}
 		>
-			<canvas ref={loupeSourceRef} className="pointer-events-none absolute h-0 w-0 opacity-0" aria-hidden="true" />
+			<canvas
+				ref={loupeSourceRef}
+				className="pointer-events-none absolute left-0 top-0 block"
+				style={{
+					width: canvasWidth,
+					height: canvasHeight,
+					opacity: annotator.ready ? 1 : 0,
+					imageRendering: "-webkit-optimize-contrast",
+				}}
+				aria-hidden="true"
+			/>
+			{/* Semi-transparent backdrop with punch-hole cutout for selection or hovered window */}
+			<svg className="pointer-events-none absolute inset-0 h-full w-full">
+				<defs>
+					<mask id="screenshot-punch-mask">
+						<rect width="100%" height="100%" fill="white" />
+						{(selection || hoverRect) && (
+							<rect
+								x={(selection ?? hoverRect)!.x}
+								y={(selection ?? hoverRect)!.y}
+								width={(selection ?? hoverRect)!.width}
+								height={(selection ?? hoverRect)!.height}
+								fill="black"
+							/>
+						)}
+					</mask>
+				</defs>
+				<rect
+					width="100%"
+					height="100%"
+					fill="rgba(0, 0, 0, 0.32)"
+					mask="url(#screenshot-punch-mask)"
+				/>
+			</svg>
 			{/*
 			 * `pointer-events-none`, and everything inside it that is meant to be touched says so
 			 * itself. A full-screen layer that swallowed presses would put itself between the user
@@ -402,12 +537,14 @@ export function ScreenshotOverlay() {
 			<div className="pointer-events-none absolute inset-0">
 			{hoverRect && hoveredWindow && (
 				<div
-					className="pointer-events-none absolute border-2 border-sky-400"
+					data-snap-hover
+					className="pointer-events-none absolute border-sky-400"
 					style={{
 						left: hoverRect.x,
 						top: hoverRect.y,
 						width: hoverRect.width,
 						height: hoverRect.height,
+						boxShadow: "0 0 0 2px rgb(56 189 248)",
 					}}
 				>
 					<div
@@ -424,47 +561,47 @@ export function ScreenshotOverlay() {
 			</div>
 
 			{/*
-			 * The annotator, seen through the selection.
+			 * The annotator, clipped strictly to the selection boundary via clip-path.
 			 *
-			 * The outer frame is the region and clips to it; the inner one carries the full-screen
-			 * canvas back up and left by the region's offset, so the part showing through is exactly
-			 * the part that will be saved. Clipping also takes the canvas out of hit testing outside
-			 * the frame, which is what leaves a press out there free to start a new selection.
+			 * Anchored at the exact full-screen origin (0, 0) matching the backdrop canvas below.
+			 * Using GPU-accelerated clip-path instead of double-nested offset divs prevents
+			 * subpixel rasterization misalignment, eliminating any visual shifting or jumping
+			 * inside the selection rectangle upon snapping or cropping.
 			 */}
-			{isAnnotating && selection && (
+			{isAnnotating && selection && annotator.ready && (
 				<div
-					className="pointer-events-auto absolute overflow-hidden"
+					className="pointer-events-auto absolute left-0 top-0"
 					style={{
-						left: selection.x,
-						top: selection.y,
-						width: selection.width,
-						height: selection.height,
+						width: canvasWidth,
+						height: canvasHeight,
+						clipPath: `inset(${selection.y}px ${Math.max(0, canvasWidth - selection.x - selection.width)}px ${Math.max(0, canvasHeight - selection.y - selection.height)}px ${selection.x}px)`,
 					}}
 				>
-					<div className="absolute" style={{ left: -selection.x, top: -selection.y }}>
-						<AnnotateCanvas
-							annotator={annotator}
-							zoom={zoom}
-							className="bg-transparent"
-							style={{
-								width: bounds.width,
-								height: bounds.height,
-								cursor: annotator.tool === "pen" ? "default" : undefined,
-							}}
-						/>
-					</div>
+					<AnnotateCanvas
+						annotator={annotator}
+						zoom={zoom}
+						className="bg-transparent"
+						transparentBackground={true}
+						style={{
+							width: canvasWidth,
+							height: canvasHeight,
+							cursor: annotator.tool === "pen" ? "default" : undefined,
+							imageRendering: "-webkit-optimize-contrast",
+						}}
+					/>
 				</div>
 			)}
 
 			{/* Selected region borders & resize handles */}
 			{selection && (
 				<div
-					className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+					className="pointer-events-none absolute border-white/90"
 					style={{
 						left: selection.x,
 						top: selection.y,
 						width: selection.width,
 						height: selection.height,
+						boxShadow: "0 0 0 2px rgba(255,255,255,0.9), 0 0 0 3px rgba(0,0,0,0.35)",
 					}}
 				>
 					{HANDLES.map((h) => {
@@ -492,7 +629,7 @@ export function ScreenshotOverlay() {
 			 * bottom-right handle ends with the pointer over it — and a `pointerup` swallowed there
 			 * never reaches the overlay, which is left believing the drag is still going.
 			 */}
-			{!selection && loupeHeld && pointer && annotator.ready && (
+			{!selection && pointer && annotator.ready && (
 				<ScreenshotLoupe
 					source={loupeSourceRef.current}
 					at={pointer}

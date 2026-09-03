@@ -52,6 +52,7 @@ export function detectCodeOrError(text: string): CodeOrErrorMatch {
 			let name = "error-log.txt";
 			if (trimmed.includes("Traceback") || trimmed.includes("File \"")) name = "traceback.txt";
 			else if (trimmed.includes("panic:")) name = "panic.txt";
+			else if (trimmed.includes("[WARN]") || trimmed.includes("[ERROR]")) name = "terminal-log.txt";
 			else if (/at\s+(?:async\s+)?[\w$.<>]+\s+\(/.test(trimmed)) name = "stack-trace.txt";
 			return { isMatch: true, kind: "stack_trace", suggestedName: name };
 		}
@@ -103,7 +104,7 @@ export function parseUserMessageContent(rawText: string): ParsedUserPart[] {
 
 	const parts: ParsedUserPart[] = [];
 
-	// Check for markdown attachment block: ### 附件文件: xxx.txt\n```lang\n...\n```
+	// 1. Check for markdown attachment block: ### 附件文件: xxx.txt\n```lang\n...\n```
 	const attachmentRegex = /### 附件文件: ([^\n]+)\n```([^\n]*)\n([\s\S]*?)```/g;
 	let lastIndex = 0;
 	let match: RegExpExecArray | null;
@@ -125,16 +126,45 @@ export function parseUserMessageContent(rawText: string): ParsedUserPart[] {
 	if (lastIndex < trimmed.length) {
 		const remaining = trimmed.slice(lastIndex).trim();
 		if (remaining) {
-			// If not matched as explicit attachment block, test if the remaining block itself is raw code/stack trace
-			const detected = detectCodeOrError(remaining);
-			if (detected.isMatch) {
+			// 2. Check for standard markdown code block: ```lang\ncode\n```
+			const codeFenceRegex = /```(\w+)?\n([\s\S]*?)\n```/g;
+			let fenceLast = 0;
+			let fenceMatch: RegExpExecArray | null;
+			let foundFence = false;
+
+			while ((fenceMatch = codeFenceRegex.exec(remaining)) !== null) {
+				foundFence = true;
+				if (fenceMatch.index > fenceLast) {
+					const prompt = remaining.slice(fenceLast, fenceMatch.index).trim();
+					if (prompt) parts.push({ type: "text", content: prompt });
+				}
+				const lang = fenceMatch[1]?.trim() || "code";
 				parts.push({
 					type: "attachment",
-					content: remaining,
-					title: detected.suggestedName,
+					content: fenceMatch[2],
+					title: `snippet.${lang === "code" ? "txt" : lang}`,
+					language: lang,
 				});
+				fenceLast = fenceMatch.index + fenceMatch[0].length;
+			}
+
+			if (foundFence) {
+				if (fenceLast < remaining.length) {
+					const tail = remaining.slice(fenceLast).trim();
+					if (tail) parts.push({ type: "text", content: tail });
+				}
 			} else {
-				parts.push({ type: "text", content: remaining });
+				// 3. If not matched as explicit attachment or markdown fence, test if remaining is raw code/stack trace
+				const detected = detectCodeOrError(remaining);
+				if (detected.isMatch) {
+					parts.push({
+						type: "attachment",
+						content: remaining,
+						title: detected.suggestedName,
+					});
+				} else {
+					parts.push({ type: "text", content: remaining });
+				}
 			}
 		}
 	}

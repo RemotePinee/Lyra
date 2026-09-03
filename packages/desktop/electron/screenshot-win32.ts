@@ -11,16 +11,37 @@
 import { join } from "node:path";
 import { app, BrowserWindow, desktopCapturer, globalShortcut, screen } from "electron";
 import type { ScreenshotSettings } from "@lyra/core";
-import { findScreenshotReturnWindow, markScreenshotWindow, ScreenshotRendererGate } from "./screenshot-window.ts";
+import { coverDisplay, findScreenshotReturnWindow, markScreenshotWindow, ScreenshotRendererGate } from "./screenshot-window.ts";
 import { detectVisibleWindows, hwndFromNativeHandle } from "./window-detect.ts";
+import {
+	HWND_BOTTOM,
+	HWND_TOPMOST,
+	SWP_NOACTIVATE,
+	SWP_SHOWWINDOW,
+	win32CaptureDisplay,
+	win32CoverDisplayPhysical,
+	win32RestoreArrowCursor,
+	win32SetForegroundWindow,
+	win32SetWindowPos,
+} from "./window-detect-win32.ts";
 
-let overlayWindows: BrowserWindow[] = [];
-let prewarmedOverlay: BrowserWindow | null = null;
+let residentOverlay: BrowserWindow | null = null;
+let isCapturingActive = false;
 const screenshotRendererGate = new ScreenshotRendererGate();
 
 let cameFromApp = false;
 let screenshotSessionId = 0;
 let escapeShortcutRegistered = false;
+
+function getOffscreenBounds(): Electron.Rectangle {
+	const primary = screen.getPrimaryDisplay();
+	return {
+		x: -32000,
+		y: -32000,
+		width: primary.bounds.width,
+		height: primary.bounds.height,
+	};
+}
 
 function overlayBounds(bounds: Electron.Rectangle): Electron.BrowserWindowConstructorOptions {
 	return {
@@ -30,8 +51,11 @@ function overlayBounds(bounds: Electron.Rectangle): Electron.BrowserWindowConstr
 		height: bounds.height,
 		frame: false,
 		transparent: true,
-		show: false,
-		focusable: false,
+		show: true,
+		focusable: true,
+		thickFrame: false,
+		roundedCorners: false,
+		acceptFirstMouse: true,
 		alwaysOnTop: true,
 		skipTaskbar: true,
 		resizable: false,
@@ -70,8 +94,10 @@ function decorateOverlay(win: BrowserWindow): void {
 	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
 }
 
-function createOverlayWindow(bounds: Electron.Rectangle): BrowserWindow {
-	const win = markScreenshotWindow(new BrowserWindow(overlayBounds(bounds)));
+function createResidentOverlay(): BrowserWindow {
+	const offscreen = getOffscreenBounds();
+	const win = markScreenshotWindow(new BrowserWindow(overlayBounds(offscreen)));
+	win.setIgnoreMouseEvents(true);
 	decorateOverlay(win);
 	if (process.platform === "win32") win.setContentProtection(true);
 	const webContentsId = win.webContents.id;
@@ -83,29 +109,35 @@ function createOverlayWindow(bounds: Electron.Rectangle): BrowserWindow {
 	});
 	win.on("closed", () => {
 		screenshotRendererGate.forget(webContentsId);
+		if (residentOverlay === win) {
+			residentOverlay = null;
+			isCapturingActive = false;
+			setTimeout(() => prewarmWin32Screenshot(), 200);
+		}
 	});
 	loadOverlay(win);
 	return win;
 }
 
 export function prewarmWin32Screenshot(): void {
-	if (prewarmedOverlay && !prewarmedOverlay.isDestroyed()) return;
-	const primary = screen.getPrimaryDisplay();
-	const win = createOverlayWindow(primary.bounds);
-	win.on("closed", () => {
-		if (prewarmedOverlay === win) prewarmedOverlay = null;
-	});
-	prewarmedOverlay = win;
+	if (residentOverlay && !residentOverlay.isDestroyed()) return;
+	residentOverlay = createResidentOverlay();
+	// Warm up koffi FFI bindings, DWM frame sniffing, and GDI capture pipeline offscreen
+	void detectVisibleWindows();
+	try {
+		const primary = screen.getPrimaryDisplay();
+		if (primary) void win32CaptureDisplay(primary);
+	} catch {
+		// Ignore any display capture failure during initial silent prewarm
+	}
 }
 
-function takeOverlayWindow(bounds: Electron.Rectangle): BrowserWindow {
-	if (prewarmedOverlay && !prewarmedOverlay.isDestroyed()) {
-		const win = prewarmedOverlay;
-		prewarmedOverlay = null;
-		win.setBounds(bounds);
-		return win;
+function ensureResidentOverlay(): BrowserWindow {
+	if (residentOverlay && !residentOverlay.isDestroyed()) {
+		return residentOverlay;
 	}
-	return createOverlayWindow(bounds);
+	residentOverlay = createResidentOverlay();
+	return residentOverlay;
 }
 
 function registerScreenshotEscape(): void {
@@ -128,24 +160,29 @@ function unregisterScreenshotEscape(): void {
 	}
 }
 
-async function captureWin32Snapshot(displayId?: number): Promise<{ pixels: Uint8Array; width: number; height: number; scaleFactor: number } | null> {
-	const targetDisplay = displayId !== undefined
-		? screen.getAllDisplays().find((d) => d.id === displayId) ?? screen.getPrimaryDisplay()
-		: screen.getPrimaryDisplay();
-	const scaleFactor = targetDisplay.scaleFactor || 1;
+async function captureWin32Snapshot(display: Electron.Display): Promise<{ pixels: Uint8Array; width: number; height: number; scaleFactor: number } | null> {
+	// First attempt 1:1 hardware pixel capture via Win32 GDI BitBlt (approx 20ms, zero distortion)
+	try {
+		const gdi = win32CaptureDisplay(display);
+		if (gdi && gdi.pixels.length > 0) return gdi;
+	} catch (err) {
+		console.warn("[screenshot] Win32 GDI fast capture failed, falling back to desktopCapturer:", err);
+	}
 
+	const scaleFactor = display.scaleFactor || 1;
 	try {
 		const sources = await desktopCapturer.getSources({
 			types: ["screen"],
 			thumbnailSize: {
-				width: Math.round(targetDisplay.bounds.width * scaleFactor),
-				height: Math.round(targetDisplay.bounds.height * scaleFactor),
+				width: Math.round(display.bounds.width * scaleFactor),
+				height: Math.round(display.bounds.height * scaleFactor),
 			},
 			fetchWindowIcons: false,
 		});
 		if (sources.length === 0) return null;
 
-		const source = sources.find((candidate) => candidate.display_id === String(targetDisplay.id)) ?? sources[0];
+		const source = sources.find((candidate) => candidate.display_id === String(display.id)) ?? sources[0];
+		if (!source) return null;
 		const image = source.thumbnail;
 		if (image.isEmpty()) return null;
 
@@ -158,8 +195,33 @@ async function captureWin32Snapshot(displayId?: number): Promise<{ pixels: Uint8
 		}
 		return { pixels, width: size.width, height: size.height, scaleFactor };
 	} catch (err) {
-		console.error("[screenshot] Win32 display snapshot failed:", err);
+		console.error("[screenshot] Win32 display snapshot fallback failed:", err);
 		return null;
+	}
+}
+
+let awaitingPaintWin32 = false;
+let paintFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function overlayPaintedWin32(): void {
+	if (paintFallbackTimer) {
+		clearTimeout(paintFallbackTimer);
+		paintFallbackTimer = null;
+	}
+	if (!awaitingPaintWin32 || !residentOverlay || residentOverlay.isDestroyed()) return;
+	awaitingPaintWin32 = false;
+	try {
+		residentOverlay.setOpacity(1);
+		const hwnd = hwndFromNativeHandle(residentOverlay.getNativeWindowHandle());
+		if (hwnd) {
+			const SWP_NOMOVE_NOSIZE = 0x0001 | 0x0002;
+			win32SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE_NOSIZE | SWP_SHOWWINDOW);
+			win32SetForegroundWindow(hwnd);
+		}
+		residentOverlay.show();
+		residentOverlay.focus();
+	} catch {
+		// Ignore any window teardown error
 	}
 }
 
@@ -169,18 +231,36 @@ export function revealWin32ScreenshotOverlay(webContentsId: number): void {
 
 export function closeWin32Screenshot(options?: { restoreFocus?: boolean; foreground?: boolean; prewarm?: boolean }): void {
 	unregisterScreenshotEscape();
-	const activeOverlays = overlayWindows;
-	const previousPrewarm = prewarmedOverlay;
-	const main = findScreenshotReturnWindow(BrowserWindow.getAllWindows(), activeOverlays, previousPrewarm);
+	isCapturingActive = false;
+	awaitingPaintWin32 = false;
+	if (paintFallbackTimer) {
+		clearTimeout(paintFallbackTimer);
+		paintFallbackTimer = null;
+	}
+	win32RestoreArrowCursor();
 
-	for (const win of overlayWindows) {
-		if (!win.isDestroyed()) {
-			win.destroy();
+	const main = findScreenshotReturnWindow(BrowserWindow.getAllWindows(), [], residentOverlay);
+
+	if (residentOverlay && !residentOverlay.isDestroyed()) {
+		try {
+			residentOverlay.setOpacity(0);
+			residentOverlay.webContents.send("screenshot:reset");
+			residentOverlay.setIgnoreMouseEvents(true);
+			const hwnd = hwndFromNativeHandle(residentOverlay.getNativeWindowHandle());
+			const currentSize = residentOverlay.getSize();
+			win32SetWindowPos(
+				hwnd,
+				HWND_BOTTOM,
+				-32000,
+				-32000,
+				currentSize[0] || 1920,
+				currentSize[1] || 1080,
+				SWP_NOACTIVATE,
+			);
+		} catch (err) {
+			console.warn("[screenshot] failed to park overlay window offscreen:", err);
 		}
 	}
-	overlayWindows = [];
-
-	if (options?.prewarm !== false) prewarmWin32Screenshot();
 
 	if (options?.restoreFocus === false) return;
 	if (!main) return;
@@ -198,67 +278,81 @@ export function closeWin32Screenshot(options?: { restoreFocus?: boolean; foregro
 export async function startWin32Screenshot(settings?: ScreenshotSettings): Promise<void> {
 	cameFromApp = BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isFocused());
 
-	closeWin32Screenshot({ restoreFocus: false, prewarm: false });
-
 	const cursorPoint = screen.getCursorScreenPoint();
 	const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
 	const { bounds } = currentDisplay;
-	const scaleFactor = currentDisplay.scaleFactor || 1;
 	const session = ++screenshotSessionId;
 
-	const snapshotPromise = captureWin32Snapshot(currentDisplay.id);
-
-	const win = takeOverlayWindow(bounds);
-	overlayWindows.push(win);
+	const win = ensureResidentOverlay();
+	isCapturingActive = true;
 	registerScreenshotEscape();
-	win.on("closed", () => {
-		overlayWindows = overlayWindows.filter((w) => w !== win);
-	});
 
-	const base = { bounds, scaleFactor, settings, session, renderMode: "live" };
-	let rendererReady = false;
-	let snapshotData: { pixels: Uint8Array; width: number; height: number } | null = null;
-	let detectedWindows: Awaited<ReturnType<typeof detectVisibleWindows>> | undefined;
-	let revealed = false;
-	const webContentsId = win.webContents.id;
-
-	const sendState = () => {
-		if (!rendererReady || win.isDestroyed() || win.webContents.isDestroyed()) return;
-		win.webContents.send("screenshot:init", { ...base, snapshot: snapshotData, windows: detectedWindows });
-	};
-	const reveal = () => {
-		if (revealed || !rendererReady || win.isDestroyed() || win.webContents.isDestroyed()) return;
-		win.showInactive();
-		revealed = true;
-	};
-	screenshotRendererGate.whenReady(webContentsId, () => {
-		rendererReady = true;
-		sendState();
-		reveal();
-	});
-
-	let excludeHwnd: bigint | undefined;
+	let hwnd: bigint | undefined;
 	try {
-		excludeHwnd = hwndFromNativeHandle(win.getNativeWindowHandle());
+		hwnd = hwndFromNativeHandle(win.getNativeWindowHandle());
 	} catch {
-		excludeHwnd = undefined;
+		hwnd = undefined;
 	}
 
-	void detectVisibleWindows({ excludeHwnd, excludeBounds: bounds }).then((windows) => {
-		detectedWindows = windows;
-		sendState();
-	});
+	// 1. Concurrently capture pristine 1:1 screen bitmap and sniff snappable windows BEFORE revealing
+	const [snapshot, windows] = await Promise.all([
+		captureWin32Snapshot(currentDisplay),
+		detectVisibleWindows({ excludeHwnd: hwnd, excludeBounds: bounds }).catch(() => []),
+	]);
 
-	const snapshot = await snapshotPromise;
-	if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-	if (!snapshot) {
+	if (!snapshot || win.isDestroyed() || session !== screenshotSessionId || !isCapturingActive) {
 		closeWin32Screenshot({ restoreFocus: false });
 		return;
 	}
-	snapshotData = { pixels: snapshot.pixels, width: snapshot.width, height: snapshot.height };
-	sendState();
+
+	const freshCursorPoint = screen.getCursorScreenPoint();
+	const cursor = { x: freshCursorPoint.x - bounds.x, y: freshCursorPoint.y - bounds.y };
+	const webContentsId = win.webContents.id;
+
+	const snappableWindows = windows.map((w, idx) => ({
+		id: idx + 1,
+		title: w.title,
+		x: w.x,
+		y: w.y,
+		width: w.width,
+		height: w.height,
+	}));
+
+	// Send complete initial state in a single atomic dispatch BEFORE showing window so no stale frame appears
+	const initPayload = {
+		bounds,
+		scaleFactor: snapshot.scaleFactor,
+		settings,
+		session,
+		renderMode: "snapshot" as const,
+		cursor,
+		snapshot: { pixels: snapshot.pixels, width: snapshot.width, height: snapshot.height },
+		windows: snappableWindows,
+	};
+
+	// 2. Keep window at zero opacity while positioned on target display until first frame is painted
+	win.setIgnoreMouseEvents(false);
+	win.setOpacity(0);
+	coverDisplay(win, bounds);
+	try {
+		win32CoverDisplayPhysical(win.getNativeWindowHandle(), currentDisplay);
+	} catch (err) {
+		console.error("[screenshot] failed to set physical display coverage:", err);
+	}
+
+	awaitingPaintWin32 = true;
+	if (paintFallbackTimer) clearTimeout(paintFallbackTimer);
+	// 80ms fallback: reveal window even if renderer paint event was dropped
+	paintFallbackTimer = setTimeout(() => {
+		overlayPaintedWin32();
+	}, 80);
+
+	screenshotRendererGate.whenReady(webContentsId, () => {
+		if (win.isDestroyed() || win.webContents.isDestroyed() || !isCapturingActive) return;
+		win.webContents.send("screenshot:init", initPayload);
+	});
 }
 
 export function hasActiveWin32Screenshot(): boolean {
-	return overlayWindows.some((window) => !window.isDestroyed());
+	return isCapturingActive && !!residentOverlay && !residentOverlay.isDestroyed();
 }

@@ -81,12 +81,11 @@ export function insideRect(rect: Rect, at: Point): boolean {
 
 /** A rectangle from two corners, in either order. */
 export function rectFromPoints(a: Point, b: Point): Rect {
-	return {
-		x: Math.min(a.x, b.x),
-		y: Math.min(a.y, b.y),
-		width: Math.abs(a.x - b.x),
-		height: Math.abs(a.y - b.y),
-	};
+	const x = Math.round(Math.min(a.x, b.x));
+	const y = Math.round(Math.min(a.y, b.y));
+	const width = Math.round(Math.abs(a.x - b.x));
+	const height = Math.round(Math.abs(a.y - b.y));
+	return { x, y, width, height };
 }
 
 /**
@@ -116,17 +115,17 @@ export function moveRect(rect: Rect, dx: number, dy: number, within: { width: nu
 	 * with its size intact, not shrink it. `Math.max(0, …)` on the low side and the screen's extent
 	 * minus the selection on the high side is exactly that.
 	 */
-	const x = Math.min(Math.max(0, rect.x + dx), Math.max(0, within.width - rect.width));
-	const y = Math.min(Math.max(0, rect.y + dy), Math.max(0, within.height - rect.height));
+	const x = Math.round(Math.min(Math.max(0, rect.x + dx), Math.max(0, within.width - rect.width)));
+	const y = Math.round(Math.min(Math.max(0, rect.y + dy), Math.max(0, within.height - rect.height)));
 	return { ...rect, x, y };
 }
 
 /** The selection clipped to the screen, for a resize that ran past the edge. */
 export function clampRect(rect: Rect, within: { width: number; height: number }): Rect {
-	const left = Math.max(0, rect.x);
-	const top = Math.max(0, rect.y);
-	const right = Math.min(within.width, rect.x + rect.width);
-	const bottom = Math.min(within.height, rect.y + rect.height);
+	const left = Math.round(Math.max(0, rect.x));
+	const top = Math.round(Math.max(0, rect.y));
+	const right = Math.round(Math.min(within.width, rect.x + rect.width));
+	const bottom = Math.round(Math.min(within.height, rect.y + rect.height));
 	return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
@@ -164,17 +163,78 @@ export function findSnapWindow(windows: SnappableWindow[], at: Point, bounds: { 
  * clamped within the current display's boundaries.
  */
 export function windowToLocalRect(win: SnappableWindow, bounds: { x: number; y: number; width: number; height: number }): Rect {
-	const localX = win.x - bounds.x;
-	const localY = win.y - bounds.y;
+	const localX = Math.round(win.x - bounds.x);
+	const localY = Math.round(win.y - bounds.y);
+	const width = Math.round(win.width);
+	const height = Math.round(win.height);
 	return clampRect(
 		{
 			x: localX,
 			y: localY,
-			width: win.width,
-			height: win.height,
+			width,
+			height,
 		},
 		bounds,
 	);
+}
+
+/**
+ * How far the pointer can wander before a press is a drag, not a click-to-snap.
+ *
+ * `MIN_SELECTION` is a crop-size floor (10px). Using that as the click/drag gate
+ * would turn a slightly shaky click into a 0×0 flash then a snap. WeChat treats
+ * a small jiggle as "I meant this window".
+ */
+export const SNAP_CLICK_SLOP = 4;
+export const MIN_SELECTION = 10;
+
+export function isDragFrom(origin: Point, at: Point, slop = SNAP_CLICK_SLOP): boolean {
+	const dx = at.x - origin.x;
+	const dy = at.y - origin.y;
+	return dx * dx + dy * dy > slop * slop;
+}
+
+export type CaptureGesture =
+	| { kind: "pending"; snap: SnappableWindow | null }
+	| { kind: "creating"; snap: SnappableWindow | null; draft: Rect | null };
+
+/**
+ * What the selection becomes when the pointer is released.
+ *
+ * A click (or a drag that never grew past `MIN_SELECTION`) confirms the hover
+ * target. A real drag keeps the draft. Returning null rather than a 0×0 box is
+ * what stops the overlay flashing an empty frame on mouse-up.
+ */
+export function finishCaptureGesture(
+	gesture: CaptureGesture,
+	bounds: { x: number; y: number; width: number; height: number },
+): Rect | null {
+	const fromSnap = (snap: SnappableWindow | null): Rect | null => {
+		if (!snap) return null;
+		const snapped = windowToLocalRect(snap, bounds);
+		if (snapped.width < MIN_SELECTION || snapped.height < MIN_SELECTION) return null;
+		return snapped;
+	};
+
+	if (gesture.kind === "creating") {
+		const draft = gesture.draft;
+		if (draft && draft.width >= MIN_SELECTION && draft.height >= MIN_SELECTION) return draft;
+	}
+	return fromSnap(gesture.snap);
+}
+
+/**
+ * CSS zoom that maps the snapshot bitmap onto the overlay.
+ *
+ * A 1–2px capture mismatch used to stretch the whole image, which on mouse-up
+ * looked like the selection jumped. Prefer the display's own scale when the
+ * bitmap is that close; only fall back to a ratio when it is genuinely off.
+ */
+export function snapshotCssZoom(physicalWidth: number, boundsWidth: number, scale: number): number {
+	if (physicalWidth <= 0) return 1;
+	const expected = Math.round(boundsWidth * scale);
+	if (Math.abs(physicalWidth - expected) <= 2) return 1 / scale;
+	return boundsWidth / physicalWidth;
 }
 
 /** How far the toolbar sits from the selection, and from the edge of the screen. */

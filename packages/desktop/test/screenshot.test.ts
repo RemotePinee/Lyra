@@ -3,13 +3,20 @@ import assert from "node:assert/strict";
 import { resolveSaveDirectory } from "../electron/screenshot-path.ts";
 import {
 	applyThemeToWindows,
+	coverDisplay,
 	findScreenshotReturnWindow,
 	isScreenshotWindow,
 	markScreenshotWindow,
 	ScreenshotRendererGate,
 	shouldApplyWindowTheme,
 } from "../electron/screenshot-window.ts";
-import { hwndFromNativeHandle, isIgnoredWindowClass, readNullTerminatedUtf16, sameBounds } from "../electron/window-detect.ts";
+import {
+	hwndFromNativeHandle,
+	isIgnoredWindowClass,
+	physicalRectToDip,
+	readNullTerminatedUtf16,
+	sameBounds,
+} from "../electron/window-detect.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -120,4 +127,52 @@ test("a screenshot waits for a renderer that has not mounted yet", () => {
 	assert.equal(reveals, 0);
 	gate.markReady(7);
 	assert.equal(reveals, 1);
+});
+
+test("physicalRectToDip rounds edges then subtracts so x+width is the right edge", () => {
+	const scale = 1.5;
+	const toDip = (point: { x: number; y: number }) => ({ x: point.x / scale, y: point.y / scale });
+	// Independent rounding of width would be round(151 / 1.5) = 101, which puts the right edge
+	// one DIP past the window. Rounding both corners first keeps the box closed.
+	const dip = physicalRectToDip({ left: 16, top: 16, right: 167, bottom: 166 }, toDip);
+	assert.deepEqual(dip, { x: 11, y: 11, width: 100, height: 100 });
+	assert.equal(dip.x + dip.width, Math.round(167 / scale));
+});
+
+test("physicalRectToDip stays closed at 125% as well as 150%", () => {
+	const scale = 1.25;
+	const toDip = (point: { x: number; y: number }) => ({ x: point.x / scale, y: point.y / scale });
+	// Independent rounding: round(2/1.25)+round(802/1.25) = 2+642 = 644, but the right edge
+	// is round(804/1.25) = 643. Rounding corners first is the closed box.
+	const dip = physicalRectToDip({ left: 2, top: 2, right: 804, bottom: 804 }, toDip);
+	assert.equal(dip.x + dip.width, Math.round(804 / scale));
+	assert.equal(dip.y + dip.height, Math.round(804 / scale));
+	assert.deepEqual(dip, { x: 2, y: 2, width: 641, height: 641 });
+});
+
+test("coverDisplay writes content bounds, not only the outer frame", () => {
+	const calls: string[] = [];
+	const bounds = { x: 0, y: 0, width: 1280, height: 800 };
+	coverDisplay(
+		{
+			setBounds: (next) => calls.push(`bounds:${next.x},${next.y},${next.width},${next.height}`),
+			setContentBounds: (next) => calls.push(`content:${next.x},${next.y},${next.width},${next.height}`),
+		},
+		bounds,
+	);
+	assert.deepEqual(calls, ["bounds:0,0,1280,800", "content:0,0,1280,800"]);
+});
+
+test("coverDisplay still applies outer bounds if content bounds reject", () => {
+	const calls: string[] = [];
+	coverDisplay(
+		{
+			setBounds: (next) => calls.push(`bounds:${next.width}`),
+			setContentBounds: () => {
+				throw new Error("unsupported");
+			},
+		},
+		{ x: 0, y: 0, width: 1280, height: 800 },
+	);
+	assert.deepEqual(calls, ["bounds:1280"]);
 });

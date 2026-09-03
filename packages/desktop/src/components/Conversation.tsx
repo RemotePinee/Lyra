@@ -67,6 +67,7 @@ export const Conversation = memo(function Conversation() {
   }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
+  const lastClientWidth = useRef(0);
   /**
    * True for the first frame after a session change.
    *
@@ -122,6 +123,44 @@ export const Conversation = memo(function Conversation() {
     [activeSessionId],
   );
 
+  const handleResize = useCallback(
+    (el: HTMLDivElement) => {
+      if (gliding.current) return;
+      const widthChanged = lastClientWidth.current !== 0 && lastClientWidth.current !== el.clientWidth;
+      lastClientWidth.current = el.clientWidth;
+
+      // When width changes (e.g. sidebar toggle or window resize), markdown reflows.
+      // In that case, do not touch scrollTop to prevent text from jumping upward.
+      if (widthChanged) {
+        if (pinnedToBottom.current) {
+          setAway(false);
+          if (activeSessionId) {
+            const cache = useApp.getState().sessionCache;
+            const currentEntry = cache[activeSessionId];
+            if (currentEntry) {
+              currentEntry.scrollTop = el.scrollTop;
+              currentEntry.pinnedToBottom = true;
+            }
+          }
+          return;
+        }
+        updateScrollState(el);
+        return;
+      }
+
+      // Vertical content height changed (e.g. indicator unfolded, card expanded).
+      // If pinned to bottom, keep following the bottom so indicators never get masked by bottom fade.
+      if (pinnedToBottom.current) {
+        el.scrollTop = el.scrollHeight;
+        updateScrollState(el);
+        return;
+      }
+
+      updateScrollState(el);
+    },
+    [activeSessionId, updateScrollState],
+  );
+
 	/*
 	 * Before paint, not after.
 	 *
@@ -146,7 +185,7 @@ export const Conversation = memo(function Conversation() {
 		 * appears or completes — the moments that actually change the page height.
 		 */
 		setMissed(false);
-	}, [messages, toolRunCount, updateScrollState]);
+	}, [messages, toolRunCount, running, answering, updateScrollState]);
 
   /**
    * Ride down to the newest message, on a curve, without being interrupted on the way.
@@ -245,6 +284,19 @@ export const Conversation = memo(function Conversation() {
   const hidden = Math.max(0, allRuns.length - windowSize);
   const visibleRuns = hidden > 0 ? allRuns.slice(hidden) : allRuns;
 
+  const handleIndicatorTransition = useCallback(
+    (e: React.TransitionEvent<HTMLDivElement>) => {
+      // Only care about height transitions on the reveal container itself
+      if (e.target !== e.currentTarget || e.propertyName !== "grid-template-rows") return;
+      const el = scrollRef.current;
+      if (el && pinnedToBottom.current) {
+        el.scrollTop = el.scrollHeight;
+        updateScrollState(el);
+      }
+    },
+    [updateScrollState],
+  );
+
   return (
     <div ref={column} className="flex min-h-0 flex-1 flex-col">
       {/*
@@ -280,11 +332,11 @@ export const Conversation = memo(function Conversation() {
       )}
 
       <Scroller
-        className="flex-1"
+        className="flex-1 ly-transcript-scroll"
         scrollRef={scrollRef}
         contentClassName={compact ? "px-4" : "px-8"}
         onScroll={updateScrollState}
-        onResize={updateScrollState}
+        onResize={handleResize}
       >
         {/*
          * Keyed on the session so switching plays a short fade rather than swapping one
@@ -388,7 +440,12 @@ export const Conversation = memo(function Conversation() {
            * Folded rather than removed, so the height goes continuously — which is the whole
            * reason it was made to stay put in the first place.
            */}
-          <div className="ly-reveal" data-open={running && !answering} aria-hidden={!running || answering}>
+          <div
+            className="ly-reveal"
+            data-open={running && !answering}
+            aria-hidden={!running || answering}
+            onTransitionEnd={handleIndicatorTransition}
+          >
             <div>
               <div>{running && <RunningIndicator />}</div>
             </div>

@@ -12,14 +12,20 @@ import { test } from "node:test";
 
 import {
 	clampRect,
+	findSnapWindow,
+	finishCaptureGesture,
 	handlePoint,
 	hitHandle,
 	insideRect,
+	isDragFrom,
 	moveRect,
 	rectFromPoints,
 	resizeRect,
+	snapshotCssZoom,
 	toolbarPosition,
+	windowToLocalRect,
 	HANDLES,
+	SNAP_CLICK_SLOP,
 } from "../src/components/image/screenshot-geometry.ts";
 
 const rect = { x: 100, y: 100, width: 200, height: 100 };
@@ -183,4 +189,67 @@ test("with room on both sides the bubble does not change where the bar goes", ()
 		toolbarPosition(roomy2, screen, toolbar, { height: 34 }),
 		toolbarPosition(roomy2, screen, toolbar),
 	);
+});
+
+test("hover-snap hits the top-most window under the pointer in overlay-local space", () => {
+	const bounds = { x: 100, y: 50, width: 800, height: 600 };
+	const behind = { id: 1, title: "behind", x: 100, y: 50, width: 800, height: 600 };
+	const front = { id: 2, title: "front", x: 140, y: 90, width: 200, height: 160 };
+	assert.equal(findSnapWindow([front, behind], { x: 50, y: 50 }, bounds)?.id, 2);
+	assert.equal(findSnapWindow([front, behind], { x: 10, y: 10 }, bounds)?.id, 1);
+	assert.equal(findSnapWindow([front, behind], { x: -1, y: 10 }, bounds), null);
+});
+
+test("windowToLocalRect subtracts the display origin and stays on screen", () => {
+	const bounds = { x: 100, y: 50, width: 800, height: 600 };
+	assert.deepEqual(
+		windowToLocalRect({ id: 1, title: "app", x: 140, y: 90, width: 200, height: 160 }, bounds),
+		{ x: 40, y: 40, width: 200, height: 160 },
+	);
+	assert.deepEqual(
+		windowToLocalRect({ id: 1, title: "off", x: 80, y: 30, width: 40, height: 40 }, bounds),
+		{ x: 0, y: 0, width: 20, height: 20 },
+	);
+	assert.deepEqual(
+		windowToLocalRect({ id: 1, title: "spill", x: 850, y: 600, width: 100, height: 100 }, bounds),
+		{ x: 750, y: 550, width: 50, height: 50 },
+	);
+});
+
+test("a click stays a click until the pointer actually leaves the slop", () => {
+	const origin = { x: 100, y: 100 };
+	assert.equal(isDragFrom(origin, { x: 103, y: 102 }), false);
+	assert.equal(isDragFrom(origin, { x: origin.x + SNAP_CLICK_SLOP, y: origin.y }), false);
+	assert.equal(isDragFrom(origin, { x: 105, y: 100 }), true);
+});
+
+test("releasing a click confirms the hovered window instead of a 0×0 box", () => {
+	const bounds = { x: 0, y: 0, width: 1280, height: 800 };
+	const snap = { id: 1, title: "app", x: 80, y: 60, width: 640, height: 480 };
+	assert.deepEqual(
+		finishCaptureGesture({ kind: "pending", snap }, bounds),
+		{ x: 80, y: 60, width: 640, height: 480 },
+	);
+	assert.equal(finishCaptureGesture({ kind: "pending", snap: null }, bounds), null);
+});
+
+test("a real drag keeps the draft; a tiny drag falls back to the snap", () => {
+	const bounds = { x: 0, y: 0, width: 1280, height: 800 };
+	const snap = { id: 1, title: "app", x: 80, y: 60, width: 640, height: 480 };
+	const draft = { x: 10, y: 10, width: 400, height: 300 };
+	assert.deepEqual(
+		finishCaptureGesture({ kind: "creating", snap, draft }, bounds),
+		draft,
+	);
+	assert.deepEqual(
+		finishCaptureGesture({ kind: "creating", snap, draft: { x: 10, y: 10, width: 4, height: 4 } }, bounds),
+		{ x: 80, y: 60, width: 640, height: 480 },
+	);
+});
+
+test("snapshot zoom uses the display scale when the bitmap is a pixel or two off", () => {
+	assert.equal(snapshotCssZoom(1920, 1280, 1.5), 1 / 1.5);
+	assert.equal(snapshotCssZoom(1921, 1280, 1.5), 1 / 1.5);
+	assert.equal(snapshotCssZoom(2000, 1280, 1.5), 1280 / 2000);
+	assert.equal(snapshotCssZoom(0, 1280, 1.5), 1);
 });

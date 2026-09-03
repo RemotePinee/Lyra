@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { app, BrowserWindow, desktopCapturer, globalShortcut, screen, systemPreferences } from "electron";
 import type { ScreenshotSettings } from "@lyra/core";
 import { listDarwinWindows } from "./screenshot-darwin-windows.ts";
+import { coverDisplay } from "./screenshot-window.ts";
 
 let overlay: BrowserWindow | null = null;
 let overlayLoading: Promise<BrowserWindow> | null = null;
@@ -108,6 +109,7 @@ function ensureDarwinOverlay(): Promise<BrowserWindow> {
 		fullscreenable: false,
 		hasShadow: false,
 		acceptFirstMouse: true,
+		roundedCorners: false,
 		backgroundColor: "#00000000",
 		enableLargerThanScreen: true,
 		webPreferences: {
@@ -121,7 +123,7 @@ function ensureDarwinOverlay(): Promise<BrowserWindow> {
 
 	win.setAlwaysOnTop(true, "screen-saver");
 	win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
-	win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+	coverDisplay(win, bounds);
 
 	win.on("closed", () => {
 		if (overlay === win) overlay = null;
@@ -275,7 +277,7 @@ export async function startDarwinScreenshot(settings?: ScreenshotSettings): Prom
 	if (!snapshot || win.isDestroyed()) return;
 	captureActive = true;
 
-	win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+	coverDisplay(win, bounds);
 	win.setIgnoreMouseEvents(false);
 	win.setOpacity(1);
 
@@ -329,6 +331,7 @@ export async function startDarwinScreenshot(settings?: ScreenshotSettings): Prom
 		scaleFactor: snapshot.scaleFactor,
 		settings,
 		renderMode: "snapshot",
+		cursor: { x: cursorPoint.x - bounds.x, y: cursorPoint.y - bounds.y },
 	});
 }
 

@@ -605,11 +605,16 @@ export interface LyraApi {
 			scaleFactor: number;
 			settings?: ScreenshotSettings;
 			windows?: { id: number | string; title: string; x: number; y: number; width: number; height: number }[];
+			renderMode?: "live" | "snapshot";
+			/** Overlay-local DIP of the cursor at session start, so hover-snap paints before any pointermove. */
+			cursor?: { x: number; y: number };
 		}) => void): () => void;
 		/** Say the overlay page is mounted. A prewarmed window already did this while hidden. */
 		ready(): void;
 		/** Say the overlay snapshot has been drawn into the canvas. */
 		painted?(): void;
+		/** Notify the overlay renderer to discard stale selection and snapshot before reuse. */
+		onReset?(handler: () => void): () => void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;

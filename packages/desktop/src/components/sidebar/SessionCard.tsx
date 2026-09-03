@@ -112,6 +112,7 @@ export function SessionCard({
 	anchor,
 	project,
 	leaving,
+	placement = "side",
 }: {
 	session: SessionMeta;
 	/** The row's rectangle, in viewport coordinates. */
@@ -120,6 +121,8 @@ export function SessionCard({
 	project?: string;
 	/** Playing its exit; see `useSessionCard`. */
 	leaving?: boolean;
+	/** Whether placed to the side of a sidebar row or below a top tab bar item */
+	placement?: "side" | "bottom";
 }) {
 	const card = useRef<HTMLDivElement>(null);
 	const [at, setAt] = useState<{ left: number; top: number } | null>(null);
@@ -135,11 +138,19 @@ export function SessionCard({
 	useLayoutEffect(() => {
 		const box = card.current?.getBoundingClientRect();
 		if (!box) return;
-		const right = anchor.right + GAP;
-		const left = right + box.width > window.innerWidth - GAP ? anchor.left - GAP - box.width : right;
-		const top = Math.min(Math.max(GAP, anchor.top - 6), window.innerHeight - box.height - GAP);
-		setAt({ left: Math.max(GAP, left), top });
-	}, [anchor]);
+		if (placement === "bottom") {
+			// Placed below the tab item
+			const idealLeft = anchor.left + anchor.width / 2 - box.width / 2;
+			const left = Math.min(Math.max(GAP, idealLeft), window.innerWidth - box.width - GAP);
+			const top = anchor.bottom + GAP;
+			setAt({ left, top });
+		} else {
+			const right = anchor.right + GAP;
+			const left = right + box.width > window.innerWidth - GAP ? anchor.left - GAP - box.width : right;
+			const top = Math.min(Math.max(GAP, anchor.top - 6), window.innerHeight - box.height - GAP);
+			setAt({ left: Math.max(GAP, left), top });
+		}
+	}, [anchor, placement]);
 
 	const usage = session.usage;
 	const hit = cacheHitRate(usage);
@@ -150,7 +161,13 @@ export function SessionCard({
 			role="tooltip"
 			style={{ zIndex: CARD_Z, left: at?.left ?? -9999, top: at?.top ?? -9999, opacity: at ? undefined : 0 }}
 			className={`ly-glass-solid pointer-events-none fixed w-[248px] overflow-hidden rounded-[12px] border border-line-soft ${
-				leaving ? "ly-card-out" : at ? "ly-card-in" : ""
+				leaving
+					? "ly-card-out"
+					: at
+						? placement === "bottom"
+							? "ly-card-in-down"
+							: "ly-card-in"
+						: ""
 			}`}
 		>
 			<div className="flex items-start gap-2 px-3 pt-2.5 pb-2">
@@ -219,6 +236,7 @@ export function useSessionCard(): {
 	const [leaving, setLeaving] = useState(false);
 	const open = useRef<number | undefined>(undefined);
 	const close = useRef<number | undefined>(undefined);
+	const targetEl = useRef<HTMLElement | null>(null);
 
 	const dismiss = useCallback(() => {
 		window.clearTimeout(open.current);
@@ -231,17 +249,50 @@ export function useSessionCard(): {
 		const unsubscribe = onTooltipSuppressedChange((suppressed) => {
 			if (suppressed) dismiss();
 		});
-		const hide = () => dismiss();
-		window.addEventListener("scroll", hide, true);
-		window.addEventListener("wheel", hide, true);
-		window.addEventListener("blur", hide);
+
+		const onScroll = (event: Event) => {
+			const el = targetEl.current;
+			if (!el || !el.isConnected) {
+				dismiss();
+				return;
+			}
+			const scrollTarget = event.target;
+			// Only dismiss if the scrolling container actually contains the row/tab
+			// (i.e. sidebar list or tab bar being scrolled). Unrelated scrollers
+			// like conversation stream chasing bottom must not dismiss this card.
+			if (
+				scrollTarget === document ||
+				scrollTarget === window ||
+				(scrollTarget instanceof Node && scrollTarget.contains(el))
+			) {
+				dismiss();
+			}
+		};
+
+		const onWheel = (event: WheelEvent) => {
+			const el = targetEl.current;
+			if (!el || !el.isConnected) {
+				dismiss();
+				return;
+			}
+			// Only dismiss if wheeling on the row itself or its scrolling container.
+			if (event.target instanceof Node && (el.contains(event.target) || event.target.contains(el))) {
+				dismiss();
+			}
+		};
+
+		window.addEventListener("scroll", onScroll, true);
+		window.addEventListener("wheel", onWheel, { capture: true, passive: true });
+		window.addEventListener("resize", dismiss);
+		window.addEventListener("blur", dismiss);
 		return () => {
 			unsubscribe();
 			window.clearTimeout(open.current);
 			window.clearTimeout(close.current);
-			window.removeEventListener("scroll", hide, true);
-			window.removeEventListener("wheel", hide, true);
-			window.removeEventListener("blur", hide);
+			window.removeEventListener("scroll", onScroll, true);
+			window.removeEventListener("wheel", onWheel, true);
+			window.removeEventListener("resize", dismiss);
+			window.removeEventListener("blur", dismiss);
 		};
 	}, [dismiss]);
 
@@ -255,7 +306,9 @@ export function useSessionCard(): {
 			},
 			onMouseEnter: (event) => {
 				if (isTooltipSuppressed()) return;
-				const box = event.currentTarget.getBoundingClientRect();
+				const current = event.currentTarget;
+				targetEl.current = current;
+				const box = current.getBoundingClientRect();
 				window.clearTimeout(open.current);
 				window.clearTimeout(close.current);
 				// Coming back before the exit finished is a re-entry, not a second arrival.

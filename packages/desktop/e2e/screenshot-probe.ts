@@ -292,7 +292,7 @@ try {
 				await call(socket, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
 				await pause(20);
 				snap = await run<{ title: string; width: number; height: number } | null>(`(() => {
-					const box = document.querySelector(".border-sky-400");
+					const box = document.querySelector("[data-snap-hover], .border-sky-400");
 					if (!box) return null;
 					const rect = box.getBoundingClientRect();
 					return { title: box.textContent.trim(), width: Math.round(rect.width), height: Math.round(rect.height) };

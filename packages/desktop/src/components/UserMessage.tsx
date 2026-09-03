@@ -86,7 +86,7 @@ function CollapsibleCodeCard({ name, content }: { name: string; content: string 
  * renders natural prompts and code/error attachments separately.
  */
 function SmartUserContent({ text }: { text: string }) {
-  // 1. If text has explicit attached files format `### 附件文件: filename\n\`\`\`\n...`
+  // 1. If text has explicit attached files format `### 附件文件: filename\n```\n...`
   const attachedFileRegex = /### 附件文件:\s*([^\n]+)\n```(?:\w+)?\n([\s\S]*?)\n```/g;
   const matches = [...text.matchAll(attachedFileRegex)];
 
@@ -106,7 +106,30 @@ function SmartUserContent({ text }: { text: string }) {
     );
   }
 
-  // 2. If user pasted a code/error block directly without explicit attachment header
+  // 2. If text contains standard markdown code fence: ```lang\ncode\n```
+  const codeFenceRegex = /```(\w+)?\n([\s\S]*?)\n```/g;
+  const fenceMatches = [...text.matchAll(codeFenceRegex)];
+
+  if (fenceMatches.length > 0) {
+    const nonCodePrompt = text.replace(codeFenceRegex, "").trim();
+    return (
+      <div className="space-y-1.5">
+        {fenceMatches.map((m, idx) => {
+          const lang = m[1]?.trim() || "code";
+          return (
+            <CollapsibleCodeCard key={idx} name={`snippet.${lang === "code" ? "txt" : lang}`} content={m[2]} />
+          );
+        })}
+        {nonCodePrompt && (
+          <p className="text-body leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-ink">
+            {nonCodePrompt}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // 3. If user pasted a code/error block directly without explicit attachment header
   const match = extractCodeOrErrorBlocks(text);
   if (match.hasExtracted && match.extractedBlock) {
     return (
@@ -124,7 +147,7 @@ function SmartUserContent({ text }: { text: string }) {
     );
   }
 
-  // 3. Plain normal user prose
+  // 4. Plain normal user prose
   return (
     <p className="text-body leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-ink">
       {text}

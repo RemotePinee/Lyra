@@ -15,6 +15,7 @@ const STACK_OR_LOG_PATTERNS = [
 	/^\s*(?:npm ERR!|yarn error|pnpm: |\[ERR_\w+\]|\[ELIFECYCLE\])/m, // Node package manager errors
 	/^\s*(?:webpack|vite|rollup|turbo|next|expo|metro).*error/im, // Build tool errors
 	/^[A-Z][a-zA-Z0-9_]*Error: /m, // Generic PascalCase Errors
+	/\[(?:WARN|ERROR|FATAL|INFO|DEBUG|TRACE)\]/m, // Bracketed log levels like [WARN]
 	/^(?:FATAL|ERROR|WARN|INFO|DEBUG|TRACE)[\s:[]/m, // Standard log levels
 	/(?:\/[a-zA-Z0-9_.-]+){3,}:\d+:\d+/, // Unix paths with line:col
 	/(?:[A-Za-z]:\\[a-zA-Z0-9_.\-\\]+){2,}:\d+(?::\d+)?/, // Windows paths with line:col
@@ -52,6 +53,7 @@ export function detectCodeOrError(text: string): CodeOrErrorMatch {
 			let name = "error-log.txt";
 			if (trimmed.includes("Traceback") || trimmed.includes("File \"")) name = "traceback.txt";
 			else if (trimmed.includes("panic:")) name = "panic.txt";
+			else if (trimmed.includes("[WARN]") || trimmed.includes("[ERROR]")) name = "terminal-log.txt";
 			else if (/at\s+(?:async\s+)?[\w$.<>]+\s+\(/.test(trimmed)) name = "stack-trace.txt";
 			return { isMatch: true, kind: "stack_trace", suggestedName: name };
 		}
@@ -95,7 +97,7 @@ export function extractCodeOrErrorBlocks(text: string): {
 } {
 	const trimmed = text.trim();
 
-	// Check if the text as a whole contains error logs, stack traces, or code
+	// 1. Check if the text as a whole contains error logs, stack traces, or code
 	const match = detectCodeOrError(trimmed);
 	if (match.isMatch) {
 		return {
@@ -107,6 +109,49 @@ export function extractCodeOrErrorBlocks(text: string): {
 				kind: match.kind,
 			},
 		};
+	}
+
+	// 2. Check if a huge log block is embedded inside text (e.g. text starts with command/log and ends with a message)
+	const lines = trimmed.split("\n");
+	if (lines.length >= 4) {
+		// Test if first few lines or middle block is log/error
+		const logLines: string[] = [];
+		const otherLines: string[] = [];
+		let inLogSection = false;
+
+		for (const line of lines) {
+			const isLogLike = STACK_OR_LOG_PATTERNS.some((p) => p.test(line)) ||
+				line.startsWith("PS ") ||
+				line.startsWith("> ") ||
+				line.includes("Unsupported engine") ||
+				line.includes("Lockfile") ||
+				line.includes("Progress:") ||
+				line.includes("Packages:") ||
+				line.includes("devDependencies:") ||
+				line.includes("Command failed");
+
+			if (isLogLike) {
+				inLogSection = true;
+				logLines.push(line);
+			} else if (inLogSection && logLines.length > 0 && (line.startsWith(" ") || line.startsWith("\t") || line.length > 50 || line.startsWith("+") || line.startsWith("-"))) {
+				// continuation of log/stack
+				logLines.push(line);
+			} else {
+				otherLines.push(line);
+			}
+		}
+
+		if (logLines.length >= 3) {
+			return {
+				hasExtracted: true,
+				mainText: otherLines.join("\n").trim(),
+				extractedBlock: {
+					name: "terminal-log.txt",
+					content: logLines.join("\n").trim(),
+					kind: "error_log",
+				},
+			};
+		}
 	}
 
 	return { hasExtracted: false, mainText: text };

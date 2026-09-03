@@ -171,6 +171,8 @@ export const useMobile = create<MobileState>((set, get) => ({
 			toolRuns: {},
 			approvals: [],
 			running: false,
+			turnStartedAt: null,
+			turnTokens: 0,
 			seq: 0,
 			minSeq: 0,
 			hasEarlierMessages: false,
@@ -180,9 +182,9 @@ export const useMobile = create<MobileState>((set, get) => ({
 		});
 
 		try {
-			// Fetch the latest 60 records for lightning-fast initial load
+			// Fetch the latest 120 records so runs aren't starved by consecutive tool calls
 			const [res, status] = await Promise.all([
-				client.records(meta.projectId, meta.id, { tail: 60 }),
+				client.records(meta.projectId, meta.id, { tail: 120 }),
 				client.status(meta.projectId, meta.id).catch(() => null),
 			]);
 
@@ -200,6 +202,7 @@ export const useMobile = create<MobileState>((set, get) => ({
 			const messages = entries.map((e) => e.message);
 			const toolRuns = rebuildToolRuns(messages);
 
+			const isRunning = status?.running ?? false;
 			set({
 				messages,
 				seq,
@@ -207,7 +210,9 @@ export const useMobile = create<MobileState>((set, get) => ({
 				hasEarlierMessages: !!res.hasEarlier,
 				toolRuns,
 				loadingSessionId: null,
-				running: status?.running ?? false,
+				running: isRunning,
+				turnStartedAt: isRunning ? (get().turnStartedAt ?? Date.now()) : null,
+				turnTokens: isRunning ? get().turnTokens : 0,
 				approvals:
 					status?.pendingApprovals.map((p) => ({
 						id: p.id,
@@ -524,7 +529,7 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			break;
 
 		case "agent_end":
-			set({ running: false, approvals: [] });
+			set({ running: false, turnStartedAt: null, turnTokens: 0, approvals: [] });
 			void get().refreshSessions();
 			break;
 	}

@@ -110,7 +110,7 @@ export function MenuItem({
 			 */}
 			{(icon || inset) && (
 				<span
-					className={`flex w-[18px] shrink-0 items-center justify-center text-ink-muted ${detail ? "mt-[3px]" : ""}`}
+					className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center text-ink-muted ${detail ? "mt-[3px]" : ""}`}
 				>
 					{icon}
 				</span>

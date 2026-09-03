@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { X, MessageSquare, ExternalLink } from "lucide-react";
 import { useApp } from "../store.ts";
 import type { SessionMeta } from "@lyra/core";
+import { SessionStatus } from "./SessionStatus.tsx";
+import { visibleActivity } from "@lyra/core/activity";
+import { ScrollText } from "./ScrollText.tsx";
+import { useLayout } from "../layout.tsx";
+import { SessionCard, useSessionCard } from "./sidebar/SessionCard.tsx";
 
 export function SessionTabBar() {
 	const openTabs = useApp((s) => s.openTabs);
@@ -10,6 +15,8 @@ export function SessionTabBar() {
 	const switchTab = useApp((s) => s.switchTab);
 	const closeTab = useApp((s) => s.closeTab);
 	const reorderTabs = useApp((s) => s.reorderTabs);
+	const { navOpen, compact } = useLayout();
+	const isSidebarHidden = !navOpen || compact;
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 	const activeTabRef = useRef<HTMLDivElement | null>(null);
 
@@ -278,87 +285,24 @@ export function SessionTabBar() {
 					const session = sessionMap.get(id);
 					const isActive = activeSessionId === id;
 					const isThisDragging = dragState?.id === id && dragState.isDragging;
-					const title = session?.title?.trim() || "新对话";
 
 					return (
-						<div
+						<SessionTabItem
 							key={id}
-							ref={(el) => {
-								if (el) tabElementsRef.current.set(id, el);
-								else tabElementsRef.current.delete(id);
-								if (isActive) activeTabRef.current = el;
-							}}
-							role="tab"
-							tabIndex={0}
-							aria-selected={isActive}
-							data-ly-tip={dragState?.isDragging ? undefined : title}
-							data-ly-tip-side="bottom"
+							id={id}
+							_index={idx}
+							session={session}
+							isActive={isActive}
+							isDragging={isThisDragging}
+							openTabsCount={openTabs.length}
+							showCardOnHover={isSidebarHidden}
 							onPointerDown={(e) => onPointerDownTab(e, id, idx)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.preventDefault();
-									void switchTab(id);
-								}
-							}}
-							onAuxClick={(e) => {
-								// Middle click to close tab
-								if (e.button === 1) {
-									e.preventDefault();
-									e.stopPropagation();
-									void closeTab(id);
-								}
-							}}
-							className={`group relative flex h-7 shrink-0 max-w-[190px] select-none items-center rounded-md px-2 text-xs transition-colors overflow-hidden ${
-								openTabs.length > 1 ? (isThisDragging ? "cursor-grabbing opacity-30 scale-95 border border-dashed border-accent" : "cursor-grab") : "cursor-pointer"
-							} ${
-								isActive
-									? "bg-elevated text-ink font-medium shadow-xs"
-									: "text-ink-muted hover:bg-card-hover hover:text-ink"
-							}`}
-						>
-							{/* Regular text flow - full natural width at rest, mask/fade shifts left on hover */}
-							<div
-								className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden pointer-events-none group-hover:[mask-image:linear-gradient(to_right,black_0%,black_calc(100%-42px),transparent_calc(100%-36px))] group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0%,black_calc(100%-42px),transparent_calc(100%-36px))]"
-							>
-								<MessageSquare size={13} className={`shrink-0 opacity-70 ${isActive ? "text-accent" : ""}`} />
-								<span className="truncate">{title}</span>
-							</div>
-
-							{/* Floating actions with smooth gradient backdrop matching tab background */}
-							<div
-								className={`absolute right-0 top-0 bottom-0 flex items-center gap-0.5 pl-6 pr-1 opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--ly-t-base)] ease-[var(--ly-e-out)] ${
-									isActive
-										? "bg-gradient-to-r from-transparent via-elevated to-elevated"
-										: "bg-gradient-to-r from-transparent via-card-hover to-card-hover"
-								}`}
-							>
-								<button
-									type="button"
-									aria-label="独立窗口打开"
-									data-ly-tip="独立窗口打开"
-									data-ly-tip-side="bottom"
-									onClick={(e) => {
-										e.stopPropagation();
-										handleTearOff(id);
-									}}
-									className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink transition-colors hover:bg-card hover:text-ink active:scale-95"
-								>
-									<ExternalLink size={11} strokeWidth={2} />
-								</button>
-
-								<button
-									type="button"
-									aria-label="关闭标签页"
-									onClick={(e) => {
-										e.stopPropagation();
-										void closeTab(id);
-									}}
-									className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink transition-colors hover:bg-card hover:text-ink active:scale-95"
-								>
-									<X size={12} strokeWidth={2} />
-								</button>
-							</div>
-						</div>
+							onSwitchTab={() => void switchTab(id)}
+							onCloseTab={() => void closeTab(id)}
+							onTearOff={() => handleTearOff(id)}
+							tabElementsRef={tabElementsRef}
+							activeTabRef={activeTabRef}
+						/>
 					);
 				})}
 			</div>
@@ -380,5 +324,144 @@ export function SessionTabBar() {
 				</div>
 			)}
 		</>
+	);
+}
+
+function SessionTabItem({
+	id,
+	_index,
+	session,
+	isActive,
+	isDragging,
+	openTabsCount,
+	showCardOnHover,
+	onPointerDown,
+	onSwitchTab,
+	onCloseTab,
+	onTearOff,
+	tabElementsRef,
+	activeTabRef,
+}: {
+	id: string;
+	_index: number;
+	session?: SessionMeta;
+	isActive: boolean;
+	isDragging: boolean;
+	openTabsCount: number;
+	showCardOnHover: boolean;
+	onPointerDown: (e: React.PointerEvent) => void;
+	onSwitchTab: () => void;
+	onCloseTab: () => void;
+	onTearOff: () => void;
+	tabElementsRef: React.MutableRefObject<Map<string, HTMLDivElement>>;
+	activeTabRef: React.MutableRefObject<HTMLDivElement | null>;
+}) {
+	const card = useSessionCard();
+	const activity = useApp((s) => s.activity[id] ?? null);
+	const title = session?.title?.trim() || "新对话";
+	const [isLeftPressed, setIsLeftPressed] = useState(false);
+
+	return (
+		<div
+			{...(showCardOnHover ? card.bind : {})}
+			ref={(el) => {
+				if (el) tabElementsRef.current.set(id, el);
+				else tabElementsRef.current.delete(id);
+				if (isActive) activeTabRef.current = el;
+			}}
+			role="tab"
+			tabIndex={0}
+			aria-selected={isActive}
+			aria-label={title}
+			onPointerDown={(e) => {
+				if (e.button === 0) {
+					setIsLeftPressed(true);
+				}
+				card.dismiss();
+				onPointerDown(e);
+			}}
+			onPointerUp={(e) => {
+				if (e.button === 0) {
+					setIsLeftPressed(false);
+				}
+			}}
+			onPointerCancel={() => setIsLeftPressed(false)}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					onSwitchTab();
+				}
+			}}
+			onAuxClick={(e) => {
+				// Middle click to close tab
+				if (e.button === 1) {
+					e.preventDefault();
+					e.stopPropagation();
+					onCloseTab();
+				}
+			}}
+			className={`ly-scroll group relative flex h-7 shrink-0 max-w-[190px] select-none items-center rounded-md px-2 text-xs transition-colors overflow-hidden ${
+				openTabsCount > 1
+					? isDragging
+						? "cursor-grabbing opacity-30 scale-95 border border-dashed border-accent"
+						: isLeftPressed
+							? "cursor-grab"
+							: "cursor-default"
+					: "cursor-default"
+			} ${
+				isActive
+					? "bg-elevated text-ink font-medium shadow-xs"
+					: "text-ink-muted hover:bg-card-hover hover:text-ink"
+			}`}
+		>
+			{showCardOnHover && session && card.anchor && (
+				<SessionCard session={session} anchor={card.anchor} leaving={card.leaving} placement="bottom" />
+			)}
+
+			{/* Regular text flow - full natural width at rest, mask/fade shifts left on hover */}
+			<div
+				className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden pointer-events-none group-hover:[mask-image:linear-gradient(to_right,black_0%,black_calc(100%-42px),transparent_calc(100%-36px))] group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0%,black_calc(100%-42px),transparent_calc(100%-36px))]"
+			>
+				{activity ? (
+					<SessionStatus activity={visibleActivity(activity, isActive)} />
+				) : (
+					<MessageSquare size={13} className={`shrink-0 opacity-70 ${isActive ? "text-accent" : ""}`} />
+				)}
+				<ScrollText text={title} className="min-w-0 flex-1" />
+			</div>
+
+			{/* Floating actions with smooth gradient backdrop matching tab background */}
+			<div
+				className={`absolute right-0 top-0 bottom-0 flex items-center gap-0.5 pl-6 pr-1 opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--ly-t-base)] ease-[var(--ly-e-out)] ${
+					isActive
+						? "bg-gradient-to-r from-transparent via-elevated to-elevated"
+						: "bg-gradient-to-r from-transparent via-card-hover to-card-hover"
+				}`}
+			>
+				<button
+					type="button"
+					aria-label="独立窗口打开"
+					onClick={(e) => {
+						e.stopPropagation();
+						onTearOff();
+					}}
+					className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink transition-colors hover:bg-card hover:text-ink active:scale-95"
+				>
+					<ExternalLink size={11} strokeWidth={2} />
+				</button>
+
+				<button
+					type="button"
+					aria-label="关闭标签页"
+					onClick={(e) => {
+						e.stopPropagation();
+						onCloseTab();
+					}}
+					className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink transition-colors hover:bg-card hover:text-ink active:scale-95"
+				>
+					<X size={12} strokeWidth={2} />
+				</button>
+			</div>
+		</div>
 	);
 }

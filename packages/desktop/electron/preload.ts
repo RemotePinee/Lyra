@@ -314,6 +314,11 @@ const api: LyraApi = {
 			ipcRenderer.on("screenshot:init", listener);
 			return () => ipcRenderer.removeListener("screenshot:init", listener);
 		},
+		onReset: (handler) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:reset", listener);
+			return () => ipcRenderer.removeListener("screenshot:reset", listener);
+		},
 		// A prewarmed overlay reports mounting before a capture session exists; main retains it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
 		painted: () => ipcRenderer.send("screenshot:painted"),

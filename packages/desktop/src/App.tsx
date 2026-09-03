@@ -248,7 +248,11 @@ function ChatShell({ settings }: { settings: boolean }) {
 
 				<main
 					className={`relative flex min-w-0 flex-1 flex-col bg-shell ${
-						!isDarwin ? "overflow-hidden rounded-tl-xl border-t border-l border-line-soft shadow-xs" : ""
+						!isDarwin
+							? `overflow-hidden border-t border-line-soft shadow-xs transition-[border-radius] duration-[var(--ly-t-base)] ${
+									navOpen && !compact ? "rounded-tl-xl border-l" : "rounded-t-xl border-x"
+								}`
+							: ""
 					}`}
 				>
 					{/*

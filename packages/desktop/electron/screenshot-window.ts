@@ -53,6 +53,29 @@ export function findScreenshotReturnWindow<T extends ScreenshotWindowState>(
 	);
 }
 
+/**
+ * Pin a capture overlay's *content* to a display, not its outer frame.
+ *
+ * On Windows a frameless window still has `WS_THICKFRAME` unless told otherwise,
+ * so `setBounds(display.bounds)` sizes the chrome and the CSS origin sits a few
+ * pixels inside the screen. Snap rects are in display DIP; pointer events are
+ * in content DIP — that mismatch is the 1–7px hover/selection jump.
+ */
+export function coverDisplay(
+	win: {
+		setBounds(bounds: { x: number; y: number; width: number; height: number }): void;
+		setContentBounds(bounds: { x: number; y: number; width: number; height: number }): void;
+	},
+	bounds: { x: number; y: number; width: number; height: number },
+): void {
+	win.setBounds(bounds);
+	try {
+		win.setContentBounds(bounds);
+	} catch {
+		// Some native window types reject a content-bounds write; the outer bounds still applied.
+	}
+}
+
 /** Preserve renderer readiness even when a prewarmed page reports it before a session exists. */
 export class ScreenshotRendererGate {
 	private readonly ready = new Set<number>();

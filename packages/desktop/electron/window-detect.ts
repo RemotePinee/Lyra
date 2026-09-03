@@ -68,6 +68,26 @@ export function sameBounds(
 	);
 }
 
+/**
+ * Convert a physical-pixel rect to DIP by rounding each edge, then subtracting.
+ *
+ * Rounding `x/y/width/height` independently is how a 1px snap offset is born at
+ * 125%/150% scale: the right edge of the window and `x + width` stop agreeing.
+ * Callers supply the point converter so this stays testable without Electron.
+ */
+export function physicalRectToDip(
+	phys: { left: number; top: number; right: number; bottom: number },
+	toDipPoint: (point: { x: number; y: number }) => { x: number; y: number },
+): { x: number; y: number; width: number; height: number } {
+	const topLeft = toDipPoint({ x: phys.left, y: phys.top });
+	const bottomRight = toDipPoint({ x: phys.right, y: phys.bottom });
+	const left = Math.round(topLeft.x);
+	const top = Math.round(topLeft.y);
+	const right = Math.round(bottomRight.x);
+	const bottom = Math.round(bottomRight.y);
+	return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
 function parseTabLine(line: string, fields: number): string[] | null {
 	const parts = line.split("\t");
 	return parts.length >= fields ? parts : null;

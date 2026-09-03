@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	ActionSheetIOS,
 	ActivityIndicator,
@@ -68,7 +68,6 @@ export default function SessionScreen() {
 	const [attachedCards, setAttachedCards] = useState<AttachedCard[]>([]);
 	const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
-	const [windowSize, setWindowSize] = useState(60);
 	const setModel = useMobile((s) => s.setModel);
 	const models = useMobile((s) => s.settings?.models ?? []);
 	const listRef = useRef<FlatList>(null);
@@ -90,7 +89,6 @@ export default function SessionScreen() {
 
 	// Reset state when switching session
 	useEffect(() => {
-		setWindowSize(60);
 		isAtBottomRef.current = true;
 		scrollFabOpacity.value = 0;
 	}, [id, scrollFabOpacity]);
@@ -270,6 +268,11 @@ export default function SessionScreen() {
 		};
 	});
 
+	// Group messages so that runs of tool calls collapse into cohesive cards.
+	// FlatList's built-in virtualization handles viewport rendering efficiently,
+	// avoiding artificial slicing that crowds out text conversation.
+	const runs = useMemo(() => groupMessages(messages), [messages]);
+
 	if (!activeSession) {
 		return (
 			<View className="flex-1 items-center justify-center bg-shell">
@@ -281,10 +284,6 @@ export default function SessionScreen() {
 	const isInitialLoading = loadingSessionId === id && messages.length === 0;
 	const isBackgroundRefreshing = loadingSessionId === id && messages.length > 0;
 	const approval = approvals[0];
-
-	// Dual Protection: window slicing on client + cursor pagination on server
-	const visibleMessages = messages.slice(-windowSize);
-	const localHiddenCount = messages.length - visibleMessages.length;
 
 	return (
 		<Animated.View style={[{ flex: 1, backgroundColor: "#171717", paddingTop: insets.top }, containerAnimatedStyle]}>
@@ -318,7 +317,7 @@ export default function SessionScreen() {
 
 			<FlatList
 				ref={listRef}
-				data={[...groupMessages(visibleMessages)].reverse()}
+				data={[...runs].reverse()}
 				inverted
 				renderItem={({ item }) => (
 					<MobileTranscriptRow
@@ -340,6 +339,12 @@ export default function SessionScreen() {
 				keyboardDismissMode="on-drag"
 				keyboardShouldPersistTaps="always"
 				onContentSizeChange={onListContentSizeChange}
+				onEndReached={() => {
+					if (hasEarlierMessages && !loadingEarlier) {
+						void loadEarlierMessages();
+					}
+				}}
+				onEndReachedThreshold={0.2}
 				onScroll={(e) => {
 					// In inverted mode: offset 0 is bottom (latest).
 					const offset = e.nativeEvent.contentOffset.y;
@@ -365,25 +370,10 @@ export default function SessionScreen() {
 				}
 				ListFooterComponent={
 					<View className="mb-3">
-						{/* If there are local loaded messages not yet expanded into the window */}
-						{localHiddenCount > 0 && (
-							<Pressable
-								onPress={() => setWindowSize((prev) => prev + 60)}
-								className="mb-3 flex-row items-center justify-center rounded-xl bg-card py-2.5 active:bg-card-hover"
-							>
-								<Text className="text-[12px] font-medium text-ink-muted">
-									展开更早的 {Math.min(localHiddenCount, 60)} 条（共 {localHiddenCount} 条已拉取）
-								</Text>
-							</Pressable>
-						)}
-
 						{/* Cursor pagination: fetch earlier records from server */}
-						{hasEarlierMessages && localHiddenCount === 0 && (
+						{hasEarlierMessages && (
 							<Pressable
-								onPress={() => {
-									setWindowSize((prev) => prev + 60);
-									void loadEarlierMessages();
-								}}
+								onPress={() => void loadEarlierMessages()}
 								disabled={loadingEarlier}
 								className="mb-3 flex-row items-center justify-center gap-2 rounded-xl bg-card py-2.5 active:bg-card-hover disabled:opacity-60"
 							>
@@ -393,7 +383,7 @@ export default function SessionScreen() {
 										<Text className="text-[12px] font-medium text-ink-muted">正在向服务器加载更早历史…</Text>
 									</>
 								) : (
-									<Text className="text-[12px] font-medium text-ink-muted">加载更早的 60 条记录</Text>
+									<Text className="text-[12px] font-medium text-ink-muted">加载更早的历史记录</Text>
 								)}
 							</Pressable>
 						)}

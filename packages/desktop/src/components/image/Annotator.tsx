@@ -319,7 +319,7 @@ export function useAnnotator(src: string | RawPixels | null, options?: Annotator
 		if (typeof src !== "string") {
 			let live = true;
 			const data = new ImageData(new Uint8ClampedArray(src.pixels), src.width, src.height);
-			void createImageBitmap(data).then(
+			void createImageBitmap(data, { premultiplyAlpha: "none", colorSpaceConversion: "none" }).then(
 				(bitmap) => {
 					if (live) accept({ source: bitmap, width: bitmap.width, height: bitmap.height });
 					else bitmap.close();
@@ -538,11 +538,13 @@ export function AnnotateCanvas({
 	zoom,
 	className,
 	style,
+	transparentBackground = false,
 }: {
 	annotator: Annotator;
 	zoom: number;
 	className?: string;
 	style?: React.CSSProperties;
+	transparentBackground?: boolean;
 }) {
 	const { canvas, image, mosaicSourceFor, ready, width, tool, colour, backdrop, weight, shapes, setHistory, selected, setSelected } =
 		annotator;
@@ -631,7 +633,10 @@ export function AnnotateCanvas({
 		if (!ctx) return;
 
 		ctx.clearRect(0, 0, el.width, el.height);
-		ctx.drawImage(img.source, 0, 0);
+		ctx.imageSmoothingEnabled = false;
+		if (!transparentBackground) {
+			ctx.drawImage(img.source, 0, 0);
+		}
 
 		/*
 		 * These are the sizes for a mark that has none of its own — the one being dragged out right
@@ -644,7 +649,7 @@ export function AnnotateCanvas({
 			block: annotator.block,
 			brush: mosaicBrush(width) * weight,
 		});
-	}, [live, ready, width, stroke, weight, canvas, image, mosaicSourceFor, annotator.block]);
+	}, [live, ready, width, stroke, weight, canvas, image, mosaicSourceFor, annotator.block, transparentBackground]);
 
 	/**
 	 * The column that just fits this text, in image pixels.
@@ -1062,7 +1067,7 @@ export function AnnotateCanvas({
 	const box = chosen ? shapeBounds(chosen, stroke) : null;
 
 	return (
-		<div className="relative">
+		<div className={className ? `relative ${className}` : "relative"} style={style}>
 			<canvas
 				ref={attach}
 				draggable={false}
@@ -1544,7 +1549,7 @@ function ToolProperties({ annotator, index, side }: { annotator: Annotator; inde
 			 * placed, so it is passed in: `below` means the toolbar is below the selection and the
 			 * bubble goes further down, `above` means it is above and the bubble goes further up.
 			 */
-			className={`absolute left-0 flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] items-center gap-1 rounded-lg border border-white/12 bg-[#1c1c1e]/95 px-2 py-1 shadow-[0_6px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl ${
+			className={`absolute left-0 flex items-center gap-1 rounded-lg border border-white/12 bg-[#1c1c1e]/95 px-2 py-1 shadow-[0_6px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl ${
 				side === "below" ? "top-full mt-2" : "bottom-full mb-2"
 			}`}
 			style={{ left: Math.max(0, index) * TOOL_STEP + TOOL_INSET, transform: "translateX(-50%)" }}
