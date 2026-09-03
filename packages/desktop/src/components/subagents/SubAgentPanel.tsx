@@ -17,21 +17,21 @@
  */
 
 import { Bot, CircleStop, FileText, Plus, RotateCcw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { SubAgentSummary } from "@lyra/core";
 import { useApp } from "../../store.ts";
 import { rosterOrder, useSubAgents } from "../../store/subAgents.ts";
 import { openViewer } from "../image/viewer-store.ts";
+import { BackToLatest } from "../BackToLatest.tsx";
 import { ComposerSend, ComposerShell } from "../ComposerShell.tsx";
 import { Markdown } from "../Markdown.tsx";
 import { PanelEmpty } from "../PanelEmpty.tsx";
 import { Scroller } from "../Scroller.tsx";
+import { useFollowBottom } from "../scroll/useFollowBottom.ts";
+import { tailSignature } from "../scroll/signature.ts";
 import { ranFor, statusTone, statusWord } from "./format.ts";
 import { SubAgentTranscript } from "./SubAgentMessageRow.tsx";
-
-/** How close to the bottom still counts as "following along" — the side chat's own slack. */
-const PIN_SLACK = 60;
 
 interface SubAgentAttachment {
 	id: string;
@@ -72,7 +72,16 @@ export function SubAgentPanel() {
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 			<Tabs agents={ordered} current={current?.id ?? null} />
-			{current && <Transcript key={current.id} agent={current} sessionId={sessionId} />}
+			{/*
+			 * No `key`, deliberately.
+			 *
+			 * Keying on the delegate forced a remount on every tab change, which threw away the
+			 * scroll position along with everything else — and reading two delegates against each
+			 * other is the case this panel exists for. `Transcript` now tells the follow hook which
+			 * delegate it is showing and gets the right position back, the same way the conversation
+			 * does when you switch sessions.
+			 */}
+			{current && <Transcript agent={current} sessionId={sessionId} />}
 		</div>
 	);
 }
@@ -166,26 +175,32 @@ function Dismiss({ agent }: { agent: SubAgentSummary }) {
 function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: string | null }) {
 	const messages = useSubAgents((s) => s.transcripts[agent.id]);
 	const loading = useSubAgents((s) => s.loading.includes(agent.id));
-	const scrollRef = useRef<HTMLDivElement>(null);
-	const pinned = useRef(true);
 
-	// Follow along while it is working, unless you have scrolled up to read something.
-	useLayoutEffect(() => {
-		if (!pinned.current) return;
-		const el = scrollRef.current;
-		if (el) el.scrollTop = el.scrollHeight;
-	}, [messages]);
+	/*
+	 * One position per delegate, not one per panel.
+	 *
+	 * The surface is the pair: the same delegate id can appear under two conversations, and the two
+	 * are different transcripts. `status` and the report are in the signature because both change
+	 * what is on screen without touching a message — a delegate finishing appends its report below
+	 * everything else, and that is content arriving like any other.
+	 */
+	const follow = useFollowBottom({
+		surfaceId: sessionId ? `${sessionId}:${agent.id}` : null,
+		namespace: "subagent",
+		count: messages?.length ?? 0,
+		tail: tailSignature(messages ?? [], `${agent.status}:${agent.answer?.length ?? 0}:${agent.error ? 1 : 0}`),
+	});
 
 	return (
 		<>
 			<Header agent={agent} sessionId={sessionId} />
+			<div className="relative flex min-h-0 flex-1 flex-col">
 			<Scroller
 				className="flex-1"
-				scrollRef={scrollRef}
+				scrollRef={follow.scrollRef}
 				contentClassName="px-3 py-2"
-				onScroll={(el) => {
-					pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_SLACK;
-				}}
+				onScroll={follow.onScroll}
+				onResize={follow.onResize}
 			>
 				{!messages || messages.length === 0 ? (
 					<p className="px-2 py-8 text-center text-detail text-ink-faint">
@@ -230,7 +245,12 @@ function Transcript({ agent, sessionId }: { agent: SubAgentSummary; sessionId: s
 				 * steering, for the same reason — one executor per workspace.
 				 */}
 				{(agent.status === "failed" || agent.status === "aborted") && <Redispatch agent={agent} />}
+				{/* Where "you have seen the newest output" is decided — see `useFollowBottom`. */}
+				<div ref={follow.tailRef} aria-hidden className="h-px w-full shrink-0" />
 			</Scroller>
+			{/* A delegate streams like anything else, and scrolling up in one used to be a one-way trip. */}
+			<BackToLatest show={follow.away} unread={follow.unread} onClick={follow.returnToBottom} />
+			</div>
 			{agent.status === "running" && sessionId && <Steer agent={agent} sessionId={sessionId} />}
 		</>
 	);

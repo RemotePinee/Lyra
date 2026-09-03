@@ -185,9 +185,16 @@ export function workspaceSlice(set: Set, get: Get) {
     });
   },
 
+  /**
+   * Rename a conversation: on screen at once, on disk right after.
+   *
+   * Painted first because the list should not stutter while a round trip happens, and replaced
+   * with what came back because the main process is the authority on the rest of the meta.
+   */
   async renameSession(session: SessionMeta, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
+    const previous = session.title;
     set({
       sessions: get().sessions.map((s) => (s.id === session.id ? { ...s, title: trimmed } : s)),
       ...(get().activeSessionId === session.id && get().meta ? { meta: { ...get().meta!, title: trimmed } } : {}),
@@ -200,7 +207,21 @@ export function workspaceSlice(set: Set, get: Get) {
           ...(get().activeSessionId === session.id && get().meta ? { meta: { ...get().meta!, ...updated } } : {}),
         });
       }
-    } catch {}
+    } catch {
+      /*
+       * Put the old name back and say so.
+       *
+       * Swallowing this left the new name on screen over a session still called the old thing on
+       * disk — the rename looked like it had worked, and the next reload was where you found out.
+       * A name that reverts in front of you is not a good outcome either, but it is an honest one.
+       */
+      set({
+        sessions: get().sessions.map((s) => (s.id === session.id ? { ...s, title: previous } : s)),
+        ...(get().activeSessionId === session.id && get().meta ? { meta: { ...get().meta!, title: previous } } : {}),
+      });
+      get().notify("改名没能存下来，已经改回原来的名字。", "error");
+    }
+
   },
 
   async moveSessionProject(session: SessionMeta, targetPath: string) {

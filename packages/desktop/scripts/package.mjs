@@ -25,6 +25,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 /** The name in the certificate `make-signing-cert.sh` generates. */
 const DEFAULT_IDENTITY = "Lyra Code Signing";
@@ -76,11 +77,18 @@ const result = spawnSync("electron-builder", args, { stdio: "inherit", shell: pr
  * After the build, and regardless of whether it succeeded: a failed package run leaves the modules
  * just as rebuilt as a successful one.
  */
-const restore = spawnSync(process.execPath, [new URL("rebuild-pty.mjs", import.meta.url).pathname], {
+const restore = spawnSync(process.execPath, [fileURLToPath(new URL("rebuild-pty.mjs", import.meta.url))], {
 	stdio: "inherit",
 });
 if (restore.status !== 0) {
 	console.warn("[package] 原生模块没能恢复成本机架构，开发运行前请手动执行 npm run rebuild:pty");
 }
 
-process.exit(result.status ?? 1);
+if (result.status !== 0) {
+	process.exit(result.status ?? 1);
+}
+
+const arch = spawnSync(process.execPath, [fileURLToPath(new URL("check-native-arch.mjs", import.meta.url))], {
+	stdio: "inherit",
+});
+process.exit(arch.status ?? 1);

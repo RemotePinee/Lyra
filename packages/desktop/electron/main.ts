@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join } from "node:path";
 let spawnPty: typeof import("node-pty").spawn = ((() => {
 	try {
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -74,7 +74,8 @@ import {
 	sessions,
 	sideChats,
 } from "./session-hub.ts";
-import { resolveInside } from "./file-ops.ts";
+import { containingRoot, resolveInside } from "./file-ops.ts";
+import { captureLog } from "./screenshot-debug.ts";
 import { registerFilesIpc } from "./ipc/files.ts";
 import { registerFileOpsIpc } from "./ipc/file-ops.ts";
 import { registerFormatIpc } from "./ipc/format.ts";
@@ -97,13 +98,22 @@ import {
 } from "./window.ts";
 import { MEDIA_SCHEME, PREVIEW_SCHEME, registerPreviewProtocols } from "./preview-protocol.ts";
 import { registerGitIpc } from "./ipc/git.ts";
+import { registerUsageIpc } from "./ipc/usage.ts";
 import { registerSideChatIpc } from "./ipc/side-chat.ts";
 import { registerUpdateIpc } from "./ipc/updates.ts";
 import { registerTerminalIpc, type LiveTerminal } from "./ipc/terminal.ts";
 import { Scheduler } from "./scheduler.ts";
 import { createTray, destroyTray, hasTray, refreshMenu, type TrayCommand } from "./tray.ts";
 import { registerScreenshotIpc } from "./ipc/screenshot.ts";
-import { prewarmScreenshotOverlay, registerScreenshotShortcut, unregisterScreenshotShortcut } from "./screenshot.ts";
+import {
+	destroyScreenshotOverlay,
+	dismissStrayOverlay,
+	isScreenshotOverlay,
+	prewarmScreenshotOverlay,
+	registerScreenshotShortcut,
+	unregisterScreenshotShortcut,
+	warmScreenshotOverlay,
+} from "./screenshot.ts";
 
 /*
  * A profile is a whole app, Chromium's half included.
@@ -172,19 +182,15 @@ function projectPath(target: string): string | null {
 	);
 }
 
-/** The innermost open project containing a path, for bounded upward config searches. */
+/**
+ * Which open project a path belongs to, or null if none of them.
+ *
+ * `projectPath` answers whether a path is allowed; this answers where it lives, which is what
+ * anything walking upward through directories needs in order to know when to stop.
+ */
 function projectRoot(target: string): string | null {
-	const resolvedTarget = projectPath(target);
-	if (!resolvedTarget) return null;
-	return (
-		(settings?.projects ?? [])
-			.map((project) => resolve(project.path))
-			.filter((root) => {
-				const rel = relative(root, resolvedTarget);
-				return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
-			})
-			.sort((a, b) => b.length - a.length)[0] ?? null
-	);
+	const roots = (settings?.projects ?? []).map((project) => project.path);
+	return containingRoot(target, roots);
 }
 
 /** The predicate form, for the doorways that only need a yes or no. */
@@ -286,6 +292,45 @@ if (process.argv.includes(WINDOWS_RUNNER_FLAG)) {
 }
 
 app.setName("Lyra");
+
+/*
+ * Keep painting a window that something is covering.
+ *
+ * Chromium stops rendering a window it believes is hidden behind another one, and repaints it when
+ * it comes back — which takes a frame. Usually nobody notices. The screenshot overlay makes it
+ * conspicuous: it is a full-screen window over the main one, so the main window is judged occluded
+ * for the length of the capture, and the moment the overlay goes away it is on screen *blank*
+ * before its first repaint lands. That white rectangle appearing and vanishing is the "Lyra flashes
+ * for an instant" at the end of every capture, and it gets worse the longer the capture took.
+ *
+ * The cost is that a covered window keeps drawing. For an app with one window that is a rounding
+ * error, and it is the same trade every editor with a preview pane already makes.
+ */
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+
+/*
+ * When the application gains and loses the foreground, in the capture log.
+ *
+ * macOS repaints every window of an application when it activates — traffic lights colour in,
+ * shadows deepen — and if that lands before the overlay is covering the screen it reads as the
+ * desktop shifting. Whether it does is a question about ordering on the user's machine, so the two
+ * events are recorded next to the capture's own steps.
+ */
+app.on("browser-window-focus", () => captureLog("app: browser-window-focus"));
+app.on("browser-window-blur", () => captureLog("app: browser-window-blur"));
+app.on("did-become-active", () => {
+	captureLog("app: did-become-active");
+	/*
+	 * And check that what came back with the application is only what should have.
+	 *
+	 * macOS restores the windows of an application it unhides, and the capture overlay is a window
+	 * that must never be restored: it covers the display, sits above the menu bar and shows nothing
+	 * between captures, so a copy of it on screen reads as a machine that has stopped answering the
+	 * mouse. It is `screenshot.ts` that must not leave one behind — this is the check that the
+	 * user's desktop does not depend on that being got right.
+	 */
+	dismissStrayOverlay();
+});
 
 /**
  * Errors that reach the top of the main process without a home.
@@ -460,7 +505,16 @@ app.whenReady().then(async () => {
 	// the app appears does not wait for Chromium to create or mount another page.
 	prewarmScreenshotOverlay();
 	createWindow();
-	registerScreenshotShortcut(() => settings);
+	registerScreenshotShortcut(
+		() => settings,
+		() => {
+			const win = getWindow();
+			if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.send("screenshot:trigger");
+			}
+		},
+	);
+	setTimeout(warmScreenshotOverlay, 3000);
 	if (settings.sync.enabled) await startSync();
 
 	scheduler = new Scheduler({
@@ -501,7 +555,24 @@ app.whenReady().then(async () => {
 	await refreshRecentSessions();
 
 	app.on("activate", () => {
-		if (BrowserWindow.getAllWindows().length === 0) createWindow();
+		/*
+		 * The main window specifically, not "any window at all": the capture overlay is permanent and
+		 * hidden, and counting it would mean clicking the dock icon of an app with no window visibly
+		 * does nothing.
+		 *
+		 * And showing it, not merely checking it exists. A capture puts the main window away for its
+		 * duration — activating the overlay activates Lyra, and macOS raises every window of an
+		 * application it activates, which would park the main window on top of whatever was being
+		 * screenshotted. Without this, the dock icon of an app whose window was hidden that way does
+		 * nothing at all.
+		 */
+		const win = getWindow();
+		if (!win) {
+			createWindow();
+			return;
+		}
+		if (win.isMinimized()) win.restore();
+		if (!win.isVisible()) win.show();
 	});
 });
 
@@ -545,8 +616,26 @@ app.on("window-all-closed", () => {
 	if (process.platform !== "darwin" && !hasTray()) app.quit();
 });
 
+/*
+ * The same rule, for when the only window left is one the user cannot see.
+ *
+ * `window-all-closed` never fires once the capture overlay has been built, because the overlay is
+ * never closed — so on Windows and Linux without a tray icon, closing the last real window would
+ * leave the process running with nothing on screen and no way back to it.
+ */
+app.on("browser-window-created", (_event, win) => {
+	win.on("closed", () => {
+		if (process.platform === "darwin" || hasTray()) return;
+		const left = BrowserWindow.getAllWindows().filter((other) => !other.isDestroyed() && !isScreenshotOverlay(other));
+		if (left.length === 0) app.quit();
+	});
+});
+
 app.on("before-quit", async () => {
 	unregisterScreenshotShortcut();
+	// The overlay outlives every capture on purpose, so it has to be let go of here or the process
+	// has a window left open and never finishes quitting.
+	destroyScreenshotOverlay();
 	destroyTray();
 	scheduler?.stop();
 	for (const dispose of browsers.values()) dispose();
@@ -605,4 +694,5 @@ function registerIpc(): void {
 	});
 
 	registerGitIpc({ insideAProject });
+	registerUsageIpc();
 }

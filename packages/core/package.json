@@ -8,13 +8,13 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./thinking-options": "./src/ai/thinking-options.ts",
     "./node": "./src/node.ts",
     "./tokens": "./src/tokens.ts",
     "./activity": "./src/activity.ts",
     "./trajectory-view": "./src/trajectory-view.ts",
     "./commands-view": "./src/commands-view.ts",
     "./schedule": "./src/config/schedule.ts",
-    "./thinking-options": "./src/ai/thinking-options.ts",
     "./install-record": "./src/plugins/install-record.ts"
   },
   "scripts": {
@@ -26,10 +26,10 @@
     "@lyra/registry-shared": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
     "yaml": "2.8.2",
-    "koffi": "^3.1.0"
+    "koffi": "^3.1.6"
   },
   "devDependencies": {
-    "@types/node": "24.12.4",
+    "@types/node": "24.13.3",
     "typescript": "5.9.3"
   }
 }

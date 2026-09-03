@@ -126,7 +126,7 @@ export function ResumeRow() {
 						void resumeTask(interrupted.id);
 						return;
 					}
-					void send([{ type: "text", text: carryOn }], { synthetic: true });
+					void send([{ type: "text", text: carryOn }], { synthetic: true, carryOn: true });
 				}}
 				className="rounded px-1 text-ink-muted underline decoration-line underline-offset-2 transition-colors hover:text-ink"
 			>

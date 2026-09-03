@@ -72,6 +72,9 @@ const api: LyraApi = {
 			return () => ipcRenderer.removeListener("settings:changed", listener);
 		},
 	},
+	usage: {
+		scan: () => ipcRenderer.invoke("usage:scan"),
+	},
 	workspace: {
 		pick: () => ipcRenderer.invoke("workspace:pick"),
 		info: (path) => ipcRenderer.invoke("workspace:info", path),
@@ -120,6 +123,7 @@ const api: LyraApi = {
 		abort: (sessionId) => ipcRenderer.invoke("agent:abort", sessionId),
 		approve: (sessionId, requestId, decision) => ipcRenderer.invoke("agent:approve", sessionId, requestId, decision),
 		setModel: (sessionId, modelId) => ipcRenderer.invoke("agent:setModel", sessionId, modelId),
+		setThinking: (sessionId, thinking) => ipcRenderer.invoke("agent:setThinking", sessionId, thinking),
 		onEvent: (handler) => {
 			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof handler>[0]) => handler(payload);
 			ipcRenderer.on("agent:event", listener);
@@ -314,14 +318,25 @@ const api: LyraApi = {
 			ipcRenderer.on("screenshot:init", listener);
 			return () => ipcRenderer.removeListener("screenshot:init", listener);
 		},
-		onReset: (handler) => {
+		onReset: (handler: () => void) => {
 			const listener = () => handler();
 			ipcRenderer.on("screenshot:reset", listener);
 			return () => ipcRenderer.removeListener("screenshot:reset", listener);
 		},
-		// A prewarmed overlay reports mounting before a capture session exists; main retains it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
+		debug: (what: string, detail: Record<string, unknown>) => ipcRenderer.send("screenshot:debug", what, detail),
+		onShown: (handler: () => void) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:shown", listener);
+			return () => ipcRenderer.removeListener("screenshot:shown", listener);
+		},
 		painted: () => ipcRenderer.send("screenshot:painted"),
+		colourPicked: () => ipcRenderer.send("screenshot:colourPicked"),
+		onHidden: (handler: () => void) => {
+			const listener = () => handler();
+			ipcRenderer.on("screenshot:hidden", listener);
+			return () => ipcRenderer.removeListener("screenshot:hidden", listener);
+		},
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),
@@ -372,10 +387,13 @@ const api: LyraApi = {
 		unstage: (cwd, paths) => ipcRenderer.invoke("git:unstage", cwd, paths),
 		discard: (cwd, paths) => ipcRenderer.invoke("git:discard", cwd, paths),
 		commitStaged: (cwd, message) => ipcRenderer.invoke("git:commitStaged", cwd, message),
+		generateCommitMessage: (cwd) => ipcRenderer.invoke("git:generateCommitMessage", cwd),
 		createBranch: (cwd, name, from) => ipcRenderer.invoke("git:createBranch", cwd, name, from),
 		deleteBranch: (cwd, name, force) => ipcRenderer.invoke("git:deleteBranch", cwd, name, force),
-		push: (cwd) => ipcRenderer.invoke("git:push", cwd),
-		pull: (cwd) => ipcRenderer.invoke("git:pull", cwd),
+		push: (cwd, token) => ipcRenderer.invoke("git:push", cwd, token),
+		pull: (cwd, token) => ipcRenderer.invoke("git:pull", cwd, token),
+		fetch: (cwd, token, quiet) => ipcRenderer.invoke("git:fetch", cwd, token, quiet),
+		cancelRemote: (token) => ipcRenderer.invoke("git:cancelRemote", token),
 		releaseInfo: (cwd) => ipcRenderer.invoke("git:releaseInfo", cwd),
 		bumpVersion: (cwd, newVersion) => ipcRenderer.invoke("git:bumpVersion", cwd, newVersion),
 		triggerDryRun: (cwd) => ipcRenderer.invoke("git:triggerDryRun", cwd),

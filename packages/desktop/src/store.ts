@@ -3,6 +3,7 @@ import type {
   Message,
   SessionMeta,
   Settings,
+  ThinkingLevel,
   ToolResult,
   UserContent,
 } from "@lyra/core";
@@ -222,6 +223,19 @@ export interface AppState {
    */
   turns: Record<string, { startedAt: number; tokens: number }>;
   /**
+   * The same meter for turns that stopped part-way, frozen so 继续 can pick it back up.
+   *
+   * A pause is a gap in one piece of work, not the end of it. Without this, `agent_end` dropped the
+   * meter and the send that follows lit a new one — so a task paused once reported the length and
+   * the tokens of its second leg alone, and the tokens-per-second computed from them described a
+   * stretch of work that never happened.
+   *
+   * Elapsed rather than a start time: see `turn-meter.ts`. Kept per session, like `turns`, and
+   * cleared when a turn ends properly or the conversation moves on to a new question — a meter that
+   * outlived the work it measured would silently add itself to whatever ran next.
+   */
+  carried: Record<string, { elapsedMs: number; tokens: number }>;
+  /**
    * When the history was last summarised, so the running line can mention it and move on.
    *
    * A rule across the transcript said the same thing permanently, which is more attention than the
@@ -333,6 +347,8 @@ export interface AppState {
   deleteSession(meta: SessionMeta): Promise<void>;
   setSessionArchived(meta: SessionMeta, archived: boolean): Promise<void>;
   deleteArchivedSessions(): Promise<void>;
+  /** Re-read one conversation's message count and usage from disk. See the action for why. */
+  refreshSessionStats(sessionId: string): Promise<void>;
 
   /**
    * `synthetic` marks a message the app composed on the user's behalf — 「继续」.
@@ -340,7 +356,11 @@ export interface AppState {
    * It reaches the model like any other, and the transcript does not draw it: putting words in
    * someone's mouth in their own voice is worse than the button having no visible effect.
    */
-  send(content: UserContent[], options?: { synthetic?: boolean }): Promise<void>;
+  /**
+   * `carryOn` says this send continues a turn that stopped rather than starting a new one, so its
+   * clock and token count are picked up from where the pause left them. See `turn-meter.ts`.
+   */
+  send(content: UserContent[], options?: { synthetic?: boolean; carryOn?: boolean }): Promise<void>;
   /** Replace a message and re-run from there; everything after it is discarded. */
   editMessage(index: number, content: UserContent[]): Promise<void>;
   /** Re-send the user message that produced the reply at `index`. */
@@ -350,7 +370,15 @@ export interface AppState {
     id: string,
     decision: "once" | "always" | "reject",
   ): Promise<void>;
-  setModel(modelId: string): Promise<void>;
+  /**
+   * Run this conversation on a different model.
+   *
+   * `asDefault` additionally makes it what new conversations start on — a separate decision, and
+   * one that used to be taken silently on every pick. See the note in `turn-slice`.
+   */
+  setModel(modelId: string, options?: { asDefault?: boolean }): Promise<void>;
+  /** How hard this conversation asks the model to think. Falls back to the app default. */
+  setThinking(thinking: ThinkingLevel): Promise<void>;
   refreshSync(): Promise<void>;
   dismissNotice(id: string): void;
   notify(message: string, level?: "info" | "warn" | "error"): void;
@@ -386,6 +414,7 @@ export const useApp = create<AppState>((set, get) => ({
   turnStartedAt: null,
   turnTokens: 0,
   turns: {},
+  carried: {},
   compactedAt: null,
   toolRuns: {},
   approvals: [],

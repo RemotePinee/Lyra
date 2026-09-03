@@ -68,14 +68,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。"
+          "cameraPermission": "扫描桌面端的二维码，一步完成配对。"
         }
       ],
       [
         "expo-image-picker",
         {
           "photosPermission": "允许 Lyra 访问相册以选择要发送给 Agent 的图片。",
-          "cameraPermission": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。"
+          "cameraPermission": "扫描桌面端的二维码，一步完成配对。"
         }
       ],
       [

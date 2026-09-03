@@ -17,7 +17,8 @@ import { EffortMenu, effortLabel } from "./EffortMenu.tsx";
 import { ModelIcon } from "./ModelIcon.tsx";
 import { RollingText, useRolled } from "./RollingText.tsx";
 import { ScrollText } from "./ScrollText.tsx";
-import { ModelMenu } from "./ModelMenu.tsx";
+import { ModelMenu, formatWindow } from "./ModelMenu.tsx";
+import { modelIdentity, modelTooltip } from "../modelGrouping.ts";
 import { usePopover } from "./Popover.tsx";
 import { BranchMenu } from "./modals/BranchMenu.tsx";
 import { PermissionPicker } from "./modals/PermissionPicker.tsx";
@@ -27,6 +28,7 @@ import { findModel } from "../models.ts";
 import { fileKind, isReadableAsText, KIND_LABEL, looksBinary, type FileKind } from "./attachments/file-kind.ts";
 import { FileKindIcon } from "./attachments/FileKindIcon.tsx";
 import { useApp } from "../store.ts";
+import { sessionThinking } from "../thinking.ts";
 
 const PERMISSION_LABEL: Record<string, string> = {
 	ask: "请求批准",
@@ -335,19 +337,19 @@ export function Composer() {
 	// The whole record, not just its name: the mark beside it is chosen from the id the provider
 	// knows the model by, which is not the same string as the label somebody typed for it.
 	const model = findModel(settings, modelId);
-	const modelName = model?.name ?? null;
+	/*
+	 * Which house this model is from, and whether the strip has to say so.
+	 *
+	 * With one provider the name is the whole answer and the extra word is noise. With two relays
+	 * offering the same `grok-4.6`, the name is not an answer at all — so the provider is folded
+	 * into the label exactly when it is what tells them apart. Either way the tooltip has room for
+	 * all of it.
+	 */
+	const identity = modelIdentity(settings, modelId);
+	const modelName = identity?.ambiguous ? `${identity.provider.name} · ${identity.model.name}` : (model?.name ?? null);
 	// The mark rolls with the name it belongs to, on the same terms — never on the first paint.
 	const modelRolls = useRolled(modelId ?? "");
 	const permissionMode = settings?.permissionMode ?? "auto";
-	/**
-	 * Settled by the first message.
-	 *
-	 * The transcript holds provider-specific handles — response ids, thinking signatures,
-	 * encrypted reasoning — that another model cannot replay. Once there is history to carry
-	 * forward, this stops being a control and becomes a label saying what this conversation
-	 * runs on.
-	 */
-	const modelLocked = messages.length > 0;
 
 	async function submit() {
 		const trimmed = text.trim();
@@ -457,6 +459,7 @@ export function Composer() {
 		return false;
 	}
 
+
 	/**
 	 * Take files on, without pretending every one of them is text.
 	 *
@@ -555,7 +558,12 @@ export function Composer() {
 	}, [settings?.screenshot?.insertIntoComposer]);
 
 	return (
-		<div className={`shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
+		/*
+		 * `ly-composer-dock`: the strip along the bottom of the conversation, named so the phone can
+		 * find it. It is the one thing that has to move when a keyboard slides over the window —
+		 * the transcript above it stays put and keeps its scroll position. See `--ly-keyboard`.
+		 */
+		<div className={`ly-composer-dock shrink-0 pt-2 pb-5 ${compact ? "px-4" : "px-8"}`}>
 			<div className="mx-auto w-full max-w-[var(--ly-content)]">
 				{/*
 				 * That work has been delegated, above everything else the composer says.
@@ -800,7 +808,7 @@ export function Composer() {
 								onClick={permissionMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={permissionMenu.open}
-								className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-label transition-colors duration-[var(--ly-t-quick)] ${
+								className={`ly-composer-control flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-label transition-colors duration-[var(--ly-t-quick)] ${
 									permissionMode === "full"
 										? // Red, not the accent: this is the one mode that hands over the machine.
 											`text-danger ${permissionMenu.open ? "bg-danger/10" : "hover:bg-danger/10"}`
@@ -820,11 +828,17 @@ export function Composer() {
 								 * word for anyone unsure.
 								 *
 								 * Measured against the field rather than the window: with a sidebar
-								 * and a panel open, a roomy-looking window still leaves this row
-								 * about 350px, and the label has to go long before the layout is
-								 * "compact".
+								 * It was `@max-[420px]:hidden` — a width standing in for 「does this fit」,
+								 * which it cannot: what fits depends on how long the model's name is, and
+								 * those run from `gpt-5` to `claude-opus-4-6-thinking`. The words went at
+								 * 419px with clear air still in the row, and having gone they freed width
+								 * that nothing then claimed.
+								 *
+								 * And it goes before the meter rather than after it. This is a mode you set
+								 * once and leave set; the meter and the name are about the turn being composed
+								 * right now — see the ranking in `composer/fit.ts`.
 								 */}
-								<span className="@max-[420px]:hidden">
+								<span data-ly-fit-drop="1" className="shrink-0 whitespace-nowrap">
 									<RollingText>{PERMISSION_LABEL[permissionMode]}</RollingText>
 								</span>
 							</button>
@@ -832,55 +846,55 @@ export function Composer() {
 					}
 					right={
 						<>
-							{/* Beside the model it is measured against — the window is a property of that model.
-							    Disappears gracefully on narrow composer widths to prevent overflowing tools. */}
-							<div className="@max-[480px]:hidden flex shrink-0 items-center">
+							{/*
+							 * Beside the model it is measured against — the window is a property of that model.
+							 *
+							 * The last thing the row gives up, and it used to be the first — at a fixed
+							 * `@max-[480px]`, which on a real window dropped it while the two halves of the
+							 * row still had 54px of clear air between them. It costs about 24px, so it now
+							 * goes only when those 24px are the ones missing, and only after 「完全访问」 has
+							 * already given up its words for a larger saving.
+							 */}
+							<div data-ly-fit-drop="2" className="flex shrink-0 items-center">
 								<ContextMeter messages={messages} settings={settings} modelId={modelId} sessionId={activeSessionId} />
 							</div>
 
-							{modelLocked ? (
-								// A label, not a disabled button: nothing here is going to become
-								// clickable, so it should not look like something that might.
-								<span
-									data-ly-tip={`${modelName ?? "模型"} · 对话开始后不能更换，新建对话可选`}
-									className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-label text-ink-faint"
-								>
-									<ModelIcon model={model?.modelId} name={modelName} />
-									<span className="min-w-0 truncate">{modelName ?? "未配置模型"}</span>
-								</span>
-							) : (
-								<button
-									type="button"
-									onClick={modelMenu.toggle}
-									data-ly-tip={modelName ?? "选择模型"}
-									aria-haspopup="menu"
-									aria-expanded={modelMenu.open}
-									className={`flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
-										modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
-									}`}
-								>
-									{/* Keyed on the model, so picking a different house turns the mark over with
-									    the label beside it rather than swapping under it. */}
-									<ModelIcon
-										key={modelId}
-										model={model?.modelId}
-										name={modelName}
-										className={modelRolls ? "ly-roll" : ""}
-									/>
-									<RollingText className="min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
-								</button>
-							)}
+							<button
+								type="button"
+								onClick={modelMenu.toggle}
+								data-ly-tip={modelTooltip(identity, formatWindow)}
+								aria-haspopup="menu"
+								aria-expanded={modelMenu.open}
+								className={`ly-composer-control flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
+									modelMenu.open ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"
+								}`}
+							>
+								{/* Keyed on the model, so picking a different house turns the mark over with
+								    the label beside it rather than swapping under it. */}
+								<ModelIcon
+									key={modelId}
+									model={model?.modelId}
+									name={modelName}
+									className={modelRolls ? "ly-roll" : ""}
+								/>
+								{/*
+								 * The one thing in the row that yields, so it is also what says the row is out of
+								 * room: everything else is `shrink-0`, and this truncating is exactly the moment
+								 * there was not enough width to go round. `fit.ts` reads this element — the class is the handle — which is why a short
+								 * name keeps its meter at any width.
+								 */}
+								<RollingText className="ly-fit-probe min-w-0 truncate">{modelName ?? "选择模型"}</RollingText>
+							</button>
 							<button
 								type="button"
 								onClick={effortMenu.toggle}
 								aria-haspopup="menu"
 								aria-expanded={effortMenu.open}
-								data-ly-tip={`推理强度：${effortLabel(settings?.thinking ?? "medium", model)}`}
-								className={`mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
+								data-ly-tip={`推理强度：${effortLabel(sessionThinking(meta, settings), model)}`}
+								className={`ly-composer-control mr-1.5 flex h-7 shrink-0 items-center rounded-md px-2 text-label transition-colors ${
 									effortMenu.open ? "bg-card-hover text-ink" : "text-ink-faint hover:bg-card-hover hover:text-ink"
-								}`}
-							>
-								<RollingText>{effortLabel(settings?.thinking ?? "medium", model)}</RollingText>
+								}`}>
+								<RollingText>{effortLabel(sessionThinking(meta, settings), model)}</RollingText>
 							</button>
 
 							<ComposerSend

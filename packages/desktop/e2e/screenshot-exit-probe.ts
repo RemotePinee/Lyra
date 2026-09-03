@@ -14,12 +14,17 @@
  */
 
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { startApp } from "./app.ts";
 
 const execFileAsync = promisify(execFile);
 const PORT = 9414;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The main process's account of what it did, read out before the run's directory is deleted. */
+let timeline = "";
 
 async function targets(): Promise<{ type: string; url: string; webSocketDebuggerUrl?: string }[]> {
 	return (await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json())) as never;
@@ -32,6 +37,23 @@ async function overlayTarget() {
 		await pause(250);
 	}
 	return null;
+}
+
+/**
+ * Whether a capture is still up, asked of the overlay page rather than of the debugger.
+ *
+ * The overlay window is not destroyed between captures any more — it is built once and shown and
+ * hidden, because building one per capture cost 147ms and PNG-encoding the screen for it cost
+ * another 133ms, and the picture a capture shows is taken *before* that wait. So its debugger
+ * target is listed whether a capture is running or not, and "is the target gone?" reported every
+ * capture as still open no matter what the app did.
+ */
+async function captureOver(socket: string): Promise<boolean> {
+	const result = (await send(socket, "Runtime.evaluate", {
+		expression: `document.querySelector('[data-capture="active"]') === null`,
+		returnByValue: true,
+	}).catch(() => null)) as { result?: { value?: boolean } } | null;
+	return result?.result?.value !== false;
 }
 
 async function send(socket: string, method: string, params: Record<string, unknown> = {}) {
@@ -73,7 +95,14 @@ async function frontmost(): Promise<string | null> {
 	}
 }
 
-const app = await startApp({ port: PORT });
+/** The app's own directory for this run, so its capture log can be read before it is deleted. */
+let home = "";
+const app = await startApp({
+	port: PORT,
+	seed: async (dir) => {
+		home = dir;
+	},
+});
 const problems: string[] = [];
 const note = (s: string) => console.log(s);
 
@@ -107,7 +136,7 @@ try {
 	});
 	await pause(1200);
 
-	const goneAfterEscape = !(await targets()).some((t) => t.url.includes("screenshot-overlay"));
+	const goneAfterEscape = await captureOver(first.webSocketDebuggerUrl);
 	note(`• 按 Esc → 浮层${goneAfterEscape ? "已关闭" : "还开着"}`);
 	if (!goneAfterEscape) problems.push("按 Esc 之后浮层没有关闭");
 
@@ -162,7 +191,7 @@ try {
 	}
 	await pause(1500);
 
-	const goneAfterFinish = !(await targets()).some((t) => t.url.includes("screenshot-overlay"));
+	const goneAfterFinish = await captureOver(socket);
 	note(`• 点完成 → 浮层${goneAfterFinish ? "已关闭" : "还开着"}`);
 	if (!goneAfterFinish) problems.push("点了完成之后浮层没有关闭——还停在截图状态");
 
@@ -172,7 +201,27 @@ try {
 		problems.push(`完成之后剪贴板里没有图片，只有：${kinds}`);
 	}
 } finally {
+	// Before `stop`, which deletes the directory it lives in.
+	timeline = await readFile(join(home, "screenshot-debug.log"), "utf8").catch(() => "");
 	await app.stop();
+}
+
+/*
+ * The main window has to get out of the way for the duration of a capture.
+ *
+ * Activating the overlay activates Lyra, and macOS raises *every* window of an application it
+ * activates — so the main window ends up above whatever was being screenshotted, invisible under
+ * the frozen picture, and revealed the moment that picture goes. A recording caught it: a colour
+ * pick ended with the Lyra window in front of the page the colour came from.
+ *
+ * Only for captures that did not start from Lyra, which is what this probe drives.
+ */
+if (timeline) {
+	if (!timeline.includes("reveal: main window stepped aside")) {
+		problems.push("从别的应用截图时主窗口没有让开——截图结束时它会挡在被截的窗口前面");
+	}
+} else {
+	problems.push("没有读到主进程时序日志，主窗口是否让开无法验证");
 }
 
 console.log("");

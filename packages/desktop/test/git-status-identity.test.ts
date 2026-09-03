@@ -27,6 +27,10 @@ function status(over: Partial<GitStatus> = {}): GitStatus {
 		behind: 0,
 		staged: [],
 		unstaged: [file("src/a.ts")],
+		remoteState: "tracking",
+		remote: "origin",
+		operation: null,
+		unpushed: 0,
 		...over,
 	};
 }
@@ -76,4 +80,23 @@ test("the branch, its upstream and the distance to it are all part of the readin
 	assert.equal(sameStatus(status(), status({ upstream: null })), false);
 	assert.equal(sameStatus(status(), status({ ahead: 1 })), false);
 	assert.equal(sameStatus(status(), status({ behind: 1 })), false);
+});
+
+test("so is where the branch stands with its remote, which moves with no file moving", () => {
+	/*
+	 * The case that makes this necessary: publishing a branch. Before and after, the tree is clean,
+	 * every count is zero and both file lists are empty — the only thing that changed is that the
+	 * branch now has an upstream. Compared on files and counts alone this reads as "nothing
+	 * happened", and the panel would go on offering 「发布分支」 for a branch already published.
+	 */
+	const untracked = status({ remoteState: "no-upstream", upstream: null, unpushed: null, unstaged: [] });
+	const published = status({ remoteState: "tracking", upstream: "origin/main", unpushed: 0, unstaged: [] });
+	assert.equal(sameStatus(untracked, published), false, "publishing has to register");
+
+	assert.equal(sameStatus(status(), status({ remoteState: "detached" })), false);
+	assert.equal(sameStatus(status(), status({ remote: "fork" })), false);
+	assert.equal(sameStatus(status(), status({ operation: "rebase" })), false);
+	assert.equal(sameStatus(status(), status({ unpushed: 3 })), false);
+	// And a genuinely unchanged reading is still the same one; the poll depends on it.
+	assert.equal(sameStatus(status(), status()), true);
 });

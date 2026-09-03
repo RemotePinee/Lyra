@@ -18,7 +18,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { after, before, test } from "node:test";
-import { startApp, type RunningApp } from "./app.ts";
+import { closeListeningServer, startApp, type RunningApp } from "./app.ts";
 
 const exec = promisify(execFile);
 
@@ -121,7 +121,7 @@ before(async () => {
 after(async () => {
 	await app?.stop();
 	for (const res of open) res.destroy();
-	await new Promise((resolve) => model?.close(() => resolve(null)));
+	await closeListeningServer(model);
 });
 
 const shell = () => app.evaluate<string>(`(document.body?.innerText ?? "")`);

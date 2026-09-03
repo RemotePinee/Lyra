@@ -16,7 +16,7 @@ import { createServer, type Server } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { startApp, type RunningApp } from "./app.ts";
+import { closeListeningServer, startApp, type RunningApp } from "./app.ts";
 
 let app: RunningApp;
 let model: Server;
@@ -151,7 +151,7 @@ before(async () => {
 
 after(async () => {
 	await app?.stop();
-	await new Promise((resolve) => model?.close(() => resolve(null)));
+	await closeListeningServer(model);
 });
 
 // ---------------------------------------------------------------------------

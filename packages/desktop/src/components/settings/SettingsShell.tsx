@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { NavPane, useLayout } from "../../layout.tsx";
+import { groupsFor, sectionFor } from "./sections-for.ts";
 import type { SettingsSection } from "../../store.ts";
 import { Scroller } from "../Scroller.tsx";
 import { useApp } from "../../store.ts";
@@ -110,20 +111,25 @@ const GROUPS: { label: string; items: { id: SettingsSection; label: string; icon
 ];
 
 export function SettingsShell() {
-	const section = useApp((s) => s.settingsSection);
+	const wanted = useApp((s) => s.settingsSection);
 	const setSection = useApp((s) => s.setSettingsSection);
 	const setView = useApp((s) => s.setView);
 	const { compact, navOpen, toggleNav, dismissNav, sidebarWidth, titlebar } = useLayout();
 
-	const groups = GROUPS.map((group) => {
-		if (group.label === "基础设置") {
-			const items = [...group.items];
+	const onPhone = window.lyra?.host === "mobile";
+
+	const section = sectionFor(GROUPS, wanted, window.lyra?.host === "mobile");
+
+	const groups = groupsFor(
+		GROUPS.map((group) => {
+			if (group.label !== "基础设置" || onPhone) return group;
 			// Insert screenshot settings into 基础设置
-			items.splice(items.length - 1, 0, { id: "screenshot", label: "屏幕截图", icon: Camera });
+			const items = [...group.items];
+			items.splice(items.length - 1, 0, { id: "screenshot" as const, label: "屏幕截图", icon: Camera });
 			return { ...group, items };
-		}
-		return group;
-	});
+		}),
+		onPhone,
+	);
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {

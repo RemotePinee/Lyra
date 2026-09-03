@@ -49,7 +49,25 @@ extraResources:
       - "*.png"
       - "!source-*.png"
 
+# Each build keeps only its own copy of the per-platform prebuilts.
+#
+# `supportedArchitectures` in `pnpm-workspace.yaml` installs every platform's `koffi`, because a
+# release job packages architectures its own machine is not — without it, the arm64 Windows
+# installer took the x64 `koffi.node` the runner happened to need, which is the bug 0.8.35 shipped.
+# The cost is that all six copies are then present at packaging time, and electron-builder copies
+# production dependencies as it finds them: a macOS build would carry Windows and Linux binaries,
+# around 8MB of code that platform can never load.
+#
+# Stated per platform rather than once, because `koffi` names its packages after Node's
+# `process.platform` — `darwin`, `win32`, `linux` — and there is no macro for that. `${arch}` is
+# expanded per build, so one pattern covers both architectures on each platform.
+#
+# These are `!` patterns, which is what reaches node_modules at all: positive patterns there are
+# ignored, since production dependencies are included by default. `scripts/check-native-arch.mjs`
+# runs after packaging and fails the build if a pattern here ever excludes the copy that was needed.
 mac:
+  files:
+    - "!**/node_modules/@koromix/koffi-!(darwin-${arch})/**"
   category: public.app-category.developer-tools
   # Relative to `buildResources`, not to the project.
   #
@@ -110,6 +128,9 @@ mac:
   identity: "-"
 
 win:
+  # See the note above `mac`.
+  files:
+    - "!**/node_modules/@koromix/koffi-!(win32-${arch})/**"
   icon: icon.png
   target:
     - target: nsis
@@ -121,12 +142,15 @@ nsis:
   perMachine: false
 
 linux:
+  # See the note above `mac`.
+  files:
+    - "!**/node_modules/@koromix/koffi-!(linux-${arch})/**"
   icon: icon.png
   category: Development
   target:
     - target: AppImage
-      arch: [x64, arm64]
+      arch: [x64]
     - target: deb
-      arch: [x64, arm64]
+      arch: [x64]
 
 publish: null

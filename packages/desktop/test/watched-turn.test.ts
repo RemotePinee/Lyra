@@ -60,25 +60,14 @@ test("watching a turn from start to finish ends with a clean row", () => {
 	assert.equal(mark, null, "nothing is left to announce");
 });
 
-/**
- * Which run's summary line glides.
+/*
+ * Which run glides is not tested here any more, and the way it used to be is the point.
  *
- * Exactly one at a time, and only while the turn is going. This was briefly every group in the
- * transcript at once — see the note in `runs.tsx` — which is worth a test because the wrong
- * version looks busy and plausible rather than broken.
+ * There were three tests below this line, and each one rewrote the rule as
+ * `turnRunning && index === total - 1` and then checked that copy against itself. They passed for
+ * as long as the bug lived, because the copy was faithful: "the last run, while the turn runs" is
+ * what the app did, and it is wrong — the last run stays the last run after you ask something else.
+ * A test that restates the code cannot disagree with it.
+ *
+ * The rule is now checked against `runs` itself, on real transcripts, in `glide.test.ts`.
  */
-const glides = (index: number, total: number, turnRunning: boolean) => turnRunning && index === total - 1;
-
-test("only the run being worked on glides, not every run above it", () => {
-	// Three runs in a turn still going: the first two are finished history.
-	assert.deepEqual([0, 1, 2].map((i) => glides(i, 3, true)), [false, false, true]);
-});
-
-test("a finished turn glides nowhere", () => {
-	assert.deepEqual([0, 1, 2].map((i) => glides(i, 3, false)), [false, false, false]);
-});
-
-test("the only run in a turn glides while that turn is going", () => {
-	assert.equal(glides(0, 1, true), true);
-	assert.equal(glides(0, 1, false), false);
-});

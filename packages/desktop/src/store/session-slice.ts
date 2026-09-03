@@ -397,7 +397,6 @@ export function sessionSlice(set: Set, get: Get) {
 
     // If the closed tab is currently active, switch to adjacent or fallback tab
     if (get().activeSessionId === sessionId) {
-      // If there are other tabs open, switch to the nearest one
       if (nextTabs.length > 0) {
         const closedIndex = currentTabs.indexOf(sessionId);
         const nextActiveId = nextTabs[Math.min(closedIndex, nextTabs.length - 1)];
@@ -407,15 +406,12 @@ export function sessionSlice(set: Set, get: Get) {
           return;
         }
       }
-      // If no remaining open tabs:
-      // In a standalone session window (opened via ?session=...), closing the only tab should close the window
       const params = new URLSearchParams(window.location.search);
       const standaloneSession = params.get("session");
       if (standaloneSession) {
         void window.lyra.windowControls?.close();
         return;
       }
-      // Otherwise in main window, clear to blank new session
       await get().newSession();
     }
   },
@@ -426,6 +422,18 @@ export function sessionSlice(set: Set, get: Get) {
     if (targetMeta) {
       await get().openSession(targetMeta);
     }
+  },
+
+  async refreshSessionStats(sessionId: string) {
+    const latest = (await window.lyra.sessions.list()).find((s) => s.id === sessionId);
+    if (!latest) return;
+    set({
+      sessions: get().sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, messageCount: latest.messageCount, usage: latest.usage }
+          : s,
+      ),
+    });
   },
   };
 }

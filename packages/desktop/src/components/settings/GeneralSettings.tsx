@@ -130,7 +130,7 @@ export function GeneralSettings() {
         />
         <Row
           title="默认推理强度"
-          detail="新会话使用的思考预算，可在输入框右侧随时切换"
+          detail="新会话使用的思考预算。每个会话都可以在输入框右侧单独调整，互不影响"
           control={
             <Segmented
               value={settings.thinking}

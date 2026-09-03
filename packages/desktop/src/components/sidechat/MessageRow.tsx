@@ -168,7 +168,7 @@ function AssistantRow({ message }: { message: AssistantMessage }) {
 							key={index}
 							text={block.thinking}
 							redacted={block.redacted === true}
-							live={message.stopReason === "pending"}
+							live={message.stopReason === "pending" && index === message.content.length - 1}
 						/>
 					);
 				}

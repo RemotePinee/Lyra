@@ -14,12 +14,13 @@
  * to press this".
  */
 
-import { ChevronRight, Folder, MoreHorizontal } from "lucide-react";
+import { ChevronRight, Folder, MoreHorizontal, SquarePen } from "lucide-react";
 import { useLayout } from "../../layout.tsx";
 import { ProjectMenu } from "../modals/ProjectMenu.tsx";
 import { usePopover } from "../Popover.tsx";
 import { ScrollText } from "../ScrollText.tsx";
 import type { Group } from "./grouping.ts";
+import { startProjectSession } from "./newSession.ts";
 
 export function ProjectHead({
 	group,
@@ -102,7 +103,17 @@ export function ProjectHead({
 				)}
 			</button>
 
-			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-100 group-has-[:focus-visible]/project:opacity-100">
+			<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-lg pr-1.5 opacity-0 transition-opacity duration-[var(--ly-t-quick)] group-hover/project:opacity-100 group-has-[:focus-visible]/project:opacity-100">
+				<button
+					type="button"
+					data-ly-tip="在这个项目里新建会话"
+					aria-label={`在「${group.name}」里新建会话`}
+					onClick={() => void startProjectSession(group.path, collapsed ? onToggleCollapsed : undefined)}
+					className="pointer-events-auto rounded p-1 text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
+				>
+					<SquarePen size={13} strokeWidth={1.8} />
+				</button>
+
 				<button
 					type="button"
 					data-ly-tip="项目操作"

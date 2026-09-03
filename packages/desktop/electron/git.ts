@@ -8,7 +8,8 @@
 
 import { git } from "./git-exec.ts";
 
-export { git, run } from "./git-exec.ts";
+export { git, run, type RemoteResult } from "./git-exec.ts";
+export { OPERATION_LABEL, type GitOperation, type RemoteState } from "./git-remote-state.ts";
 export { collectWorkspaceDiff, readDiffBlob, type DiffBlob } from "./git-diff.ts";
 export {
 	commentOnPullRequest,
@@ -37,8 +38,11 @@ export {
 	deleteBranch,
 	diffRefs,
 	gitLog,
+	fetchRemotes,
 	pullBranch,
 	pushBranch,
+	FETCH_TIMEOUT_MS,
+	QUIET_FETCH_TIMEOUT_MS,
 } from "./git-history.ts";
 export {
 	addWorktree,
@@ -66,6 +70,7 @@ export {
 	type WorkflowRunStatus,
 	type WorkflowRunSummary,
 } from "./git-release.ts";
+export { generateCommitMessage } from "./git-commit-message.ts";
 
 /**
  * Whether this directory is inside a working tree — and if git would not say, why not.
@@ -122,19 +127,24 @@ export async function isGitRepo(cwd: string): Promise<boolean> {
 	return (await probeRepo(cwd)).repo;
 }
 
+/**
+ * The branch that is checked out, or null when none is.
+ *
+ * `symbolic-ref` and nothing else, for two reasons that pull the same way.
+ *
+ * It is the only one that answers the question. `rev-parse --abbrev-ref HEAD` returns the *string*
+ * `"HEAD"` on a detached checkout rather than failing — so every caller that wrote `if (!branch)`
+ * was reading "not on a branch" as "on a branch called HEAD". `pushBranch` was one of them, and it
+ * went on to run `push -u origin HEAD`, which git refuses with `not a full refname`. A checkout at
+ * a tag, a bisect, and every rebase in progress all land here.
+ *
+ * And it is right about a repository with no commits, which is why `rev-parse` was paired with it
+ * to begin with: there is no commit to resolve, but HEAD already names the branch the first commit
+ * will land on, and `symbolic-ref` reads that name. So one call answers both cases where two used
+ * to, and the one it drops is the one that was lying.
+ */
 export async function gitBranch(cwd: string): Promise<string | null> {
-	const named = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])
-		.then((out) => out.trim())
-		.catch(() => null);
-	if (named) return named;
-	/*
-	 * A repository with no commits yet still has a branch — it just has nothing to point at.
-	 *
-	 * `rev-parse HEAD` resolves a commit and so fails outright there, which showed a freshly
-	 * initialised project as having no branch at all. `symbolic-ref` reads the name HEAD is
-	 * waiting to become, which is what the first commit will land on.
-	 */
-	return git(cwd, ["symbolic-ref", "--short", "HEAD"])
+	return git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"])
 		.then((out) => out.trim() || null)
 		.catch(() => null);
 }

@@ -141,6 +141,13 @@ export async function runSubAgent(
 				systemPrompt: subAgentPrompt,
 				tools: allowed,
 				messages: [{ role: "user", content: [{ type: "text", text: input.prompt }], timestamp: Date.now() }],
+				/*
+				 * The app default, deliberately — not the dispatching conversation's level.
+				 *
+				 * A session turned up to the top level is one piece of work somebody decided was
+				 * worth it; the sub-agents it dispatches are a dozen cheap errands run in parallel,
+				 * and inheriting that level would multiply the decision by however many were sent.
+				 */
 				thinking: options.settings.thinking,
 				retryAttempts: options.settings.retryAttempts,
 				signal: controller.signal,

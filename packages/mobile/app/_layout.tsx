@@ -68,6 +68,8 @@ export default function RootLayout() {
 							headerStyle: { backgroundColor: "#1c1c1c" },
 						}}
 					/>
+					<Stack.Screen name="desk" options={{ headerShown: false }} />
+					<Stack.Screen name="scan" options={{ title: "扫码连接", headerShown: false, presentation: "fullScreenModal" }} />
 					<Stack.Screen
 						name="session/[id]"
 						options={{

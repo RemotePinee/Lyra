@@ -33,11 +33,14 @@ export const SubAgentTranscript = memo(function SubAgentTranscript({
 				if (run.kind === "compaction") return null;
 
 				if (run.kind === "tools") {
-					const isTrailing = Boolean(isLive && idx === transcriptRuns.length - 1);
-					return <ToolRun key={`sub-run-${idx}`} calls={run.calls} trailing={isTrailing} runs={toolRuns} />;
+					// Which run is being worked on is `grouping.ts`'s answer; whether anyone is working on
+					// it at all is this panel's. The same pair as in `Conversation`.
+					return <ToolRun key={`sub-run-${idx}`} calls={run.calls} live={Boolean(isLive && run.live)} runs={toolRuns} />;
 				}
 
 				const { message, upTo } = run;
+				// Set only on the reply whose reasoning `grouping.ts` drew above the work; see `Run.from`.
+				const from = run.from ?? 0;
 				if (message.role === "user") {
 					if (message.synthetic) return null;
 					const text = message.content
@@ -82,17 +85,18 @@ export const SubAgentTranscript = memo(function SubAgentTranscript({
 				}
 
 				if (message.role === "assistant") {
-					const visibleBlocks = message.content.slice(0, upTo);
+					const visibleBlocks = message.content.slice(from, upTo);
 					return (
 						<div key={`assistant-${idx}`} className="ly-enter mb-3">
-							{visibleBlocks.map((block, bIdx) => {
+							{visibleBlocks.map((block, offset) => {
+								const bIdx = from + offset;
 								if (block.type === "thinking") {
 									return (
 										<ThinkingBlock
 											key={bIdx}
 											text={block.thinking}
 											redacted={block.redacted === true}
-											live={message.stopReason === "pending"}
+											live={message.stopReason === "pending" && bIdx === message.content.length - 1}
 										/>
 									);
 								}

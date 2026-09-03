@@ -12,7 +12,7 @@ import { ToolCard } from "../ToolCard.tsx";
 import { describeRun } from "../ToolGroup.tsx";
 import { ToolGroup } from "../ToolGroup.tsx";
 import { useApp, type ToolRun as ToolRunState } from "../../store.ts";
-import type { Call } from "./grouping.ts";
+import { sameRun, type Call } from "./grouping.ts";
 
 /**
  * How much of a long transcript is mounted at once, and how much each "show more" adds.
@@ -112,11 +112,12 @@ export function LiveToolCard({
  */
 const ToolRunGroup = function ToolRun({
   calls,
-  trailing,
+  live,
   runs,
 }: {
   calls: Call[];
-  trailing?: boolean;
+  /** Whether this is the run being worked on right now — decided in `grouping.ts`, not here. */
+  live?: boolean;
   /** Records for a transcript outside the main session — see `LiveToolCard`. */
   runs?: Record<string, ToolRunState>;
 }) {
@@ -132,10 +133,13 @@ const ToolRunGroup = function ToolRun({
    *
    * It used to also light up whenever a call in the group counted as live, and that turned out to
    * mean something else entirely: a call with no recorded result counts as live while its message
-   * is still `pending` — and during a turn the earlier messages are *all* still pending,
-   * so every group in the transcript qualified and the whole conversation shimmered at once. What
-   * was wanted is the single run being worked on, and the answer to that is `trailing`: the last
-   * run of a turn that has not finished. Everything above it is over, whatever its calls look like.
+   * is still `pending`, so several groups qualified at once and the conversation shimmered in
+   * places nothing was happening. Answering it with "the last run in the transcript" was the next
+   * attempt, and it was wrong in the other direction — the last run stays the last run after you
+   * ask something else, so a finished stretch of work glided through the whole of the next reply.
+   *
+   * The question is about the turn, so it is answered where the turn's shape is known. See
+   * `liveWork` in `grouping.ts`.
    */
 
   /*
@@ -160,7 +164,7 @@ const ToolRunGroup = function ToolRun({
   ));
 
   return (
-    <ToolGroup summary={summary} added={added} removed={removed} running={Boolean(trailing)}>
+    <ToolGroup summary={summary} added={added} removed={removed} running={Boolean(live)}>
       {cards}
     </ToolGroup>
   );
@@ -172,27 +176,21 @@ const ToolRunGroup = function ToolRun({
  * rebuilt on every render of the transcript, but the calls in it are the same objects with the
  * same ids, and a group whose calls are unchanged has nothing new to draw.
  *
- * `trailing` has to be in here too, and leaving it out is the whole of a bug that survived two
+ * `live` has to be in here too, and leaving it out is the whole of a bug that survived two
  * attempts at fixing it. It is the one prop that changes *without the calls changing*: a group
- * stops being the last one the moment another begins, and stops being live the moment the turn
+ * stops being the current one the moment another begins, and stops being live the moment the turn
  * ends — and in both cases its own calls are exactly as they were. Compared on calls alone, React
  * was told nothing had changed and skipped the render, so the highlight stayed on every group that
- * had ever been the last one, and stayed lit after the turn was over.
+ * had ever been the current one, and stayed lit after the turn was over.
  *
  * It also explains why this twice looked fixed when it was not: switching conversations remounts
  * these, and a fresh mount never consults a memo comparison. The failure only shows in the one
  * situation the comparison exists for — a transcript being added to in place.
+ *
+ * The comparison itself is `sameRun`, in `grouping.ts`, so that the tests can check the one that
+ * actually runs instead of a copy of it. See the note there.
  */
-export const ToolRun = memo(ToolRunGroup, (before, after) => {
-	if (before.trailing !== after.trailing) return false;
-	// Injected records are rebuilt whenever their transcript grows, and a new map is the only sign
-	// that a call in this group has finished — nothing here subscribes to them.
-	if (before.runs !== after.runs) return false;
-	if (before.calls.length !== after.calls.length) return false;
-	return before.calls.every(
-		(call, i) => call.block.id === after.calls[i].block.id && call.stopReason === after.calls[i].stopReason,
-	);
-});
+export const ToolRun = memo(ToolRunGroup, sameRun);
 
 
 /** The file a call is about, when it is about one — the part worth naming in a summary. */

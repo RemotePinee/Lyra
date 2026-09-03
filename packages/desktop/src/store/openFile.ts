@@ -86,6 +86,15 @@ interface OpenFileState {
 	/** Close one tab. The pane moves to a neighbour, the way a terminal's strip does. */
 	closeTab(path: string): void;
 	/**
+	 * Close several at once — 关闭其他, 关闭右侧, 全部关闭.
+	 *
+	 * Unlike `closeTab`, a tab holding unsaved edits is kept rather than closed, and the count of
+	 * those is returned so the caller can say so. Closing one tab is aimed at that tab; closing
+	 * "the others" is aimed at a set nobody looked through, and silently dropping an edit somewhere
+	 * inside it is the one outcome that cannot be undone. Reopening a tab costs a click.
+	 */
+	closeTabs(paths: string[]): number;
+	/**
 	 * Write the open file back, and clear its draft.
 	 *
 	 * Here rather than in the viewer because more than one thing saves now: ⌘S in the editor, and
@@ -205,6 +214,34 @@ export const useOpenFile = create<OpenFileState>((set, get) => ({
 		const next = rest[at] ?? rest[rest.length - 1];
 		if (next) void get().open({ name: next.name, path: next.path, isDirectory: false, size: 0 });
 		else set({ ...EMPTY });
+	},
+
+	closeTabs(paths) {
+		const { tabs, path: open, drafts } = get();
+		const asked = new Set(paths);
+		const kept = tabs.filter((tab) => asked.has(tab.path) && tab.path in drafts).length;
+		const gone = new Set(
+			tabs.filter((tab) => asked.has(tab.path) && !(tab.path in drafts)).map((tab) => tab.path),
+		);
+		if (gone.size === 0) return kept;
+
+		const openAt = tabs.findIndex((tab) => tab.path === open);
+		const rest = tabs.filter((tab) => !gone.has(tab.path));
+		set({ tabs: rest });
+		if (open === null || !gone.has(open)) return kept;
+
+		/*
+		 * The same landing rule as `closeTab`, applied to whatever survived.
+		 *
+		 * Measured from where the open file was, not from where the first casualty was: 关闭其他
+		 * removes tabs on both sides of it, and taking the first index would land the pane on
+		 * whatever happens to sit at that position afterwards rather than on the nearest file
+		 * still open to the right.
+		 */
+		const next = tabs.slice(openAt + 1).find((tab) => !gone.has(tab.path)) ?? rest[rest.length - 1];
+		if (next) void get().open({ name: next.name, path: next.path, isDirectory: false, size: 0 });
+		else set({ ...EMPTY });
+		return kept;
 	},
 
 	async save() {

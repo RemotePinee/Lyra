@@ -12,17 +12,13 @@
  * and it is already decoded, so this costs a `drawImage` of a few hundred pixels per frame.
  */
 
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { Point } from "./screenshot-geometry.ts";
 
-/** How many snapshot pixels are visible along each axis of the loupe (must be odd). */
+/** How much of the snapshot is shown, in snapshot pixels across the whole loupe. */
 const SPAN = 17;
-/** Display size in CSS pixels for a single snapshot pixel inside the loupe. */
-const CELL = 8;
-/** The loupe glass size on screen (strictly integer: 17 * 8 = 136px, zero subpixel drift). */
-const SIZE = SPAN * CELL;
-const CENTER_CELL_OFFSET = Math.floor(SPAN / 2) * CELL; // 64px
-const CENTER_LINE_OFFSET = CENTER_CELL_OFFSET + CELL / 2; // 68px
+/** The loupe's size on screen. */
+const SIZE = 132;
 
 export interface LoupeReading {
 	/** In snapshot pixels, which is what a colour picker's coordinates mean. */
@@ -51,18 +47,16 @@ export function ScreenshotLoupe({
 }) {
 	const glass = useRef<HTMLCanvasElement | null>(null);
 
-	useLayoutEffect(() => {
+	useEffect(() => {
 		const el = glass.current;
 		const ctx = el?.getContext("2d");
 		if (!el || !ctx || !source) return;
-		const targetX = reading ? reading.x : Math.round(at.x * scale);
-		const targetY = reading ? reading.y : Math.round(at.y * scale);
-		const half = Math.floor(SPAN / 2);
+		const half = SPAN / 2;
 		ctx.imageSmoothingEnabled = false;
+		ctx.clearRect(0, 0, el.width, el.height);
 		// A slab of the snapshot, blown up so one snapshot pixel is a visible square.
-		// Aligned strictly to integer snapshot pixels so the center box matches `reading` exactly.
-		ctx.drawImage(source, targetX - half, targetY - half, SPAN, SPAN, 0, 0, el.width, el.height);
-	}, [source, at.x, at.y, scale, reading]);
+		ctx.drawImage(source, at.x * scale - half, at.y * scale - half, SPAN, SPAN, 0, 0, el.width, el.height);
+	}, [source, at.x, at.y, scale]);
 
 	/*
 	 * Beside the pointer, and never off the screen.
@@ -70,7 +64,7 @@ export function ScreenshotLoupe({
 	 * Flipped to the other side when it would overhang, which is what keeps it usable in the corner
 	 * where a selection most often ends.
 	 */
-	const pad = 10;
+	const pad = 18;
 	const boxW = SIZE;
 	const boxH = SIZE + 44;
 	const left = at.x + pad + boxW > viewport.width ? at.x - pad - boxW : at.x + pad;
@@ -86,37 +80,33 @@ export function ScreenshotLoupe({
 			<div className="relative" style={{ height: SIZE }}>
 				<canvas ref={glass} width={SIZE} height={SIZE} className="block h-full w-full" />
 				{/*
-				 * The crosshair and target box mark the exact integer pixel being sampled.
-				 * Using strict integer pixel values avoids browser subpixel rounding jitter.
+				 * The crosshair marks the pixel being reported, not the middle of the glass.
+				 *
+				 * They are the same place by construction — the slab is centred on the pointer — and
+				 * drawing it in the DOM keeps it out of the canvas, which is being redrawn every frame.
 				 */}
+				<span className="absolute inset-x-0 top-1/2 h-px bg-[var(--color-accent)]/90" />
+				<span className="absolute inset-y-0 left-1/2 w-px bg-[var(--color-accent)]/90" />
 				<span
-					className="absolute inset-x-0 h-px bg-[var(--color-accent)]/90"
-					style={{ top: CENTER_LINE_OFFSET }}
-				/>
-				<span
-					className="absolute inset-y-0 w-px bg-[var(--color-accent)]/90"
-					style={{ left: CENTER_LINE_OFFSET }}
-				/>
-				<span
-					className="absolute border border-[var(--color-accent)] shadow-[0_0_2px_rgba(0,0,0,0.8)]"
+					className="absolute border border-[var(--color-accent)]"
 					style={{
-						left: CENTER_CELL_OFFSET,
-						top: CENTER_CELL_OFFSET,
-						width: CELL,
-						height: CELL,
+						left: `${(Math.floor(SPAN / 2) / SPAN) * 100}%`,
+						top: `${(Math.floor(SPAN / 2) / SPAN) * 100}%`,
+						width: `${(1 / SPAN) * 100}%`,
+						height: `${(1 / SPAN) * 100}%`,
 					}}
 				/>
 			</div>
 			<div className="space-y-0.5 px-2 py-1.5 text-caption text-white/85 tabular-nums">
 				<div className="flex items-center justify-between gap-2">
 					<span className="text-white/50">坐标</span>
-					<span className="font-mono">
+					<span>
 						{reading ? `${reading.x}, ${reading.y}` : "—"}
 					</span>
 				</div>
 				<div className="flex items-center justify-between gap-2">
 					<span className="text-white/50">色值</span>
-					<span className="flex items-center gap-1 font-mono">
+					<span className="flex items-center gap-1">
 						<span
 							className="inline-block size-2.5 rounded-[2px] border border-white/30"
 							style={{ background: reading?.hex ?? "transparent" }}

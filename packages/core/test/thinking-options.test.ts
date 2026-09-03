@@ -104,3 +104,76 @@ test("off means no effort parameter at all, not the string 'off'", () => {
 	assert.equal(resolveReasoningEffort("off", model("gpt-5.6")), undefined);
 	assert.equal(resolveReasoningEffort(undefined, model("gpt-5.6")), undefined);
 });
+
+test("Gemini models never receive effort none when thinking is off in openai-responses adapter", async () => {
+	const { openaiResponsesProvider } = await import("../src/ai/openai-responses.ts");
+	let capturedPayload: any = null;
+
+	const mockFetch = async () => {
+		// Return 400 immediately to terminate stream early
+		return new Response(JSON.stringify({ error: { message: "mock" } }), { status: 400 });
+	};
+
+	const providerConfig = {
+		id: "test",
+		name: "test",
+		baseUrl: "https://example.invalid",
+		api: "openai-responses" as const,
+		apiKey: "test",
+		enabled: true,
+		models: [],
+	};
+
+	// 1. Gemini model with thinking: "off"
+	const geminiModel = {
+		...model("gemini-3.7-flash-high"),
+		supportsThinking: true,
+	};
+
+	const genGemini = openaiResponsesProvider.stream(
+		providerConfig,
+		geminiModel,
+		{ systemPrompt: "", messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }], tools: [] },
+		{
+			thinking: "off",
+			fetch: mockFetch as any,
+			onPayload: (p) => {
+				capturedPayload = p;
+			},
+		},
+	);
+	try {
+		await genGemini.next();
+	} catch {
+		// Expected error from mockFetch
+	}
+
+	assert.ok(capturedPayload, "Payload should be sent");
+	assert.equal(capturedPayload.reasoning, undefined, "Gemini with thinking: 'off' must not have reasoning property");
+
+	// 2. OpenAI model with thinking: "off" should still have { reasoning: { effort: "none" } }
+	const gptModel = {
+		...model("gpt-5.6"),
+		supportsThinking: true,
+	};
+	let capturedGptPayload: any = null;
+	const genGpt = openaiResponsesProvider.stream(
+		providerConfig,
+		gptModel,
+		{ systemPrompt: "", messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }], tools: [] },
+		{
+			thinking: "off",
+			fetch: mockFetch as any,
+			onPayload: (p) => {
+				capturedGptPayload = p;
+			},
+		},
+	);
+	try {
+		await genGpt.next();
+	} catch {
+		// Expected error from mockFetch
+	}
+	assert.ok(capturedGptPayload, "Payload should be sent for GPT");
+	assert.deepEqual(capturedGptPayload.reasoning, { effort: "none" }, "GPT with thinking: 'off' retains effort: 'none'");
+});

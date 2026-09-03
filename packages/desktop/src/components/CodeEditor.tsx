@@ -184,7 +184,7 @@ export function CodeEditor({
 					{
 						key: "Mod-f",
 						preventDefault: true,
-						run: (view) => (searchPanelOpen(view.state) ? closeSearchPanel(view) : openSearchPanel(view)),
+						run: (view: EditorView) => (searchPanelOpen(view.state) ? closeSearchPanel(view) : openSearchPanel(view)),
 					},
 					// The replace half, which is folded away until it is asked for — same as the
 					// context menu's 替换 item, so the two cannot say different things.
@@ -200,7 +200,7 @@ export function CodeEditor({
 					{
 						key: "Mod-s",
 						preventDefault: true,
-						run: (view) => {
+						run: (view: EditorView) => {
 							/*
 							 * Tidy first, then write — when that has been asked for.
 							 *
@@ -233,7 +233,7 @@ export function CodeEditor({
 						key: "Shift-Alt-f",
 						mac: "Mod-Shift-f",
 						preventDefault: true,
-						run: (view) => {
+						run: (view: EditorView) => {
 							void formatNow(view, pathRef.current);
 							return true;
 						},
@@ -243,7 +243,8 @@ export function CodeEditor({
 					...historyKeymap,
 					...searchKeymap,
 					...foldKeymap,
-				]),
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				] as any),
 				editorTheme(),
 				EditorView.updateListener.of((update) => {
 					if (update.docChanged) onChangeRef.current(update.state.doc.toString());

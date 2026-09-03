@@ -6,13 +6,36 @@
  * sequence number it saw, so a dropped connection never loses a turn.
  */
 
+import { roomFor } from "./sha256.ts";
 import type { AgentEvent, RemoteSettings, SessionMeta, SessionRecord, UserContent } from "./protocol";
 
 export interface Connection {
 	host: string;
 	port: number;
 	token: string;
-	secure?: boolean;
+	/**
+	 * Speak https/wss rather than http/ws.
+	 *
+	 * A desktop on the LAN is plain http — it is on the same network and there is no certificate
+	 * to have. Anything reached through a reverse proxy or a tunnel is almost always TLS, and
+	 * guessing wrong is not a degraded connection but no connection: http against a TLS port hangs
+	 * until it times out, and the error names neither cause.
+	 */
+	tls?: boolean;
+	/**
+	 * This endpoint is a relay to meet at, not the desktop itself.
+	 *
+	 * Kept so the UI can say which way it is connected — "通过中转" is worth showing, because it
+	 * explains both the extra hop of latency and why it still works away from home.
+	 */
+	relay?: boolean;
+	/**
+	 * The desktop's platform, learned when pairing.
+	 *
+	 * The renderer reads it before its first paint to decide where the window controls go and which
+	 * shortcut glyphs to print. It describes the machine the session runs on, not this phone.
+	 */
+	platform?: string;
 }
 
 export class SyncClient {
@@ -27,15 +50,8 @@ export class SyncClient {
 		this.connection = connection;
 	}
 
-	private get isHttps(): boolean {
-		if (typeof this.connection.secure === "boolean") return this.connection.secure;
-		return /^https:\/\//i.test(this.connection.host);
-	}
-
 	get baseUrl(): string {
-		const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
-		const proto = this.isHttps ? "https" : "http";
-		return `${proto}://${cleanHost}:${this.connection.port}`;
+		return `${this.connection.tls ? "https" : "http"}://${this.connection.host}:${this.connection.port}`;
 	}
 
 	// -------------------------------------------------------------------------
@@ -58,37 +74,70 @@ export class SyncClient {
 		return (await response.json()) as T;
 	}
 
-	static async ping(host: string, port: number): Promise<{ ok: boolean; reason?: string; secure?: boolean }> {
-		const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
-		const isExplicitHttps = /^https:\/\//i.test(host);
-
-		// Helper to probe a specific protocol
-		const probe = async (proto: "https" | "http") => {
-			try {
-				const response = await fetch(`${proto}://${cleanHost}:${port}/api/ping`, {
-					signal: AbortSignal.timeout(4000),
-				});
-				if (!response.ok) return { ok: false, reason: `HTTP ${response.status}` };
-				const body = (await response.json()) as { app?: string };
-				return { ok: body.app === "lyra", reason: body.app !== "lyra" ? "不是 Lyra 服务" : undefined, secure: proto === "https" };
-			} catch (e) {
-				return { ok: false, reason: e instanceof Error ? e.message : String(e) };
-			}
-		};
-
-		// If user explicitly provided https or domain name, probe https first
-		if (isExplicitHttps) {
-			return probe("https");
+	static async ping(host: string, port: number, tls = false): Promise<boolean> {
+		try {
+			const response = await fetch(`${tls ? "https" : "http"}://${host}:${port}/api/ping`, {
+				signal: AbortSignal.timeout(5000),
+			});
+			if (!response.ok) return false;
+			const body = (await response.json()) as { app?: string };
+			return body.app === "lyra";
+		} catch {
+			return false;
 		}
+	}
 
-		// Try http first, if failed then auto probe https
-		const httpRes = await probe("http");
-		if (httpRes.ok) return httpRes;
+	/**
+	 * Whether a relay is reachable and will let us into our room.
+	 *
+	 * Not `ping`: a relay is not a sync server. It answers no HTTP route the app knows and has no
+	 * opinion about the token, so the question it *can* answer is whether the desktop is in the room
+	 * — which is `ready`, and is a stronger answer than either half alone. It says the relay works,
+	 * that the desktop is dialled in, and that both ends derived the same room, which they can only
+	 * do from the same token. That last part is why this doubles as the token check on this path.
+	 *
+	 * `waiting` is not enough: it means the room opened and nobody else is in it, which is equally
+	 * what a wrong token looks like — a room of one, belonging to nobody.
+	 */
+	static pingRelay(host: string, port: number, tls: boolean, token: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			let socket: WebSocket;
+			try {
+				socket = new WebSocket(`${tls ? "wss" : "ws"}://${host}:${port}`);
+			} catch {
+				resolve(false);
+				return;
+			}
 
-		const httpsRes = await probe("https");
-		if (httpsRes.ok) return httpsRes;
+			const done = (ok: boolean) => {
+				clearTimeout(timer);
+				try {
+					socket.close();
+				} catch {
+					/* already gone */
+				}
+				resolve(ok);
+			};
+			// Longer than the direct ping: this crosses the internet twice, and the relay itself
+			// allows ten seconds before it hangs up on a socket that has said nothing.
+			const timer = setTimeout(() => done(false), 8000);
 
-		return httpRes.reason ? httpRes : httpsRes;
+			socket.onopen = () => socket.send(JSON.stringify({ type: "hello", room: roomFor(token) }));
+			socket.onerror = () => done(false);
+			socket.onclose = () => done(false);
+			socket.onmessage = (event) => {
+				let message: { type?: string };
+				try {
+					message = JSON.parse(String(event.data)) as typeof message;
+				} catch {
+					return;
+				}
+				if (message.type === "ready") done(true);
+				// `waiting` is not an answer yet — the desktop may still be dialling in — so it is
+				// left to the timeout. `refused` (room-full, bad hello) is a definite no.
+				else if (message.type === "refused") done(false);
+			};
+		});
 	}
 
 	async verify(): Promise<boolean> {
@@ -108,18 +157,8 @@ export class SyncClient {
 		return this.request("/api/settings");
 	}
 
-	records(
-		projectId: string,
-		sessionId: string,
-		options?: { since?: number; before?: number; limit?: number; tail?: number },
-	): Promise<{ records: SessionRecord[]; total?: number; hasEarlier?: boolean }> {
-		const params = new URLSearchParams();
-		if (typeof options?.since === "number") params.set("since", String(options.since));
-		if (typeof options?.before === "number") params.set("before", String(options.before));
-		if (typeof options?.limit === "number") params.set("limit", String(options.limit));
-		if (typeof options?.tail === "number") params.set("tail", String(options.tail));
-		const qs = params.toString();
-		return this.request(`/api/sessions/${projectId}/${sessionId}${qs ? `?${qs}` : ""}`);
+	records(projectId: string, sessionId: string, since = 0): Promise<{ records: SessionRecord[] }> {
+		return this.request(`/api/sessions/${projectId}/${sessionId}?since=${since}`);
 	}
 
 	status(projectId: string, sessionId: string): Promise<{
@@ -190,10 +229,8 @@ export class SyncClient {
 		this.closedByUser = false;
 		this.emitState("connecting");
 
-		const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
-		const wsProto = this.isHttps ? "wss" : "ws";
 		const socket = new WebSocket(
-			`${wsProto}://${cleanHost}:${this.connection.port}/ws?token=${encodeURIComponent(this.connection.token)}`,
+			`${this.connection.tls ? "wss" : "ws"}://${this.connection.host}:${this.connection.port}/ws?token=${encodeURIComponent(this.connection.token)}`,
 		);
 		this.socket = socket;
 

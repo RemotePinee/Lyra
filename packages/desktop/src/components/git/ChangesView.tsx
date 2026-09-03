@@ -1,7 +1,7 @@
 /**
  * The index, as a column you read downwards.
  */
-import { Check, FolderTree, List, Minus, Plus, RefreshCw, RotateCcw, Wand2 } from "lucide-react";
+import { Check, FolderTree, List, Minus, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { GitStatus, GitStatusFile, WorkspaceDiffFile } from "../../../electron/ipc-types.ts";
@@ -12,15 +12,14 @@ import { PanelEmpty } from "../PanelEmpty.tsx";
 
 import { Scroller } from "../Scroller.tsx";
 
-import { Text } from "../Text.tsx";
-
+import { CommitComposer } from "./CommitComposer.tsx";
 import { FileDiffList } from "./FileDiffList.tsx";
 import { FileDiffTree } from "./FileDiffTree.tsx";
 
 import { GroupHeader } from "./GroupHeader.tsx";
 import { SkeletonList } from "../Skeleton.tsx";
+import type { SyncPlan } from "./syncPlan.ts";
 import type { Act } from "./types.ts";
-import { useApp } from "../../store.ts";
 
 /**
  * Staged above unstaged, with the commit box under both.
@@ -35,6 +34,9 @@ export function ChangesView({
   busy,
   loading,
   act,
+  plan,
+  onPush,
+  onPull,
 }: {
   status: GitStatus | null;
   cwd: string;
@@ -42,12 +44,13 @@ export function ChangesView({
   /** The checkout moved and this is being re-read; see `switching` in `GitPanel`. */
   loading?: boolean;
   act: Act;
+  /** What a clean tree should say, and what to offer doing about it. Computed in `GitPanel`. */
+  plan: SyncPlan;
+  onPush: () => void;
+  onPull: () => void;
 }) {
-  const [message, setMessage] = useState("");
   const [treeView, setTreeView] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const confirm = useConfirmer();
-  const notify = useApp((s) => s.notify);
   /** The hunks, once they arrive. The rows themselves do not wait for them — see `rowsFor`. */
   const [hunks, setHunks] = useState<{ staged: WorkspaceDiffFile[]; unstaged: WorkspaceDiffFile[] }>({
     staged: [],
@@ -98,68 +101,6 @@ export function ChangesView({
   const stagedRows = rowsFor(status?.staged ?? [], hunks.staged);
   const unstagedRows = rowsFor(status?.unstaged ?? [], hunks.unstaged);
 
-  async function generateCommitMessage() {
-    const filesToDescribe = stagedPaths.length > 0 ? stagedRows : unstagedRows;
-    if (filesToDescribe.length === 0) {
-      notify("没有可供生成提交信息的改动", "info");
-      return;
-    }
-    setGenerating(true);
-    try {
-      // 1. Group changes by Conventional Commits type and path
-      const featFiles: string[] = [];
-      const fixFiles: string[] = [];
-      const perfFiles: string[] = [];
-      const choreFiles: string[] = [];
-
-      for (const f of filesToDescribe) {
-        const basename = f.path.split("/").pop() ?? f.path;
-        const p = f.path.toLowerCase();
-        if (p.includes("test") || p.includes(".test.") || p.includes("package.json") || p.includes("tsconfig") || p.includes(".yml") || p.includes("requirements")) {
-          choreFiles.push(basename);
-        } else if (p.includes("fix") || p.includes("error") || p.includes("bug")) {
-          fixFiles.push(basename);
-        } else if (p.includes("perf") || p.includes("cache") || p.includes("speed")) {
-          perfFiles.push(basename);
-        } else {
-          featFiles.push(basename);
-        }
-      }
-
-      // Determine main prefix and summary
-      let type = "feat";
-      let primaryNames: string[] = [];
-
-      if (fixFiles.length > 0 && featFiles.length === 0) {
-        type = "fix";
-        primaryNames = fixFiles.slice(0, 3);
-      } else if (perfFiles.length > 0 && featFiles.length === 0 && fixFiles.length === 0) {
-        type = "perf";
-        primaryNames = perfFiles.slice(0, 3);
-      } else if (choreFiles.length > 0 && featFiles.length === 0 && fixFiles.length === 0 && perfFiles.length === 0) {
-        type = "chore";
-        primaryNames = choreFiles.slice(0, 3);
-      } else {
-        type = "feat";
-        primaryNames = (featFiles.length > 0 ? featFiles : filesToDescribe.map((f) => f.path.split("/").pop() ?? f.path)).slice(0, 3);
-      }
-
-      const totalCount = filesToDescribe.length;
-      const fileSummary = primaryNames.join("、");
-      const autoMsg = `${type}: 更新 ${fileSummary}${totalCount > primaryNames.length ? ` 等 ${totalCount} 个文件` : ""}的改动`;
-
-      setMessage(autoMsg);
-      notify("已自动生成提交说明");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function commit() {
-    const ok = await act(() => window.lyra.git.commitStaged(cwd, message));
-    if (ok) setMessage("");
-  }
-
   /*
    * While the checkout is moving, stand in the shape of what is coming.
    *
@@ -176,9 +117,31 @@ export function ChangesView({
   }
 
   if (nothing) {
+    /*
+     * Clean, and what that leaves you with.
+     *
+     * 「没有未提交的改动」 was the only thing this ever said, and for the commit you have just made
+     * it is an answer to a question nobody asked: the tree is clean *and* the work has not left the
+     * machine. What follows from a clean tree depends entirely on where the branch stands with its
+     * remote, so the sentence comes from `syncPlan` — the same one the sync row is drawn from, so
+     * the two cannot disagree.
+     */
     return (
-      <PanelEmpty icon={Check} title="工作区干净">
-        没有未提交的改动。
+      <PanelEmpty
+        icon={Check}
+        title="工作区干净"
+        action={
+          plan.empty.action
+            ? {
+                label: plan.empty.action.label,
+                onClick: plan.empty.action.kind === "push" ? onPush : onPull,
+                disabled: busy,
+                loading: busy,
+              }
+            : undefined
+        }
+      >
+        {plan.empty.body}
       </PanelEmpty>
     );
   }
@@ -342,53 +305,13 @@ export function ChangesView({
         )}
       </Scroller>
 
-      {/* The commit box, styled harmoniously with the main composer */}
-      <div className="shrink-0 p-2.5">
-        <div className="ly-composer @container rounded-[18px] border border-line-soft bg-input transition-[border-color,box-shadow] duration-[var(--ly-t-base)]">
-          <div className="ly-scroll-host relative">
-            <textarea
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  void commit();
-                }
-              }}
-              rows={2}
-              placeholder="输入提交信息…"
-              className="block max-h-32 min-h-[46px] w-full resize-none overflow-y-auto bg-transparent px-3.5 pt-2.5 pb-1.5 text-label leading-relaxed text-ink placeholder:text-ink-faint focus:outline-none"
-            />
-          </div>
-          <div className="flex items-center justify-between gap-1 px-2.5 pt-0 pb-2">
-            <div className="flex min-w-0 shrink items-center gap-1">
-              <IconButton
-                icon={generating ? <RefreshCw size={13.5} className="ly-spin text-accent" /> : <Wand2 size={13.5} className="text-accent" />}
-                label={generating ? "正在生成提交说明…" : "AI 智能生成 Commit 说明"}
-                size="sm"
-                disabled={generating || (stagedPaths.length === 0 && unstagedPaths.length === 0)}
-                onClick={() => void generateCommitMessage()}
-              />
-              <Text size="caption" tone="faint" className="hidden @xs:inline truncate">
-                {stagedPaths.length > 0 ? `${stagedPaths.length} 个文件已暂存` : "未暂存文件"}
-              </Text>
-            </div>
-            <div className="flex min-w-0 shrink items-center gap-1">
-              <button
-                type="button"
-                data-ly-tip="提交暂存改动 (⌘Enter)"
-                aria-label="提交"
-                disabled={busy || stagedPaths.length === 0 || !message.trim()}
-                onClick={() => void commit()}
-                className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md bg-ink px-2.5 text-detail font-medium text-shell transition-all duration-[var(--ly-t-quick)] hover:opacity-90 disabled:opacity-30 cursor-pointer"
-              >
-                <Check size={12.5} strokeWidth={2.2} />
-                提交
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CommitComposer
+        cwd={cwd}
+        stagedCount={stagedPaths.length}
+        busy={busy}
+        disabled={nothing}
+        onCommit={(next) => act(() => window.lyra.git.commitStaged(cwd, next))}
+      />
 
       {confirm.element}
     </>

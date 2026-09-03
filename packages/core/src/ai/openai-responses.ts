@@ -51,6 +51,8 @@ async function* streamResponses(
 
 	const thinkingEnabled = model.supportsThinking && options.thinking && options.thinking !== "off";
 	const reasoningEffort = thinkingEnabled ? resolveReasoningEffort(options.thinking, model) : undefined;
+	const modelId = (model.modelId || model.id || "").toLowerCase();
+	const isGemini = modelId.includes("gemini") || modelId.includes("gemma");
 
 	const body: Record<string, unknown> = {
 		model: model.modelId,
@@ -63,6 +65,8 @@ async function* streamResponses(
 		...(context.tools.length > 0 ? { tools: toResponsesTools(context.tools), tool_choice: "auto" } : {}),
 		// Omitting `reasoning` does not disable thinking — several providers still reason by
 		// default, so "off" has to say so explicitly. `effort: "none"` is the documented way.
+		// Google Gemini/Vertex API rejects `effort: "none"` with HTTP 400 (none is not a valid
+		// ThinkingLevel enum value); Gemini models omit the property when thinking is off.
 		...(model.supportsThinking
 			? thinkingEnabled && reasoningEffort
 				? {
@@ -72,7 +76,9 @@ async function* streamResponses(
 						},
 						include: ["reasoning.encrypted_content"],
 					}
-				: { reasoning: { effort: "none" } }
+				: isGemini
+					? {}
+					: { reasoning: { effort: "none" } }
 			: {}),
 		...(options.temperature !== undefined && !thinkingEnabled ? { temperature: options.temperature } : {}),
 		...model.samplingParams,
