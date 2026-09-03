@@ -173,13 +173,14 @@ test("pausing keeps what came down, and resuming asks only for the rest", async 
 
 		// Wait for real progress before pausing, or the pause lands before anything was received and
 		// the resume would be an ordinary download wearing a resume's clothes.
-		await until(download, (p) => p.at === "downloading" && p.received > 0, "下载没有开始");
+		// Wait until at least one chunk was actually delivered and written.
+		await until(download, (p) => p.at === "downloading" && p.received >= 20_000, "下载没有开始");
 		await download.pause();
 
 		const paused = download.state;
 		assert.equal(paused.at, "paused");
-		assert.ok(paused.at === "paused" && paused.received > 0, "暂停时应当记得已经下了多少");
 		const kept = paused.at === "paused" ? paused.received : 0;
+		assert.ok(kept > 0, `暂停时应当记得已经下了多少，实际: ${JSON.stringify(paused)}`);
 
 		const resumed = await download.start();
 		assert.equal(resumed.at, "preparing");
@@ -203,7 +204,7 @@ test("a server that ignores the range is not appended to, it is started over", a
 	try {
 		const download = downloadInto(dir, server.url);
 		void download.start();
-		await until(download, (p) => p.at === "downloading" && p.received > 0, "下载没有开始");
+		await until(download, (p) => p.at === "downloading" && p.received >= 20_000, "下载没有开始");
 		await download.pause();
 
 		await download.start();

@@ -48,7 +48,7 @@ before(async () => {
 after(async () => {
 	for (const socket of held) socket.destroy();
 	await new Promise<void>((resolve) => silent.close(() => resolve()));
-	await rm(dir, { recursive: true, force: true });
+	await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const silentUrl = () => `http://127.0.0.1:${silentPort}/x.git`;

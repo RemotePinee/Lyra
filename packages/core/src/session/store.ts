@@ -128,6 +128,14 @@ export class SessionStore implements SessionStorage {
 	 */
 	private writeQueues = new Map<string, Promise<SessionMeta>>();
 	private latestMeta = new Map<string, SessionMeta>();
+	/**
+	 * Serializes mutations to `index.json`.
+	 *
+	 * Writing the index is write-to-temp-then-rename. On Windows, renaming over an existing file
+	 * while another handle is touching it fails with EPERM or EBUSY. Serializing index mutations
+	 * ensures atomic updates do not collide during concurrent session creation or archiving.
+	 */
+	private indexQueue: Promise<unknown> = Promise.resolve();
 
 	constructor(root = join(lyraHome(), "sessions")) {
 		this.root = root;
@@ -323,21 +331,43 @@ export class SessionStore implements SessionStorage {
 	}
 
 	private async writeIndex(meta: SessionMeta): Promise<void> {
-		const all = await this.listSessions();
-		const next = [meta, ...all.filter((s) => s.id !== meta.id)].sort((a, b) => b.updatedAt - a.updatedAt);
-		await mkdir(this.root, { recursive: true });
-		/*
-		 * Write-then-rename so a crash cannot leave a truncated index.
-		 *
-		 * The temporary name carries more than the pid. Two writes racing inside one process — two
-		 * conversations created at once, which the desktop does whenever a window restores several
-		 * — both wrote to the same path, and the first rename took the file out from under the
-		 * second: `ENOENT ... index.json.NNN.tmp -> index.json`, and the session that lost is not
-		 * in the index at all.
-		 */
-		const tmp = `${this.indexPath}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
-		await writeFile(tmp, JSON.stringify(next, null, 2), "utf8");
-		await rename(tmp, this.indexPath);
+		const nextTask = this.indexQueue.catch(() => undefined).then(async () => {
+			const all = await this.listSessions();
+			const next = [meta, ...all.filter((s) => s.id !== meta.id)].sort((a, b) => b.updatedAt - a.updatedAt);
+			await mkdir(this.root, { recursive: true });
+			/*
+			 * Write-then-rename so a crash cannot leave a truncated index.
+			 *
+			 * The temporary name carries more than the pid. Two writes racing inside one process — two
+			 * conversations created at once, which the desktop does whenever a window restores several
+			 * — both wrote to the same path, and the first rename took the file out from under the
+			 * second: `ENOENT ... index.json.NNN.tmp -> index.json`, and the session that lost is not
+			 * in the index at all.
+			 *
+			 * On Windows, renaming over an existing file while another write/read handle is open fails
+			 * with EPERM. Retrying briefly smooths over external scanners (e.g. antivirus or search indexer).
+			 */
+			const tmp = `${this.indexPath}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+			await writeFile(tmp, JSON.stringify(next, null, 2), "utf8");
+			let renamed = false;
+			for (let attempt = 0; attempt < 8; attempt++) {
+				try {
+					await rename(tmp, this.indexPath);
+					renamed = true;
+					break;
+				} catch (err: unknown) {
+					const code = (err as { code?: string })?.code;
+					if ((code === "EPERM" || code === "EBUSY") && attempt < 7) {
+						await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+						continue;
+					}
+					throw err;
+				}
+			}
+			if (!renamed) await rename(tmp, this.indexPath);
+		});
+		this.indexQueue = nextTask;
+		await nextTask;
 	}
 
 	/** Reconstruct the index by scanning every session log. Used when the index is missing or corrupt. */
