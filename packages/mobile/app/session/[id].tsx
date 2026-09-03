@@ -27,6 +27,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { detectCodeOrError, parseUserMessageContent } from "../../src/codeDetection";
 import { MobileCollapsibleCodeCard } from "../../src/CollapsibleCard";
+import { MobileMarkdownView } from "../../src/MarkdownContent";
 import { groupMessages, type MobileRun } from "../../src/grouping";
 import { describeRun, formatElapsed, formatTokens, moodFor, phraseFor, type Mood } from "../../src/runSummary";
 import type { AssistantMessage, ImageContent, Message } from "../../src/protocol";
@@ -590,8 +591,8 @@ export default function SessionScreen() {
 				style={[
 					{
 						position: "absolute",
-						right: 16,
-						bottom: (insets.bottom || 12) + 76,
+						right: 14,
+						bottom: (insets.bottom || 12) + 68,
 						zIndex: 30,
 					},
 					fabAnimatedStyle,
@@ -603,9 +604,9 @@ export default function SessionScreen() {
 						scrollFabOpacity.value = withTiming(0, { duration: 150 });
 						listRef.current?.scrollToEnd({ animated: true });
 					}}
-					className="h-10 w-10 items-center justify-center rounded-full bg-elevated shadow-lg active:bg-card-hover"
+					className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#222225]/95 shadow-md shadow-black/50 active:bg-[#2d2d32]"
 				>
-					<Text className="text-[15px] font-bold text-ink">↓</Text>
+					<View className="-mt-0.5 h-2 w-2 rotate-45 border-b-2 border-r-2 border-ink-muted" />
 				</Pressable>
 			</Animated.View>
 
@@ -727,7 +728,7 @@ function AssistantRow({ message, upTo }: { message: AssistantMessage; upTo: numb
 				<ThinkingBlock text={thinking.thinking} />
 			)}
 
-			{text.length > 0 && <Text className="text-[14px] leading-6 text-ink">{stripMarkdown(text)}</Text>}
+			{text.length > 0 && <MobileMarkdownView content={text} />}
 
 			{message.stopReason === "error" && message.errorMessage && (
 				<View className="mt-2 rounded-xl bg-danger/10 px-3.5 py-2.5">
@@ -845,18 +846,7 @@ function ToolCard({ run, name }: { run: ToolRun | undefined; name: string }) {
 	);
 }
 
-/**
- * React Native has no markdown renderer built in. Rather than ship a half-broken one, strip
- * the syntax that would otherwise show up as literal asterisks and backticks.
- */
-function stripMarkdown(text: string): string {
-	return text
-		.replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*\n?/g, "").trimEnd())
-		.replace(/`([^`]+)`/g, "$1")
-		.replace(/\*\*([^*]+)\*\*/g, "$1")
-		.replace(/^#{1,6}\s+/gm, "")
-		.replace(/^\s*[-*+]\s+/gm, "• ");
-}
+
 
 function MobileRunningIndicator({
 	messages,
