@@ -356,3 +356,7 @@ export async function startWin32Screenshot(settings?: ScreenshotSettings): Promi
 export function hasActiveWin32Screenshot(): boolean {
 	return isCapturingActive && !!residentOverlay && !residentOverlay.isDestroyed();
 }
+
+export function getWin32ScreenshotOverlay(): BrowserWindow | null {
+	return residentOverlay;
+}

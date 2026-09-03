@@ -1549,7 +1549,7 @@ function ToolProperties({ annotator, index, side }: { annotator: Annotator; inde
 			 * placed, so it is passed in: `below` means the toolbar is below the selection and the
 			 * bubble goes further down, `above` means it is above and the bubble goes further up.
 			 */
-			className={`absolute left-0 flex animate-[ly-tool-in_var(--ly-t-base)_ease-out] items-center gap-1 rounded-lg border border-white/12 bg-[#1c1c1e]/95 px-2 py-1 shadow-[0_6px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl ${
+			className={`absolute left-0 flex items-center gap-1 rounded-lg border border-white/12 bg-[#1c1c1e]/95 px-2 py-1 shadow-[0_6px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl ${
 				side === "below" ? "top-full mt-2" : "bottom-full mb-2"
 			}`}
 			style={{ left: Math.max(0, index) * TOOL_STEP + TOOL_INSET, transform: "translateX(-50%)" }}

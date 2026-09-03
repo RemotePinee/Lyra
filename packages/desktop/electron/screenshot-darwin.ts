@@ -338,3 +338,7 @@ export async function startDarwinScreenshot(settings?: ScreenshotSettings): Prom
 export function hasActiveDarwinScreenshot(): boolean {
 	return captureActive || (overlay !== null && !overlay.isDestroyed() && overlay.isVisible());
 }
+
+export function getDarwinScreenshotOverlay(): BrowserWindow | null {
+	return overlay;
+}

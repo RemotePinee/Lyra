@@ -116,20 +116,10 @@ export const useMobile = create<MobileState>((set, get) => ({
 	},
 
 	async pair(connection) {
-		/*
-		 * A relayed connection is verified before it gets here, and cannot be verified the same way.
-		 *
-		 * `verify` asks the sync server a question over HTTP; a relay answers no HTTP the app knows.
-		 * What stands in for it is the room: both ends derive it from the token, so meeting in one
-		 * already proves the token matches — see `SyncClient.pingRelay`, which waits for the desktop
-		 * to actually be in there rather than settling for an empty room.
-		 */
-		if (!connection.relay) {
-			const client = new SyncClient(connection);
-			if (!(await client.verify())) {
-				set({ error: "地址或令牌不正确，请检查桌面端的「移动端同步」页面。" });
-				return false;
-			}
+		const client = new SyncClient(connection);
+		if (!(await client.verify())) {
+			set({ error: "地址或令牌不正确，请检查桌面端的「移动端同步」页面。" });
+			return false;
 		}
 		// Keychain writes can fail (locked device, web preview); pairing should still work
 		// for the current session rather than dropping the user back to the pairing screen.
@@ -192,8 +182,9 @@ export const useMobile = create<MobileState>((set, get) => ({
 		});
 
 		try {
+			// Fetch the latest 120 records so runs aren't starved by consecutive tool calls
 			const [res, status] = await Promise.all([
-				client.records(meta.projectId, meta.id),
+				client.records(meta.projectId, meta.id, { tail: 120 }),
 				client.status(meta.projectId, meta.id).catch(() => null),
 			]);
 
@@ -216,7 +207,7 @@ export const useMobile = create<MobileState>((set, get) => ({
 				messages,
 				seq,
 				minSeq: minSeq === Infinity ? 0 : minSeq,
-				hasEarlierMessages: false,
+				hasEarlierMessages: !!res.hasEarlier,
 				toolRuns,
 				loadingSessionId: null,
 				running: isRunning,
@@ -236,7 +227,36 @@ export const useMobile = create<MobileState>((set, get) => ({
 	},
 
 	async loadEarlierMessages() {
-		return Promise.resolve();
+		const { client, activeSession, minSeq, loadingEarlier, hasEarlierMessages, messages: currentMessages } = get();
+		if (!client || !activeSession || loadingEarlier || !hasEarlierMessages || minSeq <= 1) return;
+
+		set({ loadingEarlier: true });
+		try {
+			// Fetch 60 records strictly before the current earliest sequence
+			const res = await client.records(activeSession.projectId, activeSession.id, { before: minSeq, tail: 60 });
+			let entries: { seq: number; message: Message }[] = [];
+			let nextMinSeq = minSeq;
+
+			for (const record of res.records) {
+				nextMinSeq = Math.min(nextMinSeq, record.seq);
+				if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
+				else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
+			}
+
+			const earlierMessages = entries.map((e) => e.message);
+			const mergedMessages = [...earlierMessages, ...currentMessages];
+			const toolRuns = rebuildToolRuns(mergedMessages);
+
+			set({
+				messages: mergedMessages,
+				minSeq: nextMinSeq,
+				hasEarlierMessages: res.records.length > 0 && nextMinSeq > 1,
+				toolRuns,
+				loadingEarlier: false,
+			});
+		} catch (error) {
+			set({ error: error instanceof Error ? error.message : String(error), loadingEarlier: false });
+		}
 	},
 
 	closeSession() {

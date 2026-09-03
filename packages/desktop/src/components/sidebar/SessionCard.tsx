@@ -212,11 +212,6 @@ export function SessionCard({
  *
  * Returned as props rather than rendered here, so the row keeps ownership of its own markup — and
  * so a row that unmounts mid-hover (the list re-sorts constantly) takes its timer with it.
- *
- * `onOpen` fires when the wait is up and the card is about to be shown — the one moment the figures
- * on it are being read, and so the one moment worth going to disk for them. Not on the mouse
- * entering: running the pointer down forty rows to reach one would be forty reads of the index for
- * forty cards nobody asked to see.
  */
 export function useSessionCard(onOpen?: () => void): {
 	anchor: DOMRect | null;
@@ -320,8 +315,8 @@ export function useSessionCard(onOpen?: () => void): {
 				setLeaving(false);
 				open.current = window.setTimeout(() => {
 					if (!isTooltipSuppressed()) {
-						onOpen?.();
 						setAnchor(box);
+						onOpen?.();
 					}
 				}, OPEN_DELAY_MS);
 			},

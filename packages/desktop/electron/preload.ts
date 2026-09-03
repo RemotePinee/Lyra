@@ -318,25 +318,14 @@ const api: LyraApi = {
 			ipcRenderer.on("screenshot:init", listener);
 			return () => ipcRenderer.removeListener("screenshot:init", listener);
 		},
-		onReset: (handler: () => void) => {
+		onReset: (handler) => {
 			const listener = () => handler();
 			ipcRenderer.on("screenshot:reset", listener);
 			return () => ipcRenderer.removeListener("screenshot:reset", listener);
 		},
+		// A prewarmed overlay reports mounting before a capture session exists; main retains it.
 		ready: () => ipcRenderer.send("screenshot:ready"),
-		debug: (what: string, detail: Record<string, unknown>) => ipcRenderer.send("screenshot:debug", what, detail),
-		onShown: (handler: () => void) => {
-			const listener = () => handler();
-			ipcRenderer.on("screenshot:shown", listener);
-			return () => ipcRenderer.removeListener("screenshot:shown", listener);
-		},
 		painted: () => ipcRenderer.send("screenshot:painted"),
-		colourPicked: () => ipcRenderer.send("screenshot:colourPicked"),
-		onHidden: (handler: () => void) => {
-			const listener = () => handler();
-			ipcRenderer.on("screenshot:hidden", listener);
-			return () => ipcRenderer.removeListener("screenshot:hidden", listener);
-		},
 	},
 	index: {
 		stats: (cwd) => ipcRenderer.invoke("index:stats", cwd),

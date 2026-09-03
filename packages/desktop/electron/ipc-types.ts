@@ -145,19 +145,10 @@ export interface LyraApi {
 	 * corrects itself is a visible jump on every launch.
 	 */
 	platform: NodeJS.Platform;
-	/**
-	 * What is displaying this interface.
-	 *
-	 * `"desktop"` — the Electron window, which has traffic lights, a mouse and a keyboard with
-	 * modifiers. `"mobile"` — a WebView on a phone, which has none of those and a thumb instead.
-	 * Absent means desktop, so nothing outside the phone has to be changed to read it.
-	 *
-	 * Deliberately not derived from the viewport. A narrow desktop window is still a desktop
-	 * window: it keeps its window controls and its hover states, and treating it as a phone would
-	 * take away both. This says which *device* is holding the app, which is a different question
-	 * from how much room it has.
-	 */
 	host?: "desktop" | "mobile";
+	usage: {
+		scan(): Promise<UsageScan>;
+	};
 	settings: {
 		get(): Promise<Settings>;
 		save(settings: Settings): Promise<Settings>;
@@ -171,15 +162,6 @@ export interface LyraApi {
 		 * the catalogue and the MCP page did not have it until the app was restarted.
 		 */
 		onChanged(handler: (settings: Settings) => void): () => void;
-	};
-	usage: {
-		/**
-		 * Everything spent, by day and by model, read from the session logs.
-		 *
-		 * Cached between calls against each log's size and mtime, so this is expensive once and
-		 * cheap afterwards. The page does its own slicing; see `usage-aggregate.ts`.
-		 */
-		scan(): Promise<UsageScan>;
 	};
 	workspace: {
 		/** Show the project directory in the OS file manager. */
@@ -226,10 +208,6 @@ export interface LyraApi {
 		abort(sessionId: string): Promise<void>;
 		approve(sessionId: string, requestId: string, decision: ApprovalDecision): Promise<void>;
 		setModel(sessionId: string, modelId: string): Promise<void>;
-		/**
-		 * The reasoning level for this conversation, from here on. `null` returns it to the app
-		 * default — which is not the same as pinning it to whatever that default is today.
-		 */
 		setThinking(sessionId: string, thinking: ThinkingLevel | null): Promise<void>;
 		onEvent(handler: (payload: { sessionId: string; event: AgentEvent }) => void): () => void;
 	};
@@ -275,12 +253,7 @@ export interface LyraApi {
 		/** Null when this session has never had one opened. */
 		state(sessionId: string): Promise<SideChatSnapshot | null>;
 		ask(sessionId: string, content: UserContent[]): Promise<void>;
-		/**
-		 * Replace a question already asked and answer from there, dropping everything after it.
-		 *
-		 * The same act as editing a message in the main conversation, and for the same reason: a
-		 * question that came out wrong, re-asked below the old one, leaves the model reading both.
-		 */
+		/** Replace one question, discard the tail and answer it again. */
 		editAndResend(sessionId: string, index: number, content: UserContent[]): Promise<void>;
 		abort(sessionId: string): Promise<void>;
 		/** Throw the conversation away and start fresh. The main session is untouched. */
@@ -292,23 +265,16 @@ export interface LyraApi {
 		list(sessionId: string): Promise<QueuedTask[]>;
 		/** Only a task that has not started can be withdrawn; stopping a running one is `abort`. */
 		cancel(sessionId: string, taskId: string): Promise<boolean>;
-		/**
-		 * Take a finished task off the list without touching what it did.
-		 *
-		 * The list is a receipt for work the side chat handed over. Clearing a row you have already
-		 * read — or one you cancelled yourself, whose outcome you knew when you clicked — leaves the
-		 * transcript alone. Refuses anything still queued or running: that would read as cancelling
-		 * and would not be.
-		 */
+		/** Remove a finished task from the receipt list. */
 		dismiss(sessionId: string, taskId: string): Promise<boolean>;
-		/**
-		 * Put a task that stopped back on the queue.
-		 *
-		 * For the two ways a task stops without finishing: the main session was paused under it, or
-		 * it failed. Both are work you still want done, and both used to be terminal — the row said
-		 * so and nothing could act on it.
-		 */
+		/** Put an interrupted task back on the queue. */
 		resume(sessionId: string, taskId: string): Promise<boolean>;
+	};
+	/** Operations that require project files or external formatter binaries. */
+	format: {
+		external(extension: string, source: string): Promise<ExternalFormatResult>;
+		available(extension: string): Promise<boolean>;
+		config(file: string): Promise<(Record<string, unknown> & { __source?: string }) | null>;
 	};
 	/**
 	 * Reading the project's files, for the panel's file browser.
@@ -317,26 +283,6 @@ export interface LyraApi {
 	 * looking at what you are working on, and a file picker that can wander into the rest of
 	 * the disk is a different, riskier thing than what was asked for.
 	 */
-	/**
-	 * Formatting that the window cannot do alone.
-	 *
-	 * Prettier runs in the renderer — see `src/components/editor/format.ts`. What is here is the
-	 * half that needs the machine: the language-owned binaries (`gofmt` and friends), and the
-	 * project's own committed style, which outranks anything set in this app's settings.
-	 */
-	format: {
-		/** Format via the language's own tool. See `electron/format-external.ts` for the outcomes. */
-		external(extension: string, source: string): Promise<ExternalFormatResult>;
-		/** Whether any external tool is even conceivable for this extension. */
-		available(extension: string): Promise<boolean>;
-		/**
-		 * `.prettierrc` / `.editorconfig` / `package.json#prettier`, nearest first.
-		 *
-		 * Null when the file is outside every open project, or when the project says nothing —
-		 * in both cases the app's own settings apply.
-		 */
-		config(file: string): Promise<(Record<string, unknown> & { __source?: string }) | null>;
-	};
 	files: {
 		list(dir: string): Promise<FileEntry[]>;
 		read(path: string): Promise<FileContents | null>;
@@ -665,28 +611,23 @@ export interface LyraApi {
 		pickDirectory(): Promise<string | null>;
 		validateShortcut(shortcut: string): Promise<{ ok: boolean; error?: string }>;
 		onCaptured(handler: (dataUrl: string) => void): () => void;
-		onInit(
-			handler: (payload: {
-				session: number;
-				snapshot: { pixels: Uint8Array; width: number; height: number } | null;
-				bounds: { x: number; y: number; width: number; height: number };
-				scaleFactor: number;
-				settings?: ScreenshotSettings;
-				windows?: { id?: number | string; app?: string; title?: string; x: number; y: number; width: number; height: number }[];
-				renderMode?: "live" | "snapshot";
-				cursor?: { x: number; y: number };
-			}) => void,
-		): () => void;
+		onInit(handler: (payload: {
+			session: number;
+			snapshot: { pixels: Uint8Array; width: number; height: number } | null;
+			bounds: { x: number; y: number; width: number; height: number };
+			scaleFactor: number;
+			settings?: ScreenshotSettings;
+			windows?: { id: number | string; title: string; x: number; y: number; width: number; height: number }[];
+			renderMode?: "live" | "snapshot";
+			/** Overlay-local DIP of the cursor at session start, so hover-snap paints before any pointermove. */
+			cursor?: { x: number; y: number };
+		}) => void): () => void;
 		/** Say the overlay page is mounted. A prewarmed window already did this while hidden. */
 		ready(): void;
 		/** Say the overlay snapshot has been drawn into the canvas. */
-		painted(): void;
+		painted?(): void;
 		/** Notify the overlay renderer to discard stale selection and snapshot before reuse. */
 		onReset?(handler: () => void): () => void;
-		colourPicked?(): void;
-		onShown?(handler: () => void): () => void;
-		onHidden?(handler: () => void): () => void;
-		debug?(what: string, detail: Record<string, unknown>): void;
 	};
 	index: {
 		stats(cwd: string): Promise<{ exists: boolean; builtAt?: number; files?: number; symbols?: number; bytes?: number }>;
@@ -835,26 +776,12 @@ export interface LyraApi {
 		discard(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }>;
 		/** Commits exactly what the panel shows as staged. */
 		commitStaged(cwd: string, message: string): Promise<{ ok: boolean; error?: string }>;
-		/** A commit message from the configured model, about the staged (or unstaged) patch. */
 		generateCommitMessage(cwd: string): Promise<{ ok: boolean; message?: string; error?: string }>;
 		createBranch(cwd: string, name: string, from?: string): Promise<{ ok: boolean; error?: string }>;
 		deleteBranch(cwd: string, name: string, force?: boolean): Promise<{ ok: boolean; error?: string }>;
-		/**
-		 * The three calls that touch a remote.
-		 *
-		 * Each takes a `token` the renderer makes up, and `cancelRemote` stops whichever call is
-		 * holding it. An `AbortSignal` cannot cross the IPC boundary, so the identity of the running
-		 * operation has to, and the renderer is the side that knows which button was pressed twice.
-		 *
-		 * They answer with `cancelled` and `timedOut` alongside `error` because the panel treats the
-		 * three differently: a cancellation says nothing, a timeout says so plainly, and a failure
-		 * gets whatever `explainGitFailure` made of git's own words.
-		 */
 		push(cwd: string, token?: string): Promise<RemoteResult>;
 		pull(cwd: string, token?: string): Promise<RemoteResult>;
-		/** `fetch --prune`, so `ahead` / `behind` describe the remote as it is now. */
 		fetch(cwd: string, token?: string, quiet?: boolean): Promise<RemoteResult>;
-		/** Stop the push / pull / fetch running under this token. Unknown tokens are ignored. */
 		cancelRemote(token: string): Promise<void>;
 
 		/* Release workflow operations */
