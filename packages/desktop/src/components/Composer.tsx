@@ -943,7 +943,7 @@ function Chip({
 			aria-busy={busy || undefined}
 			onClick={onClick}
 			/* Dimmed while it is being changed, so the name reads as "still this, for now". */
-			className={`ly-scroll flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-label transition-[color,background-color,opacity] duration-[var(--ly-t-quick)] ${
+			className={`ly-scroll flex h-[26px] min-w-0 max-w-[200px] sm:max-w-[280px] items-center gap-1.5 rounded-md px-2 text-label transition-[color,background-color,opacity] duration-[var(--ly-t-quick)] ${
 				busy ? "opacity-60" : ""
 			} ${active ? "bg-card-hover text-ink" : "text-ink-muted hover:bg-card-hover hover:text-ink"}`}
 		>
@@ -951,7 +951,7 @@ function Chip({
 			{/* Keyed on the label so switching project or branch rolls the new one in. `ScrollText`
 			    cannot take `RollingText` as a child — it measures the string to decide whether the
 			    chip scrolls on hover — so the remount happens around it instead, on the same terms. */}
-			<ScrollText key={label} text={label} className={`min-w-0 ${rolls ? "ly-roll" : ""}`} />
+			<ScrollText key={label} text={label} className={`min-w-0 flex-1 ${rolls ? "ly-roll" : ""}`} />
 		</button>
 	);
 }

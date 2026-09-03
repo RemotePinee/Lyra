@@ -37,12 +37,25 @@ export function ScrollText({ text, className = "" }: { text: string; className?:
 		 * Sub-pixel differences are noise — a fitting row must not claim 0.4px of overflow and
 		 * animate for it. The dead band matters as much as the rounding: a measurement that
 		 * oscillates by a pixel would re-render on every observer callback forever.
+		 *
+		 * Schmitt trigger (hysteresis): entering scroll mode requires clear overflow (> 3px),
+		 * while exiting requires the text to fit completely (<= 1px).
 		 */
 		const measure = () => {
-			const part = Math.round(inner.getBoundingClientRect().width);
-			const next = Math.max(0, part - outer.clientWidth);
+			const part = Math.round(inner.scrollWidth);
+			const outerWidth = outer.clientWidth;
+			if (outerWidth <= 0) return;
+			const next = Math.max(0, part - outerWidth);
 			setWidth((prev) => (Math.abs(part - prev) > 1 ? part : prev));
-			setOverflow((prev) => (Math.abs(next - prev) > 1 ? next : prev));
+			setOverflow((prev) => {
+				const wasScrolling = prev > 1;
+				if (wasScrolling) {
+					if (next <= 1) return 0;
+					return Math.abs(next - prev) > 2 ? next : prev;
+				}
+				if (next > 3) return next;
+				return 0;
+			});
 		};
 		measure();
 
@@ -71,13 +84,17 @@ export function ScrollText({ text, className = "" }: { text: string; className?:
 					: undefined
 			}
 		>
-			<span className={scrolls ? "ly-marquee-track" : "inline-block"}>
-				<span ref={body} className="inline-block">
+			<span className={scrolls ? "ly-marquee-track relative inline-flex !gap-0" : "inline-block"}>
+				<span ref={body} className="inline-block shrink-0">
 					{text}
 				</span>
-				{/* The trailing copy is decoration; screen readers and copy-paste get one line. */}
+				{/*
+				 * The trailing copy is decoration; screen readers and copy-paste get one line.
+				 * Positioned absolutely off the right edge so it never inflates the parent's
+				 * max-content width or triggers flexbox oscillation loops at boundary widths.
+				 */}
 				{scrolls && (
-					<span aria-hidden className="inline-block">
+					<span aria-hidden className="absolute left-full top-0 inline-block shrink-0 pl-[44px]">
 						{text}
 					</span>
 				)}
