@@ -175,30 +175,10 @@ export function registerSessionsIpc({
 		async (_event, projectId: string, sessionId: string, title: string) => {
 			const cleanTitle = title.trim();
 			if (!cleanTitle) return null;
-			let updatedMeta = null;
 			const live = sessions.get(sessionId);
 			if (live) {
 				await live.rename(cleanTitle);
-				updatedMeta = live.meta;
-			} else {
-				const meta = (await store.listSessions()).find((s) => s.id === sessionId);
-				if (!meta) return null;
-				updatedMeta = await store.append(meta, { type: "title", title: cleanTitle });
-			}
-			broadcast(sessionId, { type: "title", title: cleanTitle });
-			void broadcastSessionsList();
-			return updatedMeta;
-		},
-	);
-
-	ipcMain.handle(
-		"sessions:rename",
-		async (_event, projectId: string, sessionId: string, title: string) => {
-			const cleanTitle = title.trim();
-			if (!cleanTitle) return null;
-			const live = sessions.get(sessionId);
-			if (live) {
-				await live.rename(cleanTitle);
+				void broadcastSessionsList();
 				return live.meta;
 			}
 			const meta = (await store.listSessions()).find((s) => s.id === sessionId);
@@ -210,6 +190,7 @@ export function registerSessionsIpc({
 				? renamed
 				: await store.append(renamed, { type: "meta", meta: { ...renamed, titleSetByUser: true } });
 			broadcast(sessionId, { type: "title", title: cleanTitle });
+			void broadcastSessionsList();
 			return updated;
 		},
 	);
