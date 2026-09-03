@@ -18,14 +18,20 @@ import { existsSync } from "node:fs";
 import { TextDecoder } from "node:util";
 import { execFileSync } from "node:child_process";
 
-let cachedWinShell: { file: string; flag: string } | null = null;
+export interface SystemShell {
+	file: string;
+	flag: string;
+	args?: string[];
+}
 
-function probeWindowsShell(): { file: string; flag: string } {
+let cachedWinShell: SystemShell | null = null;
+
+function probeWindowsShell(): SystemShell {
 	if (cachedWinShell) return cachedWinShell;
 
 	// 1. Respect explicit user SHELL preference (e.g. bash / zsh / custom shell)
 	if (process.env.SHELL && existsSync(process.env.SHELL)) {
-		return (cachedWinShell = { file: process.env.SHELL, flag: "-c" });
+		return (cachedWinShell = { file: process.env.SHELL, flag: "-c", args: ["-c"] });
 	}
 
 	// 2. Prefer Git Bash (fast startup ~200ms, 100% POSIX / Linux pipeline compatible)
@@ -38,7 +44,7 @@ function probeWindowsShell(): { file: string; flag: string } {
 	];
 	for (const path of standardGitBashPaths) {
 		if (path && existsSync(path)) {
-			return (cachedWinShell = { file: path, flag: "-c" });
+			return (cachedWinShell = { file: path, flag: "-c", args: ["-c"] });
 		}
 	}
 
@@ -53,7 +59,7 @@ function probeWindowsShell(): { file: string; flag: string } {
 			const candidates = [join(gitDir, "bin", "bash.exe"), join(gitDir, "usr", "bin", "bash.exe")];
 			for (const candidate of candidates) {
 				if (existsSync(candidate)) {
-					return (cachedWinShell = { file: candidate, flag: "-c" });
+					return (cachedWinShell = { file: candidate, flag: "-c", args: ["-c"] });
 				}
 			}
 		}
@@ -66,27 +72,34 @@ function probeWindowsShell(): { file: string; flag: string } {
 			.trim()
 			.split(/\r?\n/)[0];
 		if (bashOut && !bashOut.toLowerCase().includes("system32") && existsSync(bashOut)) {
-			return (cachedWinShell = { file: bashOut, flag: "-c" });
+			return (cachedWinShell = { file: bashOut, flag: "-c", args: ["-c"] });
 		}
 	} catch {}
 
-	// 3. Fallback to cmd.exe (guaranteed on all Windows hosts, ultra-fast 40ms, native && / || support)
-	return (cachedWinShell = { file: process.env.ComSpec || "cmd.exe", flag: "/c" });
+	// 3. Secondary fallback to PowerShell with -NoProfile (native Windows quoting and chaining compatibility)
+	const sysRoot = process.env.SystemRoot || "C:\\Windows";
+	const powerShellPath = join(sysRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+	if (existsSync(powerShellPath)) {
+		return (cachedWinShell = { file: powerShellPath, flag: "-Command", args: ["-NoProfile", "-Command"] });
+	}
+
+	// 4. Final fallback to cmd.exe (ultra-fast, native && / || support)
+	return (cachedWinShell = { file: process.env.ComSpec || "cmd.exe", flag: "/c", args: ["/c"] });
 }
 
 /**
  * The shell to run a command line through, and the flag that says "here is the command".
  *
- * On Windows, we follow the industry standard:
- * Prioritise Git Bash (fast startup, native POSIX & tool compatibility),
- * falling back to cmd.exe (/c) or respecting process.env.SHELL.
- * Cold-starting PowerShell (pwsh/powershell) is avoided as its CLR VM boot takes seconds per call.
+ * On Windows:
+ * 1. Prioritise Git Bash (POSIX & tool compatibility).
+ * 2. Secondary fallback to PowerShell with -NoProfile (understands model quotes and && chains).
+ * 3. Final fallback to cmd.exe.
  */
-export function systemShell(): { file: string; flag: string } {
+export function systemShell(): SystemShell {
 	if (process.platform === "win32") {
 		return probeWindowsShell();
 	}
-	return { file: process.env.SHELL || "/bin/bash", flag: "-c" };
+	return { file: process.env.SHELL || "/bin/bash", flag: "-c", args: ["-c"] };
 }
 
 /**

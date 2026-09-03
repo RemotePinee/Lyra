@@ -10,11 +10,15 @@ test("systemShell on Windows provides a shell that supports command chaining", (
 		const shell = systemShell();
 		assert.ok(
 			shell.file.toLowerCase().includes("bash") ||
+				shell.file.toLowerCase().includes("powershell") ||
 				shell.file.toLowerCase().includes("cmd.exe") ||
 				shell.file.toLowerCase().includes("sh"),
-			"Windows systemShell should prefer Git Bash, fallback to cmd.exe, or custom SHELL",
+			"Windows systemShell should prefer Git Bash, fallback to powershell or cmd.exe, or custom SHELL",
 		);
-		assert.ok(shell.flag === "/c" || shell.flag === "-c");
+		assert.ok(shell.flag === "/c" || shell.flag === "-c" || shell.flag === "-Command");
+		if (shell.file.toLowerCase().includes("powershell")) {
+			assert.ok(shell.args?.includes("-NoProfile"));
+		}
 	}
 });
 

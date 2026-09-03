@@ -47,13 +47,16 @@ export class LocalSandbox implements Sandbox {
 		 * is applied *before* the shell exists rather than around a shell that is already running.
 		 */
 		const wrap = options.mode ? confine({ mode: options.mode, workspaceRoot: options.cwd }) : null;
+		const shellArgs = shell.args ?? [shell.flag];
 		const child = wrap
-			? spawn(wrap.command, [...wrap.args, shell.file, shell.flag, command], {
+			? spawn(wrap.command, [...wrap.args, shell.file, ...shellArgs, command], {
 					cwd: options.cwd,
 					// The Windows runner needs `ELECTRON_RUN_AS_NODE`; the others contribute nothing.
 					env: { ...env, ...wrap.env },
 				})
-			: spawn(command, { cwd: options.cwd, shell: shell.file, env });
+			: shell.args && shell.args.length > 1
+				? spawn(shell.file, [...shellArgs, command], { cwd: options.cwd, env })
+				: spawn(command, { cwd: options.cwd, shell: shell.file, env });
 
 		return {
 			onOutput(listener) {
