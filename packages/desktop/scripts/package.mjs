@@ -77,7 +77,7 @@ const result = spawnSync("electron-builder", args, { stdio: "inherit", shell: pr
  * After the build, and regardless of whether it succeeded: a failed package run leaves the modules
  * just as rebuilt as a successful one.
  */
-const restore = spawnSync(process.execPath, [new URL("rebuild-pty.mjs", import.meta.url).pathname], {
+const restore = spawnSync(process.execPath, [fileURLToPath(new URL("rebuild-pty.mjs", import.meta.url))], {
 	stdio: "inherit",
 });
 if (restore.status !== 0) {
