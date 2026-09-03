@@ -9,6 +9,8 @@ import {
 	Image,
 	Keyboard,
 	Modal,
+	NativeScrollEvent,
+	NativeSyntheticEvent,
 	Platform,
 	Pressable,
 	ScrollView,
@@ -93,6 +95,25 @@ export default function SessionScreen() {
 		scrollFabOpacity.value = 0;
 	}, [id, scrollFabOpacity]);
 
+	const handleScroll = useCallback(
+		(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+			const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+			const paddingToBottom = 60;
+			const isBottom =
+				layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+			isAtBottomRef.current = isBottom;
+
+			const distanceFromBottom =
+				contentSize.height - (layoutMeasurement.height + contentOffset.y);
+			if (distanceFromBottom > 160 && contentSize.height > layoutMeasurement.height + 60) {
+				scrollFabOpacity.value = withTiming(1, { duration: 150 });
+			} else {
+				scrollFabOpacity.value = withTiming(0, { duration: 150 });
+			}
+		},
+		[scrollFabOpacity],
+	);
+
 	// When user sends a message, snap to bottom
 	const handleSend = useCallback(() => {
 		const text = draft.trim();
@@ -117,7 +138,7 @@ export default function SessionScreen() {
 		textInputRef.current?.blur();
 		Keyboard.dismiss();
 		isAtBottomRef.current = true;
-		listRef.current?.scrollToOffset({ offset: 0, animated: false });
+		listRef.current?.scrollToEnd({ animated: true });
 		void send(fullText, imagesToSend);
 	}, [draft, selectedImages, attachedCards, send]);
 
@@ -245,18 +266,18 @@ export default function SessionScreen() {
 	}, [id, activeSession, sessions, openSession]);
 
 	// Auto-scroll anchor logic:
-	// When messages change or agent streams, if user is anchored at bottom, stay at offset 0
+	// When messages change or agent streams, if user is anchored at bottom, stay at end
 	useEffect(() => {
 		if (isAtBottomRef.current) {
-			listRef.current?.scrollToOffset({ offset: 0, animated: false });
+			listRef.current?.scrollToEnd({ animated: false });
 		}
 	}, [messages, toolRuns, running]);
 
-	// Inverted list native anchor:
-	// When entering a session or when content sizes finalize, if user is at bottom, snap to 0
+	// Native scroll anchor:
+	// When entering a session or when content sizes finalize, if user is at bottom, snap to end
 	const onListContentSizeChange = useCallback(() => {
 		if (isAtBottomRef.current) {
-			listRef.current?.scrollToOffset({ offset: 0, animated: false });
+			listRef.current?.scrollToEnd({ animated: false });
 		}
 	}, []);
 
@@ -317,8 +338,7 @@ export default function SessionScreen() {
 
 			<FlatList
 				ref={listRef}
-				data={[...runs].reverse()}
-				inverted
+				data={runs}
 				renderItem={({ item }) => (
 					<MobileTranscriptRow
 						key={item.kind === "tools" ? `group-${item.id}` : rowKey(item.message)}
@@ -331,7 +351,7 @@ export default function SessionScreen() {
 					item.kind === "tools" ? `group-${item.id}` : rowKey(item.message)
 				}
 				style={{ flex: 1 }}
-				contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 16 }}
+				contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 16 }}
 				maxToRenderPerBatch={10}
 				windowSize={7}
 				initialNumToRender={20}
@@ -339,37 +359,10 @@ export default function SessionScreen() {
 				keyboardDismissMode="on-drag"
 				keyboardShouldPersistTaps="always"
 				onContentSizeChange={onListContentSizeChange}
-				onEndReached={() => {
-					if (hasEarlierMessages && !loadingEarlier) {
-						void loadEarlierMessages();
-					}
-				}}
-				onEndReachedThreshold={0.2}
-				onScroll={(e) => {
-					// In inverted mode: offset 0 is bottom (latest).
-					const offset = e.nativeEvent.contentOffset.y;
-					isAtBottomRef.current = offset <= 10;
-					if (offset > 160) {
-						scrollFabOpacity.value = withTiming(1, { duration: 150 });
-					} else {
-						scrollFabOpacity.value = withTiming(0, { duration: 150 });
-					}
-				}}
-				onScrollBeginDrag={() => {
-					isAtBottomRef.current = false;
-				}}
+				onScroll={handleScroll}
 				scrollEventThrottle={16}
 				ListHeaderComponent={
-					error ? (
-						<View className="mb-2 pt-0.5">
-							<View className="rounded-xl bg-danger/10 px-3.5 py-2.5">
-								<Text className="text-[12.5px] font-medium text-danger">{error}</Text>
-							</View>
-						</View>
-					) : null
-				}
-				ListFooterComponent={
-					<View className="mb-3">
+					<View className="mb-4">
 						{/* Cursor pagination: fetch earlier records from server */}
 						{hasEarlierMessages && (
 							<Pressable
@@ -431,6 +424,15 @@ export default function SessionScreen() {
 							</View>
 						)}
 					</View>
+				}
+				ListFooterComponent={
+					error ? (
+						<View className="mt-2 pt-0.5">
+							<View className="rounded-xl bg-danger/10 px-3.5 py-2.5">
+								<Text className="text-[12.5px] font-medium text-danger">{error}</Text>
+							</View>
+						</View>
+					) : null
 				}
 			/>
 
@@ -599,7 +601,7 @@ export default function SessionScreen() {
 					onPress={() => {
 						isAtBottomRef.current = true;
 						scrollFabOpacity.value = withTiming(0, { duration: 150 });
-						listRef.current?.scrollToOffset({ offset: 0, animated: true });
+						listRef.current?.scrollToEnd({ animated: true });
 					}}
 					className="h-10 w-10 items-center justify-center rounded-full bg-elevated shadow-lg active:bg-card-hover"
 				>
