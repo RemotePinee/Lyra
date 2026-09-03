@@ -1,4 +1,7 @@
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
+import { X } from "lucide-react";
+import { Spinner } from "./loaders.tsx";
 
 /**
  * The middle of an empty panel body.
@@ -30,8 +33,17 @@ export function PanelEmpty({
 	 * Styled as the panel's own primary button, the same as 「初始化仓库」, and deliberately not as
 	 * anything resembling the composer's send key.
 	 */
-	action?: { label: string; onClick: () => void; disabled?: boolean };
+	action?: {
+		label: string;
+		onClick: () => void;
+		disabled?: boolean;
+		loading?: boolean;
+		cancelLabel?: string;
+	};
 }) {
+	const [hovered, setHovered] = useState(false);
+	const isLoading = action?.loading ?? false;
+
 	return (
 		<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-7 pb-6 text-center">
 			<Icon size={30} strokeWidth={1.35} className="text-ink-faint" />
@@ -40,11 +52,22 @@ export function PanelEmpty({
 			{action && (
 				<button
 					type="button"
-					disabled={action.disabled}
+					disabled={action.disabled && !isLoading}
 					onClick={action.onClick}
-					className="mt-4 h-[28px] rounded-md bg-ink px-3 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
+					onMouseEnter={() => setHovered(true)}
+					onMouseLeave={() => setHovered(false)}
+					data-ly-tip={isLoading ? (action.cancelLabel ?? `取消${action.label}`) : undefined}
+					className="mt-4 flex h-[28px] min-w-[56px] items-center justify-center gap-1.5 rounded-md bg-ink px-3 text-detail font-medium text-shell transition-opacity hover:opacity-90 disabled:opacity-40"
 				>
-					{action.label}
+					{isLoading ? (
+						hovered ? (
+							<X size={13} strokeWidth={2.2} className="text-shell" />
+						) : (
+							<Spinner size={13} className="text-shell" />
+						)
+					) : (
+						action.label
+					)}
 				</button>
 			)}
 		</div>

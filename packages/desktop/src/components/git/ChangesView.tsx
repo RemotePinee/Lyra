@@ -136,6 +136,7 @@ export function ChangesView({
                 label: plan.empty.action.label,
                 onClick: plan.empty.action.kind === "push" ? onPush : onPull,
                 disabled: busy,
+                loading: busy,
               }
             : undefined
         }

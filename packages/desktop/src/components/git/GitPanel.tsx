@@ -1,4 +1,4 @@
-import { Activity, ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Sparkles } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal, GitCompare, RefreshCw, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "../useLiveRefresh.ts";
 import { useDock } from "../../dock/store.ts";
@@ -6,6 +6,7 @@ import { kinds } from "../../dock/tree.ts";
 import { paneVisible } from "../../dock/visibility.ts";
 import { useLayout } from "../../layout.tsx";
 import { syncPlan, type SyncButton } from "./syncPlan.ts";
+import { Spinner } from "../loaders.tsx";
 
 import type { GitStatus } from "../../../electron/ipc-types.ts";
 import type { RepoRef } from "../../../electron/git.ts";
@@ -63,21 +64,30 @@ function SyncControl({
 	roomForWords: boolean;
 	onClick: () => void;
 }) {
+	const [hovered, setHovered] = useState(false);
 	const label = running ? `取消${word}` : state.tip;
+	const currentIcon = running ? (hovered ? <X size={12} strokeWidth={2} className="text-ink" /> : <Spinner size={12} />) : icon;
+
 	// Words only for the emphasised control, only when it is idle, and only when the row is wide
 	// enough that spelling it out does not push the branch name out of view.
 	if (!roomForWords || !state.emphasis || running) {
 		return (
-			<IconButton
-				icon={icon}
-				label={label}
-				size="sm"
-				disabled={disabled}
-				explainDisabled={state.disabled}
-				emphasis={state.emphasis}
-				badge={state.count}
-				onClick={onClick}
-			/>
+			<span
+				onMouseEnter={() => setHovered(true)}
+				onMouseLeave={() => setHovered(false)}
+				className="inline-flex"
+			>
+				<IconButton
+					icon={currentIcon}
+					label={label}
+					size="sm"
+					disabled={disabled}
+					explainDisabled={state.disabled}
+					emphasis={state.emphasis}
+					badge={running ? null : state.count}
+					onClick={onClick}
+				/>
+			</span>
 		);
 	}
 	return (
@@ -88,9 +98,11 @@ function SyncControl({
 			data-ly-count={state.count === null ? undefined : String(state.count)}
 			disabled={disabled}
 			onClick={onClick}
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
 			className="flex h-[22px] shrink-0 items-center gap-1 rounded-md px-1.5 text-caption font-medium text-ink transition-colors duration-[var(--ly-t-quick)] hover:bg-card-hover active:bg-elevated disabled:opacity-40"
 		>
-			{icon}
+			{currentIcon}
 			<span className="tabular-nums">{state.count === null ? word : `${word} ${state.count}`}</span>
 		</button>
 	);
@@ -586,7 +598,7 @@ export function GitPanel() {
             where the thing you would do about them is. */}
         <div className="min-w-1 flex-1" />
         <SyncControl
-          icon={<ArrowDownToLine size={12} strokeWidth={1.9} className={sync === "pull" ? "ly-spin" : undefined} />}
+          icon={<ArrowDownToLine size={12} strokeWidth={1.9} />}
           word="拉取"
           state={plan.pull}
           running={sync === "pull"}
@@ -596,7 +608,7 @@ export function GitPanel() {
           onClick={() => void remote("pull", (id) => window.lyra.git.pull(cwd, id))}
         />
         <SyncControl
-          icon={<ArrowUpFromLine size={12} strokeWidth={1.9} className={sync === "push" ? "ly-spin" : undefined} />}
+          icon={<ArrowUpFromLine size={12} strokeWidth={1.9} />}
           word={plan.push.count === null && plan.branch !== "—" && status?.remoteState === "no-upstream" ? "发布" : "推送"}
           state={plan.push}
           running={sync === "push"}
