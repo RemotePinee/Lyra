@@ -793,10 +793,13 @@ export function Composer() {
 								 * which it cannot: what fits depends on how long the model's name is, and
 								 * those run from `gpt-5` to `claude-opus-4-6-thinking`. The words went at
 								 * 419px with clear air still in the row, and having gone they freed width
-								 * that nothing then claimed. The row is measured now, and this is the last
-								 * thing it gives up — see `composer/fit.ts`.
+								 * that nothing then claimed.
+								 *
+								 * And it goes before the meter rather than after it. This is a mode you set
+								 * once and leave set; the meter and the name are about the turn being composed
+								 * right now — see the ranking in `composer/fit.ts`.
 								 */}
-								<span data-ly-fit-drop="2" className="shrink-0 whitespace-nowrap">
+								<span data-ly-fit-drop="1" className="shrink-0 whitespace-nowrap">
 									<RollingText>{PERMISSION_LABEL[permissionMode]}</RollingText>
 								</span>
 							</button>
@@ -807,12 +810,13 @@ export function Composer() {
 							{/*
 							 * Beside the model it is measured against — the window is a property of that model.
 							 *
-							 * The first thing the row gives up, and it used to be given up at a fixed
-							 * `@max-[480px]`: on a real window that dropped it while the two halves of the row
-							 * still had 54px of clear air between them. It costs about 24px, so it now goes
-							 * only when those 24px are the ones missing.
+							 * The last thing the row gives up, and it used to be the first — at a fixed
+							 * `@max-[480px]`, which on a real window dropped it while the two halves of the
+							 * row still had 54px of clear air between them. It costs about 24px, so it now
+							 * goes only when those 24px are the ones missing, and only after 「完全访问」 has
+							 * already given up its words for a larger saving.
 							 */}
-							<div data-ly-fit-drop="1" className="flex shrink-0 items-center">
+							<div data-ly-fit-drop="2" className="flex shrink-0 items-center">
 								<ContextMeter messages={messages} settings={settings} modelId={modelId} sessionId={activeSessionId} />
 							</div>
 

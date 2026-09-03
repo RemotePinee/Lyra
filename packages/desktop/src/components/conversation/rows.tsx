@@ -47,6 +47,7 @@ export const MessageRow = memo(function MessageRow({
   message,
   index,
   upTo,
+  from,
   continued,
   turnStats,
 }: {
@@ -61,6 +62,12 @@ export const MessageRow = memo(function MessageRow({
    * after the first would land in the second.
    */
   upTo: number;
+  /**
+   * Where this row starts, for the one reply whose reasoning is drawn above the work.
+   *
+   * See `Run.from` in `grouping.ts`. Absent everywhere else, which is every other row.
+   */
+  from?: number;
   /** The runtime told it to keep going, so this is a pause rather than a finish. */
   continued?: boolean;
   /** Accumulated statistics for the turn this message concludes. */
@@ -98,19 +105,23 @@ export const MessageRow = memo(function MessageRow({
   // Tool results are rendered inside their tool card, not as standalone rows.
   if (message.role === "toolResult") return null;
 
-  return <AssistantRow message={message} index={index} upTo={upTo} continued={continued} turnStats={turnStats} />;
+  return (
+    <AssistantRow message={message} index={index} upTo={upTo} from={from} continued={continued} turnStats={turnStats} />
+  );
 });
 
 function AssistantRow({
   message,
   index,
   upTo,
+  from = 0,
   continued,
   turnStats,
 }: {
   message: AssistantMessage;
   index: number;
   upTo: number;
+  from?: number;
   continued?: boolean;
   turnStats?: TurnStats;
 }) {
@@ -124,7 +135,7 @@ function AssistantRow({
   const [errorOpen, setErrorOpen] = useState(false);
   const confirm = useConfirmer();
 
-  const own = message.content.slice(0, upTo);
+  const own = message.content.slice(from, upTo);
 
   const text = own
     .filter((block) => block.type === "text")
@@ -145,21 +156,23 @@ function AssistantRow({
       {segments(own).map((segment, position) => {
         if (segment.kind === "block") {
           const { block, index } = segment;
+          // `segments` numbers what it was handed; `from` puts that back on the message's own scale.
+          const at = from + index;
           if (block.type === "thinking") {
             // Ticking while it is the block being written: only the newest block of a reply that is
             // still arriving can be, whatever the message as a whole is doing.
             return (
               <ThinkingBlock
-                key={index}
+                key={at}
                 text={block.thinking}
                 redacted={block.redacted === true}
-                live={message.stopReason === "pending" && index === message.content.length - 1}
+                live={message.stopReason === "pending" && at === message.content.length - 1}
               />
             );
           }
           if (block.type === "text") {
             return block.text ? (
-              <div key={index} className="mb-2.5">
+              <div key={at} className="mb-2.5">
                 <Markdown text={block.text} />
               </div>
             ) : null;

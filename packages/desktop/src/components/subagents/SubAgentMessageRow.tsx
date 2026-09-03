@@ -39,6 +39,8 @@ export const SubAgentTranscript = memo(function SubAgentTranscript({
 				}
 
 				const { message, upTo } = run;
+				// Set only on the reply whose reasoning `grouping.ts` drew above the work; see `Run.from`.
+				const from = run.from ?? 0;
 				if (message.role === "user") {
 					if (message.synthetic) return null;
 					const text = message.content
@@ -83,10 +85,11 @@ export const SubAgentTranscript = memo(function SubAgentTranscript({
 				}
 
 				if (message.role === "assistant") {
-					const visibleBlocks = message.content.slice(0, upTo);
+					const visibleBlocks = message.content.slice(from, upTo);
 					return (
 						<div key={`assistant-${idx}`} className="ly-enter mb-3">
-							{visibleBlocks.map((block, bIdx) => {
+							{visibleBlocks.map((block, offset) => {
+								const bIdx = from + offset;
 								if (block.type === "thinking") {
 									return (
 										<ThinkingBlock

@@ -1030,6 +1030,31 @@
   display: none;
 }
 
+/*
+ * A rolling label inside a parent that truncates has to truncate too.
+ *
+ * `truncate` puts the ellipsis on inline content that overflows its block. `RollingText` wraps its
+ * value in an inline-block — it has to, or the roll has nothing to transform — and an inline-block
+ * is an atomic box: `text-overflow` does not apply to it, so `overflow: hidden` cut it off mid-glyph
+ * and no ellipsis was ever drawn. The model name in the composer is where this showed:
+ * `gemini-3.8-flas`, sliced, with nothing to say there was more.
+ *
+ * `block` rather than keeping `inline-block` and adding the elision to it. An inline-block with
+ * `overflow: hidden` takes its baseline from its bottom edge instead of from its text, which drops
+ * the descender's worth of space into the line box above it and lifts the label a pixel or two off
+ * where every other control in the row sits. A block has no baseline to lose.
+ *
+ * A child combinator, not a descendant one. The rule is meant for a `RollingText` that was itself
+ * told to truncate — that is the wrapper, and the box is its only child. Matching any truncating
+ * ancestor would catch the other twelve rolling labels in the app the moment one of them was placed
+ * inside a clipped title, and none of those overflow or should be width-bound.
+ */
+.truncate > .ly-roll-value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 :root.dark .ly-composer {
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.35),

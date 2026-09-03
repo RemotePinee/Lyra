@@ -1,6 +1,15 @@
 import { useState } from "react";
 
 /**
+ * The box holding the value — the thing that rolls, and the thing that overflows.
+ *
+ * Exported because a parent that truncates has to be able to find it: the wrapper's own width is
+ * bounded by its parent, so the wrapper never overflows, and anything measuring "is this being
+ * cut" has to ask the box inside. `ComposerShell` does exactly that.
+ */
+export const ROLL_VALUE = "ly-roll-value";
+
+/**
  * A value replacing a value, wherever that happens.
  *
  * Text that changes in place — the effort level in the composer, the model you just picked, the
@@ -39,8 +48,13 @@ export function RollingText({
 			 * `inline-block`, because `transform` does nothing to an inline box — the roll would be a
 			 * bare fade, which is what the two hand-written versions of this were getting. `max-w-full`
 			 * so it stays inside a parent that truncates rather than pushing through it.
+			 *
+			 * `ly-roll-value` is the handle a truncating parent needs. Staying inside that parent is
+			 * not the same as being elided by it: an inline-block is an atomic box, `text-overflow`
+			 * does not apply to one, and `overflow: hidden` simply cuts it — which is why a model name
+			 * too long for the composer ended mid-glyph with no ellipsis. See the rule in styles.css.
 			 */}
-			<span key={value} className={`inline-block max-w-full ${rolls ? "ly-roll" : ""}`}>
+			<span key={value} className={`${ROLL_VALUE} inline-block max-w-full ${rolls ? "ly-roll" : ""}`}>
 				{children}
 			</span>
 		</span>

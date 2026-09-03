@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import { OverlayScrollbar } from "./OverlayScrollbar.tsx";
 import { FIT_LEVELS, FIT_PROBE, settle, tight } from "./composer/fit.ts";
+import { ROLL_VALUE } from "./RollingText.tsx";
 
 /**
  * The surface you type into, wherever you are typing.
@@ -83,7 +84,18 @@ export function ComposerShell({
 
   const remeasure = useCallback(() => {
     const row = bar.current;
-    const probe = row?.querySelector(`.${FIT_PROBE}`) ?? null;
+    /*
+     * One level in from the handle, where the overflow actually is.
+     *
+     * The probe is a `RollingText`, and it is the box *inside* it that elides — see the
+     * `.truncate .ly-roll-value` rule in styles.css. That box is width-bound by the wrapper, so the
+     * wrapper's own `scrollWidth` never exceeds its `clientWidth`: measuring it would report a row
+     * that fits at every width, and the toolbar would stop adapting entirely.
+     *
+     * Falling back to the handle so a probe that is not a rolling label still measures something.
+     */
+    const handle = row?.querySelector(`.${FIT_PROBE}`) ?? null;
+    const probe = handle?.querySelector(`.${ROLL_VALUE}`) ?? handle;
     if (!row || !probe) return;
     const was = row.getAttribute("data-ly-fit");
     const level = settle((at) => {

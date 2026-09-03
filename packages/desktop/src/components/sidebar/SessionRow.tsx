@@ -126,7 +126,8 @@ export function SessionRow({
 	 * Both lists use it — under a project the folder above already names the project, so only 「聊天」
 	 * passes one, but the path and the figures are worth having in either.
 	 */
-	const card = useSessionCard();
+	const refreshSessionStats = useApp((s) => s.refreshSessionStats);
+	const card = useSessionCard(() => void refreshSessionStats(session.id));
 
 	const actionsCount = onRestore && onDelete ? 2 : (onArchive ? 1 : 0) + 1;
 

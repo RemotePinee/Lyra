@@ -380,6 +380,34 @@ export function sessionSlice(set: Set, get: Get) {
   async deleteArchivedSessions() {
     set({ sessions: await window.lyra.sessions.removeArchived() });
   },
+
+  /**
+   * One conversation's figures, read back from disk.
+   *
+   * The list is only re-read when a turn *ends* (`agent_end` in `apply-event.ts`), so for as long
+   * as a turn runs, the count and the usage on its row are whatever they were when the last one
+   * finished. On a conversation that has never finished a turn there is nothing to be stale from:
+   * `send` puts `messageCount: 1` and an empty usage on the row it creates, so a session an hour
+   * into its first turn still reads 「1 条消息、0」 — which is what the hover card was showing.
+   *
+   * The store on the other side has the real numbers all along: every message committed to the log
+   * updates them (`SessionStore.appendExclusive`). Nothing was writing them down here.
+   *
+   * Only the two figures, deliberately. Taking the whole record would bring `updatedAt` with it,
+   * and the sidebar is sorted by that — pulling the row out from under a pointer that is resting on
+   * it, to show a fresher number, would be a worse trade than the stale number.
+   */
+  async refreshSessionStats(sessionId: string) {
+    const latest = (await window.lyra.sessions.list()).find((s) => s.id === sessionId);
+    if (!latest) return;
+    set({
+      sessions: get().sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, messageCount: latest.messageCount, usage: latest.usage }
+          : s,
+      ),
+    });
+  },
   };
 }
 

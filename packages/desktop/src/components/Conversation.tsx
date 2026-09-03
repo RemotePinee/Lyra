@@ -261,6 +261,7 @@ export const Conversation = memo(function Conversation() {
                 message={run.message}
                 index={run.index}
                 upTo={run.upTo}
+                from={run.from}
                 /* A turn the runtime carried straight on from did not end where it stopped. */
                 continued={isNudge(messages[run.index + 1])}
                 /* Computed with the grouping, so its identity changes only when the transcript

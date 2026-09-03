@@ -134,7 +134,7 @@ after(async () => {
 interface Row {
 	/** The field's own width, which is what the old breakpoints were reading. */
 	shell: number;
-	/** How much has been given up: 0 all, 1 no meter, 2 no access label. */
+	/** How much has been given up: 0 all, 1 no access label, 2 no meter as well. */
 	fit: number;
 	/** Drawn and occupying width — not merely "its wrapper was not `display: none`". */
 	meterShown: boolean;
@@ -173,8 +173,8 @@ const READ_ROW = `(() => { try {
 	const shell = bar.closest(".ly-composer");
 	if (!shell) throw new Error("no composer around the toolbar row");
 	const [leftGroup, rightGroup] = [...bar.children];
-	const meter = shell.querySelector('[data-ly-fit-drop="1"]');
-	const label = shell.querySelector('[data-ly-fit-drop="2"]');
+	const meter = shell.querySelector('[data-ly-fit-drop="2"]');
+	const label = shell.querySelector('[data-ly-fit-drop="1"]');
 	const shown = (el) => Boolean(el) && getComputedStyle(el).display !== "none";
 	// Hidden elements report a zero rect at the origin; including them would put the "leftmost"
 	// element of the right group at x=0 and turn every reading into a false overlap.
@@ -279,7 +279,64 @@ test("a row that genuinely runs out gives things up, in order", async () => {
 	// It has to still work — the point was never to keep everything at every width.
 	const tightRow = await at(300);
 	assert.ok(tightRow.fit > 0, `nothing was given up at ${tightRow.shell}px: ${JSON.stringify(tightRow)}`);
-	assert.equal(tightRow.meterShown, false, "the meter is the first to go");
+	assert.equal(tightRow.labelShown, false, "the words beside the access mark are the first to go");
+});
+
+test("the meter outlives the words beside the access mark", async () => {
+	/*
+	 * The order, on a real row rather than on the two constants.
+	 *
+	 * Swept, because the width at which the first step is taken depends on the name in the row, and
+	 * the case worth seeing is the band *between* the two steps: 「完全访问」 already gone, the meter
+	 * still there. A row that skipped straight from everything to nothing would pass a check at the
+	 * ends and fail the reader, who lost a live reading to keep four static characters.
+	 */
+	const seen: Row[] = [];
+	for (const width of [560, 520, 480, 440, 400, 380, 360, 340, 320, 300, 280, 260, 240]) {
+		seen.push(await at(width));
+	}
+	const band = seen.filter((row) => row.fit === 1);
+	assert.ok(band.length > 0, `no width gave up the label alone:\n${JSON.stringify(seen, null, 1)}`);
+	for (const row of band) {
+		assert.equal(row.labelShown, false, `at ${row.shell}px the label should have gone first`);
+		assert.equal(row.meterShown, true, `and the meter should have survived it: ${JSON.stringify(row)}`);
+	}
+	// And nothing ever loses the meter while still spending width on the label.
+	const wrong = seen.filter((row) => !row.meterShown && row.labelShown);
+	assert.deepEqual(wrong, [], `the meter went while the label stayed:\n${JSON.stringify(wrong, null, 1)}`);
+});
+
+test("a name too long for the row ends in an ellipsis rather than mid-glyph", async () => {
+	/*
+	 * The reported fault, which the fit levels never touched: `gemini-3.8-flas`, sliced, with
+	 * nothing to say there was more of it.
+	 *
+	 * `RollingText` wraps its value in an inline-block so the roll has something to transform, and
+	 * an inline-block is an atomic box — `text-overflow` does not apply to one, so `overflow: hidden`
+	 * on the wrapper simply cut it. The elision has to be on the box that holds the text.
+	 */
+	await at(300);
+	const name = await app.evaluate<{
+		cut: boolean; overflow: string; ellipsis: string; whiteSpace: string; wrapperCuts: boolean;
+	}>(`(() => {
+		const probe = document.querySelector("main .ly-fit-probe");
+		const box = probe.querySelector(".ly-roll-value");
+		if (!box) throw new Error("no rolling value inside the model name");
+		const cs = getComputedStyle(box);
+		return {
+			cut: box.scrollWidth > box.clientWidth + 1,
+			overflow: cs.overflow,
+			ellipsis: cs.textOverflow,
+			whiteSpace: cs.whiteSpace,
+			// If the wrapper clips the box, the ellipsis is drawn and then cut off with it.
+			wrapperCuts: probe.scrollWidth > probe.clientWidth + 1,
+		};
+	})()`);
+	assert.equal(name.cut, true, `the name is not actually being cut at this width: ${JSON.stringify(name)}`);
+	assert.equal(name.ellipsis, "ellipsis", `the box holding the text does not elide: ${JSON.stringify(name)}`);
+	assert.notEqual(name.overflow, "visible", `and it has to clip for the elision to apply: ${name.overflow}`);
+	assert.equal(name.whiteSpace, "nowrap", "a name that wraps would not need eliding at all");
+	assert.equal(name.wrapperCuts, false, `the wrapper is clipping the elided box: ${JSON.stringify(name)}`);
 });
 
 test("and takes it back when the room comes back", async () => {

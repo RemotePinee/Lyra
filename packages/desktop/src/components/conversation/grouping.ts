@@ -27,13 +27,17 @@ export type Run =
 	 * belongs to the run below rather than to the reply. It is the whole message whenever the
 	 * message has no trailing calls, which is most of them.
 	 *
+	 * `from` is the other end, and is only ever set on the reply the thinking row is showing: its
+	 * reasoning is drawn up there, above the work, so the reply's own row starts after it. Without
+	 * it the same reasoning would appear twice in one turn, once at each end of the work.
+	 *
 	 * `turnStats` rides along for assistant rows. It used to be computed where the row is drawn,
 	 * which meant a fresh object per render — so `MessageRow`'s memo compared unequal every time
 	 * and every visible reply was rebuilt whenever anything re-rendered the transcript. Computed
 	 * here it is derived from the messages alone, which is what it is a fact about, and its
 	 * identity changes exactly when the transcript does.
 	 */
-	| { kind: "message"; message: Message; index: number; upTo: number; turnStats?: TurnStats }
+	| { kind: "message"; message: Message; index: number; upTo: number; from?: number; turnStats?: TurnStats }
 	/**
 	 * A stretch of tool work, and whether it is the stretch being worked on right now.
 	 *
@@ -180,7 +184,7 @@ function reasoning(content: AssistantContent[]): boolean {
 }
 
 /**
- * Which reply's reasoning the live row shows, or -1 for none.
+ * Which reply's reasoning the thinking row shows, or -1 for none.
  *
  * Not simply the last reply's. A reply begins as an empty message, and its reasoning follows a
  * beat later — with a real model, often several hundred milliseconds later. Keyed to the last
@@ -190,15 +194,24 @@ function reasoning(content: AssistantContent[]): boolean {
  * last reply past any that have none yet.
  *
  * The walk stops at the start of the turn (a real user message; the runtime's own are passed
- * over), at a reply that has said something (its prose is the newest thing on screen, and
- * older reasoning would be stale under it), and at a finished reply with no calls (that one
- * has a row of its own already). Nothing is shown at all once the last reply has prose: the
- * answer has arrived, and it carries its own reasoning.
+ * over), at a reply that has said something, and at a finished reply with no calls (that one
+ * has a row of its own already).
  */
 function liveReasoning(messages: Message[], live: number): number {
 	if (live < 0) return -1;
 	const last = messages[live];
-	if (last.role !== "assistant" || spoken(last.content) > 0) return -1;
+	if (last.role !== "assistant") return -1;
+	/*
+	 * The answer has started, and the reasoning that produced it stays where it is.
+	 *
+	 * This used to give up here. That was right while the row sat *under* the work: the answer
+	 * lands in the same place, so it took the row's position over and nothing moved. Above the
+	 * work there is no such handover — withdrawing the row would pull everything below it up by
+	 * a line at the exact moment the reader is watching the answer arrive. So the turn keeps its
+	 * one thinking row until the turn itself is over, and `runs` gives the reply's own row a
+	 * `from` so the reasoning is not drawn a second time underneath.
+	 */
+	if (spoken(last.content) > 0) return leadingThinking(last.content) > 0 ? live : -1;
 	for (let at = live; at >= 0; at--) {
 		const message = messages[at];
 		if (message.role === "user") {
@@ -259,10 +272,20 @@ function liveWork(messages: Message[], live: number, rowOfCalls: Map<number, num
 	return -1;
 }
 
-/** How many blocks come before the first call — the reasoning, which is the row's whole content. */
-function beforeCalls(content: AssistantContent[]): number {
-	const first = content.findIndex((block) => block.type === "toolCall");
-	return first < 0 ? content.length : first;
+/**
+ * How many blocks at the front are reasoning — the thinking row's whole content.
+ *
+ * Counted from the front rather than "everything before the first call", which is the same answer
+ * for a reply that thinks and then works and a different one for a reply that has already spoken:
+ * the looser reading would put the prose in the thinking row as well as in the reply's own.
+ */
+function leadingThinking(content: AssistantContent[]): number {
+	let count = 0;
+	for (const block of content) {
+		if (block.type !== "thinking") break;
+		count++;
+	}
+	return count;
 }
 
 function spoken(content: AssistantContent[]): number {
@@ -387,6 +410,8 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 		}
 
 		if (said > 0) {
+			// `from` is set afterwards, and only if the reasoning above this actually got a row of
+			// its own — which is not known until the whole transcript has been walked.
 			out.push({ kind: "message", message, index, upTo: said, turnStats: turn });
 		} else if (calls.length === 0 && message.stopReason !== "pending") {
 			/*
@@ -399,28 +424,6 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 		}
 
 		work(calls, index);
-
-		/*
-		 * The reasoning of the reply being made right now, under the run it is driving.
-		 *
-		 * Reasoning before a call is never shown once the reply is done — a turn of thirty calls
-		 * would otherwise be thirty lines of thinking with a run between each — so while the reply
-		 * is being made, its reasoning has nowhere of its own to go. Given a row above the run, it
-		 * vanished the moment its first call arrived and merged into the run above, and the next
-		 * reply's reasoning then appeared below: everything under it moved down and up with every
-		 * call in the turn.
-		 *
-		 * So it goes under the run instead, and stays there: still shown while its own call runs,
-		 * replaced in place by the next reply's reasoning once that has actually arrived, and taken
-		 * over by the answer when the prose finally starts — which lands in exactly the same place.
-		 * One row, one position, for the whole of the turn. Placed after the last reply rather than
-		 * after the reply it belongs to, so a call from a newer reply still joins the run above it,
-		 * and a message the user sends meanwhile still comes after it.
-		 */
-		if (index === live && reasoningRow >= 0) {
-			const shown = messages[reasoningRow] as AssistantMessage;
-			out.push({ kind: "message", message: shown, index: reasoningRow, upTo: beforeCalls(shown.content), turnStats: turn });
-		}
 	}
 
 	// A compaction recorded after the last message still belongs at the end.
@@ -430,15 +433,82 @@ export function runs(messages: Message[], compactions: { at: number }[] = []): R
 	}
 
 	/*
-	 * Marked last, on the row rather than on the calls.
+	 * Marked before the thinking row is placed, because placing it moves the rows below it.
 	 *
-	 * Rows are only ever appended, so the indices `work` recorded still point where they did — and
-	 * the answer depends on the whole transcript, which is not known until the walk above is done.
+	 * Rows are only ever appended by the walk above, so the indices `work` recorded still point
+	 * where they did — and the answer depends on the whole transcript, which is not known until
+	 * that walk is done.
 	 */
-	const working = liveWork(messages, live, rowOfCalls);
+	let working = liveWork(messages, live, rowOfCalls);
+
+	/*
+	 * What this turn is thinking, above the work it is driving.
+	 *
+	 * One row for the whole turn, in one place. A reply's reasoning is never given a row of its own
+	 * once it is done — a turn of thirty calls would be thirty lines of thinking with a run between
+	 * each — so the turn shows its newest reasoning and nothing else. `liveReasoning` picks which.
+	 *
+	 * Anchored to the run this turn's work is in rather than to the reply the reasoning came from.
+	 * Those are the same place while the turn works, and they part company at the end: the reply
+	 * that finally speaks has no calls of its own, so anchoring to it would drop the row back under
+	 * the work for the last stretch of the turn — a jump at the moment the answer arrives. Anchored
+	 * to the run, the row does not move from the first call to the last word.
+	 *
+	 * Placed after the walk rather than during it, so a call from a newer reply still joins the run
+	 * above it, and a message the user sends mid-turn still comes after the row.
+	 */
+	if (reasoningRow >= 0) {
+		const shown = messages[reasoningRow] as AssistantMessage;
+		const think = leadingThinking(shown.content);
+		const work = turnWork(messages, live, rowOfCalls);
+		const own = out.findIndex((row) => row.kind === "message" && row.index === reasoningRow);
+		/*
+		 * Only when there is work for it to stand in front of, or nothing else to show it.
+		 *
+		 * A turn that answered without touching a tool has its reasoning and its answer next to each
+		 * other already; splitting them there would spend a row and a margin to change nothing.
+		 */
+		if (think > 0 && (work >= 0 || own < 0)) {
+			const at = work >= 0 ? work : out.length;
+			out.splice(at, 0, { kind: "message", message: shown, index: reasoningRow, upTo: think, turnStats: turn });
+			if (working >= at) working += 1;
+			// And the reply's own row now starts after the reasoning drawn above. See `Run.from`.
+			if (own >= 0) {
+				const row = out[own >= at ? own + 1 : own];
+				if (row.kind === "message") row.from = think;
+			}
+		}
+	}
+
 	if (working >= 0) {
 		const row = out[working];
 		if (row.kind === "tools") row.live = true;
 	}
 	return out;
+}
+
+/**
+ * The row this turn's tool work is in, whether or not the turn is still pushing it forward.
+ *
+ * `liveWork` answers a different question — which run is *being worked on* — and gives up as soon
+ * as a reply has spoken, because nothing should glide once the answer is being written. The
+ * thinking row needs the run either way: it sits above the work for the whole turn, including the
+ * part of it spent writing the answer.
+ *
+ * Walked back from the last reply and stopped by anything a person actually said, so a turn that
+ * has done no work of its own never attaches its reasoning to the run above someone else's
+ * question. The runtime's own messages are not a person speaking; see `opensTurn`.
+ */
+function turnWork(messages: Message[], live: number, rowOfCalls: Map<number, number>): number {
+	for (let at = live; at >= 0; at--) {
+		const message = messages[at];
+		if (message.role === "user") {
+			if (message.synthetic || isNudge(message)) continue;
+			return -1;
+		}
+		if (message.role !== "assistant") continue;
+		const row = rowOfCalls.get(at);
+		if (row !== undefined) return row;
+	}
+	return -1;
 }

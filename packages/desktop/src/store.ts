@@ -342,6 +342,8 @@ export interface AppState {
   deleteSession(meta: SessionMeta): Promise<void>;
   setSessionArchived(meta: SessionMeta, archived: boolean): Promise<void>;
   deleteArchivedSessions(): Promise<void>;
+  /** Re-read one conversation's message count and usage from disk. See the action for why. */
+  refreshSessionStats(sessionId: string): Promise<void>;
 
   /**
    * `synthetic` marks a message the app composed on the user's behalf — 「继续」.

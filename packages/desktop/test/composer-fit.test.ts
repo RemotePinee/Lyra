@@ -69,8 +69,21 @@ test("a row that fits gives up nothing", () => {
 });
 
 test("a tight row gives up the next thing, in order", () => {
-	assert.equal(nextLevel(FIT_LEVELS.all, true), FIT_LEVELS.noMeter);
-	assert.equal(nextLevel(FIT_LEVELS.noMeter, true), FIT_LEVELS.noAccessLabel);
+	assert.equal(nextLevel(FIT_LEVELS.all, true), FIT_LEVELS.noAccessLabel);
+	assert.equal(nextLevel(FIT_LEVELS.noAccessLabel, true), FIT_LEVELS.noMeter);
+});
+
+test("the words beside the access mark go before the meter does", () => {
+	/*
+	 * Asserted on the order rather than left to the two names, because the order *is* the decision.
+	 *
+	 * The meter and the model name answer questions about the reply being asked for — how much room
+	 * is left, and who will answer. 「完全访问」 is a mode set once and left set, its mark is red, and
+	 * its tooltip still says the word. Reading them the other way round is what made a narrow
+	 * composer drop the meter while spending its width on four characters that had not changed in
+	 * days.
+	 */
+	assert.ok(FIT_LEVELS.noAccessLabel < FIT_LEVELS.noMeter, "the label yields first");
 });
 
 test("and stops once there is nothing left to give up", () => {
@@ -98,19 +111,19 @@ test("a roomy row settles on showing everything", () => {
 	assert.deepEqual(row.asked, [FIT_LEVELS.all], "and asked once, rather than trying levels it did not need");
 });
 
-test("a row that needs the meter's width stops as soon as it has it", () => {
+test("a row that needs the label's width stops as soon as it has it", () => {
 	const row = rowWhere(FIT_LEVELS.all);
-	assert.equal(settle(row.measure), FIT_LEVELS.noMeter);
-	assert.deepEqual(row.asked, [FIT_LEVELS.all, FIT_LEVELS.noMeter]);
+	assert.equal(settle(row.measure), FIT_LEVELS.noAccessLabel);
+	assert.deepEqual(row.asked, [FIT_LEVELS.all, FIT_LEVELS.noAccessLabel]);
 });
 
-test("a row that needs more than that goes on to the label", () => {
-	const row = rowWhere(FIT_LEVELS.all, FIT_LEVELS.noMeter);
-	assert.equal(settle(row.measure), FIT_LEVELS.noAccessLabel);
+test("a row that needs more than that goes on to the meter", () => {
+	const row = rowWhere(FIT_LEVELS.all, FIT_LEVELS.noAccessLabel);
+	assert.equal(settle(row.measure), FIT_LEVELS.noMeter);
 });
 
 test("a row too narrow for anything settles at the barest level rather than looping", () => {
-	const row = rowWhere(FIT_LEVELS.all, FIT_LEVELS.noMeter, FIT_LEVELS.noAccessLabel);
+	const row = rowWhere(FIT_LEVELS.all, FIT_LEVELS.noAccessLabel, FIT_LEVELS.noMeter);
 	assert.equal(settle(row.measure), MAX_FIT_LEVEL);
 	assert.equal(row.asked.length, MAX_FIT_LEVEL + 1, "each level asked exactly once");
 });

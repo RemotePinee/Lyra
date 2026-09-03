@@ -16,17 +16,25 @@
  * fits. What "fits" means is `tight` below.
  */
 
-/** What may be given up, in the order it is given up. Higher levels include the lower ones. */
+/**
+ * What may be given up, in the order it is given up. Higher levels include the lower ones.
+ *
+ * The order is a ranking of what the row is *for*. The meter and the model name answer questions
+ * about the reply you are about to ask for — how much room is left, and who is going to answer —
+ * and they change from turn to turn. 「完全访问」 is a mode you set once and leave set, and its mark
+ * is red and keeps its tooltip, so the four characters beside it are the cheapest thing in the row.
+ * They go first.
+ */
 export const FIT_LEVELS = {
 	/** Everything is drawn. */
 	all: 0,
-	/** The context meter goes: it is a glance at a number the model chip's tooltip also gives. */
-	noMeter: 1,
 	/** 「完全访问」 loses its words. The mark stays, and it is red — see the note at its call site. */
-	noAccessLabel: 2,
+	noAccessLabel: 1,
+	/** The context meter goes: it is a glance at a number the model chip's tooltip also gives. */
+	noMeter: 2,
 } as const;
 
-export const MAX_FIT_LEVEL = FIT_LEVELS.noAccessLabel;
+export const MAX_FIT_LEVEL = FIT_LEVELS.noMeter;
 
 /** The handle on the element that yields; `ComposerShell` looks for this inside the toolbar row. */
 export const FIT_PROBE = "ly-fit-probe";
