@@ -1,11 +1,28 @@
 import { Link, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SessionMeta } from "../src/protocol";
 import { useMobile } from "../src/store";
 
+const appIcon = require("../assets/logo.png");
+
+function HeaderTitle() {
+	return (
+		<View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+			<Image
+				source={appIcon}
+				style={{ width: 32, height: 32 }}
+				resizeMode="contain"
+			/>
+			<Text style={{ fontSize: 22, fontWeight: "700", color: "#ededed", letterSpacing: 0.3 }}>Lyra</Text>
+		</View>
+	);
+}
+
 export default function SessionListScreen() {
 	const router = useRouter();
+	const insets = useSafeAreaInsets();
 	const hydrated = useMobile((s) => s.hydrated);
 	const connection = useMobile((s) => s.connection);
 	const sessions = useMobile((s) => s.sessions);
@@ -17,10 +34,8 @@ export default function SessionListScreen() {
 
 	const [refreshing, setRefreshing] = useState(false);
 	const [creating, setCreating] = useState<string | null>(null);
-	const [navigatingId, setNavigatingId] = useState<string | null>(null);
 	const settings = useMobile((s) => s.settings);
 	const createSession = useMobile((s) => s.createSession);
-	const activeSessionId = useMobile((s) => s.activeSession?.id ?? null);
 	const projects = settings?.projects ?? [];
 
 	// Poll while the app is foregrounded so a session started on the desktop shows up here.
@@ -48,17 +63,20 @@ export default function SessionListScreen() {
 
 	/*
 	 * Same rule as the desktop sidebar: a session with no messages has no title and nothing to
-	 * return to, so it is not a row worth showing. The one you are currently in is exempt —
-	 * it may be brand new with its first message still on the way.
+	 * return to, so it is not a row worth showing.
 	 */
-	const grouped = groupByProject(sessions.filter((s) => s.messageCount > 0 || s.id === activeSessionId));
+	const grouped = groupByProject(sessions.filter((s) => s.messageCount > 0));
 
 	return (
-		<ScrollView
-			className="flex-1 bg-shell"
-			contentContainerStyle={{ padding: 16, paddingTop: 6, paddingBottom: 40 }}
-			refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9a9a9a" />}
-		>
+		<View style={{ flex: 1, backgroundColor: "#171717", paddingTop: insets.top }}>
+			<View className="flex-row items-center justify-between border-b border-line-soft/30 px-4 py-2.5">
+				<HeaderTitle />
+			</View>
+			<ScrollView
+				className="flex-1 bg-shell"
+				contentContainerStyle={{ padding: 16, paddingTop: 10, paddingBottom: 40 }}
+				refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9a9a9a" />}
+			>
 			<View className="mb-4 flex-row items-center gap-2 px-1">
 				<View
 					className={`h-2 w-2 rounded-full ${
@@ -127,26 +145,20 @@ export default function SessionListScreen() {
 				<View key={group.projectId} className="mb-6">
 					<Text className="mb-2.5 px-1 text-[12px] font-medium tracking-wide text-ink-faint">{group.projectName}</Text>
 					<View className="overflow-hidden rounded-2xl bg-card">
-						{group.sessions.map((session, index) => {
-							const isNavigating = navigatingId === session.id;
+						{group.sessions.map((session) => {
 							return (
 								<Pressable
 									key={session.id}
 									onPress={() => {
-										setNavigatingId(session.id);
 										void openSession(session);
 										router.push(`/session/${session.id}`);
-										setTimeout(() => setNavigatingId(null), 500);
 									}}
-									className={`px-4 py-3.5 ${isNavigating ? "bg-card-hover" : "active:bg-card-hover"} ${
-										index > 0 ? "border-t border-line-soft/40" : ""
-									}`}
+									className="px-4 py-3.5 active:bg-card-hover border-t border-line-soft/40 first:border-t-0"
 								>
 									<View className="flex-row items-center justify-between gap-2">
 										<Text className="flex-1 text-[14.5px] font-medium text-ink" numberOfLines={1}>
 											{session.title}
 										</Text>
-										{isNavigating && <ActivityIndicator size="small" color="#9a9a9a" />}
 									</View>
 									<View className="mt-1.5 flex-row items-center gap-3">
 										<Text className="text-[12px] text-ink-faint">{session.messageCount} 条消息</Text>
@@ -161,7 +173,8 @@ export default function SessionListScreen() {
 					</View>
 				</View>
 			))}
-		</ScrollView>
+			</ScrollView>
+		</View>
 	);
 }
 

@@ -12,6 +12,34 @@ import type {
 } from "./protocol";
 
 const CONNECTION_KEY = "lyra.connection";
+const CACHE_STORAGE_KEY = "lyra.session_cache";
+
+async function loadCacheFromStorage(): Promise<Record<string, CachedSessionData>> {
+	try {
+		const raw = await SecureStore.getItemAsync(CACHE_STORAGE_KEY);
+		if (!raw) return {};
+		return JSON.parse(raw) as Record<string, CachedSessionData>;
+	} catch {
+		return {};
+	}
+}
+
+async function saveCacheToStorage(cache: Record<string, CachedSessionData>): Promise<void> {
+	try {
+		// Limit to 5 most recent sessions and up to 60 messages each to keep SecureStore payload lightweight
+		const trimmed: Record<string, CachedSessionData> = {};
+		const sorted = Object.entries(cache).sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, 5);
+		for (const [id, data] of sorted) {
+			trimmed[id] = {
+				...data,
+				messages: data.messages.slice(-60),
+			};
+		}
+		await SecureStore.setItemAsync(CACHE_STORAGE_KEY, JSON.stringify(trimmed));
+	} catch {
+		// Ignore storage quota / secure store issues
+	}
+}
 
 export interface ToolRun {
 	toolCallId: string;
@@ -100,18 +128,22 @@ export const useMobile = create<MobileState>((set, get) => ({
 	cache: {},
 
 	async hydrate() {
-		const raw = await SecureStore.getItemAsync(CONNECTION_KEY).catch(() => null);
-		if (!raw) {
-			set({ hydrated: true });
+		const [rawConnection, initialCache] = await Promise.all([
+			SecureStore.getItemAsync(CONNECTION_KEY).catch(() => null),
+			loadCacheFromStorage(),
+		]);
+
+		if (!rawConnection) {
+			set({ hydrated: true, cache: initialCache });
 			return;
 		}
 		try {
-			const connection = JSON.parse(raw) as Connection;
+			const connection = JSON.parse(rawConnection) as Connection;
 			attach(connection, set, get);
-			set({ connection, hydrated: true });
+			set({ connection, hydrated: true, cache: initialCache });
 			void get().refreshSessions();
 		} catch {
-			set({ hydrated: true });
+			set({ hydrated: true, cache: initialCache });
 		}
 	},
 
@@ -164,25 +196,44 @@ export const useMobile = create<MobileState>((set, get) => ({
 		const client = get().client;
 		if (!client) return;
 
-		// Reset state for the opened session and show loading
-		set({
-			activeSession: meta,
-			messages: [],
-			toolRuns: {},
-			approvals: [],
-			running: false,
-			turnStartedAt: null,
-			turnTokens: 0,
-			seq: 0,
-			minSeq: 0,
-			hasEarlierMessages: false,
-			loadingEarlier: false,
-			loadingSessionId: meta.id,
-			error: null,
-		});
+		// Stale-While-Revalidate: If session exists in cache, load it immediately!
+		const cached = get().cache[meta.id];
+		const hasCache = !!cached && cached.messages.length > 0;
+
+		if (hasCache) {
+			set({
+				activeSession: meta,
+				messages: cached.messages,
+				toolRuns: cached.toolRuns,
+				approvals: [],
+				seq: cached.seq,
+				minSeq: 0,
+				hasEarlierMessages: false,
+				loadingEarlier: false,
+				loadingSessionId: meta.id,
+				error: null,
+			});
+		} else {
+			// First-time open: clean state
+			set({
+				activeSession: meta,
+				messages: [],
+				toolRuns: {},
+				approvals: [],
+				running: false,
+				turnStartedAt: null,
+				turnTokens: 0,
+				seq: 0,
+				minSeq: 0,
+				hasEarlierMessages: false,
+				loadingEarlier: false,
+				loadingSessionId: meta.id,
+				error: null,
+			});
+		}
 
 		try {
-			// Fetch the latest 120 records so runs aren't starved by consecutive tool calls
+			// Background revalidate: fetch latest 120 records & status
 			const [res, status] = await Promise.all([
 				client.records(meta.projectId, meta.id, { tail: 120 }),
 				client.status(meta.projectId, meta.id).catch(() => null),
@@ -203,6 +254,17 @@ export const useMobile = create<MobileState>((set, get) => ({
 			const toolRuns = rebuildToolRuns(messages);
 
 			const isRunning = status?.running ?? false;
+			const nextCache = trimCache({
+				...get().cache,
+				[meta.id]: {
+					messages,
+					toolRuns,
+					seq,
+					updatedAt: Date.now(),
+				},
+			});
+			void saveCacheToStorage(nextCache);
+
 			set({
 				messages,
 				seq,
@@ -213,6 +275,7 @@ export const useMobile = create<MobileState>((set, get) => ({
 				running: isRunning,
 				turnStartedAt: isRunning ? (get().turnStartedAt ?? Date.now()) : null,
 				turnTokens: isRunning ? get().turnTokens : 0,
+				cache: nextCache,
 				approvals:
 					status?.pendingApprovals.map((p) => ({
 						id: p.id,
@@ -262,16 +325,18 @@ export const useMobile = create<MobileState>((set, get) => ({
 	closeSession() {
 		const { activeSession, messages, toolRuns, seq, cache } = get();
 		if (activeSession) {
+			const nextCache = trimCache({
+				...cache,
+				[activeSession.id]: {
+					messages,
+					toolRuns,
+					seq,
+					updatedAt: Date.now(),
+				},
+			});
+			void saveCacheToStorage(nextCache);
 			set({
-				cache: trimCache({
-					...cache,
-					[activeSession.id]: {
-						messages,
-						toolRuns,
-						seq,
-						updatedAt: Date.now(),
-					},
-				}),
+				cache: nextCache,
 				activeSession: null,
 			});
 		} else {
@@ -368,6 +433,32 @@ function attach(connection: Connection, set: Setter, get: Getter): void {
 	set({ client });
 }
 
+let updateFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingMessageUpdates: { sessionId: string; message: Message } | null = null;
+
+function flushPendingMessageUpdate(set: Setter, get: Getter): void {
+	if (updateFlushTimer) {
+		clearTimeout(updateFlushTimer);
+		updateFlushTimer = null;
+	}
+	if (!pendingMessageUpdates) return;
+
+	const { sessionId, message } = pendingMessageUpdates;
+	pendingMessageUpdates = null;
+
+	const state = get();
+	if (state.activeSession?.id !== sessionId) return;
+
+	const messages = [...state.messages];
+	const index = messages.length - 1;
+	if (index >= 0 && messages[index].role === "assistant") {
+		messages[index] = message;
+	} else {
+		messages.push(message);
+	}
+	set({ messages });
+}
+
 function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Getter): void {
 	const state = get();
 
@@ -438,6 +529,7 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			break;
 
 		case "message_start": {
+			flushPendingMessageUpdate(set, get);
 			if (isDuplicateUserEcho(state.messages, event.message)) {
 				const messages = [...state.messages];
 				messages[messages.length - 1] = event.message;
@@ -449,16 +541,21 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 		}
 
 		case "message_update": {
-			const messages = [...state.messages];
-			const index = messages.length - 1;
-			if (index >= 0 && messages[index].role === "assistant") messages[index] = event.message;
-			else messages.push(event.message);
-			set({ messages });
+			// Backpressure protection: buffer rapid-fire stream updates into ~40ms batches
+			// to avoid thousands of React Yoga layout re-computations and UI queue starvation.
+			pendingMessageUpdates = { sessionId, message: event.message };
+			if (!updateFlushTimer) {
+				updateFlushTimer = setTimeout(() => {
+					flushPendingMessageUpdate(set, get);
+				}, 40);
+			}
 			break;
 		}
 
 		case "message_end": {
-			const messages = [...state.messages];
+			// Immediately flush any buffered streaming text so mobile instant-syncs with desktop
+			flushPendingMessageUpdate(set, get);
+			const messages = [...get().messages];
 			const index = findSlot(messages, event.message);
 			if (index >= 0) messages[index] = event.message;
 			else if (!isDuplicateUserEcho(messages, event.message)) messages.push(event.message);
@@ -466,16 +563,17 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 				messages,
 				turnTokens:
 					event.message.role === "assistant" && event.message.usage?.total
-						? state.turnTokens + event.message.usage.total
-						: state.turnTokens,
+						? get().turnTokens + event.message.usage.total
+						: get().turnTokens,
 			});
 			break;
 		}
 
 		case "tool_start":
+			flushPendingMessageUpdate(set, get);
 			set({
 				toolRuns: {
-					...state.toolRuns,
+					...get().toolRuns,
 					[event.toolCallId]: {
 						toolCallId: event.toolCallId,
 						toolName: event.toolName,
@@ -487,13 +585,14 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			break;
 
 		case "tool_end":
+			flushPendingMessageUpdate(set, get);
 			set({
 				toolRuns: {
-					...state.toolRuns,
+					...get().toolRuns,
 					[event.toolCallId]: {
 						toolCallId: event.toolCallId,
 						toolName: event.toolName,
-						summary: state.toolRuns[event.toolCallId]?.summary ?? event.toolName,
+						summary: get().toolRuns[event.toolCallId]?.summary ?? event.toolName,
 						status: event.isError ? "error" : "done",
 						output: event.result.content
 							.map((c) => (c.type === "text" ? c.text : "[图片]"))
@@ -506,9 +605,10 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			break;
 
 		case "approval_request":
+			flushPendingMessageUpdate(set, get);
 			set({
 				approvals: [
-					...state.approvals,
+					...get().approvals,
 					{ id: event.requestId, kind: event.kind, title: event.title, detail: event.detail },
 				],
 			});
@@ -522,13 +622,15 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			break;
 
 		case "rewound":
+			flushPendingMessageUpdate(set, get);
 			// A message was edited elsewhere; the reply it drew no longer follows from what was
 			// said, so it goes. Cannot be inferred from the messages that arrive next — the
 			// replacement looks like an ordinary new one.
-			set({ messages: state.messages.slice(0, event.messageCount), toolRuns: {} });
+			set({ messages: get().messages.slice(0, event.messageCount), toolRuns: {} });
 			break;
 
 		case "agent_end":
+			flushPendingMessageUpdate(set, get);
 			set({ running: false, turnStartedAt: null, turnTokens: 0, approvals: [] });
 			void get().refreshSessions();
 			break;
