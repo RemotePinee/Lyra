@@ -285,8 +285,10 @@ export default function SessionScreen() {
 	// Since isNavigationBarTranslucentAndroid is properly set, Reanimated will never report
 	// dirty initial values for the bottom navigation bar.
 	const keyboardAnimatedStyle = useAnimatedStyle(() => {
+		const h = Math.max(0, keyboard.height.value);
+		const active = keyboard.state.value === 2 || keyboard.state.value === 1;
 		return {
-			transform: [{ translateY: -keyboard.height.value }],
+			transform: [{ translateY: active ? -h : 0 }],
 		};
 	});
 
@@ -294,8 +296,11 @@ export default function SessionScreen() {
 	// FlatList must have a bottom padding / contentInset matching keyboard height,
 	// so that offset 0 (the bottom-most message) always remains anchored exactly above the input bar.
 	const listContainerAnimatedStyle = useAnimatedStyle(() => {
+		// Android windowInsets / edgeToEdge: when app returns from background or keyboard hides,
+		// only apply translation/padding when keyboard height is positive and state is active.
+		const h = Math.max(0, keyboard.height.value);
 		return {
-			paddingBottom: keyboard.height.value,
+			paddingBottom: keyboard.state.value === 2 || keyboard.state.value === 1 ? h : 0,
 		};
 	});
 
