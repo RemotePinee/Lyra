@@ -5,11 +5,29 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            name: arm64-v8a
+            gradle_arg: -PreactNativeArchitectures=arm64-v8a
+          - abi: armeabi-v7a
+            name: armeabi-v7a
+            gradle_arg: -PreactNativeArchitectures=armeabi-v7a
+          - abi: x86_64
+            name: x86_64
+            gradle_arg: -PreactNativeArchitectures=x86_64
+          - abi: universal
+            name: universal
+            gradle_arg: -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+    name: build-apk (${{ matrix.name }})
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,22 +64,21 @@ jobs:
         with:
           cache-disabled: false
 
-      - name: Configure ABI Splits
+      - name: Suppress Compiler Warnings
         run: |
           node -e '
           const fs = require("fs");
           const file = "packages/mobile/android/app/build.gradle";
           let content = fs.readFileSync(file, "utf8");
-          const splitsBlock = "\n    splits {\n        abi {\n            reset()\n            enable true\n            universalApk true\n            include \"armeabi-v7a\", \"arm64-v8a\", \"x86\", \"x86_64\"\n        }\n    }\n";
-          content = content.replace(/android\s*\{/, "android {" + splitsBlock);
-          fs.writeFileSync(file, content, "utf8");
+          const suppressBlock = "\nallprojects { tasks.withType(JavaCompile).configureEach { options.compilerArgs += [\"-nowarn\", \"-Xlint:none\"]; options.warnings = false } }\nallprojects { tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { kotlinOptions { allWarningsAsErrors = false; freeCompilerArgs += [\"-nowarn\"] } } }\n";
+          fs.writeFileSync(file, content + suppressBlock, "utf8");
           '
 
       - name: Build Release APK
         run: |
           cd packages/mobile/android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --build-cache
+          ./gradlew assembleRelease --no-daemon --build-cache ${{ matrix.gradle_arg }}
 
       - name: Prepare Named APK
         run: |
@@ -71,22 +88,33 @@ jobs:
           cd packages/mobile/android/app/build/outputs/apk/release
           for f in *.apk; do
             if [ -f "$f" ]; then
-              # Replace 'app' prefix with 'Lyra-${ANDROID_VERSION}-android'
-              outname=$(echo "$f" | sed "s/^app/Lyra-${ANDROID_VERSION}-android/")
+              outname="Lyra-${ANDROID_VERSION}-android-${{ matrix.abi }}-release.apk"
               cp "$f" "${ROOT_DIR}/dist-apk/${outname}"
+              break
             fi
           done
 
-      - name: Upload APK Artifact
+      - name: Upload Single APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Lyra-Android-Release-APK
+          name: Lyra-Android-${{ matrix.abi }}-APK
           path: dist-apk/*.apk
           if-no-files-found: error
           retention-days: 30
 
+  publish-apk:
+    needs: build-apk
+    runs-on: ubuntu-latest
+    name: publish-apk (release)
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-apks
+          merge-multiple: true
+
       - name: Release APK to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-apk/*.apk
+          files: all-apks/*.apk
