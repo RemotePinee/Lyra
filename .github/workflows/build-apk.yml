@@ -78,14 +78,16 @@ jobs:
             -dname "CN=Lyra Developer, OU=Mobile, O=Lyra Studio, L=Shenzhen, ST=Guangdong, C=CN"
 
           # 2. Configure android/app/build.gradle to sign release builds with official keystore instead of debug.keystore
+          # Also enable v1 (JAR) and v2 (Full APK Signature) signing explicitly
           node -e '
           const fs = require("fs");
           const file = "packages/mobile/android/app/build.gradle";
           let content = fs.readFileSync(file, "utf8");
 
-          const releaseSigningBlock = "        release {\n            storeFile file(\"release.keystore\")\n            storePassword \"lyraAppReleaseKey2026\"\n            keyAlias \"lyra-release\"\n            keyPassword \"lyraAppReleaseKey2026\"\n        }\n";
+          const releaseSigningBlock = "        release {\n            storeFile file(\"release.keystore\")\n            storePassword \"lyraAppReleaseKey2026\"\n            keyAlias \"lyra-release\"\n            keyPassword \"lyraAppReleaseKey2026\"\n            v1SigningEnabled true\n            v2SigningEnabled true\n        }\n";
           content = content.replace(/signingConfigs\s*\{/, "signingConfigs {\n" + releaseSigningBlock);
-          content = content.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release");
+          // Only replace signingConfig under release block, NOT debug block
+          content = content.replace(/(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/, "$1signingConfig signingConfigs.release");
 
           const suppressBlock = "\nallprojects { tasks.withType(JavaCompile).configureEach { options.compilerArgs += [\"-nowarn\", \"-Xlint:none\"]; options.warnings = false } }\nallprojects { tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { kotlinOptions { allWarningsAsErrors = false; freeCompilerArgs += [\"-nowarn\"] } } }\n";
           fs.writeFileSync(file, content + suppressBlock, "utf8");
