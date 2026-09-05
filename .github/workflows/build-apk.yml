@@ -46,6 +46,27 @@ jobs:
         with:
           cache-disabled: false
 
+      - name: Configure ABI Splits
+        run: |
+          # Inject splits block into android/app/build.gradle
+          node -e '
+            const fs = require("fs");
+            const file = "packages/mobile/android/app/build.gradle";
+            let content = fs.readFileSync(file, "utf8");
+            const splitsBlock = `
+    splits {
+        abi {
+            reset()
+            enable true
+            universalApk true
+            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
+    }
+`;
+            content = content.replace(/android\s*\{/, "android {" + splitsBlock);
+            fs.writeFileSync(file, content, "utf8");
+          '
+
       - name: Build Release APK
         run: |
           cd packages/mobile/android
@@ -54,17 +75,15 @@ jobs:
 
       - name: Prepare Named APK
         run: |
-          MOBILE_VERSION=$(node -p "require('./packages/mobile/package.json').version")
+          TAG_OR_BRANCH="${{ github.ref_name }}"
+          VERSION="${TAG_OR_BRANCH#v}"
           ROOT_DIR="$(pwd)"
           mkdir -p "${ROOT_DIR}/dist-apk"
-          # If splitPerAbi is enabled, multiple APKs are generated:
-          # app-arm64-v8a-release.apk, app-armeabi-v7a-release.apk, app-x86_64-release.apk, app-universal-release.apk, etc.
-          # If only single APK was generated, app-release.apk is used.
           cd packages/mobile/android/app/build/outputs/apk/release
           for f in *.apk; do
             if [ -f "$f" ]; then
-              # Replace 'app' prefix with 'Lyra-${MOBILE_VERSION}-android'
-              outname=$(echo "$f" | sed "s/^app/Lyra-${MOBILE_VERSION}-android/")
+              # Replace 'app' prefix with 'Lyra-${VERSION}-android'
+              outname=$(echo "$f" | sed "s/^app/Lyra-${VERSION}-android/")
               cp "$f" "${ROOT_DIR}/dist-apk/${outname}"
             fi
           done
