@@ -75,15 +75,14 @@ jobs:
 
       - name: Prepare Named APK
         run: |
-          TAG_OR_BRANCH="${{ github.ref_name }}"
-          VERSION="${TAG_OR_BRANCH#v}"
+          ANDROID_VERSION=$(node -p "require('./packages/mobile/package.json').version")
           ROOT_DIR="$(pwd)"
           mkdir -p "${ROOT_DIR}/dist-apk"
           cd packages/mobile/android/app/build/outputs/apk/release
           for f in *.apk; do
             if [ -f "$f" ]; then
-              # Replace 'app' prefix with 'Lyra-${VERSION}-android'
-              outname=$(echo "$f" | sed "s/^app/Lyra-${VERSION}-android/")
+              # Replace 'app' prefix with 'Lyra-${ANDROID_VERSION}-android'
+              outname=$(echo "$f" | sed "s/^app/Lyra-${ANDROID_VERSION}-android/")
               cp "$f" "${ROOT_DIR}/dist-apk/${outname}"
             fi
           done
