@@ -165,7 +165,7 @@ export async function getReleaseInfo(cwd: string): Promise<ReleaseInfo> {
 }
 
 /**
- * Bump version across all package.json files in repository.
+ * Bump version across all package.json files and packages/mobile/app.json in repository.
  */
 export async function bumpVersionFiles(cwd: string, newVersion: string): Promise<{ ok: boolean; error?: string }> {
 	const version = newVersion.replace(/^v/, "").trim();
@@ -181,6 +181,27 @@ export async function bumpVersionFiles(cwd: string, newVersion: string): Promise
 			json.version = version;
 			await fs.writeFile(pkgPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
 		}
+
+		// Also synchronize Expo app.json for mobile version consistency
+		const appJsonPath = join(cwd, "packages", "mobile", "app.json");
+		try {
+			const appContent = await fs.readFile(appJsonPath, "utf8");
+			const appConfig = JSON.parse(appContent);
+			if (appConfig.expo) {
+				appConfig.expo.version = version;
+				if (typeof appConfig.expo.android?.versionCode === "number") {
+					appConfig.expo.android.versionCode += 1;
+				}
+				if (typeof appConfig.expo.ios?.buildNumber === "string") {
+					const bNum = Number.parseInt(appConfig.expo.ios.buildNumber, 10) || 1;
+					appConfig.expo.ios.buildNumber = String(bNum + 1);
+				}
+				await fs.writeFile(appJsonPath, `${JSON.stringify(appConfig, null, 2)}\n`, "utf8");
+			}
+		} catch {
+			// Ignore if app.json doesn't exist
+		}
+
 		return { ok: true };
 	} catch (err) {
 		return { ok: false, error: err instanceof Error ? err.message : String(err) };

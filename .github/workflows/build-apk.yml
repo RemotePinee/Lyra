@@ -64,12 +64,29 @@ jobs:
         with:
           cache-disabled: false
 
-      - name: Suppress Compiler Warnings
+      - name: Generate Official Release Keystore & Configure Signing
         run: |
+          # 1. Generate dedicated release keystore using keytool provided by Java JDK
+          keytool -genkeypair -v \
+            -keystore packages/mobile/android/app/release.keystore \
+            -alias lyra-release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass lyraAppReleaseKey2026 \
+            -keypass lyraAppReleaseKey2026 \
+            -dname "CN=Lyra Developer, OU=Mobile, O=Lyra Studio, L=Shenzhen, ST=Guangdong, C=CN"
+
+          # 2. Configure android/app/build.gradle to sign release builds with official keystore instead of debug.keystore
           node -e '
           const fs = require("fs");
           const file = "packages/mobile/android/app/build.gradle";
           let content = fs.readFileSync(file, "utf8");
+
+          const releaseSigningBlock = "        release {\n            storeFile file(\"release.keystore\")\n            storePassword \"lyraAppReleaseKey2026\"\n            keyAlias \"lyra-release\"\n            keyPassword \"lyraAppReleaseKey2026\"\n        }\n";
+          content = content.replace(/signingConfigs\s*\{/, "signingConfigs {\n" + releaseSigningBlock);
+          content = content.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release");
+
           const suppressBlock = "\nallprojects { tasks.withType(JavaCompile).configureEach { options.compilerArgs += [\"-nowarn\", \"-Xlint:none\"]; options.warnings = false } }\nallprojects { tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { kotlinOptions { allWarningsAsErrors = false; freeCompilerArgs += [\"-nowarn\"] } } }\n";
           fs.writeFileSync(file, content + suppressBlock, "utf8");
           '

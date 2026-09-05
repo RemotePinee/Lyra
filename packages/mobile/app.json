@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lyra",
     "slug": "lyra",
-    "version": "0.1.2",
+    "version": "0.9.6",
     "orientation": "portrait",
     "scheme": "lyra",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.lyra.app",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "infoPlist": {
         "UIUserInterfaceStyle": "Automatic",
         "NSCameraUsageDescription": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "dev.lyra.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": true,
