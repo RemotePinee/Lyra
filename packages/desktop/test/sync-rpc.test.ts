@@ -46,7 +46,6 @@ test("the things that would hand over the machine are all absent", () => {
 		"terminal.attach",
 		"terminal.write",
 		"files.write",
-		"files.read",
 		"files.bytes",
 		"screenshot.start",
 		"system.openPath",
@@ -54,7 +53,6 @@ test("the things that would hand over the machine are all absent", () => {
 		"plugins.install",
 		"updates.install",
 		"forge.add",
-		"git.commit",
 		"sync.rotateToken",
 	]) {
 		assert.ok(!allowed.has(method), `${method} 不该在白名单里`);
@@ -70,6 +68,17 @@ test("what a phone is actually for is on the list", () => {
 		"agent.prompt",
 		"agent.abort",
 		"agent.approve",
+		"git.status",
+		"git.stage",
+		"git.unstage",
+		"git.commit",
+		"git.push",
+		"git.pull",
+		"git.discard",
+		"git.diff",
+		"git.log",
+		"git.branches",
+		"git.switch",
 	]) {
 		assert.ok(allowed.has(method), `${method} 应该可用`);
 	}

@@ -40,6 +40,20 @@ export interface SyncServerDeps {
 	getOrCreate(cwd: string, modelId: string): Promise<AgentSession>;
 	snapshot(session: AgentSession): Promise<unknown>;
 	touch(sessionId: string): void;
+	scanUsage?(): Promise<unknown>;
+	gitStatus?(cwd: string): Promise<unknown>;
+	gitStage?(cwd: string, paths: string[]): Promise<unknown>;
+	gitUnstage?(cwd: string, paths: string[]): Promise<unknown>;
+	gitCommit?(cwd: string, message: string): Promise<unknown>;
+	gitPush?(cwd: string): Promise<unknown>;
+	gitPull?(cwd: string): Promise<unknown>;
+	gitDiscard?(cwd: string, paths: string[]): Promise<unknown>;
+	gitDiff?(cwd: string, path: string, staged?: boolean): Promise<unknown>;
+	gitLog?(cwd: string, limit?: number): Promise<unknown>;
+	gitBranches?(cwd: string): Promise<unknown>;
+	gitSwitch?(cwd: string, branch: string): Promise<unknown>;
+	listFiles?(dir: string): Promise<unknown>;
+	readFile?(path: string): Promise<unknown>;
 }
 
 export class SyncServer {
@@ -189,6 +203,20 @@ export class SyncServer {
 			getOrCreate: (cwd, modelId) => this.deps.getOrCreate(cwd, modelId),
 			snapshot: (session) => this.deps.snapshot(session),
 			touch: (id) => this.deps.touch(id),
+			scanUsage: async () => (this.deps.scanUsage ? this.deps.scanUsage() : null),
+			gitStatus: async (cwd: string) => (this.deps.gitStatus ? this.deps.gitStatus(cwd) : null),
+			gitStage: async (cwd: string, paths: string[]) => (this.deps.gitStage ? this.deps.gitStage(cwd, paths) : { ok: false }),
+			gitUnstage: async (cwd: string, paths: string[]) => (this.deps.gitUnstage ? this.deps.gitUnstage(cwd, paths) : { ok: false }),
+			gitCommit: async (cwd: string, message: string) => (this.deps.gitCommit ? this.deps.gitCommit(cwd, message) : { ok: false }),
+			gitPush: async (cwd: string) => (this.deps.gitPush ? this.deps.gitPush(cwd) : { ok: false }),
+			gitPull: async (cwd: string) => (this.deps.gitPull ? this.deps.gitPull(cwd) : { ok: false }),
+			gitDiscard: async (cwd: string, paths: string[]) => (this.deps.gitDiscard ? this.deps.gitDiscard(cwd, paths) : { ok: false }),
+			gitDiff: async (cwd: string, path: string, staged?: boolean) => (this.deps.gitDiff ? this.deps.gitDiff(cwd, path, staged) : null),
+			gitLog: async (cwd: string, limit?: number) => (this.deps.gitLog ? this.deps.gitLog(cwd, limit) : []),
+			gitBranches: async (cwd: string) => (this.deps.gitBranches ? this.deps.gitBranches(cwd) : null),
+			gitSwitch: async (cwd: string, branch: string) => (this.deps.gitSwitch ? this.deps.gitSwitch(cwd, branch) : { ok: false }),
+			listFiles: async (dir: string) => (this.deps.listFiles ? this.deps.listFiles(dir) : []),
+			readFile: async (path: string) => (this.deps.readFile ? this.deps.readFile(path) : null),
 		};
 	}
 
@@ -364,6 +392,8 @@ export class SyncServer {
 					permissionMode: settings.permissionMode,
 					thinking: settings.thinking,
 					defaultModelId: settings.defaultModelId,
+					commitLanguage: settings.commitLanguage,
+					personalization: settings.personalization,
 					projects: settings.projects,
 					models: settings.providers
 						.filter((p) => p.enabled)

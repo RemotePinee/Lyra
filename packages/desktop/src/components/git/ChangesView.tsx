@@ -332,13 +332,17 @@ export function ChangesView({
 function rowsFor(files: GitStatusFile[], diffed: WorkspaceDiffFile[]): WorkspaceDiffFile[] {
   const known = new Map(diffed.map((file) => [file.path, file]));
   return files.map(
-    (file) =>
-      known.get(file.path) ?? {
+    (file) => {
+      const d = known.get(file.path);
+      return {
         path: file.path,
         status: file.status,
         added: file.added,
         removed: file.removed,
-        hunks: [],
-      },
+        hunks: d?.hunks ?? [],
+        binary: d?.binary,
+        bytes: d?.bytes,
+      };
+    },
   );
 }

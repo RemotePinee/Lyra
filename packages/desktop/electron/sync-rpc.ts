@@ -38,6 +38,20 @@ export interface RpcDeps {
 	getOrCreate(cwd: string, modelId: string): Promise<AgentSession>;
 	snapshot(session: AgentSession): Promise<unknown>;
 	touch(sessionId: string): void;
+	scanUsage?(): Promise<unknown>;
+	gitStatus?(cwd: string): Promise<unknown>;
+	gitStage?(cwd: string, paths: string[]): Promise<unknown>;
+	gitUnstage?(cwd: string, paths: string[]): Promise<unknown>;
+	gitCommit?(cwd: string, message: string): Promise<unknown>;
+	gitPush?(cwd: string): Promise<unknown>;
+	gitPull?(cwd: string): Promise<unknown>;
+	gitDiscard?(cwd: string, paths: string[]): Promise<unknown>;
+	gitDiff?(cwd: string, path: string, staged?: boolean): Promise<unknown>;
+	gitLog?(cwd: string, limit?: number): Promise<unknown>;
+	gitBranches?(cwd: string): Promise<unknown>;
+	gitSwitch?(cwd: string, branch: string): Promise<unknown>;
+	listFiles?(dir: string): Promise<unknown>;
+	readFile?(path: string): Promise<unknown>;
 }
 
 /**
@@ -68,6 +82,20 @@ export const RPC: Record<string, Handler> = {
 	"settings.get": async (deps) => deps.settings(),
 	"sessions.list": async (deps) => deps.store().listSessions(),
 	"workspace.info": async (deps, [path]) => deps.workspaceInfo(s(path)),
+	"usage.scan": async (deps) => deps.scanUsage?.() ?? null,
+	"git.status": async (deps, [cwd]) => deps.gitStatus?.(s(cwd)) ?? null,
+	"git.stage": async (deps, [cwd, paths]) => deps.gitStage?.(s(cwd), Array.isArray(paths) ? paths.map(String) : []) ?? { ok: false },
+	"git.unstage": async (deps, [cwd, paths]) => deps.gitUnstage?.(s(cwd), Array.isArray(paths) ? paths.map(String) : []) ?? { ok: false },
+	"git.commit": async (deps, [cwd, message]) => deps.gitCommit?.(s(cwd), s(message)) ?? { ok: false },
+	"git.push": async (deps, [cwd]) => deps.gitPush?.(s(cwd)) ?? { ok: false },
+	"git.pull": async (deps, [cwd]) => deps.gitPull?.(s(cwd)) ?? { ok: false },
+	"git.discard": async (deps, [cwd, paths]) => deps.gitDiscard?.(s(cwd), Array.isArray(paths) ? paths.map(String) : []) ?? { ok: false },
+	"git.diff": async (deps, [cwd, path, staged]) => deps.gitDiff?.(s(cwd), s(path), Boolean(staged)) ?? null,
+	"git.log": async (deps, [cwd, limit]) => deps.gitLog?.(s(cwd), typeof limit === "number" ? limit : 30) ?? [],
+	"git.branches": async (deps, [cwd]) => deps.gitBranches?.(s(cwd)) ?? null,
+	"git.switch": async (deps, [cwd, branch]) => deps.gitSwitch?.(s(cwd), s(branch)) ?? { ok: false },
+	"files.list": async (deps, [dir]) => deps.listFiles?.(s(dir)) ?? [],
+	"files.read": async (deps, [path]) => deps.readFile?.(s(path)) ?? null,
 
 	// -- Opening and reading a conversation ------------------------------------
 	"sessions.transcript": async (deps, [projectId, sessionId]) => {

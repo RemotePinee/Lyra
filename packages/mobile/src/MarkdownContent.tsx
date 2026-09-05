@@ -307,16 +307,16 @@ export const MobileCodeBlock = memo(function MobileCodeBlock({
 			<View className="flex-row items-center justify-between border-b border-white/5 bg-[#1c1c1e] px-3.5 py-2">
 				<View className="flex-row items-center gap-2">
 					<View className="h-2 w-2 rounded-full bg-accent/80" />
-					<Text className="font-mono text-[11px] font-semibold tracking-wider text-ink-muted">
+					<Text className="font-mono text-[11px] font-semibold tracking-wider text-[#d4d4d8]">
 						{langLabel}
 					</Text>
 				</View>
 				<Pressable
 					onPress={handleCopy}
 					hitSlop={8}
-					className="flex-row items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 active:bg-white/15"
+					className="flex-row items-center gap-1 rounded-md bg-white/10 px-2.5 py-1 active:bg-white/20"
 				>
-					<Text className="text-[11px] font-medium text-ink-muted">
+					<Text className="text-[11px] font-medium text-[#e4e4e7]">
 						{copied ? "已复制" : "复制"}
 					</Text>
 				</Pressable>

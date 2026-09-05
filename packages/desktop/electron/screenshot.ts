@@ -16,6 +16,7 @@ import type { ScreenshotSettings, Settings } from "@lyra/core";
 import { resolveSaveDirectory } from "./screenshot-path.ts";
 import {
 	closeWin32Screenshot,
+	destroyWin32Screenshot,
 	getWin32ScreenshotOverlay,
 	hasActiveWin32Screenshot,
 	overlayPaintedWin32,
@@ -233,5 +234,10 @@ export function isScreenshotOverlay(win: BrowserWindow): boolean {
 }
 
 export function destroyScreenshotOverlay(): void {
-	closeScreenshotOverlay({ foreground: false });
+	if (process.platform === "win32") {
+		destroyWin32Screenshot();
+		return;
+	}
+	const win = getActiveScreenshotOverlay();
+	if (win && !win.isDestroyed()) win.destroy();
 }

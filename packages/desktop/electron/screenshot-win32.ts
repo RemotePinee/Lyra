@@ -27,6 +27,7 @@ import {
 
 let residentOverlay: BrowserWindow | null = null;
 let isCapturingActive = false;
+let shuttingDown = false;
 const screenshotRendererGate = new ScreenshotRendererGate();
 
 let cameFromApp = false;
@@ -112,7 +113,9 @@ function createResidentOverlay(): BrowserWindow {
 		if (residentOverlay === win) {
 			residentOverlay = null;
 			isCapturingActive = false;
-			setTimeout(() => prewarmWin32Screenshot(), 200);
+			// Do not recreate the overlay while the app is shutting down — it would
+			// leave a window that nobody closes, keeping the process alive.
+			if (!shuttingDown) setTimeout(() => prewarmWin32Screenshot(), 200);
 		}
 	});
 	loadOverlay(win);
@@ -355,6 +358,14 @@ export async function startWin32Screenshot(settings?: ScreenshotSettings): Promi
 
 export function hasActiveWin32Screenshot(): boolean {
 	return isCapturingActive && !!residentOverlay && !residentOverlay.isDestroyed();
+}
+
+export function destroyWin32Screenshot(): void {
+	shuttingDown = true;
+	if (residentOverlay && !residentOverlay.isDestroyed()) {
+		residentOverlay.destroy();
+	}
+	residentOverlay = null;
 }
 
 export function getWin32ScreenshotOverlay(): BrowserWindow | null {

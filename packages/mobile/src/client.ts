@@ -160,6 +160,14 @@ export class SyncClient {
 		});
 	}
 
+	setThinking(sessionId: string, thinking: string): Promise<{ ok: boolean }> {
+		return this.rpc("agent.setThinking", [sessionId, thinking]);
+	}
+
+	saveSettings(settings: Partial<import("./protocol").RemoteSettings>): Promise<{ ok: boolean }> {
+		return this.rpc("settings.save", [settings]);
+	}
+
 	rename(projectId: string, sessionId: string, title: string): Promise<{ ok: boolean; meta: SessionMeta }> {
 		return this.request(`/api/sessions/${projectId}/${sessionId}/rename`, {
 			method: "POST",
@@ -169,6 +177,91 @@ export class SyncClient {
 
 	createSession(cwd: string, modelId?: string): Promise<{ meta: SessionMeta }> {
 		return this.request("/api/sessions", { method: "POST", body: JSON.stringify({ cwd, modelId }) });
+	}
+
+	rpc<T = unknown>(method: string, args: unknown[] = []): Promise<{ ok: boolean; value?: T; error?: string }> {
+		return this.request("/api/rpc", {
+			method: "POST",
+			body: JSON.stringify({ method, args }),
+		});
+	}
+
+	setArchived(projectId: string, sessionId: string, archived: boolean): Promise<{ ok: boolean }> {
+		return this.rpc("sessions.setArchived", [projectId, sessionId, archived]);
+	}
+
+	removeSession(projectId: string, sessionId: string): Promise<{ ok: boolean }> {
+		return this.rpc("sessions.remove", [projectId, sessionId]);
+	}
+
+	async scanUsage(): Promise<import("./usage").UsageScan | null> {
+		const res = await this.rpc<import("./usage").UsageScan | null>("usage.scan", []);
+		return res.ok && res.value ? res.value : null;
+	}
+
+	async gitStatus(cwd: string): Promise<import("./protocol").GitStatus | null> {
+		const res = await this.rpc<import("./protocol").GitStatus | null>("git.status", [cwd]);
+		return res.ok && res.value ? res.value : null;
+	}
+
+	async gitStage(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.stage", [cwd, paths]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "stage failed" };
+	}
+
+	async gitUnstage(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.unstage", [cwd, paths]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "unstage failed" };
+	}
+
+	async gitCommit(cwd: string, message: string): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.commit", [cwd, message]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "commit failed" };
+	}
+
+	async gitPush(cwd: string): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.push", [cwd]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "push failed" };
+	}
+
+	async gitPull(cwd: string): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.pull", [cwd]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "pull failed" };
+	}
+
+	async gitDiscard(cwd: string, paths: string[]): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.discard", [cwd, paths]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "discard failed" };
+	}
+
+	async gitDiff(cwd: string, path: string, staged = false): Promise<string | null> {
+		const res = await this.rpc<string | null>("git.diff", [cwd, path, staged]);
+		return res.ok && typeof res.value === "string" ? res.value : null;
+	}
+
+	async gitLog(cwd: string, limit = 30): Promise<import("./protocol").GitCommit[]> {
+		const res = await this.rpc<import("./protocol").GitCommit[]>("git.log", [cwd, limit]);
+		return res.ok && Array.isArray(res.value) ? res.value : [];
+	}
+
+	async gitBranches(cwd: string): Promise<import("./protocol").BranchList | null> {
+		const res = await this.rpc<import("./protocol").BranchList | null>("git.branches", [cwd]);
+		return res.ok && res.value ? res.value : null;
+	}
+
+	async gitSwitch(cwd: string, branch: string): Promise<{ ok: boolean; error?: string }> {
+		const res = await this.rpc<{ ok: boolean; error?: string }>("git.switch", [cwd, branch]);
+		return res.ok && res.value ? res.value : { ok: false, error: res.error || "switch failed" };
+	}
+
+	async listFiles(dir: string): Promise<import("./protocol").RemoteFileEntry[]> {
+		const res = await this.rpc<import("./protocol").RemoteFileEntry[]>("files.list", [dir]);
+		return res.ok && Array.isArray(res.value) ? res.value : [];
+	}
+
+	async readFile(path: string): Promise<import("./protocol").RemoteFileContents | null> {
+		const res = await this.rpc<import("./protocol").RemoteFileContents | null>("files.read", [path]);
+		return res.ok && res.value ? res.value : null;
 	}
 
 	// -------------------------------------------------------------------------
@@ -225,6 +318,26 @@ export class SyncClient {
 		this.reconnectTimer = null;
 		this.socket?.close();
 		this.socket = null;
+	}
+
+	/** Immediate reconnect trigger without waiting for the 3s backoff timer, used on app foreground resume */
+	reconnectNow(): void {
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+		if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+			return;
+		}
+		if (this.socket) {
+			try {
+				this.socket.close();
+			} catch {
+				// ignore
+			}
+			this.socket = null;
+		}
+		this.connect();
 	}
 
 	private scheduleReconnect(): void {

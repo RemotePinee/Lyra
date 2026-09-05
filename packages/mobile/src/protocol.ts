@@ -22,6 +22,12 @@ export interface ThinkingContent {
 	redacted?: boolean;
 }
 
+export interface TodoItem {
+	content: string;
+	status: "pending" | "in_progress" | "completed";
+	activeForm?: string;
+}
+
 export interface ToolCallContent {
 	type: "toolCall";
 	id: string;
@@ -86,6 +92,7 @@ export interface SessionMeta {
 	createdAt: number;
 	updatedAt: number;
 	modelId: string;
+	thinking?: string;
 	messageCount: number;
 	usage: Usage;
 	archived?: boolean;
@@ -122,7 +129,7 @@ export type AgentEvent =
 	| { type: "title"; title: string }
 	| { type: "rewound"; messageCount: number };
 
-interface RemoteModel {
+export interface RemoteModel {
 	id: string;
 	name: string;
 	provider: string;
@@ -133,6 +140,69 @@ export interface RemoteSettings {
 	permissionMode: string;
 	thinking: string;
 	defaultModelId: string | null;
+	commitLanguage?: string;
+	personalization?: {
+		customInstructions?: string;
+		enableMemory?: boolean;
+		enableToolAssistedMemory?: boolean;
+		tone?: "friendly" | "professional" | "concise" | "candid" | "humorous";
+	};
 	projects: { id: string; name: string; path: string; pinned: boolean; lastOpenedAt: number }[];
 	models: RemoteModel[];
+}
+
+export interface GitStatusFile {
+	path: string;
+	status: "added" | "modified" | "deleted" | "renamed" | "untracked";
+	staged: boolean;
+	unstaged: boolean;
+	added: number;
+	removed: number;
+}
+
+export interface GitStatus {
+	branch: string | null;
+	upstream: string | null;
+	ahead: number;
+	behind: number;
+	staged: GitStatusFile[];
+	unstaged: GitStatusFile[];
+	remoteState: "none" | "clean" | "ahead" | "behind" | "diverged" | "untracked" | "in-progress";
+	remote: string | null;
+	operation: { kind: string; branch?: string } | null;
+	unpushed: number | null;
+	head: string | null;
+}
+
+export interface GitCommit {
+	hash: string;
+	shortHash: string;
+	subject: string;
+	author: string;
+	authorEmail?: string;
+	relativeDate: string;
+	timestamp: number;
+	parents?: string[];
+	refs?: string[];
+}
+
+export interface BranchList {
+	current: string | null;
+	local: string[];
+	remote: string[];
+}
+
+export interface RemoteFileEntry {
+	name: string;
+	path: string;
+	isDirectory: boolean;
+	size: number;
+}
+
+export interface RemoteFileContents {
+	text: string;
+	truncated: boolean;
+	bytes: number;
+	binary: boolean;
+	modifiedAt: number;
 }

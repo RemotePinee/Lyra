@@ -1,17 +1,16 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { haptic } from "../../src/haptics";
 import {
-	ActionSheetIOS,
 	ActivityIndicator,
-	Alert,
 	FlatList,
 	Image,
 	Keyboard,
-	Modal,
-	Platform,
+	LayoutAnimation,
 	Pressable,
 	ScrollView,
+	StyleSheet,
 	Text,
 	TextInput,
 	View,
@@ -24,12 +23,22 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { detectCodeOrError, parseUserMessageContent } from "../../src/codeDetection";
+import { MobileCodeViewer } from "../../src/MobileCodeViewer";
 import { MobileCollapsibleCodeCard } from "../../src/CollapsibleCard";
+import { MobileActionSheet, MobileConfirmDialog } from "../../src/MobileDialog";
 import { MobileMarkdownView } from "../../src/MarkdownContent";
+import { MobileModelPickerModal } from "../../src/MobileModelPickerModal";
+import { MobilePermissionPickerModal } from "../../src/MobilePermissionPickerModal";
+import { MobileResumeRow } from "../../src/MobileResumeRow";
+import { MobileThinkingPickerModal } from "../../src/MobileThinkingPickerModal";
+import { resolveModelThinkingOptions, type ThinkingOption } from "../../src/thinkingOptions";
+import { MobileTaskList } from "../../src/MobileTaskList";
+import { MobileThinkingBlock } from "../../src/MobileThinkingBlock";
 import { groupMessages, type MobileRun } from "../../src/grouping";
 import { describeRun, formatElapsed, formatTokens, moodFor, phraseFor, type Mood } from "../../src/runSummary";
 import type { AssistantMessage, ImageContent, Message } from "../../src/protocol";
-import { assistantText, useMobile, type ToolRun } from "../../src/store";
+import { assistantText, todosFrom, useMobile, type ToolRun } from "../../src/store";
+import { useThemeColors } from "../../src/theme";
 
 interface SelectedImage {
 	uri: string;
@@ -48,6 +57,7 @@ export default function SessionScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>();
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
+	const { colors, isDark } = useThemeColors();
 	const keyboard = useAnimatedKeyboard({
 		isStatusBarTranslucentAndroid: true,
 		isNavigationBarTranslucentAndroid: true,
@@ -72,8 +82,16 @@ export default function SessionScreen() {
 	const [attachedCards, setAttachedCards] = useState<AttachedCard[]>([]);
 	const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const [isRenaming, setIsRenaming] = useState(false);
+	const [renameText, setRenameText] = useState("");
+	const renameSession = useMobile((s) => s.renameSession);
 	const setModel = useMobile((s) => s.setModel);
+	const setThinking = useMobile((s) => s.setThinking);
+	const setPermissionMode = useMobile((s) => s.setPermissionMode);
+	const settings = useMobile((s) => s.settings);
 	const models = useMobile((s) => s.settings?.models ?? []);
+	const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
+	const [permissionPickerOpen, setPermissionPickerOpen] = useState(false);
 	const listRef = useRef<FlatList>(null);
 
 	const loadingSessionId = useMobile((s) => s.loadingSessionId);
@@ -81,7 +99,20 @@ export default function SessionScreen() {
 	const hasEarlierMessages = useMobile((s) => s.hasEarlierMessages);
 	const loadEarlierMessages = useMobile((s) => s.loadEarlierMessages);
 	const isAtBottomRef = useRef(true);
+	const isDraggingRef = useRef(false);
 	const textInputRef = useRef<TextInput>(null);
+
+	// Adaptive ActionSheet & Dialog States for Session
+	const [imageSheetVisible, setImageSheetVisible] = useState(false);
+	const [sessionAlert, setSessionAlert] = useState<{ visible: boolean; title: string; message: string }>({
+		visible: false,
+		title: "",
+		message: "",
+	});
+
+	const showSessionAlert = (title: string, message: string) => {
+		setSessionAlert({ visible: true, title, message });
+	};
 
 	// Floating scroll-to-bottom button opacity (driven purely by Reanimated UI thread, 0 React re-renders)
 	const scrollFabOpacity = useSharedValue(0);
@@ -94,11 +125,13 @@ export default function SessionScreen() {
 	// Reset state when switching session
 	useEffect(() => {
 		isAtBottomRef.current = true;
+		isDraggingRef.current = false;
 		scrollFabOpacity.value = 0;
 	}, [id, scrollFabOpacity]);
 
 	const scrollToBottom = useCallback((animated = true) => {
 		isAtBottomRef.current = true;
+		isDraggingRef.current = false;
 		scrollFabOpacity.value = withTiming(0, { duration: 150 });
 		listRef.current?.scrollToOffset({ offset: 0, animated });
 	}, [scrollFabOpacity]);
@@ -107,6 +140,7 @@ export default function SessionScreen() {
 	const handleSend = useCallback(() => {
 		const text = draft.trim();
 		if (!text && selectedImages.length === 0 && attachedCards.length === 0) return;
+		haptic.impact();
 
 		// Assemble prompt with attachments
 		let fullText = text;
@@ -172,7 +206,7 @@ export default function SessionScreen() {
 		try {
 			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 			if (!permission.granted) {
-				Alert.alert("权限不足", "需要访问相册权限以选择图片");
+				showSessionAlert("权限不足", "需要访问相册权限以选择图片");
 				return;
 			}
 			const result = await ImagePicker.launchImageLibraryAsync({
@@ -193,7 +227,7 @@ export default function SessionScreen() {
 				setSelectedImages((prev) => [...prev, ...newImages].slice(0, 4));
 			}
 		} catch {
-			Alert.alert("选图失败", "读取相册图片出现异常");
+			showSessionAlert("选图失败", "读取相册图片出现异常");
 		}
 	};
 
@@ -201,7 +235,7 @@ export default function SessionScreen() {
 		try {
 			const permission = await ImagePicker.requestCameraPermissionsAsync();
 			if (!permission.granted) {
-				Alert.alert("权限不足", "需要相机权限以进行拍照");
+				showSessionAlert("权限不足", "需要相机权限以进行拍照");
 				return;
 			}
 			const result = await ImagePicker.launchCameraAsync({
@@ -218,33 +252,17 @@ export default function SessionScreen() {
 				setSelectedImages((prev) => [...prev, newImage].slice(0, 4));
 			}
 		} catch {
-			Alert.alert("拍照失败", "唤起相机出现异常");
+			showSessionAlert("拍照失败", "唤起相机出现异常");
 		}
 	};
 
 	const handlePickImage = () => {
 		if (selectedImages.length >= 4) {
-			Alert.alert("数量限制", "单次最多支持发送 4 张图片");
+			showSessionAlert("数量限制", "单次最多支持发送 4 张图片");
 			return;
 		}
-		if (Platform.OS === "ios") {
-			ActionSheetIOS.showActionSheetWithOptions(
-				{
-					options: ["取消", "拍照", "从相册选取"],
-					cancelButtonIndex: 0,
-				},
-				(buttonIndex) => {
-					if (buttonIndex === 1) void takePhoto();
-					if (buttonIndex === 2) void pickFromLibrary();
-				},
-			);
-		} else {
-			Alert.alert("添加图片", "请选择图片来源", [
-				{ text: "拍照", onPress: () => void takePhoto() },
-				{ text: "从相册选取", onPress: () => void pickFromLibrary() },
-				{ text: "取消", style: "cancel" },
-			]);
-		}
+		haptic.impact();
+		setImageSheetVisible(true);
 	};
 
 	// Deep-linking straight to a session id means the store may not have it loaded yet.
@@ -260,12 +278,13 @@ export default function SessionScreen() {
 	// Debounce/guard using rAF so high-frequency streaming doesn't saturate the UI thread.
 	const scrollRafRef = useRef<number | null>(null);
 	useEffect(() => {
-		if (!isAtBottomRef.current) return;
+		// If user is touching/dragging the list or scrolled away from bottom, do NOT force scroll
+		if (isDraggingRef.current || !isAtBottomRef.current) return;
 		if (scrollRafRef.current !== null) return;
 
 		scrollRafRef.current = requestAnimationFrame(() => {
 			scrollRafRef.current = null;
-			if (isAtBottomRef.current) {
+			if (isAtBottomRef.current && !isDraggingRef.current) {
 				listRef.current?.scrollToOffset({ offset: 0, animated: false });
 			}
 		});
@@ -280,27 +299,24 @@ export default function SessionScreen() {
 
 	useEffect(() => () => closeSession(), [closeSession]);
 
-	// Industrial standard keyboard offset:
-	// Clean translateY driven purely by keyboard.height without any thresholds or manual gates.
-	// Since isNavigationBarTranslucentAndroid is properly set, Reanimated will never report
-	// dirty initial values for the bottom navigation bar.
+	// Keyboard offset driven by keyboard.height
+	// When modal opens or textinput blurs, ensure translateY immediately stays 0.
 	const keyboardAnimatedStyle = useAnimatedStyle(() => {
-		const h = Math.max(0, keyboard.height.value);
-		const active = keyboard.state.value === 2 || keyboard.state.value === 1;
+		const h = keyboard.height.value;
+		const isOpen = keyboard.state.value === 1 || keyboard.state.value === 2;
+		const offset = isOpen && h > 10 ? h : 0;
 		return {
-			transform: [{ translateY: active ? -h : 0 }],
+			transform: [{ translateY: -offset }],
 		};
 	});
 
-	// Industrial standard keyboard avoidance for inverted FlatList:
-	// FlatList must have a bottom padding / contentInset matching keyboard height,
-	// so that offset 0 (the bottom-most message) always remains anchored exactly above the input bar.
+	// Keyboard avoidance for inverted FlatList:
 	const listContainerAnimatedStyle = useAnimatedStyle(() => {
-		// Android windowInsets / edgeToEdge: when app returns from background or keyboard hides,
-		// only apply translation/padding when keyboard height is positive and state is active.
-		const h = Math.max(0, keyboard.height.value);
+		const h = keyboard.height.value;
+		const isOpen = keyboard.state.value === 1 || keyboard.state.value === 2;
+		const offset = isOpen && h > 10 ? h : 0;
 		return {
-			paddingBottom: keyboard.state.value === 2 || keyboard.state.value === 1 ? h : 0,
+			paddingBottom: offset,
 		};
 	});
 
@@ -310,7 +326,9 @@ export default function SessionScreen() {
 		return runs.reverse();
 	}, [messages]);
 
-	const extractKey = useCallback((item: MobileRun) => getRunKey(item), []);
+	const currentTodos = useMemo(() => todosFrom(messages), [messages]);
+
+	const extractKey = useCallback((item: MobileRun, index: number) => getRunKey(item, index), []);
 
 	const handleImagePress = useCallback((uri: string) => {
 		setViewingImageUri(uri);
@@ -328,12 +346,21 @@ export default function SessionScreen() {
 
 	const isInitialLoading = (loadingSessionId === id || !activeSession) && messages.length === 0;
 	const isBackgroundRefreshing = loadingSessionId === id && messages.length > 0;
+	// Determine whether prose is actively streaming at the tail of the message list.
+	// When answer text starts arriving, running indicator is automatically folded.
+	const answering = useMemo(() => {
+		const last = messages[messages.length - 1];
+		if (last?.role !== "assistant" || last.stopReason !== "pending") return false;
+		const lastBlock = last.content[last.content.length - 1];
+		return lastBlock?.type === "text" && lastBlock.text.trim().length > 0;
+	}, [messages]);
+
 	const approval = approvals[0];
 	const sessionTitle = activeSession?.title ?? sessions.find((s) => s.id === id)?.title ?? "会话";
 
 	return (
-		<View style={{ flex: 1, backgroundColor: "#171717", paddingTop: insets.top }}>
-			<View className="h-14 flex-row items-center border-b border-line-soft/30 bg-sidebar px-3.5">
+		<View style={{ flex: 1, backgroundColor: colors.shell, paddingTop: insets.top }}>
+			<View className="h-14 flex-row items-center bg-shell px-3.5">
 				<Pressable
 					onPress={() => router.back()}
 					hitSlop={8}
@@ -347,10 +374,53 @@ export default function SessionScreen() {
 					</View>
 				</Pressable>
 				<View className="ml-3 flex-1 flex-row items-center gap-2 pr-2">
-					<Text className="text-[17px] font-semibold tracking-tight text-ink" numberOfLines={1}>
-						{sessionTitle}
-					</Text>
-					{isBackgroundRefreshing && <ActivityIndicator size="small" color="#9a9a9a" />}
+					{isRenaming ? (
+						<TextInput
+							value={renameText}
+							onChangeText={setRenameText}
+							autoFocus
+							onSubmitEditing={async () => {
+								if (renameText.trim()) {
+									await renameSession(renameText.trim());
+								}
+								setIsRenaming(false);
+							}}
+							onBlur={() => setIsRenaming(false)}
+							className="h-8 flex-1 rounded-lg bg-card px-2.5 text-[15px] font-semibold text-ink"
+						/>
+					) : (
+						<Pressable
+							onLongPress={() => {
+								setRenameText(sessionTitle);
+								setIsRenaming(true);
+							}}
+							className="flex-1 justify-center"
+						>
+							<View className="flex-row items-center gap-2">
+								<Text className="text-[16px] font-semibold tracking-tight text-ink" numberOfLines={1}>
+									{sessionTitle}
+								</Text>
+								{isBackgroundRefreshing && <ActivityIndicator size="small" color="#9a9a9a" />}
+							</View>
+							{Boolean(activeSession?.cwd) && (
+								<Text className="font-mono text-[10.5px] text-ink-faint" numberOfLines={1}>
+									{activeSession?.cwd}
+								</Text>
+							)}
+						</Pressable>
+					)}
+					<Pressable
+						onPress={() => router.push("/git-status")}
+						className="rounded-lg bg-elevated px-2.5 py-1 active:bg-card-hover"
+					>
+						<Text className="font-mono text-[12px] font-medium text-ink-muted">Git</Text>
+					</Pressable>
+					<Pressable
+						onPress={() => router.push("/file-viewer")}
+						className="rounded-lg bg-elevated px-2.5 py-1 active:bg-card-hover"
+					>
+						<Text className="text-[12px] font-medium text-ink-muted">文件</Text>
+					</Pressable>
 				</View>
 			</View>
 
@@ -362,6 +432,31 @@ export default function SessionScreen() {
 			)}
 
 			<Animated.View style={[{ flex: 1 }, listContainerAnimatedStyle]}>
+				{currentTodos.length > 0 && (
+					<View
+						style={{ backgroundColor: colors.shell }}
+						className="absolute left-0 right-0 top-0 z-10 px-3.5 pb-1.5 pt-1"
+					>
+						<MobileTaskList
+							todos={currentTodos}
+							running={running}
+							onPause={() => void abort()}
+							onResume={() => void send("继续，从暂停的地方接着做。")}
+						/>
+					</View>
+				)}
+
+				{currentTodos.length === 0 && (
+					<View className="px-3.5 pt-1">
+						<MobileResumeRow
+							running={running}
+							messages={messages}
+							todos={currentTodos}
+							onResume={(prompt) => void send(prompt)}
+						/>
+					</View>
+				)}
+
 				<FlatList
 					ref={listRef}
 				data={reversedRuns}
@@ -369,7 +464,12 @@ export default function SessionScreen() {
 				renderItem={renderTranscriptItem}
 				keyExtractor={extractKey}
 				style={{ flex: 1 }}
-				contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 16 }}
+				contentContainerStyle={{
+					paddingHorizontal: 14,
+					paddingTop: 6,
+					// In inverted list paddingBottom is visual top; reserve space for floating task bar
+					paddingBottom: currentTodos.length > 0 ? 52 : 16,
+				}}
 				maxToRenderPerBatch={6}
 				updateCellsBatchingPeriod={50}
 				windowSize={5}
@@ -386,7 +486,10 @@ export default function SessionScreen() {
 				onScroll={(e) => {
 					// In inverted mode: offset 0 is bottom (latest message).
 					const offset = e.nativeEvent.contentOffset.y;
-					isAtBottomRef.current = offset <= 15;
+					// If user is actively dragging or offset is clearly away from bottom, stay unlocked
+					if (!isDraggingRef.current) {
+						isAtBottomRef.current = offset <= 15;
+					}
 					if (offset > 160) {
 						scrollFabOpacity.value = withTiming(1, { duration: 150 });
 					} else {
@@ -394,7 +497,18 @@ export default function SessionScreen() {
 					}
 				}}
 				onScrollBeginDrag={() => {
+					isDraggingRef.current = true;
 					isAtBottomRef.current = false;
+				}}
+				onScrollEndDrag={(e) => {
+					isDraggingRef.current = false;
+					const offset = e.nativeEvent.contentOffset.y;
+					isAtBottomRef.current = offset <= 15;
+				}}
+				onMomentumScrollEnd={(e) => {
+					isDraggingRef.current = false;
+					const offset = e.nativeEvent.contentOffset.y;
+					isAtBottomRef.current = offset <= 15;
 				}}
 				scrollEventThrottle={16}
 				ListHeaderComponent={
@@ -407,9 +521,9 @@ export default function SessionScreen() {
 					) : null
 				}
 				ListFooterComponent={
-					<View className="mb-3">
-						{/* Cursor pagination: fetch earlier records from server */}
-						{hasEarlierMessages && (
+					hasEarlierMessages ? (
+						<View className="mb-3">
+							{/* Cursor pagination: fetch earlier records from server */}
 							<Pressable
 								onPress={() => void loadEarlierMessages()}
 								disabled={loadingEarlier}
@@ -424,51 +538,8 @@ export default function SessionScreen() {
 									<Text className="text-[12px] font-medium text-ink-muted">加载更早的历史记录</Text>
 								)}
 							</Pressable>
-						)}
-
-						<View className="flex-row items-center gap-2">
-							<Text className="flex-1 text-[11.5px] text-ink-faint" numberOfLines={1}>
-								{activeSession?.cwd ?? ""}
-							</Text>
-							{messages.length > 0 ? (
-								<Text className="px-2 py-1 text-[11.5px] text-ink-faint">
-									{models.find((m) => m.id === activeSession?.modelId)?.name ?? activeSession?.modelId ?? ""}
-								</Text>
-							) : (
-								<Pressable
-									onPress={() => setModelPickerOpen(true)}
-									className="rounded-lg bg-card px-2.5 py-1 active:bg-card-hover"
-								>
-									<Text className="text-[11.5px] text-ink-muted">
-										{models.find((m) => m.id === activeSession?.modelId)?.name ?? "选择模型"}
-									</Text>
-								</Pressable>
-							)}
 						</View>
-
-						{modelPickerOpen && (
-							<View className="mt-2 overflow-hidden rounded-xl bg-card">
-								{models.map((model) => (
-									<Pressable
-										key={model.id}
-										onPress={() => {
-											void setModel(model.id);
-											setModelPickerOpen(false);
-										}}
-										className="border-b border-line-soft/40 px-3.5 py-2.5 last:border-b-0 active:bg-card-hover"
-									>
-										<Text className="text-[13px] text-ink">{model.name}</Text>
-										<Text className="mt-0.5 text-[11px] text-ink-faint">{model.provider}</Text>
-									</Pressable>
-								))}
-								{models.length === 0 && (
-									<Text className="px-3.5 py-4 text-center text-[12px] text-ink-faint">
-										桌面端还没有可用模型
-									</Text>
-								)}
-							</View>
-						)}
-					</View>
+					) : null
 				}
 			/>
 				{/* Floating Scroll to Bottom Button */}
@@ -590,24 +661,108 @@ export default function SessionScreen() {
 					</View>
 				)}
 
-				{running && <MobileRunningIndicator messages={messages} toolRuns={toolRuns} />}
+				{running && !answering && <MobileRunningIndicator messages={messages} toolRuns={toolRuns} />}
 
-				<View className="px-3 py-2.5">
+				{/* Composer Control Bar: Permission, Model, and Thinking */}
+				<View className="flex-row items-center justify-between px-3 pt-1.5 pb-0.5">
+					<View className="flex-row items-center gap-1.5">
+						{/* Permission Mode Chip */}
+						<Pressable
+							disabled={running}
+							onPress={() => {
+								haptic.tap();
+								setPermissionPickerOpen(true);
+							}}
+							className="flex-row items-center gap-1.5 rounded-full bg-card px-2.5 py-1 active:bg-card-hover disabled:opacity-60"
+						>
+							<View
+								className={`h-1.5 w-1.5 rounded-full ${
+									(settings?.permissionMode ?? "auto") === "full"
+										? "bg-danger"
+										: (settings?.permissionMode ?? "auto") === "auto"
+											? "bg-emerald-500"
+											: "bg-amber-500"
+								}`}
+							/>
+							<Text className="text-[11.5px] font-medium text-ink">
+								{(settings?.permissionMode ?? "auto") === "full"
+									? "完全访问"
+									: (settings?.permissionMode ?? "auto") === "auto"
+										? "帮我批准"
+										: "请求批准"}
+							</Text>
+							<Text className="text-[9.5px] text-ink-faint">▾</Text>
+						</Pressable>
+					</View>
+
+					<View className="flex-row items-center gap-1.5">
+						{/* Thinking Effort Chip */}
+						{(() => {
+							const currentModel = models.find((m) => m.id === activeSession?.modelId);
+							const thinkingOpts = resolveModelThinkingOptions(
+								currentModel ? { id: currentModel.id, modelId: currentModel.id } : null,
+							);
+							if (thinkingOpts.length === 0) return null;
+
+							const currentLevel = activeSession?.thinking ?? settings?.thinking ?? "medium";
+							const matchedOpt =
+								thinkingOpts.find((o: ThinkingOption) => o.id === currentLevel) ??
+								thinkingOpts.find((o: ThinkingOption) => o.isDefault);
+							const label = matchedOpt?.label ?? "中";
+
+							return (
+								<Pressable
+									disabled={running}
+									onPress={() => {
+										haptic.tap();
+										setThinkingPickerOpen(true);
+									}}
+									className="flex-row items-center gap-1 rounded-full bg-card px-2 py-1 active:bg-card-hover disabled:opacity-60"
+								>
+									<Text className="text-[11px] text-ink-muted">思考</Text>
+									<Text className="text-[11.5px] font-medium text-accent">
+										{label}
+									</Text>
+									<Text className="text-[9.5px] text-ink-faint">▾</Text>
+								</Pressable>
+							);
+						})()}
+
+						{/* Model Chip */}
+						<Pressable
+							disabled={running}
+							onPress={() => {
+								haptic.tap();
+								setModelPickerOpen(true);
+							}}
+							className="max-w-[155px] flex-row items-center gap-1.5 rounded-full bg-card px-2.5 py-1 active:bg-card-hover disabled:opacity-60"
+						>
+							<View className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+							<Text className="shrink truncate text-[11.5px] font-medium text-ink" numberOfLines={1}>
+								{models.find((m) => m.id === activeSession?.modelId)?.name ?? activeSession?.modelId ?? "选择模型"}
+							</Text>
+							<Text className="shrink-0 text-[9.5px] text-ink-faint">▾</Text>
+						</Pressable>
+					</View>
+				</View>
+
+				<View className="px-3 py-2">
 					<View className="flex-row items-end gap-2">
 						<Pressable
 							disabled={running}
 							onPress={handlePickImage}
-							className={`h-11 w-11 items-center justify-center rounded-full bg-card active:bg-card-hover ${
+							style={{ backgroundColor: colors.elevated }}
+							className={`h-11 w-11 items-center justify-center rounded-full active:opacity-75 ${
 								running ? "opacity-50" : ""
 							}`}
 						>
 							<View className="h-5 w-5 items-center justify-center">
 								{/* Camera top bump */}
-								<View className="h-[2px] w-[5px] rounded-t-[1px] bg-ink-muted self-start ml-0.5" />
+								<View className="h-[2.5px] w-[6px] rounded-t-[1px] bg-ink self-start ml-0.5" />
 								{/* Camera body */}
-								<View className="h-[14px] w-[18px] items-center justify-center rounded-[3px] bg-ink-muted/30">
+								<View className="h-[13px] w-[18px] items-center justify-center rounded-[3px] border border-ink bg-transparent">
 									{/* Lens */}
-									<View className="h-[6px] w-[6px] rounded-full bg-ink-muted" />
+									<View className="h-[6px] w-[6px] rounded-full border border-ink bg-ink/30" />
 								</View>
 							</View>
 						</Pressable>
@@ -617,17 +772,23 @@ export default function SessionScreen() {
 							editable={!running}
 							onChangeText={handleDraftChange}
 							placeholder={running ? "Agent 正在执行中…" : "随心输入"}
-							placeholderTextColor="#6e6e6e"
+							placeholderTextColor={isDark ? "#71717a" : "#8e8e93"}
 							multiline
 							onSubmitEditing={handleSend}
-							style={inputHeight !== undefined ? { height: inputHeight } : undefined}
-							className={`max-h-32 min-h-11 flex-1 rounded-2xl bg-card px-4 py-2.5 text-[14px] leading-5 text-ink ${
+							style={[
+								{ backgroundColor: colors.input },
+								inputHeight !== undefined ? { height: inputHeight } : undefined,
+							]}
+							className={`max-h-32 min-h-11 flex-1 rounded-2xl px-4 py-2.5 text-[14px] leading-5 text-ink ${
 								running ? "opacity-60" : ""
 							}`}
 						/>
 						{running ? (
 							<Pressable
-								onPress={() => void abort()}
+								onPress={() => {
+									haptic.heavy();
+									void abort();
+								}}
 								className="h-11 w-11 items-center justify-center rounded-full bg-ink active:opacity-85"
 							>
 								<View className="h-3 w-3 rounded-[2px] bg-shell" />
@@ -636,53 +797,125 @@ export default function SessionScreen() {
 							<Pressable
 								disabled={!draft.trim() && selectedImages.length === 0}
 								onPress={handleSend}
-								className="h-11 w-11 items-center justify-center rounded-full bg-elevated active:opacity-85 disabled:opacity-40"
+								style={{
+									backgroundColor: draft.trim() || selectedImages.length > 0 ? colors.ink : colors.elevated,
+								}}
+								className="h-11 w-11 items-center justify-center rounded-full active:opacity-85 disabled:opacity-40"
 							>
-								<Text className="text-[17px] leading-5 text-ink">↑</Text>
+								<Text
+									style={{
+										color: draft.trim() || selectedImages.length > 0 ? colors.shell : colors.inkMuted,
+									}}
+									className="text-[17px] leading-5 font-bold"
+								>
+									↑
+								</Text>
 							</Pressable>
 						)}
 					</View>
 				</View>
 			</Animated.View>
 
-			{/* Fullscreen Image Preview Modal */}
-			<Modal
-				visible={!!viewingImageUri}
-				transparent
-				animationType="fade"
-				onRequestClose={() => setViewingImageUri(null)}
-			>
-				<Pressable
-					onPress={() => setViewingImageUri(null)}
-					className="flex-1 items-center justify-center bg-black/90 p-4"
+			{/* Fullscreen Image Preview */}
+			{viewingImageUri && (
+				<View
+					style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}
+					className="items-center justify-center bg-black/90 p-4"
 				>
-					{viewingImageUri && (
-						<Image
-							source={{ uri: viewingImageUri }}
-							className="h-full w-full"
-							resizeMode="contain"
-						/>
-					)}
+					<Pressable
+						style={StyleSheet.absoluteFill}
+						onPress={() => setViewingImageUri(null)}
+					/>
+					<Image
+						source={{ uri: viewingImageUri }}
+						className="h-full w-full"
+						resizeMode="contain"
+					/>
 					<Pressable
 						onPress={() => setViewingImageUri(null)}
 						className="absolute top-12 right-6 h-10 w-10 items-center justify-center rounded-full bg-white/20"
 					>
 						<Text className="text-[16px] font-bold text-white">✕</Text>
 					</Pressable>
-				</Pressable>
-			</Modal>
+				</View>
+			)}
+
+			{/* Adaptive High-Grade ActionSheet for Camera & Photo Picker */}
+			<MobileActionSheet
+				visible={imageSheetVisible}
+				title="添加图片"
+				iconKind="image"
+				onClose={() => setImageSheetVisible(false)}
+				actions={[
+					{
+						label: "拍照",
+						onPress: () => {
+							void takePhoto();
+						},
+					},
+					{
+						label: "从相册选取",
+						onPress: () => {
+							void pickFromLibrary();
+						},
+					},
+				]}
+			/>
+
+			{/* Adaptive Session Alert Dialog */}
+			<MobileConfirmDialog
+				visible={sessionAlert.visible}
+				title={sessionAlert.title}
+				message={sessionAlert.message}
+				confirmText="知道了"
+				cancelText=""
+				onConfirm={() => setSessionAlert((prev) => ({ ...prev, visible: false }))}
+				onCancel={() => setSessionAlert((prev) => ({ ...prev, visible: false }))}
+			/>
+
+			{/* Model Picker Modal */}
+			<MobileModelPickerModal
+				visible={modelPickerOpen}
+				models={models}
+				currentModelId={activeSession?.modelId ?? null}
+				onSelectModel={(modelId) => {
+					void setModel(modelId);
+				}}
+				onClose={() => setModelPickerOpen(false)}
+			/>
+
+			{/* Thinking Effort Picker Modal */}
+			<MobileThinkingPickerModal
+				visible={thinkingPickerOpen}
+				model={models.find((m) => m.id === activeSession?.modelId) ?? null}
+				currentThinking={activeSession?.thinking ?? settings?.thinking ?? "medium"}
+				onSelectThinking={(thinking) => {
+					void setThinking(thinking);
+				}}
+				onClose={() => setThinkingPickerOpen(false)}
+			/>
+
+			{/* Permission Picker Modal */}
+			<MobilePermissionPickerModal
+				visible={permissionPickerOpen}
+				currentMode={settings?.permissionMode ?? "auto"}
+				onSelectMode={(mode) => {
+					void setPermissionMode(mode);
+				}}
+				onClose={() => setPermissionPickerOpen(false)}
+			/>
 		</View>
 	);
 }
 
 // Helper for stable key extraction that does NOT change mid-stream or collide
-function getRunKey(run: MobileRun): string {
-	if (run.kind === "tools") return `tools-${run.id}`;
+function getRunKey(run: MobileRun, index: number): string {
+	if (run.kind === "tools") return `tools-${run.id}-${index}`;
 	const m = run.message;
-	if (m.role === "toolResult") return `tr-${m.toolCallId}`;
-	if (m.role === "user") return `user-${m.timestamp}`;
-	// For assistant, use timestamp or first content id if stable
-	return `ast-${m.timestamp}`;
+	if (m.role === "toolResult") return `tr-${m.toolCallId}-${run.index}`;
+	if (m.role === "user") return `user-${m.timestamp}-${run.index}`;
+	// For assistant, use index + timestamp + upTo slice to ensure global uniqueness across turns
+	return `ast-${m.timestamp}-${run.index}-${run.upTo}`;
 }
 
 function isSyntheticOrNudge(message: Message): boolean {
@@ -771,8 +1004,12 @@ function AssistantRow({ message, upTo }: { message: AssistantMessage; upTo: numb
 
 	return (
 		<View className="mb-4">
-			{thinking && thinking.type === "thinking" && thinking.thinking.length > 0 && (
-				<ThinkingBlock text={thinking.thinking} />
+			{thinking && thinking.type === "thinking" && (
+				<MobileThinkingBlock
+					text={thinking.thinking}
+					redacted={thinking.redacted}
+					live={message.stopReason === "pending"}
+				/>
 			)}
 
 			{text.length > 0 && <MobileMarkdownView content={text} />}
@@ -795,43 +1032,71 @@ function ToolRunGroup({
 }) {
 	const [open, setOpen] = useState(false);
 	const toolRuns = useMobile((s) => s.toolRuns);
+	const running = useMobile((s) => s.running);
+	const { colors } = useThemeColors();
+	const listRef = useRef<View>(null);
 
-	const callsWithSummary = calls.map((c) => ({
-		toolName: c.block.name,
-		summary: toolRuns[c.block.id]?.summary ?? c.block.name,
-		status: toolRuns[c.block.id]?.status ?? (c.stopReason === "pending" ? "running" : "done"),
-	}));
+	const callsWithSummary = calls.map((c) => {
+		const tr = toolRuns[c.block.id];
+		const fallbackDone = !running || c.stopReason !== "pending";
+		return {
+			toolName: c.block.name,
+			summary: tr?.summary ?? c.block.name,
+			status: tr?.status ?? (fallbackDone ? "done" : "running"),
+		};
+	});
 
 	const isRunning = callsWithSummary.some((c) => c.status === "running");
 	const hasError = callsWithSummary.some((c) => c.status === "error");
 	const summaryText = describeRun(callsWithSummary);
 
+	const toggleOpen = () => {
+		LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+		setOpen((v) => !v);
+	};
+
 	return (
-		<View className="mb-2.5">
+		<View
+			ref={listRef}
+			style={{ backgroundColor: colors.card }}
+			className="mb-2.5 overflow-hidden rounded-2xl"
+		>
 			<Pressable
-				onPress={() => setOpen((v) => !v)}
-				className="flex-row items-center justify-between rounded-xl bg-card/60 px-3.5 py-2.5 active:bg-card-hover"
+				onPress={toggleOpen}
+				className="flex-row items-center justify-between px-3.5 py-2.5 active:opacity-80"
 			>
 				<View className="mr-2 flex-1 flex-row items-center gap-2">
 					<View
-						className={`h-1.5 w-1.5 rounded-full ${
+						className={`h-2 w-2 rounded-full ${
 							hasError ? "bg-danger" : isRunning ? "bg-accent" : "bg-ok"
 						}`}
 					/>
-					<Text className="flex-1 text-[12.5px] font-medium text-ink-muted" numberOfLines={1}>
+					<Text
+						style={{ color: colors.ink }}
+						className="flex-1 text-[13px] font-medium"
+						numberOfLines={1}
+					>
 						{summaryText || "调用工具"}
 					</Text>
 				</View>
-				<View className="flex-row items-center gap-1.5">
-					<Text className="text-[11px] text-ink-faint">{calls.length} 项</Text>
-					<Text className="text-[11px] text-ink-faint">{open ? "▾" : "▸"}</Text>
+				<View className="flex-row items-center gap-2">
+					<Text style={{ color: colors.inkMuted }} className="text-[11.5px] font-mono">
+						{calls.length} 项
+					</Text>
+					<Text style={{ color: colors.inkFaint }} className="text-[11px]">
+						{open ? "▾" : "▸"}
+					</Text>
 				</View>
 			</Pressable>
 
 			{open && (
-				<View className="mt-1.5 gap-1.5 pl-2">
-					{calls.map((c) => (
-						<ToolCard key={c.block.id} run={toolRuns[c.block.id]} name={c.block.name} />
+				<View className="px-3 pb-1.5 pt-0.5">
+					{calls.map((c, idx) => (
+						<ToolCard
+							key={`${c.block.id}-${idx}`}
+							run={toolRuns[c.block.id]}
+							name={c.block.name}
+						/>
 					))}
 				</View>
 			)}
@@ -839,56 +1104,91 @@ function ToolRunGroup({
 	);
 }
 
-function ThinkingBlock({ text }: { text: string }) {
-	const [open, setOpen] = useState(false);
+function renderToolSummary(summary: string) {
+	// Parse git-like diff stats: e.g. "Edited foo.tsx: 1 replacement, +1 -1." or "+10 -5"
+	const diffMatch = summary.match(/^([\s\S]*?)(?:,\s*)?(\+\d+)?(?:\s*)?([-\u2212]\d+)?(\.?)$/);
+	if (diffMatch && (diffMatch[2] || diffMatch[3])) {
+		const prefix = diffMatch[1];
+		const added = diffMatch[2];
+		const removed = diffMatch[3];
+		const suffix = diffMatch[4];
+
+		return (
+			<Text className="flex-1 font-mono text-[12px] text-ink-muted" numberOfLines={1}>
+				{prefix}
+				{Boolean(prefix && (added || removed)) && " "}
+				{Boolean(added) && (
+					<Text className="font-bold text-ok">{added} </Text>
+				)}
+				{Boolean(removed) && (
+					<Text className="font-bold text-danger">{removed}</Text>
+				)}
+				{suffix}
+			</Text>
+		);
+	}
+
 	return (
-		<View className="mb-2 overflow-hidden rounded-xl bg-card/60">
-			<Pressable
-				onPress={() => setOpen((v) => !v)}
-				className="flex-row items-center justify-between px-3.5 py-2 active:bg-card-hover"
-			>
-				<View className="flex-row items-center gap-2">
-					<View className="h-1.5 w-1.5 rounded-full bg-violet" />
-					<Text className="text-[12px] font-medium text-ink-muted">思考过程</Text>
-				</View>
-				<Text className="text-[11px] text-ink-faint">{open ? "收起" : "展开"}</Text>
-			</Pressable>
-			{open && (
-				<View className="bg-[#121212] px-3.5 py-2.5">
-					<Text className="font-mono text-[12px] leading-5 text-ink-muted">{text}</Text>
-				</View>
-			)}
-		</View>
+		<Text className="flex-1 font-mono text-[12px] text-ink-muted" numberOfLines={1}>
+			{summary}
+		</Text>
 	);
 }
 
 function ToolCard({ run, name }: { run: ToolRun | undefined; name: string }) {
 	const [open, setOpen] = useState(false);
+	const [ready, setReady] = useState(false);
 	const status = run?.status ?? "running";
 
+	const toggleOpen = () => {
+		LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+		const next = !open;
+		setOpen(next);
+		if (next && !ready) {
+			// Defer heavy code viewer until after layout animation settles
+			requestIdleCallback(() => setReady(true));
+		}
+	};
+
+	const summaryText = run?.summary ?? name;
+
 	return (
-		<Pressable
-			onPress={() => setOpen((v) => !v)}
-			className="mb-1.5 overflow-hidden rounded-xl bg-card px-3.5 py-2.5 active:bg-card-hover"
-		>
-			<View className="flex-row items-center gap-2">
-				<Text className="flex-1 text-[12.5px] font-medium text-ink-muted" numberOfLines={1}>
-					{run?.summary ?? name}
-				</Text>
-				<Text
-					className={`text-[11.5px] font-medium ${
-						status === "error" ? "text-danger" : status === "done" ? "text-ok" : "text-accent"
-					}`}
-				>
-					{status === "running" ? "运行中" : status === "done" ? "完成" : "失败"}
-				</Text>
-			</View>
-			{open && run?.output && (
-				<Text className="mt-2 font-mono text-[11px] leading-4 text-ink-faint" numberOfLines={40}>
-					{run.output}
-				</Text>
+		<View className="py-1.5">
+			<Pressable
+				onPress={toggleOpen}
+				className="flex-row items-center justify-between gap-2 active:opacity-75"
+			>
+				{renderToolSummary(summaryText)}
+				<View className="flex-row items-center gap-1.5">
+					<View
+						className={`h-1.5 w-1.5 rounded-full ${
+							status === "error" ? "bg-danger" : status === "done" ? "bg-ok" : "bg-accent"
+						}`}
+					/>
+					<Text
+						className={`text-[11px] font-medium ${
+							status === "error" ? "text-danger" : status === "done" ? "text-ok" : "text-accent"
+						}`}
+					>
+						{status === "running" ? "运行中" : status === "done" ? "完成" : "失败"}
+					</Text>
+					{Boolean(run?.output) && (
+						<Text className="text-[10px] text-ink-faint">{open ? "▴" : "▾"}</Text>
+					)}
+				</View>
+			</Pressable>
+			{open && Boolean(run?.output) && (
+				<View className="mt-1.5 overflow-hidden rounded-xl bg-card">
+					{ready ? (
+						<MobileCodeViewer code={run?.output || ""} />
+					) : (
+						<View className="items-center py-3">
+							<ActivityIndicator size="small" />
+						</View>
+					)}
+				</View>
 			)}
-		</Pressable>
+		</View>
 	);
 }
 

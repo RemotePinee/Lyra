@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { AppState, type AppStateStatus } from "react-native";
 import { create } from "zustand";
 import { SyncClient, type Connection } from "./client";
 import { summarizeToolCall } from "./toolSummary";
@@ -8,6 +9,7 @@ import type {
 	Message,
 	RemoteSettings,
 	SessionMeta,
+	TodoItem,
 	UserContent,
 } from "./protocol";
 
@@ -89,6 +91,8 @@ interface MobileState {
 	hasEarlierMessages: boolean;
 	minSeq: number;
 	cache: Record<string, CachedSessionData>;
+	/** Tracks running/waiting/done activity per session id across the entire workspace. */
+	sessionActivities: Record<string, "running" | "waiting" | "done" | "failed">;
 
 	hydrate(): Promise<void>;
 	pair(connection: Connection): Promise<boolean>;
@@ -101,7 +105,18 @@ interface MobileState {
 	abort(): Promise<void>;
 	approve(id: string, decision: "once" | "always" | "reject"): Promise<void>;
 	createSession(cwd: string): Promise<SessionMeta | null>;
+	renameSession(title: string): Promise<void>;
+	archiveSession(session: SessionMeta, archived: boolean): Promise<void>;
+	deleteSession(session: SessionMeta): Promise<void>;
 	setModel(modelId: string): Promise<void>;
+	setThinking(thinking: string): Promise<void>;
+	setPermissionMode(mode: string): Promise<void>;
+	updateRemoteSettings(patch: Partial<RemoteSettings>): Promise<boolean>;
+	fetchUsage(): Promise<import("./usage").UsageScan | null>;
+	fetchGitStatus(cwd: string): Promise<import("./protocol").GitStatus | null>;
+	listFiles(dir: string): Promise<import("./protocol").RemoteFileEntry[]>;
+	readFile(path: string): Promise<import("./protocol").RemoteFileContents | null>;
+	catchUp(): Promise<void>;
 }
 
 export const useMobile = create<MobileState>((set, get) => ({
@@ -126,6 +141,7 @@ export const useMobile = create<MobileState>((set, get) => ({
 	hasEarlierMessages: false,
 	minSeq: 0,
 	cache: {},
+	sessionActivities: {},
 
 	async hydrate() {
 		const [rawConnection, initialCache] = await Promise.all([
@@ -183,8 +199,25 @@ export const useMobile = create<MobileState>((set, get) => ({
 		set({ loadingSessions: true, error: null });
 		try {
 			const [sessions, settings] = await Promise.all([client.listSessions(), client.settings()]);
-			// Archived sessions are hidden on the desktop too; the two lists have to agree.
-			set({ sessions: sessions.sessions.filter((s) => !s.archived), settings });
+			set({ sessions: sessions.sessions, settings });
+
+			// Check live status for the latest sessions in background to seed initial activity state
+			const topSessions = sessions.sessions.slice(0, 10);
+			void Promise.allSettled(
+				topSessions.map(async (s) => {
+					try {
+						const status = await client.status(s.projectId, s.id);
+						if (status.running || status.pendingApprovals?.length > 0) {
+							set({
+								sessionActivities: {
+									...get().sessionActivities,
+									[s.id]: status.pendingApprovals?.length > 0 ? "waiting" : "running",
+								},
+							});
+						}
+					} catch {}
+				}),
+			);
 		} catch (error) {
 			set({ error: error instanceof Error ? error.message : String(error) });
 		} finally {
@@ -212,6 +245,12 @@ export const useMobile = create<MobileState>((set, get) => ({
 				loadingEarlier: false,
 				loadingSessionId: meta.id,
 				error: null,
+				sessionActivities: {
+					...get().sessionActivities,
+					...(get().sessionActivities[meta.id] === "done" || get().sessionActivities[meta.id] === "failed"
+						? { [meta.id]: undefined as never }
+						: {}),
+				},
 			});
 		} else {
 			// First-time open: clean state
@@ -229,6 +268,12 @@ export const useMobile = create<MobileState>((set, get) => ({
 				loadingEarlier: false,
 				loadingSessionId: meta.id,
 				error: null,
+				sessionActivities: {
+					...get().sessionActivities,
+					...(get().sessionActivities[meta.id] === "done" || get().sessionActivities[meta.id] === "failed"
+						? { [meta.id]: undefined as never }
+						: {}),
+				},
 			});
 		}
 
@@ -369,7 +414,18 @@ export const useMobile = create<MobileState>((set, get) => ({
 
 	async abort() {
 		const { client, activeSession } = get();
-		if (client && activeSession) await client.abort(activeSession.projectId, activeSession.id).catch(() => undefined);
+		if (client && activeSession) {
+			await client.abort(activeSession.projectId, activeSession.id).catch(() => undefined);
+			// Mark all active toolRuns as done immediately
+			const updatedToolRuns = { ...get().toolRuns };
+			for (const key of Object.keys(updatedToolRuns)) {
+				if (updatedToolRuns[key].status === "running") {
+					updatedToolRuns[key] = { ...updatedToolRuns[key], status: "done" };
+				}
+			}
+			set({ running: false, turnStartedAt: null, turnTokens: 0, approvals: [], toolRuns: updatedToolRuns });
+			void get().catchUp();
+		}
 	},
 
 	async approve(id, decision) {
@@ -388,14 +444,101 @@ export const useMobile = create<MobileState>((set, get) => ({
 	 * to be told no, and the optimistic update now waits for the server to agree: it used to
 	 * paint the new model regardless, leaving the phone showing one the session was not using.
 	 */
+	async renameSession(title) {
+		const { client, activeSession } = get();
+		if (!client || !activeSession || !title.trim()) return;
+		try {
+			const res = await client.rename(activeSession.projectId, activeSession.id, title.trim());
+			if (res.ok) {
+				set({
+					activeSession: { ...activeSession, title: title.trim() },
+					sessions: get().sessions.map((s) => (s.id === activeSession.id ? { ...s, title: title.trim() } : s)),
+				});
+			}
+		} catch {
+			// ignore rename errors
+		}
+	},
+
+	async archiveSession(session, archived) {
+		const client = get().client;
+		if (!client) return;
+		try {
+			await client.setArchived(session.projectId, session.id, archived);
+			set({
+				sessions: get().sessions.map((s) => (s.id === session.id ? { ...s, archived } : s)),
+			});
+		} catch {
+			// ignore error
+		}
+	},
+
+	async deleteSession(session) {
+		const client = get().client;
+		if (!client) return;
+		try {
+			await client.removeSession(session.projectId, session.id);
+			set({
+				sessions: get().sessions.filter((s) => s.id !== session.id),
+			});
+		} catch {
+			// ignore error
+		}
+	},
+
 	async setModel(modelId) {
 		const { client, activeSession, messages } = get();
-		if (!client || !activeSession || messages.length > 0) return;
+		if (!client || !activeSession) return;
+		const midConversation = messages.length > 0 && activeSession.modelId !== modelId;
 		const result = await client
 			.setModel(activeSession.projectId, activeSession.id, modelId)
 			.catch(() => null);
 		if (!result?.ok) return;
 		set({ activeSession: { ...activeSession, modelId } });
+		if (midConversation) {
+			// Align with desktop turn-slice.ts warning toast/alert
+			set({
+				error: "已切换模型。之前的推理上下文无法跨模型沿用，接下来的回答可能变差；重开一个对话效果最好。",
+			});
+		}
+	},
+
+	async setThinking(thinking: string) {
+		const { client, activeSession, settings } = get();
+		if (!client || !activeSession) return;
+		const res = await client.setThinking(activeSession.id, thinking).catch(() => null);
+		if (res?.ok) {
+			set({
+				activeSession: { ...activeSession, thinking },
+			});
+			if (settings && thinking !== "off") {
+				void client.saveSettings({ lastThinking: thinking } as never);
+			}
+		}
+	},
+
+	async setPermissionMode(mode: string) {
+		const { client, settings } = get();
+		if (!client || !settings) return;
+		const res = await client.saveSettings({ permissionMode: mode }).catch(() => null);
+		if (res?.ok) {
+			set({
+				settings: { ...settings, permissionMode: mode },
+			});
+		}
+	},
+
+	async updateRemoteSettings(patch: Partial<RemoteSettings>) {
+		const { client, settings } = get();
+		if (!client || !settings) return false;
+		const res = await client.saveSettings(patch).catch(() => null);
+		if (res?.ok) {
+			set({
+				settings: { ...settings, ...patch },
+			});
+			return true;
+		}
+		return false;
 	},
 
 	async createSession(cwd) {
@@ -410,13 +553,133 @@ export const useMobile = create<MobileState>((set, get) => ({
 			return null;
 		}
 	},
+
+	async fetchUsage() {
+		const client = get().client;
+		if (!client) return null;
+		try {
+			return await client.scanUsage();
+		} catch {
+			return null;
+		}
+	},
+
+	async fetchGitStatus(cwd: string) {
+		const client = get().client;
+		if (!client) return null;
+		try {
+			return await client.gitStatus(cwd);
+		} catch {
+			return null;
+		}
+	},
+
+	async listFiles(dir: string) {
+		const client = get().client;
+		if (!client) return [];
+		try {
+			return await client.listFiles(dir);
+		} catch {
+			return [];
+		}
+	},
+
+	async readFile(path: string) {
+		const client = get().client;
+		if (!client) return null;
+		try {
+			return await client.readFile(path);
+		} catch {
+			return null;
+		}
+	},
+
+	/**
+	 * Silent incremental catch-up on reconnect or app foreground resume.
+	 * Fetches only missing records since current `seq` without tearing down UI or showing loading spinners.
+	 */
+	async catchUp() {
+		const { client, activeSession, seq: currentSeq, messages: currentMessages } = get();
+		if (!client || !activeSession) return;
+
+		try {
+			const [res, status] = await Promise.all([
+				client.records(activeSession.projectId, activeSession.id, { since: currentSeq }),
+				client.status(activeSession.projectId, activeSession.id).catch(() => null),
+			]);
+
+			if (res.records.length === 0 && !status) return;
+
+			let nextSeq = currentSeq;
+			const newEntries: { seq: number; message: Message }[] = [];
+			let truncated = false;
+			let afterSeq = 0;
+
+			for (const record of res.records) {
+				nextSeq = Math.max(nextSeq, record.seq);
+				if (record.type === "message") {
+					newEntries.push({ seq: record.seq, message: record.message });
+				} else if (record.type === "truncate") {
+					truncated = true;
+					afterSeq = record.afterSeq;
+				}
+			}
+
+			let updatedMessages = currentMessages;
+			if (truncated) {
+				updatedMessages = updatedMessages.slice(0, afterSeq);
+			}
+
+			if (newEntries.length > 0) {
+				const merged = [...updatedMessages];
+				for (const item of newEntries) {
+					// Avoid duplicate bubble if message already exists
+					const exists = findSlot(merged, item.message);
+					if (exists >= 0) {
+						merged[exists] = item.message;
+					} else {
+						merged.push(item.message);
+					}
+				}
+				updatedMessages = merged;
+			}
+
+			const toolRuns = rebuildToolRuns(updatedMessages);
+			const isRunning = status?.running ?? false;
+
+			set({
+				messages: updatedMessages,
+				toolRuns,
+				seq: nextSeq,
+				running: isRunning,
+				turnStartedAt: isRunning ? (get().turnStartedAt ?? Date.now()) : null,
+				turnTokens: isRunning ? get().turnTokens : 0,
+				approvals:
+					status?.pendingApprovals.map((p) => ({
+						id: p.id,
+						kind: p.request.kind,
+						title: p.request.title,
+						detail: p.request.detail,
+					})) ?? [],
+			});
+		} catch {
+			// Silent background catch-up failure should not interrupt user UI
+		}
+	},
 }));
 
 type Setter = (partial: Partial<MobileState>) => void;
 type Getter = () => MobileState;
 
+let appStateSubscription: { remove: () => void } | null = null;
+
 function attach(connection: Connection, set: Setter, get: Getter): void {
 	get().client?.disconnect();
+	if (appStateSubscription) {
+		appStateSubscription.remove();
+		appStateSubscription = null;
+	}
+
 	const client = new SyncClient(connection);
 
 	client.onStateChange((socketState) => {
@@ -424,13 +687,31 @@ function attach(connection: Connection, set: Setter, get: Getter): void {
 		if (socketState === "open") {
 			const activeSession = get().activeSession;
 			if (activeSession) {
-				void get().openSession(activeSession);
+				// If session already mounted with messages, silently catch up missing delta
+				// rather than flashing a full-screen loading spinner
+				if (get().messages.length > 0 && get().seq > 0) {
+					void get().catchUp();
+				} else {
+					void get().openSession(activeSession);
+				}
 			}
 		}
 	});
+
 	client.onEvent((sessionId, event) => applyEvent(sessionId, event, set, get));
 	client.connect();
 	set({ client });
+
+	// Listen for OS foreground resume event: immediately ping/reconnect WebSocket
+	appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+		if (nextState === "active") {
+			client.reconnectNow();
+			const activeSession = get().activeSession;
+			if (activeSession && get().messages.length > 0) {
+				void get().catchUp();
+			}
+		}
+	});
 }
 
 let updateFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -461,6 +742,34 @@ function flushPendingMessageUpdate(set: Setter, get: Getter): void {
 
 function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Getter): void {
 	const state = get();
+
+	// Track global session activity across the entire app
+	const currentActivity = state.sessionActivities[sessionId] ?? null;
+	let nextAct: "running" | "waiting" | "done" | "failed" | null = currentActivity;
+	if (event.type === "agent_start" || event.type === "turn_start") {
+		nextAct = "running";
+	} else if (event.type === "approval_request") {
+		nextAct = "waiting";
+	} else if (event.type === "tool_start" || event.type === "message_start" || event.type === "message_update") {
+		if (currentActivity === "waiting") nextAct = "running";
+	} else if (event.type === "agent_end") {
+		if (event.reason === "error" || event.reason === "max_turns") {
+			nextAct = "failed";
+		} else if (event.reason === "aborted") {
+			nextAct = null;
+		} else {
+			nextAct = "done";
+		}
+	}
+	if (nextAct !== currentActivity) {
+		const nextActivities = { ...state.sessionActivities };
+		if (nextAct === null) {
+			delete nextActivities[sessionId];
+		} else {
+			nextActivities[sessionId] = nextAct;
+		}
+		set({ sessionActivities: nextActivities });
+	}
 
 	// If the event belongs to a session in cache but not currently active, keep cache updated
 	if (state.activeSession?.id !== sessionId) {
@@ -629,24 +938,39 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 			set({ messages: get().messages.slice(0, event.messageCount), toolRuns: {} });
 			break;
 
-		case "agent_end":
+		case "agent_end": {
 			flushPendingMessageUpdate(set, get);
-			set({ running: false, turnStartedAt: null, turnTokens: 0, approvals: [] });
+			const finishedToolRuns = { ...get().toolRuns };
+			for (const key of Object.keys(finishedToolRuns)) {
+				if (finishedToolRuns[key].status === "running") {
+					finishedToolRuns[key] = { ...finishedToolRuns[key], status: "done" };
+				}
+			}
+			set({ running: false, turnStartedAt: null, turnTokens: 0, approvals: [], toolRuns: finishedToolRuns });
 			void get().refreshSessions();
 			break;
+		}
 	}
 }
 
 /** The desktop echoes the prompt we optimistically rendered; match on text to avoid a double bubble. */
 function isDuplicateUserEcho(messages: Message[], incoming: Message): boolean {
 	if (incoming.role !== "user") return false;
-	const incomingText = incoming.content.map((c) => (c.type === "text" ? c.text.trim() : "")).join("");
-	if (!incomingText) return false;
 	// Only inspect the very latest message if it is an unsynced optimistic user prompt
 	const last = messages[messages.length - 1];
 	if (!last || last.role !== "user") return false;
+
+	const incomingText = incoming.content.map((c) => (c.type === "text" ? c.text.trim() : "")).join("");
 	const lastText = last.content.map((c) => (c.type === "text" ? c.text.trim() : "")).join("");
-	return lastText === incomingText;
+	if (incomingText !== lastText) return false;
+
+	// For image-only messages (no text), compare image count to avoid false negatives
+	const incomingImages = incoming.content.filter((c) => c.type === "image").length;
+	const lastImages = last.content.filter((c) => c.type === "image").length;
+	if (incomingImages !== lastImages) return false;
+
+	// At least text or images must match to be considered a duplicate
+	return incomingText.length > 0 || incomingImages > 0;
 }
 
 function findSlot(messages: Message[], incoming: Message): number {
@@ -678,13 +1002,14 @@ function rebuildToolRuns(messages: Message[]): Record<string, ToolRun> {
 	const runs: Record<string, ToolRun> = {};
 	for (const message of messages) {
 		if (message.role === "assistant") {
+			const isMsgDone = message.stopReason !== "pending";
 			for (const block of message.content) {
 				if (block.type !== "toolCall") continue;
 				runs[block.id] = {
 					toolCallId: block.id,
 					toolName: block.name,
 					summary: summarizeToolCall(block.name, block.arguments),
-					status: "running",
+					status: isMsgDone ? "done" : "running",
 				};
 			}
 		} else if (message.role === "toolResult") {
@@ -707,4 +1032,14 @@ export function assistantText(message: AssistantMessage, upTo?: number): string 
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("");
+}
+
+export function todosFrom(messages: Message[]): TodoItem[] {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "toolResult" || message.toolName !== "todo_write" || message.isError) continue;
+		const details = message.details as { kind?: string; todos?: TodoItem[] } | undefined;
+		if (details?.kind === "todo" && Array.isArray(details.todos)) return details.todos;
+	}
+	return [];
 }

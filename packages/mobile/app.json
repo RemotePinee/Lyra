@@ -5,7 +5,7 @@
     "version": "0.1.2",
     "orientation": "portrait",
     "scheme": "lyra",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "backgroundColor": "#171717",
     "icon": "./assets/icon.png",
@@ -19,7 +19,7 @@
       "bundleIdentifier": "dev.lyra.app",
       "buildNumber": "3",
       "infoPlist": {
-        "UIUserInterfaceStyle": "Dark",
+        "UIUserInterfaceStyle": "Automatic",
         "NSCameraUsageDescription": "允许 Lyra 访问相机以拍摄照片或扫描配对二维码。",
         "NSPhotoLibraryUsageDescription": "允许 Lyra 访问相册以选择要发送给 Agent 的图片。",
         "NSAppTransportSecurity": {
