@@ -69,9 +69,12 @@ async function serve(options: { ranges?: boolean; hold?: boolean; cut?: boolean 
 			 * nothing is written, nothing is kept, and the test would be about a connection that never
 			 * delivered anything rather than one that died halfway.
 			 */
-			response.write(slice.subarray(0, Math.floor(slice.length / 2)), () => {
-				setTimeout(() => response.destroy(), 60);
-			});
+			const half = slice.subarray(0, Math.floor(slice.length / 2));
+			response.write(half);
+			const timer = setTimeout(() => {
+				for (const socket of sockets) socket.destroy();
+			}, 300);
+			response.on("close", () => clearTimeout(timer));
 			return;
 		}
 
@@ -246,7 +249,7 @@ test("a failed download resumes from what it kept rather than starting again", a
 	const file = join(dir, "Lyra.zip");
 	try {
 		await downloadInto(dir, cut.url).start();
-		const kept = (await stat(`${file}.part`)).size;
+		const kept = (await stat(`${file}.part`).catch(() => ({ size: 0 }))).size;
 		assert.ok(kept > 0);
 		await cut.close();
 
