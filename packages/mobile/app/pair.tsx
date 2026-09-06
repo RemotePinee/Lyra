@@ -1,5 +1,6 @@
 import { useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -277,7 +278,8 @@ export default function PairScreen() {
 									autoCapitalize="none"
 									autoCorrect={false}
 									keyboardType="numbers-and-punctuation"
-									className="h-10 rounded-xl bg-input px-3 text-[13.5px] text-ink"
+									className="h-11 rounded-xl bg-input px-3 text-[13.5px] text-ink"
+									style={{ includeFontPadding: false, textAlignVertical: "center" }}
 								/>
 							</Field>
 
@@ -288,7 +290,8 @@ export default function PairScreen() {
 									placeholder="4517"
 									placeholderTextColor="#6e6e6e"
 									keyboardType="number-pad"
-									className="h-10 rounded-xl bg-input px-3 text-[13.5px] text-ink"
+									className="h-11 rounded-xl bg-input px-3 text-[13.5px] text-ink"
+									style={{ includeFontPadding: false, textAlignVertical: "center" }}
 								/>
 							</Field>
 
@@ -300,7 +303,8 @@ export default function PairScreen() {
 									placeholderTextColor="#6e6e6e"
 									autoCapitalize="none"
 									autoCorrect={false}
-									className="h-10 rounded-xl bg-input px-3 text-[13.5px] text-ink"
+									className="h-11 rounded-xl bg-input px-3 text-[13.5px] text-ink"
+									style={{ includeFontPadding: false, textAlignVertical: "center" }}
 								/>
 							</Field>
 
@@ -347,7 +351,9 @@ export default function PairScreen() {
 
 				{/* 4. About */}
 				<View className="items-center py-2">
-					<Text className="text-[11.5px] text-ink-faint">Lyra Mobile Companion · v0.7.0</Text>
+					<Text className="text-[11.5px] text-ink-faint">
+						Lyra Mobile Companion · v{Constants.expoConfig?.version ?? "0.9.7"}
+					</Text>
 				</View>
 			</ScrollView>
 

@@ -4,7 +4,7 @@
  * into a single cohesive ToolGroup block.
  */
 
-import type { AssistantContent, AssistantMessage, Message } from "./protocol";
+import type { AssistantContent, AssistantMessage, Message, SessionMeta } from "./protocol";
 
 type ToolCallBlock = Extract<AssistantContent, { type: "toolCall" }>;
 
@@ -79,4 +79,41 @@ export function groupMessages(messages: Message[]): MobileRun[] {
 	work(calls);
 
 	return out;
+}
+
+export function groupByProject(
+	sessions: SessionMeta[],
+	projects: { id: string; name: string; path: string; pinned?: boolean }[] = [],
+) {
+	const normalize = (p: string) => p.replace(/[/\\]+/g, "/").replace(/\/$/, "").toLowerCase();
+	const projectByPath = new Map<string, { id: string; name: string; path: string }>();
+	for (const p of projects) {
+		projectByPath.set(normalize(p.path), p);
+		if (p.id) projectByPath.set(normalize(p.id), p);
+	}
+
+	const map = new Map<string, { projectId: string; projectName: string; sessions: SessionMeta[] }>();
+	for (const session of sessions) {
+		const matched = projectByPath.get(normalize(session.cwd)) ?? projectByPath.get(normalize(session.projectId));
+		const projectName = matched?.name ?? session.projectName;
+		const groupKey = matched?.path ? normalize(matched.path) : session.projectId;
+
+		const group = map.get(groupKey) ?? {
+			projectId: session.projectId,
+			projectName,
+			sessions: [],
+		};
+		group.projectName = projectName;
+		group.sessions.push(session);
+		map.set(groupKey, group);
+	}
+
+	const order = new Map(projects.map((p, i) => [normalize(p.path), i]));
+	return [...map.values()].sort((a, b) => {
+		const matchA = projectByPath.get(normalize(a.projectId)) ?? projects.find((p) => p.name === a.projectName);
+		const matchB = projectByPath.get(normalize(b.projectId)) ?? projects.find((p) => p.name === b.projectName);
+		const orderA = matchA ? (order.get(normalize(matchA.path)) ?? 999) : 999;
+		const orderB = matchB ? (order.get(normalize(matchB.path)) ?? 999) : 999;
+		return orderA - orderB;
+	});
 }

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import type Swipeable from "react-native-gesture-handler/Swipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { groupByProject } from "../src/grouping";
 import { haptic } from "../src/haptics";
 import { MobileConfirmDialog } from "../src/MobileDialog";
 import { MobileQrScannerModal } from "../src/MobileQrScannerModal";
@@ -246,7 +247,7 @@ export default function SessionListScreen() {
 	if (!connection) return <NotPaired />;
 
 	const filteredSessions = sessions.filter((s) => (showArchived ? !!s.archived : !s.archived));
-	const grouped = groupByProject(filteredSessions);
+	const grouped = groupByProject(filteredSessions, projects);
 	const recencyBands = bandByRecency(filteredSessions);
 	const hasArchivedSessions = sessions.some((s) => s.archived);
 
@@ -330,37 +331,55 @@ export default function SessionListScreen() {
 				</View>
 
 				{/* Quick New Session Project Chips */}
-				{projects.length > 0 && (
-					<View className="mb-5">
-						<Text className="mb-2.5 px-1 text-[12px] font-medium tracking-wide text-ink-faint">新建会话</Text>
-						<ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-							<View className="flex-row gap-2">
-								{projects.map((project) => (
-									<Pressable
-										key={project.path}
-										disabled={creating !== null}
-										onPress={async () => {
-											setCreating(project.path);
-											try {
-												const meta = await createSession(project.path);
-												if (meta) {
-													await openSession(meta);
-													router.push(`/session/${meta.id}`);
+				{(() => {
+					// Unify project list: combine settings.projects with any additional projects present in sessions
+					const projectMap = new Map<string, { id: string; name: string; path: string }>();
+					for (const p of projects) {
+						projectMap.set(p.path.toLowerCase().replace(/[/\\]+/g, "/"), p);
+					}
+					for (const s of sessions) {
+						if (!s.archived && s.cwd) {
+							const key = s.cwd.toLowerCase().replace(/[/\\]+/g, "/");
+							if (!projectMap.has(key)) {
+								projectMap.set(key, { id: s.projectId, name: s.projectName, path: s.cwd });
+							}
+						}
+					}
+					const activeChips = [...projectMap.values()];
+					if (activeChips.length === 0) return null;
+
+					return (
+						<View className="mb-5">
+							<Text className="mb-2.5 px-1 text-[12px] font-medium tracking-wide text-ink-faint">新建会话</Text>
+							<ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+								<View className="flex-row gap-2">
+									{activeChips.map((project) => (
+										<Pressable
+											key={project.path}
+											disabled={creating !== null}
+											onPress={async () => {
+												setCreating(project.path);
+												try {
+													const meta = await createSession(project.path);
+													if (meta) {
+														await openSession(meta);
+														router.push(`/session/${meta.id}`);
+													}
+												} finally {
+													setCreating(null);
 												}
-											} finally {
-												setCreating(null);
-											}
-										}}
-										className="flex-row items-center gap-2 rounded-xl bg-card px-3.5 py-2 active:bg-card-hover"
-									>
-										<Text className="text-[13px] font-medium text-ink">+ {project.name}</Text>
-										{creating === project.path && <ActivityIndicator size="small" color="#9a9a9a" />}
-									</Pressable>
-								))}
-							</View>
-						</ScrollView>
-					</View>
-				)}
+											}}
+											className="flex-row items-center gap-2 rounded-xl bg-card px-3.5 py-2 active:bg-card-hover"
+										>
+											<Text className="text-[13px] font-medium text-ink">+ {project.name}</Text>
+											{creating === project.path && <ActivityIndicator size="small" color="#9a9a9a" />}
+										</Pressable>
+									))}
+								</View>
+							</ScrollView>
+						</View>
+					);
+				})()}
 
 				{/* View Mode Segmented Controls: Projects vs Chats */}
 				<View className="mb-4 flex-row items-center justify-between px-1">
@@ -585,7 +604,16 @@ export default function SessionListScreen() {
 											<View className="mt-1.5 flex-row items-center gap-3">
 												<View className="rounded bg-shell px-1.5 py-0.5">
 													<Text className="text-[11px] font-medium text-ink-muted">
-														{session.projectName}
+														{(() => {
+															const matched = projects.find(
+																(p) =>
+																	p.path.replace(/[/\\]+/g, "/").toLowerCase() ===
+																		session.cwd.replace(/[/\\]+/g, "/").toLowerCase() ||
+																	p.id.replace(/[/\\]+/g, "/").toLowerCase() ===
+																		session.projectId.replace(/[/\\]+/g, "/").toLowerCase(),
+															);
+															return matched?.name ?? session.projectName;
+														})()}
 													</Text>
 												</View>
 												<Text className="text-[12px] text-ink-faint">{session.messageCount} 条消息</Text>
@@ -654,20 +682,6 @@ function NotPaired() {
 			</Text>
 		</View>
 	);
-}
-
-function groupByProject(sessions: SessionMeta[]) {
-	const map = new Map<string, { projectId: string; projectName: string; sessions: SessionMeta[] }>();
-	for (const session of sessions) {
-		const group = map.get(session.projectId) ?? {
-			projectId: session.projectId,
-			projectName: session.projectName,
-			sessions: [],
-		};
-		group.sessions.push(session);
-		map.set(session.projectId, group);
-	}
-	return [...map.values()];
 }
 
 function formatTime(timestamp: number): string {

@@ -70,12 +70,14 @@ const THEME_STORE_KEY = "lyra.theme_preference";
 
 interface ThemeState {
 	preference: ThemePreference;
+	initialized: boolean;
 	setPreference: (pref: ThemePreference) => void;
 	initPreference: () => Promise<void>;
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
 	preference: "system",
+	initialized: false,
 	setPreference: (preference: ThemePreference) => {
 		set({ preference });
 		void SecureStore.setItemAsync(THEME_STORE_KEY, preference).catch(() => {});
@@ -84,11 +86,13 @@ export const useThemeStore = create<ThemeState>((set) => ({
 		try {
 			const saved = await SecureStore.getItemAsync(THEME_STORE_KEY);
 			if (saved === "system" || saved === "dark" || saved === "light") {
-				set({ preference: saved });
+				set({ preference: saved, initialized: true });
+				return;
 			}
 		} catch {
 			// ignore storage failure
 		}
+		set({ initialized: true });
 	},
 }));
 

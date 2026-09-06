@@ -8,6 +8,7 @@ import {
 	Image,
 	Keyboard,
 	LayoutAnimation,
+	Modal,
 	Pressable,
 	ScrollView,
 	StyleSheet,
@@ -843,20 +844,25 @@ export default function SessionScreen() {
 			</Animated.View>
 
 			{/* Fullscreen Image Preview */}
-			{viewingImageUri && (
-				<View
-					style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}
-					className="items-center justify-center bg-black/90 p-4"
-				>
+			<Modal
+				visible={Boolean(viewingImageUri)}
+				transparent
+				animationType="fade"
+				statusBarTranslucent
+				onRequestClose={() => setViewingImageUri(null)}
+			>
+				<View className="flex-1 items-center justify-center bg-black/90 p-4">
 					<Pressable
 						style={StyleSheet.absoluteFill}
 						onPress={() => setViewingImageUri(null)}
 					/>
-					<Image
-						source={{ uri: viewingImageUri }}
-						className="h-full w-full"
-						resizeMode="contain"
-					/>
+					{Boolean(viewingImageUri) && (
+						<Image
+							source={{ uri: viewingImageUri! }}
+							className="h-full w-full"
+							resizeMode="contain"
+						/>
+					)}
 					<Pressable
 						onPress={() => setViewingImageUri(null)}
 						className="absolute top-12 right-6 h-10 w-10 items-center justify-center rounded-full bg-white/20"
@@ -864,7 +870,7 @@ export default function SessionScreen() {
 						<Text className="text-[16px] font-bold text-white">✕</Text>
 					</Pressable>
 				</View>
-			)}
+			</Modal>
 
 			{/* Adaptive High-Grade ActionSheet for Camera & Photo Picker */}
 			<MobileActionSheet

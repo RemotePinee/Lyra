@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { groupMessages } from "../src/grouping.ts";
+import { groupMessages, groupByProject } from "../src/grouping.ts";
 import type { Message } from "../src/protocol.ts";
 
 test("groups consecutive tool calls across multi-turn assistant messages", () => {
@@ -75,4 +75,47 @@ test("groups consecutive tool calls across multi-turn assistant messages", () =>
 		assert.equal(runs[1].calls[1].block.name, "edit");
 	}
 	assert.equal(runs[2].kind, "message");
+});
+
+test("groupByProject prioritizes latest project name from settings and preserves historical ones", () => {
+	const sessions: SessionMeta[] = [
+		{
+			id: "s1",
+			title: "Session 1",
+			cwd: "E:\\CPA",
+			projectId: "49de9a5fd17065d6",
+			projectName: "CPA",
+			createdAt: 100,
+			updatedAt: 100,
+			modelId: "test",
+			messageCount: 1,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: { total: 0 } },
+			seq: 1,
+		},
+		{
+			id: "s2",
+			title: "Session 2",
+			cwd: "E:\\Mixstart",
+			projectId: "76a0fc8418004973",
+			projectName: "Mixstart",
+			createdAt: 200,
+			updatedAt: 200,
+			modelId: "test",
+			messageCount: 2,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: { total: 0 } },
+			seq: 2,
+		},
+	];
+
+	const projects = [
+		{ id: "E:\\CPA", name: "CliRelay", path: "E:\\CPA" },
+	];
+
+	const groups = groupByProject(sessions, projects);
+	assert.equal(groups.length, 2);
+	const cpaGroup = groups.find((g: any) => g.sessions.some((s: any) => s.id === "s1"));
+	const mixGroup = groups.find((g: any) => g.sessions.some((s: any) => s.id === "s2"));
+
+	assert.equal(cpaGroup?.projectName, "CliRelay");
+	assert.equal(mixGroup?.projectName, "Mixstart");
 });
