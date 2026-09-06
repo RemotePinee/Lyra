@@ -5,6 +5,7 @@
  * without one.
  */
 
+import { ChevronRight } from "lucide-react";
 import { Text } from "../Text.tsx";
 
 export function GroupHeader({
@@ -12,31 +13,54 @@ export function GroupHeader({
   count,
   action,
   disabled,
+  collapsed,
+  onToggleCollapse,
   onAction,
 }: {
   label: string;
   count: number;
   action: string;
   disabled: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   onAction: () => void;
 }) {
   return (
     <div className="flex items-center gap-1.5 px-1 pt-2 pb-1">
-      <Text size="caption" tone="faint" weight="medium">
-        {label}
-      </Text>
+      {onToggleCollapse ? (
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="flex items-center gap-1 text-ink-faint transition-colors hover:text-ink -ml-0.5"
+        >
+          <ChevronRight
+            size={12}
+            strokeWidth={2}
+            className={`transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`}
+          />
+          <Text size="caption" tone="faint" weight="medium">
+            {label}
+          </Text>
+        </button>
+      ) : (
+        <Text size="caption" tone="faint" weight="medium">
+          {label}
+        </Text>
+      )}
       <Text size="caption" tone="faint" numeric>
         {count}
       </Text>
       <div className="min-w-1 flex-1" />
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onAction}
-        className="rounded px-1 text-caption text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
-      >
-        {action}
-      </button>
+      {action ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onAction}
+          className="rounded px-1 text-caption text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
+        >
+          {action}
+        </button>
+      ) : null}
     </div>
   );
 }

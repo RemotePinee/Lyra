@@ -50,6 +50,8 @@ export function ChangesView({
   onPull: () => void;
 }) {
   const [treeView, setTreeView] = useState(false);
+  const [stagedCollapsed, setStagedCollapsed] = useState(false);
+  const [unstagedCollapsed, setUnstagedCollapsed] = useState(false);
   const confirm = useConfirmer();
   /** The hunks, once they arrive. The rows themselves do not wait for them — see `rowsFor`. */
   const [hunks, setHunks] = useState<{ staged: WorkspaceDiffFile[]; unstaged: WorkspaceDiffFile[] }>({
@@ -72,7 +74,7 @@ export function ChangesView({
     let live = true;
     void Promise.all([
       window.lyra.git.diffRefs(cwd, "HEAD", null),
-      window.lyra.diff.workspaceDiff(cwd),
+      window.lyra.diff.workspaceDiff(cwd, "unstaged"),
     ]).then(([indexDiff, treeDiff]) => {
       if (!live) return;
       setHunks({ staged: indexDiff.files, unstaged: treeDiff.files });
@@ -157,6 +159,8 @@ export function ChangesView({
               count={stagedPaths.length}
               action="取消全部"
               disabled={busy}
+              collapsed={stagedCollapsed}
+              onToggleCollapse={() => setStagedCollapsed((v) => !v)}
               onAction={() =>
                 void act(() => window.lyra.git.unstage(cwd, stagedPaths))
               }
@@ -171,7 +175,7 @@ export function ChangesView({
             </button>
           </div>
         )}
-        {stagedPaths.length > 0 && (
+        {stagedPaths.length > 0 && !stagedCollapsed && (
           treeView ? (
             <FileDiffTree
               cwd={cwd}
@@ -214,6 +218,8 @@ export function ChangesView({
               count={unstagedPaths.length}
               action="全部暂存"
               disabled={busy}
+              collapsed={unstagedCollapsed}
+              onToggleCollapse={() => setUnstagedCollapsed((v) => !v)}
               onAction={() =>
                 void act(() => window.lyra.git.stage(cwd, unstagedPaths))
               }
@@ -230,7 +236,7 @@ export function ChangesView({
             )}
           </div>
         )}
-        {unstagedPaths.length > 0 && (
+        {unstagedPaths.length > 0 && !unstagedCollapsed && (
           treeView ? (
             <FileDiffTree
               cwd={cwd}

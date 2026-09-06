@@ -134,6 +134,7 @@ export interface RemoteModel {
 	name: string;
 	provider: string;
 	api: string;
+	supportsThinking?: boolean;
 }
 
 export interface RemoteSettings {

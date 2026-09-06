@@ -238,6 +238,11 @@ export class SyncServer {
 		} catch {
 			return;
 		}
+		// If phone just connected and sends a hello frame through the tunnel, reply with hello
+		if (message.type === "hello") {
+			if (ws.readyState === 1) ws.send(JSON.stringify({ type: "hello", version: 1 }));
+			return;
+		}
 		if (message.type !== "rpc" || typeof message.id !== "string") return;
 
 		const method = typeof message.method === "string" ? message.method : "";
@@ -267,6 +272,8 @@ export class SyncServer {
 	 * ends to agree on how to apply one.
 	 */
 	broadcastSettings(settings: Settings): void {
+		// Re-evaluate relay link if relayUrl changed
+		this.linkRelay();
 		this.send(JSON.stringify({ type: "settings_changed", settings }));
 	}
 
@@ -397,7 +404,15 @@ export class SyncServer {
 					projects: settings.projects,
 					models: settings.providers
 						.filter((p) => p.enabled)
-						.flatMap((p) => p.models.map((m) => ({ id: m.id, name: m.name, provider: p.name, api: p.api }))),
+						.flatMap((p) =>
+							p.models.map((m) => ({
+								id: m.id,
+								name: m.name,
+								provider: p.name,
+								api: p.api,
+								supportsThinking: m.supportsThinking !== false,
+							})),
+						),
 				});
 				return;
 			}
@@ -426,12 +441,38 @@ export class SyncServer {
 						allRecords.push(record);
 					}
 
-					// If tail is requested, return the latest N records from the filtered set
-					const records = tail && tail > 0 ? allRecords.slice(-tail) : allRecords;
+					// If tail is requested, ensure we retain dialogue turns instead of pure tool result flood
+					if (tail && tail > 0) {
+						let turns = 0;
+						let cutIndex = Math.max(0, allRecords.length - tail);
+						for (let i = allRecords.length - 1; i >= 0; i--) {
+							const rec = allRecords[i] as { type?: string; message?: { role?: string } };
+							if (rec.type === "message" && (rec.message?.role === "user" || rec.message?.role === "assistant")) {
+								turns++;
+							}
+							if (allRecords.length - i >= tail && turns >= 12) {
+								cutIndex = i;
+								break;
+							}
+							if (allRecords.length - i >= 500) {
+								cutIndex = i;
+								break;
+							}
+							if (i === 0) cutIndex = 0;
+						}
+						const records = allRecords.slice(cutIndex);
+						send(200, {
+							records,
+							total: allRecords.length,
+							hasEarlier: cutIndex > 0 || typeof beforeSeq === "number",
+						});
+						return;
+					}
+
 					send(200, {
-						records,
+						records: allRecords,
 						total: allRecords.length,
-						hasEarlier: tail ? allRecords.length > records.length : typeof beforeSeq === "number",
+						hasEarlier: typeof beforeSeq === "number",
 					});
 					return;
 				}

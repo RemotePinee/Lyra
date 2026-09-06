@@ -214,14 +214,13 @@ export function overlayPaintedWin32(): void {
 	if (!awaitingPaintWin32 || !residentOverlay || residentOverlay.isDestroyed()) return;
 	awaitingPaintWin32 = false;
 	try {
-		residentOverlay.setOpacity(1);
 		const hwnd = hwndFromNativeHandle(residentOverlay.getNativeWindowHandle());
 		if (hwnd) {
 			const SWP_NOMOVE_NOSIZE = 0x0001 | 0x0002;
 			win32SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE_NOSIZE | SWP_SHOWWINDOW);
 			win32SetForegroundWindow(hwnd);
 		}
-		residentOverlay.show();
+		residentOverlay.setOpacity(1);
 		residentOverlay.focus();
 	} catch {
 		// Ignore any window teardown error
@@ -333,6 +332,9 @@ export async function startWin32Screenshot(settings?: ScreenshotSettings): Promi
 		windows: snappableWindows,
 	};
 
+	screenshotRendererGate.markReady(webContentsId);
+	win.webContents.send("screenshot:init", initPayload);
+
 	// 2. Keep window at zero opacity while positioned on target display until first frame is painted
 	win.setIgnoreMouseEvents(false);
 	win.setOpacity(0);
@@ -349,11 +351,6 @@ export async function startWin32Screenshot(settings?: ScreenshotSettings): Promi
 	paintFallbackTimer = setTimeout(() => {
 		overlayPaintedWin32();
 	}, 80);
-
-	screenshotRendererGate.whenReady(webContentsId, () => {
-		if (win.isDestroyed() || win.webContents.isDestroyed() || !isCapturingActive) return;
-		win.webContents.send("screenshot:init", initPayload);
-	});
 }
 
 export function hasActiveWin32Screenshot(): boolean {

@@ -800,7 +800,7 @@ export interface LyraApi {
 	};
 	diff: {
 		/** Uncommitted changes for the review panel. */
-		workspaceDiff(cwd: string): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }>;
+		workspaceDiff(cwd: string, target?: "workspace" | "unstaged"): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }>;
 		/**
 		 * One side of a binary file, as a data URL, for the review to draw rather than describe.
 		 *

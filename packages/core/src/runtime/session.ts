@@ -419,6 +419,7 @@ export class AgentSession {
 		 */
 		this.subAgents.abortAll();
 		this.approvals.rejectAll();
+		this.steering.length = 0;
 		// Stop means stop. Letting the queue carry on after the button was pressed would be
 		// the opposite of what pressing it asks for.
 		void this.tasks.cancelAll();

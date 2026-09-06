@@ -17,7 +17,7 @@ import { SyncServer } from "../electron/sync-server.ts";
 import { DEFAULT_SETTINGS, type Settings } from "@lyra/core";
 
 /** A port high enough to be unused, and its own per-run offset so two runs do not collide. */
-const PORT = 45700 + (process.pid % 200);
+const PORT = 35700 + (process.pid % 200);
 
 function server() {
 	let settings: Settings = { ...DEFAULT_SETTINGS, sync: { enabled: false, port: PORT, token: null } };

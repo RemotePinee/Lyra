@@ -24,6 +24,7 @@ import { resolveInside } from "./file-ops.ts";
  */
 export async function collectWorkspaceDiff(
 	cwd: string,
+	target: "workspace" | "unstaged" = "workspace",
 ): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }> {
 	if (!(await isGitRepo(cwd))) return { files: [], added: 0, removed: 0, branch: null };
 
@@ -42,22 +43,29 @@ export async function collectWorkspaceDiff(
 
 	const changed = entries
 		.slice(0, MAX_FILES)
-		.map((entry) => ({ path: entry.slice(3), kind: classify(entry.slice(0, 2)) }))
+		.map((entry) => ({
+			path: entry.slice(3),
+			code: entry.slice(0, 2),
+			kind: classify(entry.slice(0, 2)),
+		}))
 		.filter((entry) => entry.path);
 
 	/*
 	 * Both sides of every file, in two batches rather than two reads per file.
 	 *
-	 * The committed side used to be a `git show` per file, which on a repository with a couple of
-	 * hundred uncommitted files is a couple of hundred process spawns — 1.8 seconds, of which the
-	 * reading was a rounding error. One `cat-file --batch` answers for all of them; see
-	 * `readBlobs`. The working-tree side is `readFile`, which has no such cost but is still latency
-	 * worth overlapping.
+	 * When target === "unstaged", the baseline is the git index (`:0:path`) rather than HEAD,
+	 * so unstaged hunks reflect only the diff between working tree and index.
 	 */
-	const heads = await readBlobs(
-		cwd,
-		changed.map((entry) => (entry.kind === "added" || entry.kind === "untracked" ? "" : `HEAD:${entry.path}`)),
-	);
+	const baselines = changed.map((entry) => {
+		if (entry.kind === "added" || entry.kind === "untracked") return "";
+		if (target === "unstaged") {
+			// If deleted in index itself (staged deletion: D ), baseline is HEAD.
+			if (entry.code.startsWith("D")) return `HEAD:${entry.path}`;
+			return `:${entry.path}`;
+		}
+		return `HEAD:${entry.path}`;
+	});
+	const heads = await readBlobs(cwd, baselines);
 	const working = await mapLimit(changed, (entry) =>
 		entry.kind === "deleted" ? Promise.resolve(blank) : readWorking(cwd, entry.path),
 	);

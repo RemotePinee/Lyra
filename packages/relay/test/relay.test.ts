@@ -15,13 +15,24 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 
-const PORT = 47800 + (process.pid % 150);
-const URL = `ws://127.0.0.1:${PORT}`;
 const SERVER = join(fileURLToPath(import.meta.url), "..", "..", "server.mjs");
 
 let server: ChildProcess;
+let PORT = 0;
+let URL = "";
 
 before(async () => {
+	// Find a free port dynamically to avoid EADDRINUSE on Windows
+	const net = await import("node:net");
+	PORT = await new Promise<number>((res) => {
+		const s = net.createServer();
+		s.listen(0, "127.0.0.1", () => {
+			const p = (s.address() as net.AddressInfo).port;
+			s.close(() => res(p));
+		});
+	});
+	URL = `ws://127.0.0.1:${PORT}`;
+
 	server = spawn(process.execPath, [SERVER], { env: { ...process.env, PORT: String(PORT) }, stdio: "pipe" });
 	// Wait for the line it prints once it is listening, rather than guessing at a delay.
 	await new Promise<void>((resolve, reject) => {

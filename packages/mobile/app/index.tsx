@@ -1,14 +1,12 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
 import { Link, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	ActivityIndicator,
 	Image,
-	Modal,
 	Pressable,
 	RefreshControl,
 	ScrollView,
-	StyleSheet,
 	Text,
 	View,
 } from "react-native";
@@ -16,6 +14,7 @@ import type Swipeable from "react-native-gesture-handler/Swipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { haptic } from "../src/haptics";
 import { MobileConfirmDialog } from "../src/MobileDialog";
+import { MobileQrScannerModal } from "../src/MobileQrScannerModal";
 import type { SessionMeta } from "../src/protocol";
 import { useMobile } from "../src/store";
 import { SwipeableSessionRow } from "../src/SwipeableSessionRow";
@@ -77,42 +76,16 @@ function bandByRecency(sessions: SessionMeta[]): RecencyBand[] {
 	return result;
 }
 
-function HeaderTitle({ onScanPress }: { onScanPress: () => void }) {
+function HeaderTitle() {
 	const { colors } = useThemeColors();
 	return (
-		<View className="flex-1 flex-row items-center justify-between">
-			<View className="flex-row items-center gap-3">
-				<Image
-					source={appIcon}
-					style={{ width: 32, height: 32 }}
-					resizeMode="contain"
-				/>
-				<Text style={{ fontSize: 22, fontWeight: "700", color: colors.ink, letterSpacing: 0.3 }}>Lyra</Text>
-			</View>
-
-			{/* QR Code Scan Button on the far right */}
-			<Pressable
-				onPress={() => {
-					haptic.impact();
-					onScanPress();
-				}}
-				hitSlop={8}
-				className="h-10 w-10 items-center justify-center rounded-full bg-card active:bg-card-hover"
-			>
-				<View className="h-6 w-6 items-center justify-center">
-					<View className="h-[20px] w-[20px] justify-between p-[1px]">
-						<View className="flex-row justify-between">
-							<View className="h-[6px] w-[6px] border-t-2 border-l-2 border-ink" />
-							<View className="h-[6px] w-[6px] border-t-2 border-r-2 border-ink" />
-						</View>
-						<View className="h-[5px] w-[5px] self-center rounded-[1px] bg-accent" />
-						<View className="flex-row justify-between">
-							<View className="h-[6px] w-[6px] border-b-2 border-l-2 border-ink" />
-							<View className="h-[6px] w-[6px] border-b-2 border-r-2 border-ink" />
-						</View>
-					</View>
-				</View>
-			</Pressable>
+		<View className="flex-row items-center gap-3">
+			<Image
+				source={appIcon}
+				style={{ width: 32, height: 32 }}
+				resizeMode="contain"
+			/>
+			<Text style={{ fontSize: 22, fontWeight: "700", color: colors.ink, letterSpacing: 0.3 }}>Lyra</Text>
 		</View>
 	);
 }
@@ -126,7 +99,6 @@ export default function SessionListScreen() {
 	const sessions = useMobile((s) => s.sessions);
 	const loading = useMobile((s) => s.loadingSessions);
 	const socketState = useMobile((s) => s.socketState);
-	const error = useMobile((s) => s.error);
 	const refresh = useMobile((s) => s.refreshSessions);
 	const openSession = useMobile((s) => s.openSession);
 	const sessionActivities = useMobile((s) => s.sessionActivities);
@@ -154,7 +126,6 @@ export default function SessionListScreen() {
 	// Scanner State
 	const [scannerOpen, setScannerOpen] = useState(false);
 	const [permission, requestPermission] = useCameraPermissions();
-	const [scanned, setScanned] = useState(false);
 
 	// Adaptive ActionSheet & Dialog States
 	const [targetSession, setTargetSession] = useState<SessionMeta | null>(null);
@@ -184,14 +155,11 @@ export default function SessionListScreen() {
 				return;
 			}
 		}
-		setScanned(false);
 		setScannerOpen(true);
 	}, [permission, requestPermission]);
 
 	const handleBarcodeScanned = useCallback(
-		async ({ data }: { data: string }) => {
-			if (scanned) return;
-			setScanned(true);
+		async (data: string) => {
 			const text = data.trim();
 			const match = /lyra:\/\/pair\?(.*)/.exec(text);
 			if (!match) {
@@ -200,23 +168,54 @@ export default function SessionListScreen() {
 				return;
 			}
 			const params = new URLSearchParams(match[1]);
+			const token = params.get("token");
+			const relay = params.get("relay");
+
+			if (!token) {
+				showModalAlert("扫码失败", "二维码缺少配对令牌");
+				setScannerOpen(false);
+				return;
+			}
+
+			if (relay) {
+				try {
+					const u = new URL(/^[a-z]+:\/\//i.test(relay) ? relay : `wss://${relay}`);
+					const host = u.hostname;
+					const port = Number.parseInt(u.port ? u.port : u.protocol === "ws:" ? "80" : "443", 10);
+					const secure = u.protocol !== "ws:";
+					setScannerOpen(false);
+					const res = await pair({ host, port, token, secure, relay: true });
+					if (res.ok) {
+						showModalAlert("连接成功", `已通过中转连接至桌面端`);
+					} else {
+						showModalAlert("连接失败", res.reason || "中转连接未就绪或令牌不匹配");
+					}
+				} catch (err) {
+					showModalAlert("连接失败", err instanceof Error ? err.message : "中转地址解析失败");
+				}
+				return;
+			}
+
 			const host = params.get("host");
 			const port = Number.parseInt(params.get("port") ?? "4517", 10);
-			const token = params.get("token");
-			if (!host || !token) {
-				showModalAlert("扫码失败", "二维码缺少主机地址或配对令牌");
+			if (!host) {
+				showModalAlert("扫码失败", "二维码缺少主机地址");
 				setScannerOpen(false);
 				return;
 			}
 			setScannerOpen(false);
 			try {
-				await pair({ host, port, token });
-				showModalAlert("连接成功", `已连接至桌面端 ${host}:${port}`);
+				const res = await pair({ host, port, token });
+				if (res.ok) {
+					showModalAlert("连接成功", `已连接至桌面端 ${host}:${port}`);
+				} else {
+					showModalAlert("连接失败", res.reason || "未知错误");
+				}
 			} catch (err) {
 				showModalAlert("连接失败", err instanceof Error ? err.message : "未知错误");
 			}
 		},
-		[scanned, pair],
+		[pair],
 	);
 
 	useEffect(() => {
@@ -254,8 +253,8 @@ export default function SessionListScreen() {
 	return (
 		<View style={{ flex: 1, backgroundColor: colors.shell, paddingTop: insets.top }}>
 			{/* Header */}
-			<View className="flex-row items-center justify-between px-4 py-2.5">
-				<HeaderTitle onScanPress={handleHomeScanPress} />
+			<View className="flex-row items-center px-4 py-2.5">
+				<HeaderTitle />
 			</View>
 
 			<ScrollView
@@ -273,12 +272,35 @@ export default function SessionListScreen() {
 						}`}
 					/>
 					<Text className="text-[12.5px] font-medium text-ink-muted">
-						{socketState === "open" ? "已连接" : socketState === "connecting" ? "连接中…" : "已断开"}
+						{socketState === "open"
+							? connection.relay
+								? "中转连接"
+								: "已连接"
+							: socketState === "connecting"
+							? "连接中…"
+							: "已断开"}
 					</Text>
 					<Text className="text-[12px] font-mono text-ink-faint">
-						{connection.host}:{connection.port}
+						{connection.relay ? `relay:${connection.host}` : `${connection.host}:${connection.port}`}
 					</Text>
 					<View className="flex-1" />
+					<Pressable
+						hitSlop={6}
+						onPress={handleHomeScanPress}
+						className="mr-2 h-8 w-8 items-center justify-center rounded-full bg-card active:bg-card-hover"
+					>
+						<View className="h-[15px] w-[15px] justify-between p-[0.5px]">
+							<View className="flex-row justify-between">
+								<View className="h-[4.5px] w-[4.5px] border-t-[1.5px] border-l-[1.5px] border-ink-muted" />
+								<View className="h-[4.5px] w-[4.5px] border-t-[1.5px] border-r-[1.5px] border-ink-muted" />
+							</View>
+							<View className="h-[3.5px] w-[3.5px] self-center rounded-[0.5px] bg-accent" />
+							<View className="flex-row justify-between">
+								<View className="h-[4.5px] w-[4.5px] border-b-[1.5px] border-l-[1.5px] border-ink-muted" />
+								<View className="h-[4.5px] w-[4.5px] border-b-[1.5px] border-r-[1.5px] border-ink-muted" />
+							</View>
+						</View>
+					</Pressable>
 					<Link href="/usage" asChild>
 						<Pressable
 							hitSlop={6}
@@ -397,11 +419,7 @@ export default function SessionListScreen() {
 					)}
 				</View>
 
-				{error && (
-					<View className="mb-4 rounded-xl bg-danger/10 px-4 py-3">
-						<Text className="text-[13px] text-danger">{error}</Text>
-					</View>
-				)}
+				{/* Error is shown via modal alert or pairing screen when critical, never inlined directly on home page */}
 
 				{loading && sessions.length === 0 && <ActivityIndicator color="#9a9a9a" className="mt-8" />}
 
@@ -581,31 +599,13 @@ export default function SessionListScreen() {
 					))}
 			</ScrollView>
 
-			{/* Fullscreen Scanner Modal */}
-			<Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
-				<View className="flex-1 bg-black">
-					<CameraView
-						style={StyleSheet.absoluteFill}
-						facing="back"
-						barcodeScannerSettings={{
-							barcodeTypes: ["qr"],
-						}}
-						onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-					/>
-					<View className="flex-1 items-center justify-between p-8 pt-16">
-						<View className="rounded-full bg-black/60 px-5 py-2">
-							<Text className="text-[14px] font-medium text-white">对准桌面端设置中的配对二维码</Text>
-						</View>
-						<View className="h-64 w-64 rounded-3xl border-2 border-accent bg-transparent" />
-						<Pressable
-							onPress={() => setScannerOpen(false)}
-							className="rounded-full bg-white/20 px-8 py-3 backdrop-blur-md active:bg-white/30"
-						>
-							<Text className="text-[15px] font-medium text-white">取消扫码</Text>
-						</Pressable>
-					</View>
-				</View>
-			</Modal>
+			{/* Google Code Scanner Style Fullscreen Scanner Modal */}
+			<MobileQrScannerModal
+				visible={scannerOpen}
+				title="对准桌面端配对二维码"
+				onClose={() => setScannerOpen(false)}
+				onScanned={handleBarcodeScanned}
+			/>
 
 			{/* Adaptive High-Grade Confirm Delete Dialog */}
 			{targetSession && (
@@ -636,16 +636,9 @@ export default function SessionListScreen() {
 	);
 }
 
-const appLogo = require("../assets/logo.png");
-
 function NotPaired() {
 	return (
 		<View className="flex-1 items-center justify-center bg-shell px-8">
-			<Image
-				source={appLogo}
-				style={{ width: 80, height: 80, marginBottom: 20 }}
-				resizeMode="contain"
-			/>
 			<Text className="text-center text-[22px] font-semibold text-ink">连接你的桌面端</Text>
 			<Text className="mt-3 text-center text-[13.5px] leading-6 text-ink-muted">
 				Lyra 的文件、终端和 MCP 都跑在电脑上。{"\n"}

@@ -397,7 +397,7 @@ const api: LyraApi = {
 		clear: () => ipcRenderer.invoke("memory:clear"),
 	},
 	diff: {
-		workspaceDiff: (cwd) => ipcRenderer.invoke("diff:workspace", cwd),
+		workspaceDiff: (cwd, target) => ipcRenderer.invoke("diff:workspace", cwd, target),
 		blob: (cwd, path, side) => ipcRenderer.invoke("diff:blob", cwd, path, side),
 	},
 };

@@ -187,7 +187,12 @@ export async function runRemote(
 		await execFileAsync("git", args, {
 			cwd,
 			maxBuffer: 32 * 1024 * 1024,
-			env: { ...GIT_ENV, GIT_TERMINAL_PROMPT: "0" },
+			env: {
+				...GIT_ENV,
+				GIT_TERMINAL_PROMPT: "0",
+				GCM_INTERACTIVE: "never",
+				GIT_CONFIG_PARAMETERS: "'credential.helper='",
+			},
 			timeout: timeoutMs,
 			signal,
 		});

@@ -29,6 +29,7 @@ function spoken(content: AssistantContent[]): number {
 
 export function groupMessages(messages: Message[]): MobileRun[] {
 	const out: MobileRun[] = [];
+	let calls: MobileCall[] = [];
 
 	const work = (calls: MobileCall[]) => {
 		if (calls.length === 0) return;
@@ -49,12 +50,14 @@ export function groupMessages(messages: Message[]): MobileRun[] {
 		if (message.role === "user" && (message.synthetic || isNudge(message))) continue;
 
 		if (message.role !== "assistant") {
+			// Flush any pending tool calls before rendering a new user/system message
+			work(calls);
+			calls = [];
 			out.push({ kind: "message", message, index, upTo: message.content.length });
 			continue;
 		}
 
 		const said = spoken(message.content);
-		const calls: MobileCall[] = [];
 		for (const block of message.content.slice(said)) {
 			if (block.type === "toolCall") {
 				calls.push({ block, stopReason: message.stopReason });
@@ -62,13 +65,18 @@ export function groupMessages(messages: Message[]): MobileRun[] {
 		}
 
 		if (said > 0) {
+			// Flush calls that preceded this speech, if any
+			work(calls);
+			calls = [];
 			out.push({ kind: "message", message, index, upTo: said });
-		} else if (calls.length === 0 && message.stopReason !== "pending") {
+		} else if (message.content.length === 0 && message.stopReason !== "pending") {
+			work(calls);
+			calls = [];
 			out.push({ kind: "message", message, index, upTo: message.content.length });
 		}
-
-		work(calls);
 	}
+
+	work(calls);
 
 	return out;
 }

@@ -1,18 +1,27 @@
 /**
  * Client for the desktop sync server.
  *
- * Two channels: HTTP for commands and history, a WebSocket for live agent events. The
- * WebSocket is best-effort — on reconnect the client re-reads the session log from the last
- * sequence number it saw, so a dropped connection never loses a turn.
+ * Supports two operating modes transparently:
+ * 1. Direct (LAN / Reverse Proxy): HTTP for REST calls, WebSocket for real-time events.
+ * 2. Relay Tunnel (Remote NAT traversal): Single multiplexed WebSocket connection
+ *    handling both RPC requests and broadcast agent events with zero HTTP dependency.
  */
 
 import type { AgentEvent, RemoteSettings, SessionMeta, SessionRecord, UserContent } from "./protocol";
+import { sha256 } from "./sha256";
 
 export interface Connection {
 	host: string;
 	port: number;
 	token: string;
 	secure?: boolean;
+	relay?: boolean;
+}
+
+interface PendingRpc {
+	resolve: (val: unknown) => void;
+	reject: (err: Error) => void;
+	timer: ReturnType<typeof setTimeout>;
 }
 
 export class SyncClient {
@@ -23,8 +32,16 @@ export class SyncClient {
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private closedByUser = false;
 
+	// In-flight WebSocket RPC promises indexed by request id
+	private pendingRpcs = new Map<string, PendingRpc>();
+	private rpcSeq = 0;
+
 	constructor(connection: Connection) {
 		this.connection = connection;
+	}
+
+	get isRelay(): boolean {
+		return Boolean(this.connection.relay);
 	}
 
 	private get isHttps(): boolean {
@@ -39,10 +56,14 @@ export class SyncClient {
 	}
 
 	// -------------------------------------------------------------------------
-	// HTTP
+	// Unified Request / RPC Dispatcher
 	// -------------------------------------------------------------------------
 
 	private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+		if (this.isRelay) {
+			throw new Error("Cannot make direct HTTP request in relay mode. Use WebSocket RPC instead.");
+		}
+
 		const response = await fetch(`${this.baseUrl}${path}`, {
 			...init,
 			headers: {
@@ -58,11 +79,70 @@ export class SyncClient {
 		return (await response.json()) as T;
 	}
 
+	/**
+	 * Send an RPC call over the active WebSocket connection.
+	 * Used for all data operations in relay mode, and for extended methods (git, files) in direct mode.
+	 */
+	async sendRpc<T = unknown>(method: string, args: unknown[] = []): Promise<T> {
+		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+			if (this.isRelay) {
+				// In relay mode, trigger reconnect and wait briefly for tunnel to be open
+				this.connect();
+				await new Promise<void>((resolve, reject) => {
+					if (this.currentState === "open") return resolve();
+					const timer = setTimeout(() => {
+						cleanup();
+						reject(new Error("中转通道未就绪 (等待超时)"));
+					}, 5000);
+					const cleanup = this.onStateChange((state) => {
+						if (state === "open") {
+							clearTimeout(timer);
+							cleanup();
+							resolve();
+						} else if (state === "closed") {
+							clearTimeout(timer);
+							cleanup();
+							reject(new Error("中转连接已断开"));
+						}
+					});
+				});
+			} else {
+				throw new Error("WebSocket is not connected");
+			}
+		}
+
+		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+			throw new Error("WebSocket is not connected");
+		}
+
+		return new Promise<T>((resolve, reject) => {
+			const id = `rpc-${++this.rpcSeq}-${Date.now().toString(36)}`;
+			const timer = setTimeout(() => {
+				this.pendingRpcs.delete(id);
+				reject(new Error(`RPC timeout (${method})`));
+			}, 20000);
+
+			this.pendingRpcs.set(id, {
+				resolve: (val) => resolve(val as T),
+				reject,
+				timer,
+			});
+
+			this.socket?.send(
+				JSON.stringify({
+					type: "rpc",
+					id,
+					method,
+					args,
+				}),
+			);
+		});
+	}
+
 	static async ping(host: string, port: number): Promise<{ ok: boolean; reason?: string; secure?: boolean }> {
 		const cleanHost = host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
 		const isExplicitHttps = /^https:\/\//i.test(host);
 
-		// Helper to probe a specific protocol
 		const probe = async (proto: "https" | "http") => {
 			try {
 				const response = await fetch(`${proto}://${cleanHost}:${port}/api/ping`, {
@@ -76,12 +156,10 @@ export class SyncClient {
 			}
 		};
 
-		// If user explicitly provided https or domain name, probe https first
 		if (isExplicitHttps) {
 			return probe("https");
 		}
 
-		// Try http first, if failed then auto probe https
 		const httpRes = await probe("http");
 		if (httpRes.ok) return httpRes;
 
@@ -91,28 +169,67 @@ export class SyncClient {
 		return httpRes.reason ? httpRes : httpsRes;
 	}
 
-	async verify(): Promise<boolean> {
+	async verify(): Promise<{ ok: boolean; reason?: string }> {
 		try {
-			await this.listSessions();
-			return true;
-		} catch {
-			return false;
+			if (this.isRelay) {
+				// In relay mode, ensure WebSocket is connected and ready before sending RPC
+				this.connect();
+				if (this.currentState !== "open") {
+					await new Promise<void>((resolve, reject) => {
+						const timer = setTimeout(() => {
+							cleanup();
+							reject(new Error("中转握手超时(桌面端未连入同房间或中继服务不可达)"));
+						}, 10000);
+						const cleanup = this.onStateChange((state) => {
+							if (state === "open") {
+								clearTimeout(timer);
+								cleanup();
+								resolve();
+							} else if (state === "closed") {
+								clearTimeout(timer);
+								cleanup();
+								reject(new Error(`中转连接被关闭: ${this.lastCloseError || "网络中断或被拒绝"}`));
+							}
+						});
+					});
+				}
+			}
+			const res = await this.listSessions();
+			const ok = Boolean(res && Array.isArray(res.sessions));
+			return { ok, reason: ok ? undefined : "获取会话列表失败" };
+		} catch (err) {
+			return { ok: false, reason: err instanceof Error ? err.message : String(err) };
 		}
 	}
 
-	listSessions(): Promise<{ sessions: SessionMeta[] }> {
+	// -------------------------------------------------------------------------
+	// Core Session API (Transparently routed to HTTP or WebSocket RPC)
+	// -------------------------------------------------------------------------
+
+	async listSessions(): Promise<{ sessions: SessionMeta[] }> {
+		if (this.isRelay) {
+			const res = await this.sendRpc<{ sessions?: SessionMeta[] } | SessionMeta[]>("sessions.list");
+			if (Array.isArray(res)) return { sessions: res };
+			return { sessions: res?.sessions ?? [] };
+		}
 		return this.request("/api/sessions");
 	}
 
-	settings(): Promise<RemoteSettings> {
+	async settings(): Promise<RemoteSettings> {
+		if (this.isRelay) {
+			return this.sendRpc<RemoteSettings>("settings.get");
+		}
 		return this.request("/api/settings");
 	}
 
-	records(
+	async records(
 		projectId: string,
 		sessionId: string,
 		options?: { since?: number; before?: number; limit?: number; tail?: number },
 	): Promise<{ records: SessionRecord[]; total?: number; hasEarlier?: boolean }> {
+		if (this.isRelay) {
+			return this.sendRpc("sessions.records", [projectId, sessionId, options]);
+		}
 		const params = new URLSearchParams();
 		if (typeof options?.since === "number") params.set("since", String(options.since));
 		if (typeof options?.before === "number") params.set("before", String(options.before));
@@ -122,38 +239,65 @@ export class SyncClient {
 		return this.request(`/api/sessions/${projectId}/${sessionId}${qs ? `?${qs}` : ""}`);
 	}
 
-	status(projectId: string, sessionId: string): Promise<{
+	async status(projectId: string, sessionId: string): Promise<{
 		meta: SessionMeta;
 		running: boolean;
 		pendingApprovals: { id: string; request: { kind: string; title: string; detail: string } }[];
 	}> {
+		if (this.isRelay) {
+			return this.sendRpc("sessions.status", [projectId, sessionId]);
+		}
 		return this.request(`/api/sessions/${projectId}/${sessionId}/status`);
 	}
 
-	prompt(projectId: string, sessionId: string, content: UserContent[]): Promise<{ accepted: boolean }> {
+	async prompt(projectId: string, sessionId: string, content: UserContent[]): Promise<{ accepted: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("agent.prompt", [sessionId, content]);
+			return { accepted: true };
+		}
 		return this.request(`/api/sessions/${projectId}/${sessionId}/prompt`, {
 			method: "POST",
 			body: JSON.stringify({ content }),
 		});
 	}
 
-	abort(projectId: string, sessionId: string): Promise<{ aborted: boolean }> {
+	async editMessage(sessionId: string, index: number, content: UserContent[]): Promise<{ ok: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("agent.editMessage", [sessionId, index, content]);
+			return { ok: true };
+		}
+		return this.rpc("agent.editMessage", [sessionId, index, content]);
+	}
+
+	async abort(projectId: string, sessionId: string): Promise<{ aborted: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("agent.abort", [sessionId]);
+			return { aborted: true };
+		}
 		return this.request(`/api/sessions/${projectId}/${sessionId}/abort`, { method: "POST" });
 	}
 
-	approve(
+	async approve(
 		projectId: string,
 		sessionId: string,
 		requestId: string,
 		decision: "once" | "always" | "reject",
 	): Promise<{ resolved: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("agent.approve", [sessionId, requestId, decision]);
+			return { resolved: true };
+		}
 		return this.request(`/api/sessions/${projectId}/${sessionId}/approve`, {
 			method: "POST",
 			body: JSON.stringify({ requestId, decision }),
 		});
 	}
 
-	setModel(projectId: string, sessionId: string, modelId: string): Promise<{ ok: boolean }> {
+	async setModel(projectId: string, sessionId: string, modelId: string): Promise<{ ok: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("agent.setModel", [sessionId, modelId]);
+			return { ok: true };
+		}
 		return this.request(`/api/sessions/${projectId}/${sessionId}/model`, {
 			method: "POST",
 			body: JSON.stringify({ modelId }),
@@ -168,36 +312,73 @@ export class SyncClient {
 		return this.rpc("settings.save", [settings]);
 	}
 
-	rename(projectId: string, sessionId: string, title: string): Promise<{ ok: boolean; meta: SessionMeta }> {
+	async rename(projectId: string, sessionId: string, title: string): Promise<{ ok: boolean; meta: SessionMeta }> {
+		if (this.isRelay) {
+			const meta = await this.sendRpc<SessionMeta>("sessions.rename", [projectId, sessionId, title]);
+			return { ok: true, meta };
+		}
 		return this.request(`/api/sessions/${projectId}/${sessionId}/rename`, {
 			method: "POST",
 			body: JSON.stringify({ title }),
 		});
 	}
 
-	createSession(cwd: string, modelId?: string): Promise<{ meta: SessionMeta }> {
+	async createSession(cwd: string, modelId?: string): Promise<{ meta: SessionMeta }> {
+		if (this.isRelay) {
+			const snapshot = await this.sendRpc<{ meta: SessionMeta }>("sessions.create", [cwd, modelId]);
+			return { meta: snapshot.meta };
+		}
 		return this.request("/api/sessions", { method: "POST", body: JSON.stringify({ cwd, modelId }) });
 	}
 
-	rpc<T = unknown>(method: string, args: unknown[] = []): Promise<{ ok: boolean; value?: T; error?: string }> {
+	async rpc<T = unknown>(method: string, args: unknown[] = []): Promise<{ ok: boolean; value?: T; error?: string }> {
+		if (this.isRelay) {
+			try {
+				const val = await this.sendRpc<T>(method, args);
+				return { ok: true, value: val };
+			} catch (err) {
+				return { ok: false, error: err instanceof Error ? err.message : String(err) };
+			}
+		}
 		return this.request("/api/rpc", {
 			method: "POST",
 			body: JSON.stringify({ method, args }),
 		});
 	}
 
-	setArchived(projectId: string, sessionId: string, archived: boolean): Promise<{ ok: boolean }> {
-		return this.rpc("sessions.setArchived", [projectId, sessionId, archived]);
+	async setArchived(projectId: string, sessionId: string, archived: boolean): Promise<{ ok: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("sessions.setArchived", [projectId, sessionId, archived]);
+			return { ok: true };
+		}
+		return this.request(`/api/sessions/${projectId}/${sessionId}/archived`, {
+			method: "POST",
+			body: JSON.stringify({ archived }),
+		});
+	}
+
+	async deleteSession(projectId: string, sessionId: string): Promise<{ ok: boolean }> {
+		if (this.isRelay) {
+			await this.sendRpc("sessions.remove", [projectId, sessionId]);
+			return { ok: true };
+		}
+		return this.request(`/api/sessions/${projectId}/${sessionId}`, {
+			method: "DELETE",
+		});
 	}
 
 	removeSession(projectId: string, sessionId: string): Promise<{ ok: boolean }> {
-		return this.rpc("sessions.remove", [projectId, sessionId]);
+		return this.deleteSession(projectId, sessionId);
 	}
 
 	async scanUsage(): Promise<import("./usage").UsageScan | null> {
-		const res = await this.rpc<import("./usage").UsageScan | null>("usage.scan", []);
+		const res = await this.rpc<import("./usage").UsageScan | null>("usage.scan");
 		return res.ok && res.value ? res.value : null;
 	}
+
+	// -------------------------------------------------------------------------
+	// Extended Remote Methods (Git, Files, Usages)
+	// -------------------------------------------------------------------------
 
 	async gitStatus(cwd: string): Promise<import("./protocol").GitStatus | null> {
 		const res = await this.rpc<import("./protocol").GitStatus | null>("git.status", [cwd]);
@@ -265,7 +446,7 @@ export class SyncClient {
 	}
 
 	// -------------------------------------------------------------------------
-	// WebSocket
+	// WebSocket Connection & Relay Multi-plexing
 	// -------------------------------------------------------------------------
 
 	onEvent(listener: (sessionId: string, event: AgentEvent) => void): () => void {
@@ -278,34 +459,117 @@ export class SyncClient {
 		return () => this.stateListeners.delete(listener);
 	}
 
+	private lastCloseError: string | null = null;
+
 	connect(): void {
 		if (this.socket) return;
 		this.closedByUser = false;
+		this.lastCloseError = null;
 		this.emitState("connecting");
 
-		const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
-		const wsProto = this.isHttps ? "wss" : "ws";
-		const socket = new WebSocket(
-			`${wsProto}://${cleanHost}:${this.connection.port}/ws?token=${encodeURIComponent(this.connection.token)}`,
-		);
+		let wsUrl: string;
+		if (this.isRelay) {
+			const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+			const proto = this.connection.secure === false ? "ws" : "wss";
+			const portSuffix = (proto === "wss" && this.connection.port === 443) || (proto === "ws" && this.connection.port === 80)
+				? ""
+				: `:${this.connection.port}`;
+			wsUrl = `${proto}://${cleanHost}${portSuffix}`;
+		} else {
+			const cleanHost = this.connection.host.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim();
+			const wsProto = this.isHttps ? "wss" : "ws";
+			wsUrl = `${wsProto}://${cleanHost}:${this.connection.port}/ws?token=${encodeURIComponent(this.connection.token)}`;
+		}
+
+		const socket = new WebSocket(wsUrl);
 		this.socket = socket;
 
-		socket.onopen = () => this.emitState("open");
+		socket.onopen = () => {
+			if (this.isRelay) {
+				// Announce zero-knowledge room to relay server
+				const room = sha256(this.connection.token);
+				socket.send(JSON.stringify({ type: "hello", room }));
+				// Relay will reply { type: "waiting" } or { type: "ready" }
+			} else {
+				this.emitState("open");
+			}
+		};
 
 		socket.onmessage = (event) => {
-			let payload: { type?: string; sessionId?: string; event?: AgentEvent };
+			let payload: Record<string, unknown>;
 			try {
-				payload = JSON.parse(String(event.data));
+				payload = JSON.parse(String(event.data)) as Record<string, unknown>;
 			} catch {
 				return;
 			}
-			if (payload.type !== "agent_event" || !payload.sessionId || !payload.event) return;
-			for (const listener of this.listeners) listener(payload.sessionId, payload.event);
+
+			// 1. Relay status frames
+			if (this.isRelay) {
+				if (payload.type === "error") {
+					// Relay explicitly refused the connection (e.g. room-full, bad-hello)
+					this.lastCloseError = `中继服务拒绝: ${String(payload.reason || "未知原因")}`;
+					this.emitState("closed");
+					return;
+				}
+				if (payload.type === "waiting") {
+					// In room alone, waiting for desktop side
+					this.emitState("connecting");
+					return;
+				}
+				if (payload.type === "ready") {
+					// Desktop side is connected in room, tunnel ready
+					this.emitState("open");
+					// Send a ping to desktop through tunnel to trigger immediate handshake
+					this.socket?.send(JSON.stringify({ type: "hello", version: 1 }));
+					return;
+				}
+				if (payload.type === "hello" && typeof payload.version === "number") {
+					// Handshake received from desktop sync server through relay tunnel
+					this.emitState("open");
+					return;
+				}
+			}
+
+			// 2. RPC response frames
+			if (payload.type === "rpc_result" && typeof payload.id === "string") {
+				const pending = this.pendingRpcs.get(payload.id);
+				if (pending) {
+					this.pendingRpcs.delete(payload.id);
+					clearTimeout(pending.timer);
+					if (payload.ok === false) {
+						pending.reject(new Error(String(payload.error || "RPC error")));
+					} else {
+						// Result may be payload.value or top-level properties
+						pending.resolve(payload.value !== undefined ? payload.value : payload);
+					}
+				}
+				return;
+			}
+
+			// 3. Agent Event frames
+			if (payload.type === "agent_event" && typeof payload.sessionId === "string" && payload.event) {
+				for (const listener of this.listeners) {
+					listener(payload.sessionId, payload.event as AgentEvent);
+				}
+				return;
+			}
 		};
 
-		socket.onclose = () => {
+		socket.onclose = (event) => {
 			this.socket = null;
+			if (!this.lastCloseError) {
+				const detail = event.reason ? ` (${event.reason})` : event.code ? ` (code: ${event.code})` : "";
+				this.lastCloseError = `连接断开${detail}`;
+			}
 			this.emitState("closed");
+
+			// Reject any pending in-flight RPCs
+			for (const [, pending] of this.pendingRpcs) {
+				clearTimeout(pending.timer);
+				pending.reject(new Error("WebSocket closed"));
+			}
+			this.pendingRpcs.clear();
+
 			if (!this.closedByUser) this.scheduleReconnect();
 		};
 
@@ -318,9 +582,14 @@ export class SyncClient {
 		this.reconnectTimer = null;
 		this.socket?.close();
 		this.socket = null;
+
+		for (const [, pending] of this.pendingRpcs) {
+			clearTimeout(pending.timer);
+			pending.reject(new Error("Client disconnected"));
+		}
+		this.pendingRpcs.clear();
 	}
 
-	/** Immediate reconnect trigger without waiting for the 3s backoff timer, used on app foreground resume */
 	reconnectNow(): void {
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
@@ -348,7 +617,10 @@ export class SyncClient {
 		}, 3000);
 	}
 
+	private currentState: "connecting" | "open" | "closed" = "closed";
+
 	private emitState(state: "connecting" | "open" | "closed"): void {
+		this.currentState = state;
 		for (const listener of this.stateListeners) listener(state);
 	}
 }

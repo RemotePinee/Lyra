@@ -46,14 +46,14 @@ export function ScrollText({ text, className = "" }: { text: string; className?:
 			const outerWidth = outer.clientWidth;
 			if (outerWidth <= 0) return;
 			const next = Math.max(0, part - outerWidth);
-			setWidth((prev) => (Math.abs(part - prev) > 1 ? part : prev));
+			setWidth(part);
 			setOverflow((prev) => {
 				const wasScrolling = prev > 1;
 				if (wasScrolling) {
 					if (next <= 1) return 0;
 					return Math.abs(next - prev) > 2 ? next : prev;
 				}
-				if (next > 3) return next;
+				if (next > 0) return next;
 				return 0;
 			});
 		};
@@ -67,7 +67,7 @@ export function ScrollText({ text, className = "" }: { text: string; className?:
 		return () => observer.disconnect();
 	}, [text]);
 
-	const scrolls = overflow > 1;
+	const scrolls = overflow > 0;
 	// One full cycle carries the first copy off the left, leaving the second exactly where the
 	// first began. Constant speed rather than constant duration, so a slightly-too-long title
 	// does not crawl while a very long one races.

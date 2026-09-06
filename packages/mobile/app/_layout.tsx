@@ -2,7 +2,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { View } from "react-native";
+import { LogBox, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
 import { useMobile } from "../src/store";
@@ -13,11 +13,8 @@ import "../global.css";
 // Prevent the native splash screen from auto-hiding before state is hydrated
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// Set smooth fade animation when splash hides so it doesn't abruptly snap/flash
-void SplashScreen.setOptions({
-	duration: 350,
-	fade: true,
-});
+// Ignore Expo CLI HMR connection warning when running over network or relay
+LogBox.ignoreLogs(["Cannot connect to Expo CLI."]);
 
 export default function RootLayout() {
 	const hydrate = useMobile((s) => s.hydrate);
@@ -32,10 +29,10 @@ export default function RootLayout() {
 
 	useEffect(() => {
 		if (hydrated) {
-			// Hide the native splash screen once store hydration completes
+			// Hide the native splash screen smoothly after the first frame has painted
 			const timer = setTimeout(() => {
 				void SplashScreen.hideAsync().catch(() => {});
-			}, 50);
+			}, 100);
 			return () => clearTimeout(timer);
 		}
 	}, [hydrated]);
@@ -65,19 +62,13 @@ export default function RootLayout() {
 						<Stack.Screen
 							name="pair"
 							options={{
-								title: "连接桌面端",
-								headerTitleAlign: "left",
-								presentation: "modal",
-								headerStyle: { backgroundColor: colors.sidebar },
+								headerShown: false,
 							}}
 						/>
 						<Stack.Screen
 							name="usage"
 							options={{
-								title: "用量与花销",
-								headerTitleAlign: "left",
-								presentation: "modal",
-								headerStyle: { backgroundColor: colors.sidebar },
+								headerShown: false,
 							}}
 						/>
 						<Stack.Screen

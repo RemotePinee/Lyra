@@ -221,7 +221,9 @@ export function registerGitIpc({ insideAProject }: GitIpcDeps): void {
 		remoteCalls.cancel(token);
 	});
 
-	ipcMain.handle("diff:workspace", async (_event, cwd: string) => collectWorkspaceDiff(cwd));
+	ipcMain.handle("diff:workspace", async (_event, cwd: string, target?: "workspace" | "unstaged") =>
+		collectWorkspaceDiff(cwd, target),
+	);
 
 	/*
 	 * One side of a binary file, so the review can show the thing rather than describe it.

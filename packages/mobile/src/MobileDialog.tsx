@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
 	Animated,
 	Pressable,
@@ -248,18 +248,21 @@ export function MobileConfirmDialog({
 	onCancel,
 }: MobileConfirmDialogProps) {
 	const { colors, isDark } = useThemeColors();
-	const animScale = useRef(new Animated.Value(0.92)).current;
+	const [rendered, setRendered] = useState(visible);
+	const animScale = useRef(new Animated.Value(1)).current;
 	const animOpacity = useRef(new Animated.Value(0)).current;
 
 	useEffect(() => {
 		if (visible) {
-			animScale.setValue(0.92);
+			setRendered(true);
+			animScale.setValue(0.96);
 			animOpacity.setValue(0);
 			Animated.parallel([
 				Animated.spring(animScale, {
 					toValue: 1,
-					tension: 300,
-					friction: 24,
+					damping: 24,
+					stiffness: 300,
+					mass: 0.8,
 					useNativeDriver: true,
 				}),
 				Animated.timing(animOpacity, {
@@ -268,27 +271,29 @@ export function MobileConfirmDialog({
 					useNativeDriver: true,
 				}),
 			]).start();
+		} else if (rendered) {
+			Animated.parallel([
+				Animated.timing(animScale, {
+					toValue: 0.96,
+					duration: 120,
+					useNativeDriver: true,
+				}),
+				Animated.timing(animOpacity, {
+					toValue: 0,
+					duration: 120,
+					useNativeDriver: true,
+				}),
+			]).start(() => {
+				setRendered(false);
+			});
 		}
-	}, [visible, animScale, animOpacity]);
+	}, [visible, rendered, animScale, animOpacity]);
 
-	if (!visible) return null;
+	if (!rendered) return null;
 
 	const handleClose = () => {
 		haptic.tap();
-		Animated.parallel([
-			Animated.timing(animScale, {
-				toValue: 0.94,
-				duration: 120,
-				useNativeDriver: true,
-			}),
-			Animated.timing(animOpacity, {
-				toValue: 0,
-				duration: 120,
-				useNativeDriver: true,
-			}),
-		]).start(() => {
-			onCancel();
-		});
+		onCancel();
 	};
 
 	return (
@@ -367,15 +372,15 @@ export function MobileConfirmDialog({
 										backgroundColor: pressed
 											? colors.cardHover
 											: destructive
-											? colors.danger
-											: colors.ink,
+											? colors.danger + "15"
+											: colors.elevated,
 									},
 								]}
-								className="rounded-xl px-3.5 py-2 active:opacity-85"
+								className="rounded-xl px-4 py-2 active:opacity-85"
 							>
 								<Text
 									style={{
-										color: destructive ? "#ffffff" : colors.shell,
+										color: destructive ? colors.danger : colors.ink,
 										fontSize: 13,
 										fontWeight: "600",
 									}}

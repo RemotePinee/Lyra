@@ -265,16 +265,27 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
       // showing it twice. Matched by reference, so sending the same text again is
       // still two messages.
       const pending = get().pendingUserMessage;
-      if (
-        event.message.role === "user" &&
-        pending &&
-        messages.includes(pending)
-      ) {
-        set({
-          messages: messages.map((m) => (m === pending ? event.message : m)),
-          pendingUserMessage: null,
-        });
-        break;
+      if (event.message.role === "user") {
+        if (pending && messages.includes(pending)) {
+          set({
+            messages: messages.map((m) => (m === pending ? event.message : m)),
+            pendingUserMessage: null,
+          });
+          break;
+        }
+        // Deduplicate user messages with the same content and recent timestamp (within 10s)
+        const dupIndex = messages.findLastIndex(
+          (m) =>
+            m.role === "user" &&
+            (m.timestamp === event.message.timestamp ||
+              (Math.abs(m.timestamp - event.message.timestamp) < 10_000 &&
+                JSON.stringify(m.content) === JSON.stringify(event.message.content)))
+        );
+        if (dupIndex >= 0) {
+          messages[dupIndex] = event.message;
+          set({ messages });
+          break;
+        }
       }
 
       // A message_start for a message already in the list happens on reconnect; ignore it.
@@ -313,12 +324,26 @@ export function applyAgentEvent(sessionId: string, event: AgentEvent, set: Set, 
        * the copy the composer painted and the message appears twice, every first message.
        */
       const pending = get().pendingUserMessage;
-      if (event.message.role === "user" && pending && messages.includes(pending)) {
-        set({
-          messages: messages.map((m) => (m === pending ? event.message : m)),
-          pendingUserMessage: null,
-        });
-        break;
+      if (event.message.role === "user") {
+        if (pending && messages.includes(pending)) {
+          set({
+            messages: messages.map((m) => (m === pending ? event.message : m)),
+            pendingUserMessage: null,
+          });
+          break;
+        }
+        const dupIndex = messages.findLastIndex(
+          (m) =>
+            m.role === "user" &&
+            (m.timestamp === event.message.timestamp ||
+              (Math.abs(m.timestamp - event.message.timestamp) < 10_000 &&
+                JSON.stringify(m.content) === JSON.stringify(event.message.content)))
+        );
+        if (dupIndex >= 0) {
+          messages[dupIndex] = event.message;
+          set({ messages });
+          break;
+        }
       }
 
       const index = findMessageSlot(messages, event.message);

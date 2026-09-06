@@ -14,9 +14,10 @@ import { MessageActions } from "../MessageActions.tsx";
 import { ThinkingBlock } from "../ThinkingBlock.tsx";
 import { UserMessage } from "../UserMessage.tsx";
 import { useApp } from "../../store.ts";
-import { ChevronDown, RotateCcw, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronUp, RotateCcw, TriangleAlert } from "lucide-react";
 import { Text } from "../Text.tsx";
 import { useConfirmer } from "../Confirm.tsx";
+import { explain } from "../toast/explain.ts";
 import { isNudge, type TurnStats } from "./grouping.ts";
 import { LiveToolCard, segments, ToolRun as ToolRunGroup } from "./runs.tsx";
 
@@ -132,8 +133,6 @@ function AssistantRow({
    * 外观 → 出错时显示. Undefined counts as compact, which is what a fresh install gets.
    */
   const compactErrors = useApp((s) => s.settings?.appearance?.errorDetail !== "full");
-  const [errorOpen, setErrorOpen] = useState(false);
-  const confirm = useConfirmer();
 
   const own = message.content.slice(from, upTo);
 
@@ -185,72 +184,12 @@ function AssistantRow({
       })}
 
       {message.stopReason === "error" && message.errorMessage && (
-        /*
-         * Stated, not staged.
-         *
-         * The first version of this put a bordered button under the message, which made a
-         * dropped socket look like the most important thing on the screen. A failure is worth
-         * one line — what went wrong, and the word that undoes it — set at the same weight as
-         * the timestamp under every other reply.
-         *
-         * Compact goes further, and is the default: the wording of the common failure is a stack
-         * of provider JSON that nobody reads, and a long session where the connection wobbled a
-         * few times reads as a wall of red for something that fixed itself. So it says how many
-         * words it is withholding and opens on a click. Set by 外观 → 出错时显示.
-         */
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          {compactErrors && !errorOpen ? (
-            <button
-              type="button"
-              onClick={() => setErrorOpen(true)}
-              className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
-            >
-              <TriangleAlert size={10.5} strokeWidth={1.9} className="text-danger" />
-              这一轮出错了
-              <ChevronDown size={10} strokeWidth={2} />
-            </button>
-          ) : (
-            <Text
-              size="caption"
-              tone="danger"
-              className="break-words whitespace-pre-wrap"
-            >
-              {message.errorMessage}
-            </Text>
-          )}
-          <button
-            type="button"
-            disabled={running}
-            /*
-             * Asked first: this discards the turn rather than resuming it.
-             *
-             * The word sits at the end of a failure message, where it reads as "undo the error" —
-             * and what it actually does is throw away everything the turn had done and pay for the
-             * whole thing again. The row underneath offers 继续, which is what most people mean
-             * here; see `ResumeRow`.
-             */
-            onClick={() =>
-              confirm.ask({
-                title: "重新生成这次回答？",
-                detail: (
-                  <>
-                    这会丢掉本轮已经做过的工作——读过的文件、跑过的命令——并从你最后一条消息重新开始，
-                    重新消耗一次 token。
-                    <br />
-                    想保留这些、从中断处接着做，请用下面那行的「继续」。
-                  </>
-                ),
-                confirmLabel: "重新生成",
-                onConfirm: () => void retryFrom(index),
-              })
-            }
-            className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink disabled:opacity-40"
-          >
-            <RotateCcw size={10.5} strokeWidth={1.9} />
-            重试
-          </button>
-          {confirm.element}
-        </div>
+        <ErrorBlock
+          errorMessage={message.errorMessage}
+          compactErrors={compactErrors}
+          running={running}
+          onRetry={() => void retryFrom(index)}
+        />
       )}
 
       {/*
@@ -271,6 +210,88 @@ function AssistantRow({
           tokens={turnStats?.outputTokens ?? message.usage?.output}
         />
       )}
+    </div>
+  );
+}
+
+function ErrorBlock({
+  errorMessage,
+  compactErrors,
+  running,
+  onRetry,
+}: {
+  errorMessage: string;
+  compactErrors: boolean;
+  running: boolean;
+  onRetry: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const confirm = useConfirmer();
+  const explained = explain(errorMessage);
+  const hasDetail = explained.message !== errorMessage || Boolean(explained.hint);
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        {compactErrors && !open ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink"
+          >
+            <TriangleAlert size={10.5} strokeWidth={1.9} className="text-danger" />
+            {explained.message}
+            <ChevronDown size={10} strokeWidth={2} />
+          </button>
+        ) : (
+          <div className="flex items-center gap-1">
+            <TriangleAlert size={10.5} strokeWidth={1.9} className="text-danger shrink-0" />
+            <Text size="caption" tone="danger" className="font-medium">
+              {explained.message}
+            </Text>
+            {compactErrors && (
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="ml-0.5 text-ink-faint hover:text-ink"
+              >
+                <ChevronUp size={10} strokeWidth={2} />
+              </button>
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={running}
+          onClick={() =>
+            confirm.ask({
+              title: "重新生成这次回答？",
+              detail: (
+                <>
+                  这会丢掉本轮已经做过的工作——读过的文件、跑过的命令——并从你最后一条消息重新开始，
+                  重新消耗一次 token。
+                  <br />
+                  想保留这些、从中断处接着做，请用下面那行的「继续」。
+                </>
+              ),
+              confirmLabel: "重新生成",
+              onConfirm: onRetry,
+            })
+          }
+          className="flex items-center gap-1 rounded text-caption text-ink-faint transition-colors duration-[var(--ly-t-quick)] hover:text-ink disabled:opacity-40"
+        >
+          <RotateCcw size={10.5} strokeWidth={1.9} />
+          重试
+        </button>
+      </div>
+
+      {(!compactErrors || open) && hasDetail && (
+        <div className="rounded-md border border-edge-subtle bg-surface-base/60 px-2.5 py-1.5 font-mono text-[11px] text-ink-subtle">
+          {explained.hint && <div className="mb-1 text-ink-faint font-sans">{explained.hint}</div>}
+          <div className="break-all whitespace-pre-wrap select-text">{errorMessage}</div>
+        </div>
+      )}
+      {confirm.element}
     </div>
   );
 }

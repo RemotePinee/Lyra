@@ -1,5 +1,7 @@
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMobile } from "../src/store";
 import { type Range, summarise, type UsageScan } from "../src/usage";
 
@@ -11,6 +13,8 @@ function formatTokens(count: number): string {
 }
 
 export default function UsageScreen() {
+	const router = useRouter();
+	const insets = useSafeAreaInsets();
 	const fetchUsage = useMobile((s) => s.fetchUsage);
 	const [scan, setScan] = useState<UsageScan | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -50,7 +54,23 @@ export default function UsageScreen() {
 	}, [scan, range, now]);
 
 	return (
-		<View className="flex-1 bg-shell">
+		<View className="flex-1 bg-shell" style={{ paddingTop: insets.top }}>
+			{/* Custom Compact Header */}
+			<View className="h-14 flex-row items-center bg-shell px-3.5">
+				<Pressable
+					onPress={() => router.back()}
+					hitSlop={8}
+					className="h-9 w-9 items-center justify-center rounded-full bg-elevated active:opacity-85"
+				>
+					<View className="h-4 w-4 items-center justify-center">
+						<View
+							className="h-2.5 w-2.5 border-b-2 border-l-2 border-ink"
+							style={{ transform: [{ rotate: "45deg" }, { translateX: 1 }] }}
+						/>
+					</View>
+				</Pressable>
+				<Text className="ml-2.5 text-[17px] font-bold text-ink">用量与花销</Text>
+			</View>
 			<ScrollView
 				className="flex-1"
 				contentContainerStyle={{ padding: 16, paddingBottom: 40 }}

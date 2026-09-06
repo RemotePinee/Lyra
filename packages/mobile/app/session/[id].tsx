@@ -28,16 +28,17 @@ import { MobileCollapsibleCodeCard } from "../../src/CollapsibleCard";
 import { MobileActionSheet, MobileConfirmDialog } from "../../src/MobileDialog";
 import { MobileMarkdownView } from "../../src/MarkdownContent";
 import { MobileModelPickerModal } from "../../src/MobileModelPickerModal";
+import { summarizeToolCall } from "../../src/toolSummary";
 import { MobilePermissionPickerModal } from "../../src/MobilePermissionPickerModal";
-import { MobileResumeRow } from "../../src/MobileResumeRow";
+import { explain } from "../../src/explain";
 import { MobileThinkingPickerModal } from "../../src/MobileThinkingPickerModal";
 import { resolveModelThinkingOptions, type ThinkingOption } from "../../src/thinkingOptions";
 import { MobileTaskList } from "../../src/MobileTaskList";
 import { MobileThinkingBlock } from "../../src/MobileThinkingBlock";
 import { groupMessages, type MobileRun } from "../../src/grouping";
 import { describeRun, formatElapsed, formatTokens, moodFor, phraseFor, type Mood } from "../../src/runSummary";
-import type { AssistantMessage, ImageContent, Message } from "../../src/protocol";
-import { assistantText, todosFrom, useMobile, type ToolRun } from "../../src/store";
+import type { AssistantContent, AssistantMessage, ImageContent, Message } from "../../src/protocol";
+import { todosFrom, useMobile, type ToolRun } from "../../src/store";
 import { useThemeColors } from "../../src/theme";
 
 interface SelectedImage {
@@ -69,12 +70,13 @@ export default function SessionScreen() {
 	const toolRuns = useMobile((s) => s.toolRuns);
 	const approvals = useMobile((s) => s.approvals);
 	const running = useMobile((s) => s.running);
-	const error = useMobile((s) => s.error);
 	const openSession = useMobile((s) => s.openSession);
 	const closeSession = useMobile((s) => s.closeSession);
 	const send = useMobile((s) => s.send);
 	const abort = useMobile((s) => s.abort);
 	const approve = useMobile((s) => s.approve);
+	const retryFrom = useMobile((s) => s.retryFrom);
+	const resume = useMobile((s) => s.resume);
 
 	const [draft, setDraft] = useState("");
 	const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
@@ -89,7 +91,7 @@ export default function SessionScreen() {
 	const setThinking = useMobile((s) => s.setThinking);
 	const setPermissionMode = useMobile((s) => s.setPermissionMode);
 	const settings = useMobile((s) => s.settings);
-	const models = useMobile((s) => s.settings?.models ?? []);
+	const models = settings?.models ?? [];
 	const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
 	const [permissionPickerOpen, setPermissionPickerOpen] = useState(false);
 	const listRef = useRef<FlatList>(null);
@@ -100,6 +102,7 @@ export default function SessionScreen() {
 	const loadEarlierMessages = useMobile((s) => s.loadEarlierMessages);
 	const isAtBottomRef = useRef(true);
 	const isDraggingRef = useRef(false);
+	const isMomentumScrollingRef = useRef(false);
 	const textInputRef = useRef<TextInput>(null);
 
 	// Adaptive ActionSheet & Dialog States for Session
@@ -126,12 +129,14 @@ export default function SessionScreen() {
 	useEffect(() => {
 		isAtBottomRef.current = true;
 		isDraggingRef.current = false;
+		isMomentumScrollingRef.current = false;
 		scrollFabOpacity.value = 0;
 	}, [id, scrollFabOpacity]);
 
 	const scrollToBottom = useCallback((animated = true) => {
 		isAtBottomRef.current = true;
 		isDraggingRef.current = false;
+		isMomentumScrollingRef.current = false;
 		scrollFabOpacity.value = withTiming(0, { duration: 150 });
 		listRef.current?.scrollToOffset({ offset: 0, animated });
 	}, [scrollFabOpacity]);
@@ -160,8 +165,8 @@ export default function SessionScreen() {
 		textInputRef.current?.setNativeProps?.({ text: "" });
 		textInputRef.current?.blur();
 		Keyboard.dismiss();
+		// Snap immediately to offset 0 when user actively sends a message
 		scrollToBottom(false);
-		setTimeout(() => scrollToBottom(false), 50);
 		void send(fullText, imagesToSend);
 	}, [draft, selectedImages, attachedCards, send, scrollToBottom]);
 
@@ -270,34 +275,34 @@ export default function SessionScreen() {
 		if (activeSession?.id === id) return;
 		const meta = sessions.find((s) => s.id === id);
 		if (meta) void openSession(meta);
-	}, [id, activeSession, sessions, openSession]);
+		// oxlint-disable-next-line react-hooks/exhaustive-deps -- run once on mount or when id changes to avoid infinite loop
+	}, [id]);
 
-	// Auto-scroll anchor logic:
-	// Inverted FlatList: offset 0 is the bottom (latest message).
-	// Only auto-scroll if the user hasn't explicitly scrolled up.
-	// Debounce/guard using rAF so high-frequency streaming doesn't saturate the UI thread.
-	const scrollRafRef = useRef<number | null>(null);
+	// Pre-sort reversed runs synchronously so FlatList mounts already inverted without layout jump
+	const reversedRuns = useMemo(() => {
+		const runs = groupMessages(messages);
+		return runs.reverse();
+	}, [messages]);
+
+	// Auto-scroll anchor logic (WeChat-grade inverted anchoring):
+	// In inverted FlatList:
+	// - offset 0 is visually the bottom (newest items).
+	// - React Native naturally anchors the top of an inverted FlatList (offset 0) to newly arriving items.
+	// - Calling `scrollToOffset` imperatively while user is touching or scrolling up causes visual fight and layout jumps.
+	// - We NEVER programmatically scroll if user is dragging, momentum scrolling, or scrolled away from offset 0.
 	useEffect(() => {
-		// If user is touching/dragging the list or scrolled away from bottom, do NOT force scroll
-		if (isDraggingRef.current || !isAtBottomRef.current) return;
-		if (scrollRafRef.current !== null) return;
+		if (isDraggingRef.current || isMomentumScrollingRef.current || !isAtBottomRef.current) return;
+		// When strictly at bottom and idle, if offset drifted slightly due to padding/size changes, snap smoothly
+		listRef.current?.scrollToOffset({ offset: 0, animated: false });
+	}, [reversedRuns.length]);
 
-		scrollRafRef.current = requestAnimationFrame(() => {
-			scrollRafRef.current = null;
-			if (isAtBottomRef.current && !isDraggingRef.current) {
-				listRef.current?.scrollToOffset({ offset: 0, animated: false });
-			}
-		});
-
+	// Clean up session state on unmount
+	useEffect(() => {
 		return () => {
-			if (scrollRafRef.current !== null) {
-				cancelAnimationFrame(scrollRafRef.current);
-				scrollRafRef.current = null;
-			}
+			closeSession();
 		};
-	}, [messages, toolRuns, running]);
-
-	useEffect(() => () => closeSession(), [closeSession]);
+		// oxlint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
+	}, []);
 
 	// Keyboard offset driven by keyboard.height
 	// When modal opens or textinput blurs, ensure translateY immediately stays 0.
@@ -319,12 +324,6 @@ export default function SessionScreen() {
 			paddingBottom: offset,
 		};
 	});
-
-	// Pre-sort reversed runs synchronously so FlatList mounts already inverted without layout jump
-	const reversedRuns = useMemo(() => {
-		const runs = groupMessages(messages);
-		return runs.reverse();
-	}, [messages]);
 
 	const currentTodos = useMemo(() => todosFrom(messages), [messages]);
 
@@ -394,13 +393,13 @@ export default function SessionScreen() {
 								setRenameText(sessionTitle);
 								setIsRenaming(true);
 							}}
-							className="flex-1 justify-center"
+							className="flex-1 justify-center overflow-hidden pr-1"
 						>
-							<View className="flex-row items-center gap-2">
-								<Text className="text-[16px] font-semibold tracking-tight text-ink" numberOfLines={1}>
+							<View className="flex-row items-center gap-1.5 overflow-hidden">
+								<Text className="shrink text-[16px] font-semibold tracking-tight text-ink" numberOfLines={1}>
 									{sessionTitle}
 								</Text>
-								{isBackgroundRefreshing && <ActivityIndicator size="small" color="#9a9a9a" />}
+								{isBackgroundRefreshing && <ActivityIndicator size="small" color="#9a9a9a" style={{ flexShrink: 0 }} />}
 							</View>
 							{Boolean(activeSession?.cwd) && (
 								<Text className="font-mono text-[10.5px] text-ink-faint" numberOfLines={1}>
@@ -411,13 +410,13 @@ export default function SessionScreen() {
 					)}
 					<Pressable
 						onPress={() => router.push("/git-status")}
-						className="rounded-lg bg-elevated px-2.5 py-1 active:bg-card-hover"
+						className="shrink-0 rounded-lg bg-elevated px-2.5 py-1 active:bg-card-hover"
 					>
 						<Text className="font-mono text-[12px] font-medium text-ink-muted">Git</Text>
 					</Pressable>
 					<Pressable
 						onPress={() => router.push("/file-viewer")}
-						className="rounded-lg bg-elevated px-2.5 py-1 active:bg-card-hover"
+						className="shrink-0 rounded-lg bg-elevated px-2.5 py-1 active:bg-card-hover"
 					>
 						<Text className="text-[12px] font-medium text-ink-muted">文件</Text>
 					</Pressable>
@@ -446,16 +445,7 @@ export default function SessionScreen() {
 					</View>
 				)}
 
-				{currentTodos.length === 0 && (
-					<View className="px-3.5 pt-1">
-						<MobileResumeRow
-							running={running}
-							messages={messages}
-							todos={currentTodos}
-							onResume={(prompt) => void send(prompt)}
-						/>
-					</View>
-				)}
+				{/* Redundant MobileResumeRow removed from top because bottom input bar already has continue/retry prompt */}
 
 				<FlatList
 					ref={listRef}
@@ -470,27 +460,31 @@ export default function SessionScreen() {
 					// In inverted list paddingBottom is visual top; reserve space for floating task bar
 					paddingBottom: currentTodos.length > 0 ? 52 : 16,
 				}}
-				maxToRenderPerBatch={6}
-				updateCellsBatchingPeriod={50}
-				windowSize={5}
-				initialNumToRender={8}
+				maxToRenderPerBatch={10}
+				updateCellsBatchingPeriod={30}
+				windowSize={7}
+				initialNumToRender={10}
+				maintainVisibleContentPosition={{
+					minIndexForVisible: 0,
+					autoscrollToTopThreshold: 10,
+				}}
 				removeClippedSubviews={false}
 				keyboardDismissMode="on-drag"
 				keyboardShouldPersistTaps="always"
-				onEndReached={() => {
-					if (hasEarlierMessages && !loadingEarlier) {
-						void loadEarlierMessages();
-					}
-				}}
-				onEndReachedThreshold={0.2}
 				onScroll={(e) => {
 					// In inverted mode: offset 0 is bottom (latest message).
 					const offset = e.nativeEvent.contentOffset.y;
-					// If user is actively dragging or offset is clearly away from bottom, stay unlocked
-					if (!isDraggingRef.current) {
-						isAtBottomRef.current = offset <= 15;
+					// If user is actively dragging or coasting, respect user intent
+					if (isDraggingRef.current || isMomentumScrollingRef.current) {
+						isAtBottomRef.current = offset <= 10;
+					} else {
+						isAtBottomRef.current = offset <= 10;
 					}
-					if (offset > 160) {
+					// Only trigger pagination when user deliberately scrolls up towards the visual top
+					if (offset > 100 && hasEarlierMessages && !loadingEarlier) {
+						void loadEarlierMessages();
+					}
+					if (offset > 120) {
 						scrollFabOpacity.value = withTiming(1, { duration: 150 });
 					} else {
 						scrollFabOpacity.value = withTiming(0, { duration: 150 });
@@ -498,28 +492,24 @@ export default function SessionScreen() {
 				}}
 				onScrollBeginDrag={() => {
 					isDraggingRef.current = true;
-					isAtBottomRef.current = false;
+					isMomentumScrollingRef.current = false;
 				}}
 				onScrollEndDrag={(e) => {
 					isDraggingRef.current = false;
 					const offset = e.nativeEvent.contentOffset.y;
-					isAtBottomRef.current = offset <= 15;
+					isAtBottomRef.current = offset <= 10;
+				}}
+				onMomentumScrollBegin={() => {
+					isMomentumScrollingRef.current = true;
 				}}
 				onMomentumScrollEnd={(e) => {
 					isDraggingRef.current = false;
+					isMomentumScrollingRef.current = false;
 					const offset = e.nativeEvent.contentOffset.y;
-					isAtBottomRef.current = offset <= 15;
+					isAtBottomRef.current = offset <= 10;
 				}}
 				scrollEventThrottle={16}
-				ListHeaderComponent={
-					error ? (
-						<View className="mb-2 pt-0.5">
-							<View className="rounded-xl bg-danger/10 px-3.5 py-2.5">
-								<Text className="text-[12.5px] font-medium text-danger">{error}</Text>
-							</View>
-						</View>
-					) : null
-				}
+				ListHeaderComponent={null}
 				ListFooterComponent={
 					hasEarlierMessages ? (
 						<View className="mb-3">
@@ -660,6 +650,42 @@ export default function SessionScreen() {
 						</ScrollView>
 					</View>
 				)}
+
+				{/* Resume / Continue Row when last request failed, stopped or has remaining items */}
+				{!running && (() => {
+					const lastMsg = messages[messages.length - 1];
+					const isStoppedError = lastMsg?.role === "assistant" && lastMsg.stopReason === "error";
+					const isStoppedAborted = lastMsg?.role === "assistant" && lastMsg.stopReason === "aborted";
+					if (!isStoppedError && !isStoppedAborted) return null;
+
+					const note = isStoppedError ? "上次请求失败，进度已保留" : "已暂停";
+
+					return (
+						<View className="flex-row items-center gap-2 px-3.5 pt-1.5 pb-0.5">
+							<Text className="text-[11.5px] text-ink-faint">{note}</Text>
+							<Text className="text-[11.5px] text-ink-faint">·</Text>
+							<Pressable
+								onPress={() => {
+									haptic.tap();
+									void resume();
+								}}
+								className="active:opacity-60"
+							>
+								<Text className="text-[12px] font-medium text-accent underline">继续</Text>
+							</Pressable>
+							<Text className="text-[11.5px] text-ink-faint">·</Text>
+							<Pressable
+								onPress={() => {
+									haptic.tap();
+									void retryFrom(messages.length - 1);
+								}}
+								className="active:opacity-60"
+							>
+								<Text className="text-[12px] font-medium text-ink-muted">重试</Text>
+							</Pressable>
+						</View>
+					);
+				})()}
 
 				{running && !answering && <MobileRunningIndicator messages={messages} toolRuns={toolRuns} />}
 
@@ -954,14 +980,28 @@ const MobileTranscriptRow = React.memo(
 						<Text className="mr-1 mb-1 text-[11px] text-ink-faint">来自侧边聊天</Text>
 					)}
 					{imageContents.length > 0 && (
-						<View className="mb-1.5 max-w-[85%] flex-row flex-wrap justify-end gap-1.5">
+						<View
+							className={`mb-1.5 flex-row flex-wrap justify-end gap-1.5 ${
+								imageContents.length === 1
+									? "max-w-[70%]"
+									: imageContents.length === 2 || imageContents.length === 4
+										? "max-w-[80%]"
+										: "max-w-[95%]"
+							}`}
+						>
 							{imageContents.map((img, idx) => {
 								const uri = `data:${img.mimeType};base64,${img.data}`;
+								const imgSizeClass =
+									imageContents.length === 1
+										? "h-44 w-44"
+										: imageContents.length === 3
+											? "h-24 w-24"
+											: "h-28 w-28";
 								return (
 									<Pressable
 										key={idx}
 										onPress={() => onImagePress?.(uri)}
-										className="h-32 w-32 overflow-hidden rounded-2xl bg-card active:opacity-80"
+										className={`${imgSizeClass} overflow-hidden rounded-2xl bg-card active:opacity-80`}
 									>
 										<Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
 									</Pressable>
@@ -998,29 +1038,98 @@ const MobileTranscriptRow = React.memo(
 	},
 );
 
+export function segments(content: AssistantContent[]): Segment[] {
+	const out: Segment[] = [];
+	for (const [index, block] of content.entries()) {
+		if (block.type === "toolCall") {
+			const last = out[out.length - 1];
+			if (last?.kind === "tools") last.blocks.push(block);
+			else out.push({ kind: "tools", blocks: [block] });
+		} else {
+			out.push({ kind: "block", block, index });
+		}
+	}
+	return out;
+}
+
+export type Segment =
+	| { kind: "block"; block: AssistantContent; index: number }
+	| { kind: "tools"; blocks: Extract<AssistantContent, { type: "toolCall" }>[] };
+
 function AssistantRow({ message, upTo }: { message: AssistantMessage; upTo: number }) {
-	const text = assistantText(message, upTo);
-	const thinking = message.content.find((c) => c.type === "thinking");
+	const own = message.content.slice(0, upTo);
 
 	return (
 		<View className="mb-4">
-			{thinking && thinking.type === "thinking" && (
-				<MobileThinkingBlock
-					text={thinking.thinking}
-					redacted={thinking.redacted}
-					live={message.stopReason === "pending"}
-				/>
-			)}
+			{segments(own).map((segment, position) => {
+				if (segment.kind === "block") {
+					const block = segment.block;
+					if (block.type === "thinking") {
+						return (
+							<MobileThinkingBlock
+								key={`think-${segment.index}`}
+								text={block.thinking}
+								redacted={block.redacted}
+								live={message.stopReason === "pending" && segment.index === message.content.length - 1}
+							/>
+						);
+					}
+					if (block.type === "text") {
+						return block.text.trim() ? (
+							<View key={`text-${segment.index}`} className="mb-2">
+								<MobileMarkdownView content={block.text} />
+							</View>
+						) : null;
+					}
+					return null;
+				}
 
-			{text.length > 0 && <MobileMarkdownView content={text} />}
+				const calls = segment.blocks.map((block) => ({ block, stopReason: message.stopReason }));
+				return <ToolRunGroup key={`group-${position}`} calls={calls} />;
+			})}
 
 			{message.stopReason === "error" && message.errorMessage && (
-				<View className="mt-2 rounded-xl bg-danger/10 px-3.5 py-2.5">
-					<Text className="text-[12.5px] font-medium text-danger">{message.errorMessage}</Text>
+				<MobileErrorBlock errorMessage={message.errorMessage} />
+			)}
+		</View>
+	);
+}
+
+function MobileErrorBlock({ errorMessage }: { errorMessage: string }) {
+	const [open, setOpen] = useState(false);
+	const explained = explain(errorMessage);
+	const hasDetail = explained.message !== errorMessage || Boolean(explained.hint);
+
+	return (
+		<View className="mt-2.5 overflow-hidden rounded-2xl border border-danger/20 bg-danger/5 p-3">
+			<Pressable
+				onPress={() => {
+					if (hasDetail) {
+						LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+						setOpen((v) => !v);
+					}
+				}}
+				className="flex-row items-center justify-between active:opacity-75"
+			>
+				<View className="mr-2 flex-1 flex-row items-center gap-2">
+					<View className="h-2 w-2 rounded-full bg-danger" />
+					<Text className="text-[13px] font-semibold text-danger">{explained.message}</Text>
+				</View>
+				{hasDetail && (
+					<Text className="text-[11px] text-ink-faint">{open ? "收起 ▲" : "详情 ▼"}</Text>
+				)}
+			</Pressable>
+
+			{open && hasDetail && (
+				<View className="mt-2.5 rounded-xl bg-card/60 p-2.5">
+					{explained.hint && (
+						<Text className="mb-1.5 text-[11.5px] leading-4 text-ink-muted">{explained.hint}</Text>
+					)}
+					<Text selectable className="font-mono text-[11px] leading-4 text-ink-faint">
+						{errorMessage}
+					</Text>
 				</View>
 			)}
-
-			{/* 桌面端设计原则：每条已完成消息气泡下不再显示冗余的小字 input/output token，全部收敛在状态栏和用量统计中 */}
 		</View>
 	);
 }
@@ -1095,7 +1204,7 @@ function ToolRunGroup({
 						<ToolCard
 							key={`${c.block.id}-${idx}`}
 							run={toolRuns[c.block.id]}
-							name={c.block.name}
+							block={c.block}
 						/>
 					))}
 				</View>
@@ -1135,7 +1244,13 @@ function renderToolSummary(summary: string) {
 	);
 }
 
-function ToolCard({ run, name }: { run: ToolRun | undefined; name: string }) {
+function ToolCard({
+	run,
+	block,
+}: {
+	run: ToolRun | undefined;
+	block: Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
+}) {
 	const [open, setOpen] = useState(false);
 	const [ready, setReady] = useState(false);
 	const status = run?.status ?? "running";
@@ -1145,12 +1260,25 @@ function ToolCard({ run, name }: { run: ToolRun | undefined; name: string }) {
 		const next = !open;
 		setOpen(next);
 		if (next && !ready) {
-			// Defer heavy code viewer until after layout animation settles
 			requestIdleCallback(() => setReady(true));
 		}
 	};
 
-	const summaryText = run?.summary ?? name;
+	const summaryText = run?.summary ?? summarizeToolCall(block.name, block.arguments);
+
+	// Render parameter text (matching desktop ToolCard args rendering)
+	const argsText = useMemo(() => {
+		const raw = block.arguments ?? {};
+		if (typeof raw.command === "string") {
+			return `$ ${raw.command}`;
+		}
+		if (Object.keys(raw).length > 0) {
+			return JSON.stringify(raw, null, 2);
+		}
+		return "";
+	}, [block.arguments]);
+
+	const outputText = run?.output ?? "";
 
 	return (
 		<View className="py-1.5">
@@ -1172,15 +1300,31 @@ function ToolCard({ run, name }: { run: ToolRun | undefined; name: string }) {
 					>
 						{status === "running" ? "运行中" : status === "done" ? "完成" : "失败"}
 					</Text>
-					{Boolean(run?.output) && (
-						<Text className="text-[10px] text-ink-faint">{open ? "▴" : "▾"}</Text>
-					)}
+					<Text className="text-[10px] text-ink-faint">{open ? "▴" : "▾"}</Text>
 				</View>
 			</Pressable>
-			{open && Boolean(run?.output) && (
-				<View className="mt-1.5 overflow-hidden rounded-xl bg-card">
+			{open && (
+				<View className="mt-1.5 overflow-hidden rounded-xl bg-card p-2.5">
 					{ready ? (
-						<MobileCodeViewer code={run?.output || ""} />
+						<View className="gap-2">
+							{Boolean(argsText) && (
+								<View>
+									<Text className="mb-1 text-[11px] font-medium text-ink-muted">参数</Text>
+									<MobileCodeViewer code={argsText} />
+								</View>
+							)}
+							{Boolean(outputText) && (
+								<View>
+									<Text className="mb-1 text-[11px] font-medium text-ink-muted">
+										{status === "error" ? "错误" : "输出"}
+									</Text>
+									<MobileCodeViewer code={outputText} />
+								</View>
+							)}
+							{!outputText && status === "running" && (
+								<Text className="text-[12px] text-ink-faint">等待输出…</Text>
+							)}
+						</View>
 					) : (
 						<View className="items-center py-3">
 							<ActivityIndicator size="small" />

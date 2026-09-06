@@ -235,6 +235,8 @@ export function turnSlice(set: Set, get: Get) {
 
   async abort() {
     const sessionId = get().activeSessionId;
+    // If there is an in-flight pending user message, clear it on manual stop
+    set({ pendingUserMessage: null });
     if (sessionId) await window.lyra.agent.abort(sessionId);
   },
 

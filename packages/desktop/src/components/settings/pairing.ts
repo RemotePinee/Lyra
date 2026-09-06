@@ -79,7 +79,8 @@ export function pairingCode(route: PairingRoute, token: string | null): string |
 		 * room from it means there is no second secret to distribute and no way to typo yourself
 		 * into someone else's session. The relay only ever sees the room id; see `relay/README`.
 		 */
-		return `lyra://pair?relay=${encodeURIComponent(`${endpoint.tls ? "wss" : "ws"}://${endpoint.host}:${endpoint.port}`)}&token=${encodeURIComponent(token)}`;
+		const proto = endpoint.tls ? "wss" : "ws";
+		return `lyra://pair?relay=${encodeURIComponent(`${proto}://${endpoint.host}:${endpoint.port}`)}&token=${encodeURIComponent(token)}`;
 	}
 
 	return `lyra://pair?host=${encodeURIComponent(endpoint.host)}&port=${endpoint.port}${endpoint.tls ? "&tls=1" : ""}&token=${encodeURIComponent(token)}`;

@@ -18,7 +18,7 @@ import { SyncServer } from "../electron/sync-server.ts";
 import { DEFAULT_SETTINGS, type Settings } from "@lyra/core";
 
 /** High enough to be free, offset per run so two runs do not collide. */
-const PORT = 45900 + (process.pid % 200);
+const PORT = 35900 + (process.pid % 200);
 const TOKEN = "1111111111111111111111111111abcd";
 
 function server() {

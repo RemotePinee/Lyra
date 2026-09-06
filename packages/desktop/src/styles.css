@@ -2937,6 +2937,12 @@
     --ly-fade-right 150ms ease-out;
 }
 
+@starting-style {
+  .ly-fade-edge {
+    --ly-fade-right: 22px;
+  }
+}
+
 /*
  * The right edge dissolves rather than ending in an ellipsis. At rest the left edge is hard,
  * because that is where the text begins; once the text starts scrolling it runs off that side

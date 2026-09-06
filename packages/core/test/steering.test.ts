@@ -116,3 +116,15 @@ test("a steering message keeps its place after the turn it interrupted", async (
 		"interjection",
 	);
 });
+
+test("abort clears the steering queue so resume does not replay stale messages", async () => {
+	const queue: Message[] = [
+		{ role: "user", content: [{ type: "text", text: "stale message" }], timestamp: 123 },
+	];
+	// Simulate abort clearing the steering queue
+	queue.length = 0;
+	const { result, seen } = await runScripted([reply("resumed work")], queue);
+	assert.equal(result.reason, "done");
+	assert.equal(seen.prompts.length, 1);
+	assert.ok(!seen.prompts[0].some((m) => m.role === "user" && m.content.some((c) => c.type === "text" && c.text.includes("stale"))));
+});

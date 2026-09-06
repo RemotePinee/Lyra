@@ -495,13 +495,17 @@ export function ScreenshotOverlay() {
 			onPointerUp={handlePointerUp}
 			onContextMenu={(e) => e.preventDefault()}
 		>
+			{/* Backdrop canvas: only visible inside the selected/hovered region to freeze that content, while the rest stays live through the transparent window */}
 			<canvas
 				ref={loupeSourceRef}
 				className="pointer-events-none absolute left-0 top-0 block"
 				style={{
 					width: canvasWidth,
 					height: canvasHeight,
-					opacity: annotator.ready ? 1 : 0,
+					opacity: annotator.ready && (selection || hoverRect) ? 1 : 0,
+					clipPath: (selection || hoverRect)
+						? `inset(${(selection ?? hoverRect)!.y}px ${Math.max(0, canvasWidth - (selection ?? hoverRect)!.x - (selection ?? hoverRect)!.width)}px ${Math.max(0, canvasHeight - (selection ?? hoverRect)!.y - (selection ?? hoverRect)!.height)}px ${(selection ?? hoverRect)!.x}px)`
+						: undefined,
 					imageRendering: "-webkit-optimize-contrast",
 				}}
 				aria-hidden="true"

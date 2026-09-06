@@ -1,27 +1,28 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
 	ActivityIndicator,
 	KeyboardAvoidingView,
-	Modal,
 	Platform,
 	Pressable,
 	ScrollView,
-	StyleSheet,
 	Text,
 	TextInput,
 	View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SyncClient } from "../src/client";
 import { haptic } from "../src/haptics";
+import { MobileQrScannerModal } from "../src/MobileQrScannerModal";
 import { SettingsAgentSection } from "../src/SettingsAgentSection";
 import { useMobile } from "../src/store";
 import { useThemeColors } from "../src/theme";
 
 export default function PairScreen() {
 	const router = useRouter();
+	const insets = useSafeAreaInsets();
 	const connection = useMobile((s) => s.connection);
 	const pair = useMobile((s) => s.pair);
 	const unpair = useMobile((s) => s.unpair);
@@ -38,17 +39,30 @@ export default function PairScreen() {
 
 	const [scannerOpen, setScannerOpen] = useState(false);
 	const [permission, requestPermission] = useCameraPermissions();
-	const [scanned, setScanned] = useState(false);
 
-	function parsePairingUrl(raw: string): { host: string; port: string; token: string } | null {
+	function parsePairingUrl(raw: string): { host: string; port: string; token: string; relay?: boolean; secure?: boolean } | null {
 		const text = raw.trim();
 		const match = /lyra:\/\/pair\?(.*)/.exec(text);
 		if (!match) return null;
 		const params = new URLSearchParams(match[1]);
+		const relay = params.get("relay");
+		const t = params.get("token");
+		if (!t) return null;
+
+		if (relay) {
+			// Relay mode: relay=wss://example.com:9000 or ws://...
+			try {
+				const u = new URL(/^[a-z]+:\/\//i.test(relay) ? relay : `wss://${relay}`);
+				const p = u.port ? u.port : u.protocol === "ws:" ? "80" : "443";
+				return { host: u.hostname, port: p, token: t, relay: true, secure: u.protocol !== "ws:" };
+			} catch {
+				return null;
+			}
+		}
+
 		const h = params.get("host");
 		const p = params.get("port") ?? "4517";
-		const t = params.get("token");
-		if (!h || !t) return null;
+		if (!h) return null;
 		return { host: h, port: p, token: t };
 	}
 
@@ -63,7 +77,7 @@ export default function PairScreen() {
 		setHost(parsed.host);
 		setPort(parsed.port);
 		setToken(parsed.token);
-		setMessage({ tone: "ok", text: "已从剪贴板读取配对信息" });
+		setMessage({ tone: "ok", text: parsed.relay ? "已从剪贴板读取中转配对信息" : "已从剪贴板读取配对信息" });
 	}
 
 	async function startScan() {
@@ -75,13 +89,10 @@ export default function PairScreen() {
 				return;
 			}
 		}
-		setScanned(false);
 		setScannerOpen(true);
 	}
 
-	async function handleBarcodeScanned({ data }: { data: string }) {
-		if (scanned) return;
-		setScanned(true);
+	async function handleBarcodeScanned(data: string) {
 		const parsed = parsePairingUrl(data);
 		if (!parsed) {
 			setMessage({ tone: "error", text: "未识别到有效的 Lyra 配对二维码" });
@@ -94,10 +105,10 @@ export default function PairScreen() {
 		setToken(parsed.token);
 		setScannerOpen(false);
 		setMessage({ tone: "ok", text: "已成功扫码，正在自动连接…" });
-		await testAndSave(parsed.host, parsed.port, parsed.token);
+		await testAndSave(parsed.host, parsed.port, parsed.token, parsed.relay);
 	}
 
-	async function testAndSave(targetHost = host, targetPort = port, targetToken = token) {
+	async function testAndSave(targetHost = host, targetPort = port, targetToken = token, isRelay = false) {
 		haptic.impact();
 		setBusy(true);
 		try {
@@ -112,6 +123,27 @@ export default function PairScreen() {
 				return;
 			}
 
+			if (isRelay) {
+				const isPlainWs = /^ws:\/\//i.test(targetHost);
+				const res = await pair({
+					host: cleanHost,
+					port: parsedPort,
+					token: targetToken.trim(),
+					secure: !isPlainWs,
+					relay: true,
+				});
+				if (res.ok) {
+					haptic.success();
+					setMessage(null);
+					setShowManualForm(false);
+					router.back();
+				} else {
+					haptic.warning();
+					setMessage({ tone: "error", text: res.reason || "中转连接失败，请确认中转服务正在运行。" });
+				}
+				return;
+			}
+
 			const pingResult = await SyncClient.ping(targetHost, parsedPort);
 			if (!pingResult.ok) {
 				setMessage({
@@ -121,20 +153,20 @@ export default function PairScreen() {
 				return;
 			}
 
-			const ok = await pair({
+			const res = await pair({
 				host: cleanHost,
 				port: parsedPort,
 				token: targetToken.trim(),
 				secure: pingResult.secure,
 			});
-			if (ok) {
+			if (res.ok) {
 				haptic.success();
 				setMessage(null);
 				setShowManualForm(false);
 				router.back();
 			} else {
 				haptic.warning();
-				setMessage({ tone: "error", text: "令牌不正确，请在桌面端重新复制或刷新二维码。" });
+				setMessage({ tone: "error", text: res.reason || "令牌不正确，请在桌面端重新复制或刷新二维码。" });
 			}
 		} finally {
 			setBusy(false);
@@ -142,7 +174,23 @@ export default function PairScreen() {
 	}
 
 	return (
-		<KeyboardAvoidingView className="flex-1 bg-shell" behavior={Platform.OS === "ios" ? "padding" : undefined}>
+		<KeyboardAvoidingView className="flex-1 bg-shell" behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ paddingTop: insets.top }}>
+			{/* Custom Compact Header */}
+			<View className="h-14 flex-row items-center bg-shell px-3.5">
+				<Pressable
+					onPress={() => router.back()}
+					hitSlop={8}
+					className="h-9 w-9 items-center justify-center rounded-full bg-elevated active:opacity-85"
+				>
+					<View className="h-4 w-4 items-center justify-center">
+						<View
+							className="h-2.5 w-2.5 border-b-2 border-l-2 border-ink"
+							style={{ transform: [{ rotate: "45deg" }, { translateX: 1 }] }}
+						/>
+					</View>
+				</Pressable>
+				<Text className="ml-2.5 text-[17px] font-bold text-ink">设置</Text>
+			</View>
 			<ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 54 }}>
 				{/* Agent Execution & Personalization Preferences */}
 				{connection && (
@@ -303,37 +351,13 @@ export default function PairScreen() {
 				</View>
 			</ScrollView>
 
-			{/* Fullscreen Scanner Modal */}
-			<Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
-				<View className="flex-1 bg-black">
-					<CameraView
-						style={StyleSheet.absoluteFill}
-						facing="back"
-						barcodeScannerSettings={{
-							barcodeTypes: ["qr"],
-						}}
-						onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-					/>
-
-					<View className="flex-1 items-center justify-between p-8 pt-16">
-						<View className="rounded-full bg-black/60 px-5 py-2">
-							<Text className="text-[14px] font-medium text-white">对准桌面端设置中的配对二维码</Text>
-						</View>
-
-						<View className="h-64 w-64 rounded-3xl border-2 border-accent bg-transparent" />
-
-						<Pressable
-							onPress={() => {
-								haptic.tap();
-								setScannerOpen(false);
-							}}
-							className="rounded-full bg-white/20 px-8 py-3 backdrop-blur-md active:bg-white/30"
-						>
-							<Text className="text-[14px] font-medium text-white">取消</Text>
-						</Pressable>
-					</View>
-				</View>
-			</Modal>
+			{/* Google Code Scanner Style Fullscreen Scanner Modal */}
+			<MobileQrScannerModal
+				visible={scannerOpen}
+				title="对准桌面端配对二维码"
+				onClose={() => setScannerOpen(false)}
+				onScanned={handleBarcodeScanned}
+			/>
 		</KeyboardAvoidingView>
 	);
 }

@@ -115,114 +115,114 @@ export function SyncSettings() {
 				{!running ? (
 					<div className="px-4 py-10 text-center text-label text-ink-faint">先启用同步服务，再进行配对</div>
 				) : (
-					<div className="p-5">
-						<div className="flex flex-col gap-6 min-[900px]:flex-row min-[900px]:items-start">
-							{/*
-							 * White, always, and padded.
-							 *
-							 * A QR code is read as dark-on-light; drawn in the app's own palette it is a
-							 * light-on-dark code that many phone cameras will not lock onto at all. The
-							 * quiet zone around it is part of the specification rather than styling.
-							 */}
-							<div className="shrink-0 self-center min-[900px]:self-start">
-								<div className="rounded-2xl bg-white p-4">
+					<div className="p-6">
+						{/* 核心双栏：左侧二维码聚焦，右侧配对说明与网络信息 */}
+						<div className="flex flex-col items-center gap-8 md:flex-row md:items-center">
+							{/* 左侧：纯白紧凑二维码 */}
+							<div className="flex shrink-0 flex-col items-center">
+								<div className="rounded-2xl bg-white p-4 shadow-md ring-1 ring-black/5">
 									{code ? (
-										<QRCodeSVG value={code} size={248} level="M" marginSize={0} />
+										<QRCodeSVG value={code} size={176} level="M" marginSize={0} />
 									) : (
-										<div className="flex h-[248px] w-[248px] items-center justify-center px-6 text-center text-label text-[#6e6e6e]">
-											还没有可用于配对的地址
+										<div className="flex h-[176px] w-[176px] items-center justify-center text-center text-label text-[#6e6e6e]">
+											未检测到可用地址
 										</div>
 									)}
 								</div>
-								<div className="mt-2.5 flex items-center justify-center gap-1.5 text-detail text-ink-faint">
-									<QrCode size={12} strokeWidth={1.8} />
-									使用手机 Lyra 扫码
+								<div className="mt-3 flex items-center gap-1.5 text-detail font-medium text-ink-faint">
+									<QrCode size={13} strokeWidth={2} />
+									<span>使用手机 Lyra 扫码配对</span>
 								</div>
 							</div>
 
-							<div className="min-w-0 flex-1">
-								<div className="flex items-center gap-1.5 text-label font-medium text-ink">
-									<Smartphone size={14} strokeWidth={1.9} className="text-info" />
-									手机一键扫码连接
-								</div>
-								<ol className="mt-3 space-y-2">
-									<Step index={1}>
-										打开手机端 Lyra，在「连接桌面端」页面点击顶部 <Strong>「扫码连接」</Strong>。
-									</Step>
-									<Step index={2}>对准左侧二维码，即可自动识别协议并完成安全配对。</Step>
-								</ol>
-
-								<div className="mt-5 flex items-baseline justify-between gap-3">
-									<div className="text-detail text-ink-faint">二维码配对地址源</div>
-									<button
-										type="button"
-										onClick={() => setRemoteOpen((open) => !open)}
-										className="shrink-0 cursor-pointer text-detail text-info transition-opacity hover:opacity-80"
-									>
-										使用公网反代 / 中转服务器
-									</button>
+							{/* 右侧：纵向清晰指引与地址 */}
+							<div className="min-w-0 flex-1 space-y-4">
+								<div>
+									<div className="flex items-center gap-2 text-label font-semibold text-ink">
+										<Smartphone size={16} strokeWidth={2.2} className="text-info" />
+										<span>两步快速绑定</span>
+									</div>
+									<ol className="mt-2.5 space-y-1.5">
+										<Step index={1}>
+											手机端打开 Lyra，点击首页右上角或连接页的 <Strong>「扫码」</Strong>。
+										</Step>
+										<Step index={2}>
+											对准左侧二维码，即可瞬间完成端到端自动安全配对。
+										</Step>
+									</ol>
 								</div>
 
-								<div className="mt-2 flex flex-wrap gap-2">
-									{routes.map((route) => {
-										const key = keyOf(route);
-										const on = active !== null && key === keyOf(active);
-										return (
-											<button
-												key={key}
-												type="button"
-												onClick={() => setChosen(key)}
-												className={`cursor-pointer rounded-lg border px-2.5 py-1.5 font-mono text-detail transition-colors duration-[var(--ly-t-quick)] ${
-													on
-														? "border-info/50 bg-info/10 text-info"
-														: "border-line text-ink-muted hover:border-ink-faint hover:bg-card-hover"
-												}`}
-											>
-												{routeLabel(route)}
-											</button>
-										);
-									})}
-									{routes.length === 0 && <span className="text-detail text-ink-faint">未检测到可用地址</span>}
-								</div>
-
-								{/*
-								 * Kept mounted and unfolded so it closes the way it opens, matching the
-								 * rest of the app's reveals.
-								 */}
-								<div className="ly-reveal" data-open={remoteOpen} aria-hidden={!remoteOpen}>
-									<div>
-										<div className="mt-4 space-y-3 rounded-xl border border-line bg-shell/50 p-3.5">
-											<RemoteField
-												label="公网地址 / 反向代理"
-												hint="已有域名或端口转发能打到这台电脑时填。留空则只用局域网。"
-												placeholder="lyra.example.com 或 https://lyra.example.com:8443"
-												value={publicDraft}
-												onChange={setPublicDraft}
-												onCommit={(next) =>
-													void saveSettings({ ...settings, sync: { ...settings.sync, publicUrl: next } }).then(
-														() => void refreshSync(),
-													)
-												}
-											/>
-											<RemoteField
-												label="中转服务器"
-												hint="两端都连不上对方时用。电脑和手机都主动连它，NAT 后面也能配对。"
-												placeholder="relay.example.com 或 wss://relay.example.com:9000"
-												value={relayDraft}
-												onChange={setRelayDraft}
-												onCommit={(next) =>
-													void saveSettings({ ...settings, sync: { ...settings.sync, relayUrl: next } }).then(
-														() => void refreshSync(),
-													)
-												}
-											/>
-										</div>
+								{/* 当前网络地址与切换 */}
+								<div className="pt-2">
+									<div className="flex items-center justify-between pb-2 text-detail">
+										<span className="font-medium text-ink-faint">二维码当前指向的局域网地址</span>
+										<button
+											type="button"
+											onClick={() => setRemoteOpen((open) => !open)}
+											className="cursor-pointer text-info hover:underline"
+										>
+											{remoteOpen ? "收起高级网络配置" : "公网 / 中转代理配置"}
+										</button>
+									</div>
+									<div className="flex flex-wrap gap-2">
+										{routes.map((route) => {
+											const key = keyOf(route);
+											const on = active !== null && key === keyOf(active);
+											return (
+												<button
+													key={key}
+													type="button"
+													onClick={() => setChosen(key)}
+													className={`cursor-pointer rounded-lg border px-3 py-1.5 font-mono text-detail transition-all ${
+														on
+															? "border-info bg-info/10 font-semibold text-info shadow-xs"
+															: "border-line bg-shell/40 text-ink-muted hover:border-ink-faint hover:bg-shell"
+													}`}
+												>
+													{routeLabel(route)}
+												</button>
+											);
+										})}
+										{routes.length === 0 && <span className="text-detail text-ink-faint">未检测到可用地址</span>}
 									</div>
 								</div>
 							</div>
 						</div>
 
-						<div className="mt-5 border-t border-line-soft pt-4">
+						{/* 公网与中转服务器展开区：独立抽屉式，不夹在主内容中间 */}
+						<div className="ly-reveal" data-open={remoteOpen} aria-hidden={!remoteOpen}>
+							<div>
+								<div className="mt-5 space-y-3.5 rounded-xl border border-line bg-shell/60 p-4">
+									<div className="text-detail font-medium text-ink">远程穿透与中转服务器</div>
+									<RemoteField
+										label="公网地址 / 反向代理"
+										hint="已有域名或端口转发能打到这台电脑时填。留空则只用局域网。"
+										placeholder="lyra.example.com 或 https://lyra.example.com:8443"
+										value={publicDraft}
+										onChange={setPublicDraft}
+										onCommit={(next) =>
+											void saveSettings({ ...settings, sync: { ...settings.sync, publicUrl: next } }).then(
+												() => void refreshSync(),
+											)
+										}
+									/>
+									<RemoteField
+										label="中转服务器"
+										hint="两端都连不上对方时用。电脑和手机都主动连它，NAT 后面也能配对。"
+										placeholder="relay.example.com 或 wss://relay.example.com:9000"
+										value={relayDraft}
+										onChange={setRelayDraft}
+										onCommit={(next) =>
+											void saveSettings({ ...settings, sync: { ...settings.sync, relayUrl: next } }).then(
+												() => void refreshSync(),
+											)
+										}
+									/>
+								</div>
+							</div>
+						</div>
+
+						<div className="mt-6 border-t border-line-soft pt-4">
 							<button
 								type="button"
 								onClick={() => setManualOpen((open) => !open)}

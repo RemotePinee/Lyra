@@ -95,7 +95,7 @@ interface MobileState {
 	sessionActivities: Record<string, "running" | "waiting" | "done" | "failed">;
 
 	hydrate(): Promise<void>;
-	pair(connection: Connection): Promise<boolean>;
+	pair(connection: Connection): Promise<{ ok: boolean; reason?: string }>;
 	unpair(): Promise<void>;
 	refreshSessions(): Promise<void>;
 	openSession(meta: SessionMeta): Promise<void>;
@@ -117,6 +117,8 @@ interface MobileState {
 	listFiles(dir: string): Promise<import("./protocol").RemoteFileEntry[]>;
 	readFile(path: string): Promise<import("./protocol").RemoteFileContents | null>;
 	catchUp(): Promise<void>;
+	retryFrom(index: number): Promise<void>;
+	resume(): Promise<void>;
 }
 
 export const useMobile = create<MobileState>((set, get) => ({
@@ -163,19 +165,24 @@ export const useMobile = create<MobileState>((set, get) => ({
 		}
 	},
 
-	async pair(connection) {
+	async pair(connection): Promise<{ ok: boolean; reason?: string }> {
+		// Disconnect existing client first so old socket doesn't hold room on relay
+		get().client?.disconnect();
 		const client = new SyncClient(connection);
-		if (!(await client.verify())) {
-			set({ error: "地址或令牌不正确，请检查桌面端的「移动端同步」页面。" });
-			return false;
+		const verification = await client.verify();
+		if (!verification.ok) {
+			client.disconnect();
+			const reason = verification.reason || "地址或令牌不正确，请检查桌面端的「移动端同步」页面。";
+			set({ error: reason });
+			return { ok: false, reason };
 		}
 		// Keychain writes can fail (locked device, web preview); pairing should still work
 		// for the current session rather than dropping the user back to the pairing screen.
 		await SecureStore.setItemAsync(CONNECTION_KEY, JSON.stringify(connection)).catch(() => undefined);
-		attach(connection, set, get);
-		set({ connection, error: null });
+		attach(connection, set, get, client);
+		set({ connection, error: null, socketState: "open" });
 		await get().refreshSessions();
-		return true;
+		return { ok: true };
 	},
 
 	async unpair() {
@@ -435,6 +442,48 @@ export const useMobile = create<MobileState>((set, get) => ({
 		await client.approve(activeSession.projectId, activeSession.id, id, decision).catch(() => undefined);
 	},
 
+	async retryFrom(index: number) {
+		const { client, activeSession, messages } = get();
+		if (!client || !activeSession || get().running) return;
+
+		let targetUserIndex = -1;
+		for (let i = Math.min(index, messages.length - 1); i >= 0; i--) {
+			const m = messages[i];
+			if (m.role === "user" && !m.synthetic) {
+				targetUserIndex = i;
+				break;
+			}
+		}
+		if (targetUserIndex === -1) return;
+
+		const targetMsg = messages[targetUserIndex];
+		if (targetMsg.role !== "user") return;
+		const optimisticMessages: Message[] = [
+			...messages.slice(0, targetUserIndex),
+			{ role: "user", content: targetMsg.content, timestamp: Date.now() },
+		];
+
+		set({
+			messages: optimisticMessages,
+			toolRuns: {},
+			approvals: [],
+			running: true,
+			turnStartedAt: Date.now(),
+			turnTokens: 0,
+		});
+
+		try {
+			await client.editMessage(activeSession.id, targetUserIndex, targetMsg.content);
+		} catch (error) {
+			set({ error: error instanceof Error ? error.message : String(error), running: false });
+		}
+	},
+
+	async resume() {
+		const { send } = get();
+		await send("继续从中断的地方接着做。");
+	},
+
 	/**
 	 * Choose the model, only while the conversation is still empty.
 	 *
@@ -673,18 +722,29 @@ type Getter = () => MobileState;
 
 let appStateSubscription: { remove: () => void } | null = null;
 
-function attach(connection: Connection, set: Setter, get: Getter): void {
-	get().client?.disconnect();
+function attach(connection: Connection, set: Setter, get: Getter, existingClient?: SyncClient): void {
+	if (existingClient) {
+		const current = get().client;
+		if (current && current !== existingClient) {
+			current.disconnect();
+		}
+	} else {
+		get().client?.disconnect();
+	}
 	if (appStateSubscription) {
 		appStateSubscription.remove();
 		appStateSubscription = null;
 	}
 
-	const client = new SyncClient(connection);
+	const client = existingClient ?? new SyncClient(connection);
 
 	client.onStateChange((socketState) => {
 		set({ socketState });
 		if (socketState === "open") {
+			// Clear any transient disconnection errors and auto-refresh sessions/settings
+			set({ error: null });
+			void get().refreshSessions();
+
 			const activeSession = get().activeSession;
 			if (activeSession) {
 				// If session already mounted with messages, silently catch up missing delta
@@ -699,7 +759,9 @@ function attach(connection: Connection, set: Setter, get: Getter): void {
 	});
 
 	client.onEvent((sessionId, event) => applyEvent(sessionId, event, set, get));
-	client.connect();
+	if (!existingClient) {
+		client.connect();
+	}
 	set({ client });
 
 	// Listen for OS foreground resume event: immediately ping/reconnect WebSocket

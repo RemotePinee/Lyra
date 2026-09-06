@@ -118,8 +118,6 @@ export function SettingsShell() {
 
 	const onPhone = window.lyra?.host === "mobile";
 
-	const section = sectionFor(GROUPS, wanted, window.lyra?.host === "mobile");
-
 	const groups = groupsFor(
 		GROUPS.map((group) => {
 			if (group.label !== "基础设置" || onPhone) return group;
@@ -130,6 +128,8 @@ export function SettingsShell() {
 		}),
 		onPhone,
 	);
+
+	const section = sectionFor(groups, wanted, onPhone);
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {

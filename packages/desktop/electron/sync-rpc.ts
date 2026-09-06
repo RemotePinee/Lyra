@@ -65,6 +65,46 @@ export interface PlatformFacts {
 	platform: NodeJS.Platform;
 }
 
+// Helper: slice records from the end so that we capture at least `minTurns` actual conversation messages (user or assistant text)
+// rather than being saturated entirely by intermediate tool results.
+function sliceTailRecords<T extends { type: string; message?: { role: string; content?: unknown } }>(
+	records: T[],
+	defaultTail = 120,
+	minTurns = 15,
+): { records: T[]; hasEarlier: boolean } {
+	if (records.length <= defaultTail) {
+		return { records, hasEarlier: false };
+	}
+
+	let turns = 0;
+	let cutIndex = records.length - defaultTail;
+
+	for (let i = records.length - 1; i >= 0; i--) {
+		const rec = records[i];
+		if (rec.type === "message" && (rec.message?.role === "user" || rec.message?.role === "assistant")) {
+			turns++;
+		}
+		// If we've scanned at least defaultTail records AND found enough conversational turns, cut here
+		if (records.length - i >= defaultTail && turns >= minTurns) {
+			cutIndex = i;
+			break;
+		}
+		// Bound maximum scan depth to 500 records to prevent excessive memory payloads
+		if (records.length - i >= 500) {
+			cutIndex = i;
+			break;
+		}
+		if (i === 0) {
+			cutIndex = 0;
+		}
+	}
+
+	return {
+		records: records.slice(cutIndex),
+		hasEarlier: cutIndex > 0,
+	};
+}
+
 type Handler = (deps: RpcDeps, args: unknown[]) => Promise<unknown>;
 
 const s = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -79,7 +119,24 @@ const s = (value: unknown): string => (typeof value === "string" ? value : "");
  */
 export const RPC: Record<string, Handler> = {
 	// -- Reading the shell -----------------------------------------------------
-	"settings.get": async (deps) => deps.settings(),
+	"settings.get": async (deps) => {
+		const s = deps.settings();
+		const models = (s.providers ?? [])
+			.filter((p) => p.enabled)
+			.flatMap((p) =>
+				(p.models ?? []).map((m) => ({
+					id: m.id,
+					name: m.name,
+					provider: p.name,
+					api: p.api,
+					supportsThinking: m.supportsThinking !== false,
+				})),
+			);
+		return {
+			...s,
+			models,
+		};
+	},
 	"sessions.list": async (deps) => deps.store().listSessions(),
 	"workspace.info": async (deps, [path]) => deps.workspaceInfo(s(path)),
 	"usage.scan": async (deps) => deps.scanUsage?.() ?? null,
@@ -115,6 +172,54 @@ export const RPC: Record<string, Handler> = {
 			compactions: loaded.compactions,
 		};
 	},
+	"sessions.records": async (deps, [projectId, sessionId, options]) => {
+		const opts = (options ?? {}) as { since?: number; before?: number; limit?: number; tail?: number };
+		const sinceSeq = typeof opts.since === "number" ? opts.since : undefined;
+		const beforeSeq = typeof opts.before === "number" ? opts.before : undefined;
+		const limit = typeof opts.limit === "number" ? opts.limit : undefined;
+		const tail = typeof opts.tail === "number" ? opts.tail : undefined;
+
+		const allRecords = [];
+		for await (const record of deps.store().read(s(projectId), s(sessionId), {
+			sinceSeq,
+			beforeSeq,
+			limit: tail ? undefined : limit,
+		})) {
+			allRecords.push(record);
+		}
+
+		if (tail && tail > 0) {
+			const sliced = sliceTailRecords(allRecords, tail, 12);
+			return {
+				records: sliced.records,
+				total: allRecords.length,
+				hasEarlier: sliced.hasEarlier || typeof beforeSeq === "number",
+			};
+		}
+
+		return {
+			records: allRecords,
+			total: allRecords.length,
+			hasEarlier: typeof beforeSeq === "number",
+		};
+	},
+	"sessions.status": async (deps, [projectId, sessionId]) => {
+		const warm = deps.live(s(sessionId));
+		if (warm) {
+			return {
+				meta: warm.meta,
+				running: warm.running,
+				pendingApprovals: warm.listPendingApprovals(),
+			};
+		}
+		const loaded = await deps.store().load(s(projectId), s(sessionId));
+		if (!loaded) return null;
+		return {
+			meta: loaded.meta,
+			running: false,
+			pendingApprovals: [],
+		};
+	},
 	"sessions.open": async (deps, [projectId, sessionId]) => {
 		const session = await deps.activate(s(projectId), s(sessionId));
 		return session ? deps.snapshot(session) : null;
@@ -128,9 +233,11 @@ export const RPC: Record<string, Handler> = {
 	// -- Driving a turn --------------------------------------------------------
 	"agent.prompt": async (deps, [sessionId, content, options]) => {
 		const session = await live(deps, s(sessionId));
-		if (!session) return null;
-		await session.prompt(content as never, (options ?? {}) as never);
-		return null;
+		if (!session) return { accepted: false, error: "Session not found" };
+		// Fire-and-forget: do not await the entire multi-minute turn in RPC dispatch!
+		// Agent streams events back over WebSocket.
+		void session.prompt(content as never, (options ?? {}) as never).catch(() => undefined);
+		return { accepted: true };
 	},
 	"agent.abort": async (deps, [sessionId]) => {
 		deps.live(s(sessionId))?.abort();

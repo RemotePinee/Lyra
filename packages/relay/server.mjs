@@ -122,7 +122,11 @@ function join(client, payload) {
 	 * The id is derived from the pairing token, so a third arrival means that token is known to
 	 * someone it should not be. Refusing the newcomer is the safer half of a bad situation:
 	 * evicting a member would let whoever holds the leaked token displace the real device.
+	 * If existing member is destroyed or closed, purge it first.
 	 */
+	for (const m of members) {
+		if (m.socket.destroyed || m.socket.readyState > 1) members.delete(m);
+	}
 	if (members.size >= 2) return refuse(client, "room-full");
 
 	client.room = hello.room;
