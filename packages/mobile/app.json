@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lyra",
     "slug": "lyra",
-    "version": "0.9.7",
+    "version": "0.9.8",
     "orientation": "portrait",
     "scheme": "lyra",
     "userInterfaceStyle": "automatic",
@@ -22,7 +22,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.lyra.app",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "userInterfaceStyle": "automatic",
       "splash": {
         "image": "./assets/logo.png",
@@ -45,7 +45,7 @@
     },
     "android": {
       "package": "dev.lyra.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "userInterfaceStyle": "automatic",
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
