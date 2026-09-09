@@ -11,6 +11,7 @@
  */
 
 import type { Message } from "../types.ts";
+import type { CommandRun } from "../agent/events.ts";
 import type { Boundary, SessionMeta, SessionRecord, SessionRecordInput } from "./store.ts";
 
 export interface ReadSessionOptions {
@@ -28,7 +29,7 @@ export interface SessionStorage {
 	load(
 		projectId: string,
 		sessionId: string,
-	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[]; compaction: Boundary | null } | null>;
+	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[]; commandRuns?: CommandRun[]; compaction: Boundary | null } | null>;
 	listSessions(): Promise<SessionMeta[]>;
 	rebuildIndex(): Promise<SessionMeta[]>;
 	truncateFrom(

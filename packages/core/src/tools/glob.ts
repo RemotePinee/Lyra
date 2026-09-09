@@ -13,6 +13,7 @@ const SKIP_DIRS = new Set([
 
 interface GlobArgs {
 	pattern: string;
+	description?: string;
 	path?: string;
 	limit?: number;
 }
@@ -27,6 +28,7 @@ export const globTool: Tool<GlobArgs> = {
 	parameters: {
 		type: "object",
 		properties: {
+			description: { type: "string", description: "Optional description of what this find operation is doing." },
 			pattern: { type: "string", description: "Glob pattern, relative to the search root." },
 			query: { type: "string", description: "Alias for pattern." },
 			search: { type: "string", description: "Alias for pattern." },
@@ -38,37 +40,25 @@ export const globTool: Tool<GlobArgs> = {
 	},
 	summarize: (args) => {
 		const raw = args as unknown as Record<string, unknown>;
-		const term = String(raw.pattern ?? raw.query ?? raw.search ?? raw.glob ?? raw.description ?? "");
+		const term = String(raw.pattern ?? raw.query ?? raw.search ?? extractPattern(raw.description) ?? "");
 		return term ? `Find ${term}` : "Find";
 	},
 
 	async execute(args, ctx): Promise<ToolResult> {
 		const raw = args as unknown as Record<string, unknown>;
-		let pattern =
-			typeof raw.pattern === "string" && raw.pattern
-				? raw.pattern
+		const pattern = typeof raw.pattern === "string" && raw.pattern
+			? raw.pattern
+			: typeof raw.glob === "string" && raw.glob
+				? raw.glob
 				: typeof raw.query === "string" && raw.query
 					? raw.query
 					: typeof raw.search === "string" && raw.search
 						? raw.search
-						: typeof raw.glob === "string" && raw.glob
-							? raw.glob
+						: typeof raw.description === "string"
+							? extractPattern(raw.description)
 							: "";
 
-		if (!pattern && typeof raw.description === "string") {
-			const desc = raw.description.trim();
-			const match = desc.match(/^(?:pattern|glob):\s*(.+)$/i);
-			pattern = match ? match[1] : desc;
-		}
-
-		const path =
-			typeof raw.path === "string"
-				? raw.path
-				: typeof raw.dir === "string"
-					? raw.dir
-					: typeof raw.cwd === "string"
-						? raw.cwd
-						: undefined;
+		const path = typeof raw.path === "string" ? raw.path : typeof raw.dir === "string" ? raw.dir : typeof raw.cwd === "string" ? raw.cwd : undefined;
 
 		let root: string;
 		try {
@@ -76,7 +66,6 @@ export const globTool: Tool<GlobArgs> = {
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
-
 		if (!pattern) return errorResult("`pattern` is required.");
 
 		const regex = globToRegExp(pattern);
@@ -113,7 +102,11 @@ export const globTool: Tool<GlobArgs> = {
 		const shown = matches.slice(0, limit);
 
 		if (shown.length === 0) {
-			return { content: [{ type: "text", text: `No files match ${pattern}.` }], details: { kind: "glob", count: 0 } };
+			return {
+				content: [{ type: "text", text: `No files match ${pattern}.` }],
+				details: { kind: "glob", count: 0 },
+				uneventful: true,
+			};
 		}
 
 		const footer = matches.length > shown.length ? `\n\n[${matches.length - shown.length} more matches not shown]` : "";
@@ -173,4 +166,16 @@ export function globToRegExp(pattern: string): RegExp {
 
 function escapeRegex(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Extract a glob pattern when the model embeds it in a description string. */
+export function extractPattern(desc: unknown): string {
+	if (typeof desc !== "string" || !desc.trim()) return "";
+	const labeled = desc.match(/(?:pattern|glob|query)[:=]\s*[`'"]?([^`'")\s]+)/i);
+	if (labeled?.[1]) return labeled[1].replace(/[`'"]+$/, "").trim();
+	const quoted = desc.match(/[`'"]([^`'"]*[*?{}][^`'"]*)[`'"]/);
+	if (quoted?.[1]) return quoted[1].trim();
+	const wildcard = desc.match(/\S*[*?{}][^\s)]*/);
+	if (wildcard?.[0]) return wildcard[0].trim();
+	return "";
 }

@@ -19,13 +19,19 @@ import type { AgentRunConfig } from "../agent/loop.ts";
 import { runTurn } from "../agent/runner.ts";
 import type { streamAssistant } from "../ai/index.ts";
 import type { Settings } from "../config/settings.ts";
+import { withEnvironment } from "../prompt/environment.ts";
+import { readPromptOverride } from "../prompt/overrides.ts";
 import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
 import { sandboxModeFor } from "../sandbox/mode-for.ts";
 import { lyraHome } from "../session/store.ts";
+import { CODE_INTEL_KEY, CodeIntelManager } from "../lsp/manager.ts";
+import { resolveSubAgentModel } from "../config/model-roles.ts";
 import { compactWith } from "./compaction.ts";
+import { childDispatch, DEFAULT_MAX_DEPTH, DISPATCH_KEY, DispatchGate, rootDispatch, type DispatchContext } from "./dispatch-guard.ts";
 import { textTokens, toolTokens } from "./context.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 import { writePreview } from "./previews.ts";
+import { makeYieldTool, renderYield, yieldInstruction, YIELD_KEY, type YieldOutcome } from "./yield-tool.ts";
 import type { Skill } from "../skills/loader.ts";
 import { SKILLS_KEY } from "../skills/tool.ts";
 import { AGENTS_KEY, BUILTIN_AGENTS, type AgentDefinition } from "../tools/task.ts";
@@ -41,10 +47,27 @@ async function pathExists(path: string): Promise<boolean> {
 	}
 }
 
+/**
+ * What a delegated run hands back.
+ *
+ * `text` is what goes in the transcript and what the parent model reads. `output` is the same
+ * answer as data, present only when the agent declared a schema and yielded against it — the
+ * parent tool puts it in `details` so the UI can render it and `agent://<id>/<field>` can index
+ * into it without the parent re-reading anything.
+ */
+export interface SubAgentAnswer {
+	text: string;
+	output?: Record<string, unknown>;
+	/** Schema problems that were accepted rather than rejected. */
+	warnings?: string[];
+}
+
 export interface SubAgentOptions {
 	sessionId: string;
 	cwd: string;
 	settings: Settings;
+	/** Resolve preferences at dispatch time without altering an already running model request. */
+	getSettings?: () => Settings;
 	tools: Tool[];
 	skills: Skill[];
 	agents: AgentDefinition[];
@@ -67,6 +90,20 @@ export interface SubAgentOptions {
 	 * old behaviour exactly. Delegation works the same either way; the registry only adds a window.
 	 */
 	registry?: SubAgentRegistry;
+	/**
+	 * Where the run doing the dispatching sits in the tree. Absent means the main conversation.
+	 *
+	 * Carried rather than counted, because the two limits need different things from it: depth is
+	 * a number, and self-recursion needs the names on the path.
+	 */
+	dispatch?: DispatchContext;
+	/**
+	 * The concurrency semaphore, shared by the whole tree.
+	 *
+	 * One per session, passed down: a limit of four that each level enforced separately would be
+	 * four at the top and four under each of those.
+	 */
+	gate?: DispatchGate;
 }
 
 export async function runSubAgent(
@@ -75,14 +112,52 @@ export async function runSubAgent(
 	provider: ProviderConfig,
 	model: ModelConfig,
 	_parentSystemPrompt: string,
-): Promise<string> {
+): Promise<SubAgentAnswer> {
 	const definition = options.agents.find((a) => a.name === (input.agentType ?? "general")) ?? BUILTIN_AGENTS[0];
-	const allowed =
+	const fromSession =
 		definition.tools === "*" ? options.tools : options.tools.filter((t) => (definition.tools as string[]).includes(t.name));
+
+	/*
+	 * Recursive dispatch is off unless the definition asks for it, and off again at the depth limit.
+	 *
+	 * Removing `task` from the list rather than refusing the call later is deliberate: a model
+	 * cannot want a tool it has not been shown, and an error after the fact costs a turn to
+	 * discover something that was never going to work.
+	 *
+	 * Both halves were previously missing their other half. `spawns` kept `task` in the list, and
+	 * nothing was ever passed for `spawnSubAgent` — so a definition that declared it could delegate
+	 * got the tool and a refusal from it. The depth the prompt promised was not enforced anywhere.
+	 */
+	// Its registry id, minted before the dispatch context so a run one level down can name its parent.
+	const id = `${options.sessionId}:sub:${randomUUID().slice(0, 8)}`;
+	const here = childDispatch(options.dispatch ?? rootDispatch(), definition.name, id);
+	const maySpawn = definition.spawns === "*" || (Array.isArray(definition.spawns) && definition.spawns.length > 0);
+	const deepEnough = here.depth < DEFAULT_MAX_DEPTH;
+	const withoutTask = maySpawn && deepEnough ? fromSession : fromSession.filter((tool) => tool.name !== "task");
+
+	/*
+	 * A declared output shape turns the reply into an object.
+	 *
+	 * Built per run because the tool carries the attempt counter — a fresh one each dispatch, so a
+	 * sub-agent that used up its retries does not hand a spent budget to the next one.
+	 */
+	// Local preferences override portable definitions; an explicit missing model is an error.
+
+	const chosen = resolveSubAgentModel(options.getSettings?.() ?? options.settings, definition, { provider, model });
+	const runProvider = chosen.provider;
+	const runModel = chosen.model;
+
+	const yieldTool = definition.output ? makeYieldTool(definition.output, { mode: definition.schemaMode }) : undefined;
+	const allowed = yieldTool ? [...withoutTask, yieldTool as unknown as Tool] : withoutTask;
+	const subState = new Map<string, unknown>([
+		[SKILLS_KEY, options.skills],
+		[AGENTS_KEY, options.agents],
+		// So the `task` tool one level down knows where it is, and can refuse a cycle by name.
+		[DISPATCH_KEY, here],
+	]);
 
 	// The sub-agent gets its own message list and its own state map, so its file reads and
 	// todo list cannot leak into the parent's.
-	const id = `${options.sessionId}:sub:${randomUUID().slice(0, 8)}`;
 	const steps: string[] = [];
 	/*
 	 * Its own controller, chained to the parent's.
@@ -96,7 +171,15 @@ export async function runSubAgent(
 	const stopWithParent = () => controller.abort();
 	options.signal?.addEventListener("abort", stopWithParent, { once: true });
 	const registry = options.registry;
-	registry?.start({ id, agent: definition.name, description: input.description, abort: () => controller.abort() });
+	registry?.start({
+		id,
+		agent: definition.name,
+		description: input.description,
+		abort: () => controller.abort(),
+		// Who asked, and how far down this is — the two things a lineage is made of.
+		parentId: options.dispatch?.id,
+		depth: here.depth,
+	});
 	/*
 	 * What it was asked to do, as the first line of its transcript.
 	 *
@@ -123,11 +206,20 @@ export async function runSubAgent(
 		skills: options.skills,
 		agents: options.agents,
 		projectInstructions: await loadProjectInstructions(options.cwd),
+		/*
+		 * 行为准则跟着走，身份不跟。
+		 *
+		 * 「注释一律中文」「匹配周围代码风格」对子代理写的代码同样成立——这些约定管的是产出，
+		 * 而子代理的产出最后进的是同一个仓库。而 `identity` 不读：子代理的身份由它自己的定义
+		 * 写着（「你是一个只读的代码审查者」），用项目的身份段盖掉它，等于把派它出去的理由抹掉。
+		 */
+		guidelinesOverride: await readPromptOverride(options.cwd, "guidelines"),
 		platform: platform(),
-		modelName: model.name,
+		modelName: runModel.name,
 		isGitRepo: await pathExists(join(options.cwd, ".git")),
-		today: new Date().toISOString().slice(0, 10),
-		appendSystemPrompt: definition.systemPrompt,
+		appendSystemPrompt: definition.output
+			? `${definition.systemPrompt}\n${yieldInstruction(definition.output)}`
+			: definition.systemPrompt,
 	});
 
 	let result: Awaited<ReturnType<typeof runTurn>>;
@@ -136,11 +228,12 @@ export async function runSubAgent(
 			{
 				sessionId: id,
 				cwd: options.cwd,
-				provider,
-				model,
+				provider: runProvider,
+				model: runModel,
 				systemPrompt: subAgentPrompt,
 				tools: allowed,
-				messages: [{ role: "user", content: [{ type: "text", text: input.prompt }], timestamp: Date.now() }],
+				// 子代理也要知道今天几号，同样接在末尾——理由见 `prompt/environment.ts`。
+				messages: withEnvironment([{ role: "user", content: [{ type: "text", text: input.prompt }], timestamp: Date.now() }]),
 				/*
 				 * The app default, deliberately — not the dispatching conversation's level.
 				 *
@@ -148,13 +241,43 @@ export async function runSubAgent(
 				 * worth it; the sub-agents it dispatches are a dozen cheap errands run in parallel,
 				 * and inheriting that level would multiply the decision by however many were sent.
 				 */
-				thinking: options.settings.thinking,
+				thinking: chosen.thinking,
 				retryAttempts: options.settings.retryAttempts,
 				signal: controller.signal,
-				state: new Map<string, unknown>([
-					[SKILLS_KEY, options.skills],
-					[AGENTS_KEY, options.agents],
-				]),
+				state: subState,
+				/*
+				 * How a sub-agent delegates further — and until now, it could not.
+				 *
+				 * `spawns` kept the `task` tool in its list and nothing was ever passed here, so a
+				 * definition that declared it could orchestrate got the tool and, from it, "sub-agents
+				 * are not available in this session". The field parsed, the tool appeared, the feature
+				 * did not exist.
+				 *
+				 * Undefined rather than a function that refuses, when this run may not spawn: the tool
+				 * is already gone from `allowed` in that case, and leaving the capability behind it
+				 * would be a second answer to the same question.
+				 */
+				spawnSubAgent: allowed.some((tool) => tool.name === "task")
+					? (nested) => {
+							/*
+							 * `spawns: ["scout", "reviewer"]` 是一份名单，不只是一个开关。
+							 *
+							 * 计划里它的作用是「读 agent 定义的人一眼看出这是个编排者，以及它会派谁」。
+							 * 只把它当布尔用，那份名单就成了注释。
+							 */
+							const allowedNames = definition.spawns;
+							const wanted = nested.agentType ?? "general";
+							if (Array.isArray(allowedNames) && !allowedNames.includes(wanted)) {
+								throw new Error(
+									`\`${definition.name}\` 只被允许派生 ${allowedNames.join("、")}，不包括 \`${wanted}\`。` +
+										`要放开，请在它的定义里把 \`${wanted}\` 加进 spawns。`,
+								);
+							}
+							return (options.gate ?? new DispatchGate(options.settings.maxConcurrentSubAgents)).run(() =>
+								runSubAgent({ ...options, dispatch: here }, nested, runProvider, runModel, subAgentPrompt),
+							);
+						}
+					: undefined,
 				requestApproval: (request) => options.requestApproval(request),
 				/*
 				 * The session's policy, which does not stop applying because the work was delegated.
@@ -203,7 +326,7 @@ export async function runSubAgent(
 				 * the tools, which is not what the parent carries.
 				 */
 				compact: (messages, model) =>
-					compactWith(messages, model, provider, options.summaryStream, textTokens(subAgentPrompt) + toolTokens(allowed)),
+					compactWith(messages, model, runProvider, options.summaryStream, textTokens(subAgentPrompt) + toolTokens(allowed)),
 				maxTurns: 60,
 			},
 			(event) => {
@@ -237,10 +360,28 @@ export async function runSubAgent(
 		throw error;
 	} finally {
 		options.signal?.removeEventListener("abort", stopWithParent);
+		/*
+		 * A delegated run has its own state map, so anything heavy it started is its own to stop.
+		 *
+		 * The session's `dispose` cannot reach this one — it looks at the session's map, and a
+		 * sub-agent's is deliberately separate so its file reads and todo list stay out of the
+		 * parent's. Which means a sub-agent that called `lsp` would leave a language server running
+		 * for the life of the process, once per dispatch.
+		 */
+		const codeIntel = subState.get(CODE_INTEL_KEY);
+		if (codeIntel instanceof CodeIntelManager) await codeIntel.dispose().catch(() => {});
 	}
 
+	/*
+	 * A yielded object is the answer; the last paragraph is the fallback.
+	 *
+	 * The fallback still matters. An agent with no declared schema returns prose by design, and one
+	 * that was aborted or ran out of turns before yielding has said something worth passing up
+	 * rather than nothing at all.
+	 */
+	const yielded = subState.get(YIELD_KEY) as YieldOutcome | undefined;
 	const last = [...result.messages].reverse().find((m) => m.role === "assistant");
-	const answer =
+	const prose =
 		last?.role === "assistant"
 			? last.content
 					.filter((c) => c.type === "text")
@@ -248,6 +389,7 @@ export async function runSubAgent(
 					.join("\n")
 					.trim()
 			: "";
+	const answer = yielded ? renderYield(yielded) : prose;
 
 	/*
 	 * Aborted is not failed.
@@ -255,7 +397,12 @@ export async function runSubAgent(
 	 * A sub-agent stopped on purpose has done exactly what was asked of it, and recording that as a
 	 * failure would put an error in the parent's transcript for a button the user pressed.
 	 */
-	registry?.finish(id, controller.signal.aborted ? { status: "aborted" } : { status: "done", answer });
+	registry?.finish(
+		id,
+		controller.signal.aborted
+			? { status: "aborted" }
+			: { status: "done", answer, output: yielded?.value, warnings: yielded?.warnings },
+	);
 	await options.emit({ type: "subagent_done", id, steps, answer });
-	return answer;
+	return { text: answer, output: yielded?.value, warnings: yielded?.warnings };
 }

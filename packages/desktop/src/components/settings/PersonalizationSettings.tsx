@@ -21,6 +21,8 @@ export function PersonalizationSettings() {
 	const [customInstructions, setCustomInstructions] = useState(personalization.customInstructions ?? "");
 	const [savedNotice, setSavedNotice] = useState(false);
 	const [memoryEntries, setMemoryEntries] = useState<{ id: string; content: string; createdAt: number }[]>([]);
+	const workspace = useApp((s) => s.workspace);
+	const [projectMemory, setProjectMemory] = useState<Awaited<ReturnType<typeof window.lyra.projectMemory.list>> | null>(null);
 	const [newMemory, setNewMemory] = useState("");
 	const [loadingMemory, setLoadingMemory] = useState(false);
 
@@ -39,6 +41,11 @@ export function PersonalizationSettings() {
 	useEffect(() => {
 		void loadMemories();
 	}, []);
+
+	useEffect(() => {
+		if (!workspace?.path || !window.lyra.projectMemory?.list) return;
+		void window.lyra.projectMemory.list(workspace.path).then(setProjectMemory).catch(() => setProjectMemory(null));
+	}, [workspace?.path]);
 
 	const handleSaveInstructions = async () => {
 		if (!settings) return;
@@ -60,8 +67,14 @@ export function PersonalizationSettings() {
 			personalization: {
 				...personalization,
 				enableMemory: checked,
+				enableProjectMemory: (personalization.enableProjectMemory ?? personalization.enableMemory) !== false,
 			},
 		});
+	};
+
+	const handleToggleExtraction = async (checked: boolean) => {
+		if (!settings) return;
+		await saveSettings({ ...settings, memoryExtraction: checked });
 	};
 
 	const handleToggleToolMemory = async (checked: boolean) => {
@@ -179,7 +192,7 @@ export function PersonalizationSettings() {
 
 				<Card>
 					<Row
-						title="启用本地记忆"
+						title="用户记忆"
 						detail="根据此电脑上的聊天与工程任务沉淀关键记忆，并用于个性化此电脑上的后续会话"
 						control={
 							<Toggle
@@ -197,6 +210,28 @@ export function PersonalizationSettings() {
 								onChange={handleToggleToolMemory}
 							/>
 						}
+					/>
+					<Row
+						title="项目记忆"
+						detail="在后续对话中使用项目约定、决策与排障经验。关闭后停止读取和记录，保留已有记忆。"
+						control={
+							<Toggle
+								checked={(personalization.enableProjectMemory ?? personalization.enableMemory) !== false}
+								onChange={(checked) => {
+									if (settings) {
+										void saveSettings({
+											...settings,
+											personalization: { ...personalization, enableProjectMemory: checked },
+										});
+									}
+								}}
+							/>
+						}
+					/>
+					<Row
+						title="自动沉淀项目记忆"
+						detail="空闲时读最近几次对话（12 小时前到 30 天内），提炼这个仓库的约定和踩过的坑，写进项目记忆。会把那些对话内容发给你配置的模型；默认关闭，每天最多一次。"
+						control={<Toggle checked={settings?.memoryExtraction === true} onChange={handleToggleExtraction} />}
 					/>
 				</Card>
 
@@ -247,6 +282,26 @@ export function PersonalizationSettings() {
 								{loadingMemory ? "正在读取记忆..." : "暂无持久化记忆条目，可在此手动添加或在对话中自动沉淀。"}
 							</div>
 						)}
+					</div>
+				)}
+				{workspace?.path && projectMemory && (projectMemory.lessons.length > 0 || projectMemory.extracted) && (
+					<div className="pt-2" data-project-memory>
+						<p className="mb-1.5 text-caption text-ink-muted">
+							这个项目记住的（<span className="font-mono">{workspace.name ?? workspace.path}</span>）
+						</p>
+						<div className="space-y-1.5">
+							{projectMemory.lessons.map((lesson) => (
+								<div key={`${lesson.at}-${lesson.text}`} className="rounded-xl border border-line bg-card p-3" data-project-lesson>
+									<span className="text-detail text-ink leading-relaxed break-words">{lesson.text}</span>
+									{lesson.context && <span className="block text-caption text-ink-muted">适用于：{lesson.context}</span>}
+								</div>
+							))}
+							{projectMemory.extracted && (
+								<div className="rounded-xl border border-line bg-card p-3" data-project-extracted>
+									<pre className="whitespace-pre-wrap font-sans text-detail text-ink leading-relaxed break-words">{projectMemory.extracted.text}</pre>
+								</div>
+							)}
+						</div>
 					</div>
 				)}
 			</div>

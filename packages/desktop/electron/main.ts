@@ -114,6 +114,7 @@ import {
 	unregisterScreenshotShortcut,
 	warmScreenshotOverlay,
 } from "./screenshot.ts";
+import { registerProjectMemoryIpc } from "./ipc/project-memory.ts";
 
 /*
  * A profile is a whole app, Chromium's half included.
@@ -695,4 +696,5 @@ function registerIpc(): void {
 
 	registerGitIpc({ insideAProject });
 	registerUsageIpc();
+	registerProjectMemoryIpc({ store: () => store });
 }

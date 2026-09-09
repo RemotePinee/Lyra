@@ -32,6 +32,7 @@ import { useFileTreeStore } from "./store/fileTree.ts";
 import { useOpenFile } from "./store/openFile.ts";
 import { useTerminalPrewarm } from "./terminal-prewarm.ts";
 import { applyAppearance, watchSystemTheme } from "./theme.ts";
+import { useMemoryPass } from "./useMemoryPass.ts";
 
 export function App() {
 	const ready = useApp((s) => s.ready);
@@ -46,6 +47,8 @@ export function App() {
 	useTerminalPrewarm();
 	// Whose files these are. Owned here rather than by the file pane, which is not always mounted.
 	useProjectFiles();
+	// Run idle project memory extraction when enabled.
+	useMemoryPass();
 
 	const appearance = useApp((s) => s.settings?.appearance);
 	useEffect(() => {
@@ -261,8 +264,8 @@ function ChatShell({ settings }: { settings: boolean }) {
 					<DockView
 						title={main.title}
 						icon={main.icon}
-						// On macOS: Panel controls ride on conversation title bar. On Windows: AppHeader handles it.
-						actions={isDarwin && !main.solo ? <PanelMenu /> : undefined}
+						// Panel controls ride on conversation title bar (top-right of the active card).
+						actions={!main.solo ? <PanelMenu /> : undefined}
 						solo={main.solo}
 						renderConversation={() => main.body}
 					/>

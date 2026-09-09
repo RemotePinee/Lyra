@@ -26,15 +26,20 @@ async function loadCacheFromStorage(): Promise<Record<string, CachedSessionData>
 	}
 }
 
-async function saveCacheToStorage(cache: Record<string, CachedSessionData>): Promise<void> {
+let saveCacheTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSaveCache: Record<string, CachedSessionData> | null = null;
+
+async function flushSaveCache(): Promise<void> {
+	if (!pendingSaveCache) return;
+	const cache = pendingSaveCache;
+	pendingSaveCache = null;
 	try {
-		// Limit to 5 most recent sessions and up to 60 messages each to keep SecureStore payload lightweight
 		const trimmed: Record<string, CachedSessionData> = {};
-		const sorted = Object.entries(cache).sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, 5);
+		const sorted = Object.entries(cache).sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, 10);
 		for (const [id, data] of sorted) {
 			trimmed[id] = {
 				...data,
-				messages: data.messages.slice(-60),
+				messages: data.messages.slice(-80),
 			};
 		}
 		await SecureStore.setItemAsync(CACHE_STORAGE_KEY, JSON.stringify(trimmed));
@@ -43,6 +48,17 @@ async function saveCacheToStorage(cache: Record<string, CachedSessionData>): Pro
 	}
 }
 
+function scheduleSaveCacheToStorage(cache: Record<string, CachedSessionData>): void {
+	pendingSaveCache = cache;
+	if (saveCacheTimer) clearTimeout(saveCacheTimer);
+	saveCacheTimer = setTimeout(() => {
+		saveCacheTimer = null;
+		void flushSaveCache();
+	}, 1500);
+}
+export async function saveCacheToStorage(cache: Record<string, CachedSessionData>): Promise<void> {
+	scheduleSaveCacheToStorage(cache);
+}
 export interface ToolRun {
 	toolCallId: string;
 	toolName: string;
@@ -58,11 +74,12 @@ export interface PendingApproval {
 	title: string;
 	detail: string;
 }
-
 export interface CachedSessionData {
 	messages: Message[];
 	toolRuns: Record<string, ToolRun>;
 	seq: number;
+	minSeq?: number;
+	hasEarlier?: boolean;
 	updatedAt: number;
 }
 
@@ -214,15 +231,20 @@ export const useMobile = create<MobileState>((set, get) => ({
 				topSessions.map(async (s) => {
 					try {
 						const status = await client.status(s.projectId, s.id);
-						if (status.running || status.pendingApprovals?.length > 0) {
+						const isRunning = status.running || (status.pendingApprovals?.length ?? 0) > 0;
+						if (isRunning) {
 							set({
 								sessionActivities: {
 									...get().sessionActivities,
-									[s.id]: status.pendingApprovals?.length > 0 ? "waiting" : "running",
+									[s.id]: (status.pendingApprovals?.length ?? 0) > 0 ? "waiting" : "running",
 								},
 							});
+							// Do not fetch records eagerly for all running sessions in background list refresh
+							// Records are fetched on-demand when user actually enters the session
 						}
-					} catch {}
+					} catch {
+						// ignore background status fail
+					}
 				}),
 			);
 		} catch (error) {
@@ -235,39 +257,37 @@ export const useMobile = create<MobileState>((set, get) => ({
 	async openSession(meta) {
 		const client = get().client;
 		if (!client) return;
-
-		// Stale-While-Revalidate: If session exists in cache, load it immediately!
 		const cached = get().cache[meta.id];
 		const hasCache = !!cached && cached.messages.length > 0;
-
+		const knownActivity = get().sessionActivities[meta.id];
+		const isInitialRunning = knownActivity === "running";
 		if (hasCache) {
+			const isInitialRunning = knownActivity === "running";
+			// Render immediately so user sees something while verifying
 			set({
 				activeSession: meta,
 				messages: cached.messages,
 				toolRuns: cached.toolRuns,
 				approvals: [],
+				running: isInitialRunning,
 				seq: cached.seq,
-				minSeq: 0,
-				hasEarlierMessages: false,
+				minSeq: cached.minSeq ?? 0,
+				hasEarlierMessages: cached.hasEarlier ?? false,
 				loadingEarlier: false,
-				loadingSessionId: meta.id,
+				loadingSessionId: null,
 				error: null,
-				sessionActivities: {
-					...get().sessionActivities,
-					...(get().sessionActivities[meta.id] === "done" || get().sessionActivities[meta.id] === "failed"
-						? { [meta.id]: undefined as never }
-						: {}),
-				},
 			});
 		} else {
-			// First-time open: clean state
+			// First-time open (no cache): clean loading state
+			const knownActivity = get().sessionActivities[meta.id];
+			const isInitialRunning = knownActivity === "running";
 			set({
 				activeSession: meta,
 				messages: [],
 				toolRuns: {},
 				approvals: [],
-				running: false,
-				turnStartedAt: null,
+				running: isInitialRunning,
+				turnStartedAt: isInitialRunning ? Date.now() : null,
 				turnTokens: 0,
 				seq: 0,
 				minSeq: 0,
@@ -275,24 +295,72 @@ export const useMobile = create<MobileState>((set, get) => ({
 				loadingEarlier: false,
 				loadingSessionId: meta.id,
 				error: null,
-				sessionActivities: {
-					...get().sessionActivities,
-					...(get().sessionActivities[meta.id] === "done" || get().sessionActivities[meta.id] === "failed"
-						? { [meta.id]: undefined as never }
-						: {}),
-				},
 			});
 		}
 
 		try {
-			// Background revalidate: fetch latest 120 records & status
-			const [res, status] = await Promise.all([
-				client.records(meta.projectId, meta.id, { tail: 120 }),
-				client.status(meta.projectId, meta.id).catch(() => null),
-			]);
+			// 1. Immediately fetch ground truth status from desktop
+			let status = null;
+			try {
+				status = await client.status(meta.projectId, meta.id);
+			} catch {
+				status = null;
+			}
 
+			const serverRunning = typeof status?.running === "boolean" ? status.running : isInitialRunning;
+			const serverPendingApprovals = status?.pendingApprovals ?? [];
+			const serverMeta = status?.meta ?? meta;
+			const serverSeq = serverMeta.seq ?? 0;
+
+			// Immediately reflect real running / approval status in UI
+			const liveActivities = { ...get().sessionActivities };
+			if (serverRunning) {
+				liveActivities[meta.id] = serverPendingApprovals.length > 0 ? "waiting" : "running";
+			} else if (liveActivities[meta.id] === "running" || liveActivities[meta.id] === "waiting") {
+				delete liveActivities[meta.id];
+			}
+
+			set({
+				activeSession: { ...meta, ...serverMeta },
+				running: serverRunning,
+				turnStartedAt: serverRunning ? (get().turnStartedAt ?? Date.now()) : null,
+				sessionActivities: liveActivities,
+				approvals: serverPendingApprovals.map((p) => ({
+					id: p.id,
+					kind: p.request.kind,
+					title: p.request.title,
+					detail: p.request.detail,
+				})),
+			});
+
+			// 2. Check cache freshness against authoritative server sequence
+			const cachedSeq = cached?.seq ?? 0;
+			const isUpToDate =
+				hasCache &&
+				!serverRunning &&
+				cachedSeq >= serverSeq &&
+				cached.messages.length > 0 &&
+				(serverMeta.updatedAt ? (cached.updatedAt ?? 0) >= serverMeta.updatedAt : true);
+
+			if (isUpToDate) {
+				set({ loadingSessionId: null });
+				return;
+			}
+
+			// 3. Delta or tail fetch:
+			// If cache exists and server sequence moved forward incrementally (<= 200 delta),
+			// fetch ONLY the delta since cachedSeq!
+			const canFetchDelta = hasCache && cachedSeq > 0 && serverSeq >= cachedSeq && serverSeq - cachedSeq <= 200;
+			const fetchPromise = canFetchDelta
+				? client.records(meta.projectId, meta.id, { since: cachedSeq })
+				: client.records(meta.projectId, meta.id, { tail: 12 });
+
+			const res = await Promise.race([
+				fetchPromise,
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error("同步超时")), 15000)),
+			]);
 			let entries: { seq: number; message: Message }[] = [];
-			let seq = 0;
+			let seq = cachedSeq;
 			let minSeq = Infinity;
 
 			for (const record of res.records) {
@@ -301,40 +369,62 @@ export const useMobile = create<MobileState>((set, get) => ({
 				if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
 				else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
 			}
+			const fetchedMessages = entries.map((e) => e.message);
 
-			const messages = entries.map((e) => e.message);
-			const toolRuns = rebuildToolRuns(messages);
+			let finalMessages: Message[];
+			if (canFetchDelta) {
+				// Incremental delta: append new messages directly onto cached list
+				finalMessages = [...cached.messages, ...fetchedMessages];
+				minSeq = cached.minSeq ?? (minSeq === Infinity ? 0 : minSeq);
+			} else {
+				// Tail fetch: fetchedMessages is a fresh, contiguous tail window.
+				// NEVER splice an older disconnected cache head onto this tail unless
+				// we verify sequence continuity (i.e. cache is contiguous with the tail).
+				finalMessages = fetchedMessages;
+				if (minSeq === Infinity) {
+					minSeq = 0;
+				}
+			}
 
-			const isRunning = status?.running ?? false;
+			const current = get();
+			// If the user navigated away from this session while fetch was in flight, discard state update
+			if (current.activeSession?.id !== meta.id) return;
+
+			// If session is active and live messages already arrived during the fetch, merge them safely
+			if (current.messages.length > 0) {
+				const currentLast = current.messages[current.messages.length - 1];
+				const fetchedLast = finalMessages[finalMessages.length - 1];
+				if (
+					current.messages.length >= finalMessages.length &&
+					currentLast?.role === "assistant" &&
+					fetchedLast?.role === "assistant"
+				) {
+					finalMessages = [...finalMessages.slice(0, -1), currentLast];
+				}
+			}
+			const toolRuns = rebuildToolRuns(finalMessages);
+
 			const nextCache = trimCache({
 				...get().cache,
 				[meta.id]: {
-					messages,
+					messages: finalMessages,
 					toolRuns,
 					seq,
+					minSeq: minSeq === Infinity ? (cached?.minSeq ?? 0) : minSeq,
+					hasEarlier: typeof cached?.hasEarlier === "boolean" ? cached.hasEarlier : Boolean(res.hasEarlier),
 					updatedAt: Date.now(),
 				},
 			});
 			void saveCacheToStorage(nextCache);
 
 			set({
-				messages,
+				messages: finalMessages,
 				seq,
 				minSeq: minSeq === Infinity ? 0 : minSeq,
-				hasEarlierMessages: !!res.hasEarlier,
+				hasEarlierMessages: canFetchDelta ? (cached?.hasEarlier ?? false) : Boolean(res.hasEarlier),
 				toolRuns,
 				loadingSessionId: null,
-				running: isRunning,
-				turnStartedAt: isRunning ? (get().turnStartedAt ?? Date.now()) : null,
-				turnTokens: isRunning ? get().turnTokens : 0,
 				cache: nextCache,
-				approvals:
-					status?.pendingApprovals.map((p) => ({
-						id: p.id,
-						kind: p.request.kind,
-						title: p.request.title,
-						detail: p.request.detail,
-					})) ?? [],
 			});
 		} catch (error) {
 			set({ error: error instanceof Error ? error.message : String(error), loadingSessionId: null });
@@ -343,12 +433,15 @@ export const useMobile = create<MobileState>((set, get) => ({
 
 	async loadEarlierMessages() {
 		const { client, activeSession, minSeq, loadingEarlier, hasEarlierMessages, messages: currentMessages } = get();
-		if (!client || !activeSession || loadingEarlier || !hasEarlierMessages || minSeq <= 1) return;
-
+		if (!client || !activeSession || loadingEarlier || !hasEarlierMessages) return;
+		if (minSeq <= 1) {
+			set({ hasEarlierMessages: false, loadingEarlier: false });
+			return;
+		}
 		set({ loadingEarlier: true });
 		try {
-			// Fetch 60 records strictly before the current earliest sequence
-			const res = await client.records(activeSession.projectId, activeSession.id, { before: minSeq, tail: 60 });
+			// Fetch 12 dialogue units strictly before the current earliest sequence
+			const res = await client.records(activeSession.projectId, activeSession.id, { before: minSeq, tail: 12 });
 			let entries: { seq: number; message: Message }[] = [];
 			let nextMinSeq = minSeq;
 
@@ -357,20 +450,35 @@ export const useMobile = create<MobileState>((set, get) => ({
 				if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
 				else if (record.type === "truncate") entries = entries.filter((e) => e.seq <= record.afterSeq);
 			}
-
 			const earlierMessages = entries.map((e) => e.message);
-			const mergedMessages = [...earlierMessages, ...currentMessages];
+			// Deduplicate by message key: user/ast timestamp and role or tool call ID
+			const seenMsgKeys = new Set<string>();
+			const deduplicatedMessages: Message[] = [];
+			for (const m of [...earlierMessages, ...currentMessages]) {
+				let key = `${m.role}-${m.timestamp}`;
+				if (m.role === "toolResult") {
+					key = `tr-${m.toolCallId}`;
+				} else if (m.role === "user") {
+					// Include content snippet in case multiple user messages share a timestamp
+					const txt = m.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+					key = `user-${m.timestamp}-${txt.slice(0, 30)}`;
+				}
+				if (!seenMsgKeys.has(key)) {
+					seenMsgKeys.add(key);
+					deduplicatedMessages.push(m);
+				}
+			}
+			const mergedMessages = deduplicatedMessages;
 			const toolRuns = rebuildToolRuns(mergedMessages);
-
 			set({
 				messages: mergedMessages,
 				minSeq: nextMinSeq,
-				hasEarlierMessages: res.records.length > 0 && nextMinSeq > 1,
+				hasEarlierMessages: Boolean(res.hasEarlier) && res.records.length > 0 && nextMinSeq > 1,
 				toolRuns,
 				loadingEarlier: false,
 			});
 		} catch (error) {
-			set({ error: error instanceof Error ? error.message : String(error), loadingEarlier: false });
+			set({ error: error instanceof Error ? error.message : String(error), loadingEarlier: false, hasEarlierMessages: false });
 		}
 	},
 
@@ -383,6 +491,8 @@ export const useMobile = create<MobileState>((set, get) => ({
 					messages,
 					toolRuns,
 					seq,
+					minSeq: get().minSeq,
+					hasEarlier: get().hasEarlierMessages,
 					updatedAt: Date.now(),
 				},
 			});
@@ -422,15 +532,25 @@ export const useMobile = create<MobileState>((set, get) => ({
 	async abort() {
 		const { client, activeSession } = get();
 		if (client && activeSession) {
-			await client.abort(activeSession.projectId, activeSession.id).catch(() => undefined);
-			// Mark all active toolRuns as done immediately
+			// Optimistically abort immediately for instant UI feedback (0ms perceived lag)
 			const updatedToolRuns = { ...get().toolRuns };
 			for (const key of Object.keys(updatedToolRuns)) {
 				if (updatedToolRuns[key].status === "running") {
 					updatedToolRuns[key] = { ...updatedToolRuns[key], status: "done" };
 				}
 			}
-			set({ running: false, turnStartedAt: null, turnTokens: 0, approvals: [], toolRuns: updatedToolRuns });
+			const nextActivities = { ...get().sessionActivities };
+			delete nextActivities[activeSession.id];
+			set({
+				running: false,
+				turnStartedAt: null,
+				turnTokens: 0,
+				approvals: [],
+				toolRuns: updatedToolRuns,
+				sessionActivities: nextActivities,
+			});
+
+			await client.abort(activeSession.projectId, activeSession.id).catch(() => undefined);
 			void get().catchUp();
 		}
 	},
@@ -776,16 +896,19 @@ function attach(connection: Connection, set: Setter, get: Getter, existingClient
 	});
 }
 
-let updateFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let updateFlushTimer: number | ReturnType<typeof setTimeout> | null = null;
 let pendingMessageUpdates: { sessionId: string; message: Message } | null = null;
 
 function flushPendingMessageUpdate(set: Setter, get: Getter): void {
-	if (updateFlushTimer) {
-		clearTimeout(updateFlushTimer);
+	if (updateFlushTimer !== null) {
+		if (typeof cancelAnimationFrame === "function") {
+			cancelAnimationFrame(updateFlushTimer as number);
+		} else {
+			clearTimeout(updateFlushTimer as ReturnType<typeof setTimeout>);
+		}
 		updateFlushTimer = null;
 	}
 	if (!pendingMessageUpdates) return;
-
 	const { sessionId, message } = pendingMessageUpdates;
 	pendingMessageUpdates = null;
 
@@ -833,55 +956,10 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 		set({ sessionActivities: nextActivities });
 	}
 
-	// If the event belongs to a session in cache but not currently active, keep cache updated
+	// If the event belongs to a session not currently active, DO NOT mutate its cached message array.
+	// Blindly appending messages in background causes severe history fragmentation/gaps
+	// when intermediate turns are skipped.
 	if (state.activeSession?.id !== sessionId) {
-		const cached = state.cache[sessionId];
-		if (cached) {
-			let cachedMessages = [...cached.messages];
-			let cachedToolRuns = { ...cached.toolRuns };
-
-			if (event.type === "message_update") {
-				const index = cachedMessages.length - 1;
-				if (index >= 0 && cachedMessages[index].role === "assistant") cachedMessages[index] = event.message;
-				else cachedMessages.push(event.message);
-			} else if (event.type === "message_end") {
-				const index = findSlot(cachedMessages, event.message);
-				if (index >= 0) cachedMessages[index] = event.message;
-				else cachedMessages.push(event.message);
-			} else if (event.type === "tool_start") {
-				cachedToolRuns[event.toolCallId] = {
-					toolCallId: event.toolCallId,
-					toolName: event.toolName,
-					summary: event.summary,
-					status: "running",
-				};
-			} else if (event.type === "tool_end") {
-				cachedToolRuns[event.toolCallId] = {
-					toolCallId: event.toolCallId,
-					toolName: event.toolName,
-					summary: cachedToolRuns[event.toolCallId]?.summary ?? event.toolName,
-					status: event.isError ? "error" : "done",
-					output: event.result.content
-						.map((c) => (c.type === "text" ? c.text : "[图片]"))
-						.join("\n")
-						.slice(0, 4000),
-					details: event.result.details,
-				};
-			}
-
-			set({
-				cache: {
-					...state.cache,
-					[sessionId]: {
-						...cached,
-						messages: cachedMessages,
-						toolRuns: cachedToolRuns,
-						updatedAt: Date.now(),
-					},
-				},
-			});
-		}
-
 		if (event.type === "title") {
 			set({ sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: event.title } : s)) });
 			return;
@@ -912,13 +990,19 @@ function applyEvent(sessionId: string, event: AgentEvent, set: Setter, get: Gett
 		}
 
 		case "message_update": {
-			// Backpressure protection: buffer rapid-fire stream updates into ~40ms batches
-			// to avoid thousands of React Yoga layout re-computations and UI queue starvation.
 			pendingMessageUpdates = { sessionId, message: event.message };
-			if (!updateFlushTimer) {
-				updateFlushTimer = setTimeout(() => {
-					flushPendingMessageUpdate(set, get);
-				}, 40);
+			if (updateFlushTimer === null) {
+				if (typeof requestAnimationFrame === "function") {
+					updateFlushTimer = requestAnimationFrame(() => {
+						updateFlushTimer = null;
+						flushPendingMessageUpdate(set, get);
+					});
+				} else {
+					updateFlushTimer = setTimeout(() => {
+						updateFlushTimer = null;
+						flushPendingMessageUpdate(set, get);
+					}, 16);
+				}
 			}
 			break;
 		}
@@ -1039,18 +1123,35 @@ function findSlot(messages: Message[], incoming: Message): number {
 	if (incoming.role === "toolResult") {
 		return messages.findIndex((m) => m.role === "toolResult" && m.toolCallId === incoming.toolCallId);
 	}
+	if (incoming.role === "assistant") {
+		const incomingCallIds = incoming.content
+			.filter((c): c is Extract<AssistantMessage["content"][number], { type: "toolCall" }> => c.type === "toolCall")
+			.map((c) => c.id);
+		if (incomingCallIds.length > 0) {
+			const byTool = messages.findLastIndex(
+				(m) =>
+					m.role === "assistant" &&
+					m.content.some((c) => c.type === "toolCall" && incomingCallIds.includes(c.id)),
+			);
+			if (byTool >= 0) return byTool;
+		}
+
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const candidate = messages[i];
+			if (candidate.role !== "assistant") continue;
+			if (candidate.stopReason === "pending") return i;
+			if (candidate.timestamp === incoming.timestamp) return i;
+		}
+		return -1;
+	}
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const candidate = messages[i];
-		if (candidate.role !== incoming.role) continue;
-		if (candidate.role === "assistant" && incoming.role === "assistant") {
-			return candidate.stopReason === "pending" || candidate.timestamp === incoming.timestamp ? i : -1;
-		}
-		if (candidate.timestamp === incoming.timestamp) return i;
+		if (candidate.role === incoming.role && candidate.timestamp === incoming.timestamp) return i;
 	}
 	return -1;
 }
 
-const MAX_CACHED_SESSIONS = 10;
+const MAX_CACHED_SESSIONS = 25;
 
 function trimCache(cache: Record<string, CachedSessionData>): Record<string, CachedSessionData> {
 	const entries = Object.entries(cache);

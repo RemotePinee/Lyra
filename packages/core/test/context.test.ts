@@ -92,3 +92,10 @@ test("segments are ordered by size, because the first row is the one worth actin
 	const sizes = result.segments.map((s) => s.tokens);
 	assert.deepEqual(sizes, [...sizes].sort((a, b) => b - a));
 });
+
+test("project memory is accounted for separately without double-counting the system prompt", () => {
+	const result = buildContextBreakdown({ ...fixed, messages: [], projectMemory: "p".repeat(350) });
+	assert.equal(result.segments.find((segment) => segment.key === "projectMemory")?.tokens, 100);
+	assert.equal(result.segments.find((segment) => segment.key === "systemPrompt")?.tokens, 600);
+	assert.equal(result.used, result.segments.reduce((sum, segment) => sum + segment.tokens, 0));
+});

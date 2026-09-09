@@ -15,7 +15,7 @@
  * you can read top to bottom rather than a rule spread across the handlers.
  */
 
-import type { AgentSession, SessionStorage, Settings } from "@lyra/core";
+import type { AgentEvent, AgentSession, SessionStorage, Settings } from "@lyra/core";
 import { settingsFromPhone } from "./phone-settings.ts";
 
 /**
@@ -52,6 +52,7 @@ export interface RpcDeps {
 	gitSwitch?(cwd: string, branch: string): Promise<unknown>;
 	listFiles?(dir: string): Promise<unknown>;
 	readFile?(path: string): Promise<unknown>;
+	broadcast?(sessionId: string, event: AgentEvent): void;
 }
 
 /**
@@ -65,42 +66,79 @@ export interface PlatformFacts {
 	platform: NodeJS.Platform;
 }
 
-// Helper: slice records from the end so that we capture at least `minTurns` actual conversation messages (user or assistant text)
-// rather than being saturated entirely by intermediate tool results.
-function sliceTailRecords<T extends { type: string; message?: { role: string; content?: unknown } }>(
+// Helper: slice records from the end so that we capture at least `defaultTail` actual conversation messages
+/**
+ * Sanitize a message record payload to prevent massive tool outputs (e.g. whole file dumps, raw images)
+ * from swelling network payload sizes on mobile transfers.
+ */
+function sanitizeRecordForTransport<T extends { type: string; message?: { role: string; content?: unknown; toolName?: string; details?: unknown } }>(
+	record: T,
+): T {
+	if (record.type !== "message" || !record.message) return record;
+	const m = record.message;
+	if (m.role === "toolResult") {
+		let sanitizedContent = m.content;
+		if (Array.isArray(m.content)) {
+			sanitizedContent = m.content.map((item: { type?: string; text?: string; data?: unknown }) => {
+				if (item?.type === "image") {
+					return { type: "text", text: "[图片]" };
+				}
+				if (item?.type === "text" && typeof item.text === "string" && item.text.length > 4000) {
+					return { type: "text", text: item.text.slice(0, 4000) + "\n... [已截断]" };
+				}
+				return item;
+			});
+		}
+		// Strip heavy tool result details except todo_write (which mobile needs for checklist rendering)
+		let details = m.details;
+		if (details && m.toolName !== "todo_write") {
+			details = undefined;
+		}
+		return {
+			...record,
+			message: {
+				...m,
+				content: sanitizedContent,
+				details,
+			},
+		};
+	}
+	return record;
+}
+
+// Tail slicing counts real dialogue turns (user prompts).
+// Tool calls and tool outputs do NOT count as dialogue units.
+function sliceTailRecords<T extends { type: string; message?: { role: string; content?: unknown; synthetic?: boolean; stopReason?: string } }>(
 	records: T[],
-	defaultTail = 120,
-	minTurns = 15,
+	defaultTail = 60,
 ): { records: T[]; hasEarlier: boolean } {
-	if (records.length <= defaultTail) {
+	if (records.length === 0) {
 		return { records, hasEarlier: false };
 	}
 
-	let turns = 0;
-	let cutIndex = records.length - defaultTail;
+	let userTurnCount = 0;
+	let cutIndex = 0;
 
+	// We scan backwards and count user turns.
+	// If the conversation doesn't even have defaultTail user turns, cutIndex remains 0 (return everything).
 	for (let i = records.length - 1; i >= 0; i--) {
 		const rec = records[i];
-		if (rec.type === "message" && (rec.message?.role === "user" || rec.message?.role === "assistant")) {
-			turns++;
-		}
-		// If we've scanned at least defaultTail records AND found enough conversational turns, cut here
-		if (records.length - i >= defaultTail && turns >= minTurns) {
-			cutIndex = i;
-			break;
-		}
-		// Bound maximum scan depth to 500 records to prevent excessive memory payloads
-		if (records.length - i >= 500) {
-			cutIndex = i;
-			break;
-		}
-		if (i === 0) {
-			cutIndex = 0;
+		if (rec.type === "message" && rec.message) {
+			const m = rec.message;
+			// Only real user prompts constitute dialogue turns
+			const isUserPrompt = m.role === "user" && !m.synthetic;
+			if (isUserPrompt) {
+				userTurnCount++;
+				if (userTurnCount >= defaultTail) {
+					cutIndex = i;
+					break;
+				}
+			}
 		}
 	}
-
+	const sliced = records.slice(cutIndex).map((r) => sanitizeRecordForTransport(r));
 	return {
-		records: records.slice(cutIndex),
+		records: sliced,
 		hasEarlier: cutIndex > 0,
 	};
 }
@@ -189,18 +227,18 @@ export const RPC: Record<string, Handler> = {
 		}
 
 		if (tail && tail > 0) {
-			const sliced = sliceTailRecords(allRecords, tail, 12);
+			const sliced = sliceTailRecords(allRecords, tail);
 			return {
 				records: sliced.records,
 				total: allRecords.length,
-				hasEarlier: sliced.hasEarlier || typeof beforeSeq === "number",
+				hasEarlier: sliced.hasEarlier,
 			};
 		}
 
 		return {
-			records: allRecords,
+			records: allRecords.map((r) => sanitizeRecordForTransport(r)),
 			total: allRecords.length,
-			hasEarlier: typeof beforeSeq === "number",
+			hasEarlier: false,
 		};
 	},
 	"sessions.status": async (deps, [projectId, sessionId]) => {
@@ -240,7 +278,12 @@ export const RPC: Record<string, Handler> = {
 		return { accepted: true };
 	},
 	"agent.abort": async (deps, [sessionId]) => {
-		deps.live(s(sessionId))?.abort();
+		const sId = s(sessionId);
+		const session = deps.live(sId);
+		if (session) {
+			session.abort();
+			deps.broadcast?.(sId, { type: "agent_end", reason: "aborted" });
+		}
 		return null;
 	},
 	"agent.approve": async (deps, [sessionId, requestId, decision]) => {

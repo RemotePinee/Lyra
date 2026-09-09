@@ -1,30 +1,33 @@
 /**
- * Portable mood and phrase mapping for mobile running state.
- * Aligned with desktop thinking-words logic.
+ * What the agent is doing, translated into words and mood for the mobile interface.
+ * Ported losslessly from desktop `thinking-words.ts` and `RunningIndicator.tsx`.
  */
 
 export type Mood =
-	| "breathing"
 	| "listening"
-	| "searching"
+	| "composing"
+	| "shaping"
 	| "working"
+	| "searching"
 	| "solving"
 	| "connecting"
 	| "weaving"
-	| "composing"
-	| "shaping";
+	| "breathing";
 
 const WORDS: Record<Mood, string[]> = {
-	listening: ["Reading up", "Skimming", "Digging in", "Getting the lay of it", "Poking around"],
-	composing: ["Writing", "Drafting", "Putting it down", "Laying down code"],
-	shaping: ["Reworking", "Editing", "Reshaping it", "Moving things around"],
-	working: ["Running it", "Executing command", "Waiting on shell", "Turning the crank"],
-	searching: ["Hunting", "Rummaging", "Combing through", "Finding files"],
-	solving: ["Proving it", "Running tests", "Making sure", "Checking results"],
-	connecting: ["Having a look", "Loading page", "Peeking web", "Reaching out"],
-	weaving: ["Plotting", "Lining it up", "Sketching steps", "Working out plan"],
-	breathing: ["Thinking", "Mulling", "Turning it over", "Working it out", "Pondering"],
+	listening: ["Reading up", "Skimming", "Digging in", "Getting the lay of it", "Poking around the source"],
+	composing: ["Writing", "Drafting", "Putting it down", "Getting it on paper", "Laying down code"],
+	shaping: ["Reworking", "Editing", "Reshaping it", "Moving things around", "Knocking it into shape"],
+	working: ["Running it", "Kicking it off", "Letting it rip", "Waiting on the shell", "Turning the crank"],
+	searching: ["Hunting", "Rummaging", "Casting about", "Following the thread", "Combing through"],
+	solving: ["Proving it", "Running the gauntlet", "Making sure", "Putting it through its paces"],
+	connecting: ["Having a look", "Loading the page", "Peeking at the web", "Reaching out"],
+	weaving: ["Plotting", "Lining it up", "Sketching the order", "Working out the steps"],
+	breathing: ["Thinking", "Mulling", "Turning it over", "Chewing on it", "Working it out", "Pondering"],
 };
+
+const PATIENCE_MS = 45_000;
+const LONG_WORDS = ["Still at it", "This one's stubborn", "Taking its time", "Nearly there", "Wrestling with it"];
 
 const BY_TOOL: Record<string, Mood> = {
 	read: "listening",
@@ -37,28 +40,29 @@ const BY_TOOL: Record<string, Mood> = {
 	glob: "searching",
 	grep: "searching",
 	ls: "searching",
-	web_search: "connecting",
-	web_fetch: "connecting",
 	todo_write: "weaving",
 	task: "weaving",
+	web_fetch: "connecting",
+	web_search: "connecting",
+	browser_act: "connecting",
 };
 
+const TEST_HINT = /\b(test|jest|vitest|pytest|spec|coverage)\b/i;
+
 export function moodFor(
-	toolName?: string,
-	summary?: string,
-	writing?: boolean
+	toolName: string | undefined,
+	summary: string | undefined,
+	retrying = false,
+	writing = false,
 ): Mood {
-	if (writing) return "composing";
-	if (!toolName) return "breathing";
-
-	if (toolName === "bash" && summary && /(?:npm|pnpm|yarn|bun|cargo|go|pytest|vitest|jest)\s+test\b/i.test(summary)) {
-		return "solving";
-	}
-
-	return BY_TOOL[toolName] ?? "working";
+	if (retrying) return "connecting";
+	if (summary && TEST_HINT.test(summary)) return "solving";
+	if (toolName) return BY_TOOL[toolName] ?? "breathing";
+	return writing ? "composing" : "breathing";
 }
 
-export function phraseFor(mood: Mood, tick: number): string {
+export function phraseFor(mood: Mood, tick: number, elapsedMs = 0): string {
+	if (elapsedMs > PATIENCE_MS) return LONG_WORDS[tick % LONG_WORDS.length];
 	const pool = WORDS[mood] ?? WORDS.breathing;
 	return pool[tick % pool.length];
 }
@@ -141,10 +145,6 @@ export function formatElapsed(ms: number): string {
 	return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, "0")}s` : `${seconds}s`;
 }
 
-/**
- * A token count at a glance: 812, 12.3k, 4.1M, 2.7B.
- * Direct copy from Desktop RunningIndicator.tsx formatTokens.
- */
 export function formatTokens(count: number): string {
 	if (count >= 1_000_000_000) return `${(count / 1_000_000_000).toFixed(1)}B`;
 	if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;

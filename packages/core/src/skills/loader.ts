@@ -10,6 +10,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { normalizeKeys } from "../capability/fs.ts";
 
 export interface Skill {
 	name: string;
@@ -33,10 +34,19 @@ export interface Skill {
 export interface SkillDiagnostic {
 	path: string;
 	message: string;
+	/**
+	 * 没写就是错误——技能没加载。`warning` 是加载了但值得看一眼。
+	 *
+	 * 可选而不是必填，是为了不动现有的每一处 push：它们全是「没加载」，而设置页那句
+	 * 「N 个技能未能加载」数的正是它们。一条描述太短的 warning 混进去，那句话就说错了。
+	 */
+	severity?: "warning";
 }
 
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_DESCRIPTION = 1024;
+/** 短于这个数的描述通常说不清什么时候该用。计划 07 定的线。 */
+const MIN_DESCRIPTION = 40;
 
 export async function loadSkills(
 	sources: { dir: string; source: Skill["source"] }[],
@@ -63,14 +73,35 @@ export async function loadSkills(
 				diagnostics.push({ path: file, message: "Frontmatter is not valid YAML." });
 				continue;
 			}
+			if (parsed.problem) diagnostics.push({ path: file, message: parsed.problem });
 
-			const { frontmatter, body } = parsed;
+			/*
+			 * 两种拼写当成同一个键。
+			 *
+			 * `disable-model-invocation` 和 `disableModelInvocation` 在外面都有人写——启发这些
+			 * 格式的那几个工具彼此就不一致——而这里原本只认连字符那一种。写了驼峰的人得到的是一个
+			 * 被静默忽略的字段：技能照常加载、照常出现在列表里，只是那个开关不起作用。
+			 */
+			const { body } = parsed;
+			const frontmatter = normalizeKeys(parsed.frontmatter);
 			const name = typeof frontmatter.name === "string" && frontmatter.name ? frontmatter.name : entry.name;
 			const description = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
 
 			if (!description) {
 				diagnostics.push({ path: file, message: "`description` is required — it is how the model decides to use this skill." });
 				continue;
+			}
+			/*
+			 * 太短的描述是一种静默失效：技能加载了、列表里有、模型永远不选它——因为它靠描述
+			 * 决定要不要用，而「处理 PDF」四个字说不清什么时候该用。验收清单（07 §10）定的线
+			 * 是 40 字符。warning 而不是拒绝：它能用，只是不好用。
+			 */
+			if (description.length < MIN_DESCRIPTION) {
+				diagnostics.push({
+					path: file,
+					message: `\`description\` 只有 ${description.length} 个字符。模型靠它决定什么时候用这个技能，说清「做什么、什么情况下用」通常要 ${MIN_DESCRIPTION} 个以上。`,
+					severity: "warning",
+				});
 			}
 			if (description.length > MAX_DESCRIPTION) {
 				diagnostics.push({ path: file, message: `\`description\` exceeds ${MAX_DESCRIPTION} characters.` });
@@ -97,7 +128,7 @@ export async function loadSkills(
 				allowedTools: Array.isArray(frontmatter["allowed-tools"])
 					? (frontmatter["allowed-tools"] as unknown[]).filter((t): t is string => typeof t === "string")
 					: undefined,
-				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
+				disableModelInvocation: frontmatter["disable-model-invocation"] === true || frontmatter.disableModelInvocation === true,
 			});
 		}
 	}
@@ -105,11 +136,31 @@ export async function loadSkills(
 	return { skills, diagnostics };
 }
 
-export function parseFrontmatter(raw: string): { frontmatter: Record<string, unknown>; body: string } | null {
+export interface ParsedFrontmatter {
+	frontmatter: Record<string, unknown>;
+	body: string;
+	/**
+	 * Set when the document opened a frontmatter block and never closed it.
+	 *
+	 * The parse still succeeds — the whole document becomes the body, which is the only reading
+	 * left once the delimiters are unusable. But that reading injects `name:` and `description:`
+	 * into the model's context as prose, and the author is looking at a file that appears to have
+	 * metadata and behaves as if it has none. Callers surface this; nothing depends on it.
+	 */
+	problem?: string;
+}
+
+export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
 	const normalized = raw.replace(/\r\n/g, "\n");
 	if (!normalized.startsWith("---\n")) return { frontmatter: {}, body: normalized };
 	const end = normalized.indexOf("\n---", 3);
-	if (end === -1) return { frontmatter: {}, body: normalized };
+	if (end === -1) {
+		return {
+			frontmatter: {},
+			body: normalized,
+			problem: "Frontmatter opens with `---` but is never closed, so the whole file is being treated as body text.",
+		};
+	}
 	try {
 		const frontmatter = (parseYaml(normalized.slice(4, end)) ?? {}) as Record<string, unknown>;
 		return { frontmatter, body: normalized.slice(end + 4).replace(/^\n+/, "") };

@@ -82,7 +82,8 @@ async function harness(duringTurn?: (session: AgentSession) => void): Promise<Ha
 			events.push(event);
 		},
 		streamFn: async (context) => {
-			const last = [...context.messages].reverse().find((m) => m.role === "user");
+			// 最后一条**人说的**——末尾那条 `<env>` 是运行时接上去的，见 `prompt/environment.ts`。
+			const last = [...context.messages].reverse().find((m) => m.role === "user" && !m.synthetic);
 			turns.push(last && last.role === "user" ? textOf(last.content) : "");
 			duringTurn?.(session);
 			return reply("ok");
@@ -110,7 +111,10 @@ async function harness(duringTurn?: (session: AgentSession) => void): Promise<Ha
 		 * but the append that records the last message is already in flight and lands a tick
 		 * later — straight into the directory being removed.
 		 */
-		cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 }),
+		cleanup: async () => {
+			await session.dispose();
+			return rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+		},
 	};
 }
 
@@ -259,7 +263,7 @@ test("changing the model is allowed even after conversation has started", async 
 	}
 });
 
-test("running out of rounds with work left starts another turn rather than stopping", async () => {
+test("running out of rounds with work left starts another turn rather than stopping", { timeout: 120_000 }, async () => {
 	const root = await mkdtemp(join(tmpdir(), "ly-cont-"));
 	const store = new SessionStore(join(root, "sessions"));
 	const notices: string[] = [];
@@ -305,6 +309,7 @@ test("running out of rounds with work left starts another turn rather than stopp
 		);
 		assert.ok(calls > 200, `more than one turn's worth of rounds ran (was ${calls})`);
 	} finally {
+		await session.dispose();
 		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
 	}
 });

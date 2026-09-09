@@ -189,7 +189,7 @@ function AssistantRow({ message }: { message: AssistantMessage }) {
 						toolName={block.name}
 						args={block.arguments}
 						summary={run?.summary ?? block.name}
-						status={run?.status ?? (message.stopReason === "pending" ? "running" : "error")}
+						status={run?.status ?? (message.stopReason === "pending" || message.stopReason === "toolUse" ? "running" : "error")}
 						result={run?.result}
 					/>
 				);

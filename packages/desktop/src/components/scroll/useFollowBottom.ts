@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
+	followsAfterRestore,
 	isAway,
 	isDegenerate,
 	marker as makeMarker,
@@ -30,6 +31,15 @@ import { readFollow, writeFollow, type FollowSnapshot } from "./memory.ts";
 
 /** How long the ride back down takes. The curve matches `--ly-e-out`, like everything else here. */
 const GLIDE_MS = 420;
+
+/**
+ * 一次输入之后，多久之内到达的滚动还算是它引起的。
+ *
+ * 拖滚动条的时候 `pointermove` 一直在发，这个数只需要盖住两次移动之间的空档；甩惯性则是 `wheel`
+ * 起的头，第一下就已经改了状态，后面跟不跟得上都无所谓。300ms 是宽裕的余量，同时短到浏览器自己
+ * 挪的那一下——它总是紧跟着内容变化，而不是紧跟着一个手势——落在窗口之外。
+ */
+const INPUT_GRACE_MS = 300;
 
 export interface FollowBottom {
 	/** Hand to `Scroller`'s `scrollRef`. */
@@ -56,6 +66,9 @@ export interface FollowBottom {
 	unread: number;
 	/** The reader asking to go back: the button, or having just sent something. */
 	returnToBottom(): void;
+	/** Explicit navigation owns the scroll position even while a reply is streaming. */
+	detach(): void;
+	scrollTo(top: number, instant?: boolean): void;
 	/** Hand to `Scroller`'s `onScroll`. */
 	onScroll(el: HTMLDivElement): void;
 	/** Hand to `Scroller`'s `onResize`. */
@@ -67,6 +80,7 @@ export function useFollowBottom({
 	count,
 	tail,
 	namespace,
+	ready = true,
 }: {
 	/** Which conversation, side chat or delegate this is. `null` while there is nothing to show. */
 	surfaceId: string | null;
@@ -76,6 +90,8 @@ export function useFollowBottom({
 	tail: string;
 	/** Which family of surfaces to remember against; see `memory.ts`. */
 	namespace: string;
+	/** A restored offset is meaningful only after this surface's content has arrived. */
+	ready?: boolean;
 }): FollowBottom {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	/*
@@ -117,7 +133,27 @@ export function useFollowBottom({
 	const written = useRef<number | null>(null);
 	const lastTop = useRef(0);
 	const glide = useRef(0);
+	const restoredSurface = useRef<string | null | undefined>(undefined);
+	const selectedSurface = useRef<string | null | undefined>(undefined);
+	const restore = useRef<FollowSnapshot | undefined>(undefined);
+	const clearWritten = useRef(0);
 
+	/**
+	 * 最近一次确实来自人的动作，以及手指/鼠标是不是还按着。
+	 *
+	 * 这两个存在，是因为「滚动位置变了」和「读者想看别处」根本不是一回事——而下面 `onScroll` 里
+	 * 靠位置差推方向的那段，曾经把两者当成一回事。
+	 *
+	 * 浏览器的滚动锚定就是这么被误伤的：文稿区特意留着锚定（上面的思考块展开时，你正在读的那行
+	 * 不该跟着跑），而锚定做这件事的手段就是改 `scrollTop`。于是上方一块内容收起来——收一个工具
+	 * 组、合一个思考块、流式渲染时重排一次——浏览器把 scrollTop 往回挪，`onScroll` 读到位置变小，
+	 * 判定「用户往上滚了」，跟随就此断掉。量过：上方从 600px 缩到 200px，scrollTop 从 1200 变
+	 * 800，一个 scroll 事件，方向朝上。人什么都没做。
+	 *
+	 * 所以位置差只在最近确实有输入时才作数。没有输入的位置变化是浏览器自己挪的，它不说明任何意图。
+	 */
+	const lastInput = useRef(0);
+	const dragging = useRef(false);
 	const read = (el: HTMLDivElement): Reading => ({
 		scrollTop: el.scrollTop,
 		scrollHeight: el.scrollHeight,
@@ -132,7 +168,8 @@ export function useFollowBottom({
 		// just shrunk.
 		written.current = el.scrollTop;
 		lastTop.current = el.scrollTop;
-		requestAnimationFrame(() => {
+		cancelAnimationFrame(clearWritten.current);
+		clearWritten.current = requestAnimationFrame(() => {
 			written.current = null;
 		});
 	}, []);
@@ -175,12 +212,49 @@ export function useFollowBottom({
 		const el = scrollRef.current;
 		if (!el) return;
 
+		const mark = () => {
+			cancelAnimationFrame(glide.current);
+			lastInput.current = performance.now();
+		};
+
 		const onWheel = (event: WheelEvent) => {
 			if (event.deltaY === 0) return;
+			// A tool result or code block can scroll independently inside the transcript.
+			if (event.target instanceof Element && event.target.closest(".ly-scroll-view") !== el) return;
+			mark();
 			intend(event.deltaY < 0 ? "up" : "down");
 		};
 		// A finger down is a claim on the surface before it has moved at all.
-		const onTouch = () => intend("unknown");
+		const onTouch = () => {
+			mark();
+			intend("unknown");
+		};
+
+		/*
+		 * 按下就算在操作，抬起才算结束。
+		 *
+		 * 拖滚动条只会以 scroll 事件的形式到达——没有 wheel，也没有 touch。按住的这段时间里每一次
+		 * 位置变化都是这只手造成的，所以不看时间窗，直接认。
+		 *
+		 * 抬起听的是 window：滑块拖到容器外面松手是常事，只听容器会把标记永远留在按下的状态。
+		 */
+		const onDown = () => {
+			dragging.current = true;
+			mark();
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.target instanceof Element && event.target.closest("textarea, input, [contenteditable=true]")) return;
+			if (!["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
+			mark();
+			intend(["ArrowUp", "PageUp", "Home"].includes(event.key) || (event.key === " " && event.shiftKey) ? "up" : "down");
+		};
+		const onUp = () => {
+			dragging.current = false;
+			mark();
+		};
+		const onMove = (event: PointerEvent) => {
+			if (event.buttons !== 0) mark();
+		};
 
 		/*
 		 * Keys are not listened for here, and that is not an oversight.
@@ -194,9 +268,23 @@ export function useFollowBottom({
 		// critical path.
 		el.addEventListener("wheel", onWheel, { passive: true });
 		el.addEventListener("touchstart", onTouch, { passive: true });
+		el.addEventListener("touchmove", mark, { passive: true });
+		// The overlay thumb is a sibling of the viewport, so its gesture belongs to the host.
+		const host = el.parentElement;
+		host?.addEventListener("pointerdown", onDown, { passive: true });
+		el.addEventListener("keydown", onKey);
+		window.addEventListener("pointermove", onMove, { passive: true });
+		window.addEventListener("pointerup", onUp, { passive: true });
+		window.addEventListener("pointercancel", onUp, { passive: true });
 		return () => {
 			el.removeEventListener("wheel", onWheel);
 			el.removeEventListener("touchstart", onTouch);
+			el.removeEventListener("touchmove", mark);
+			host?.removeEventListener("pointerdown", onDown);
+			el.removeEventListener("keydown", onKey);
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
 		};
 	}, [intend]);
 
@@ -206,6 +294,7 @@ export function useFollowBottom({
 
 	const onScroll = useCallback(
 		(el: HTMLDivElement) => {
+			if (!ready || restoredSurface.current !== surfaceId) return;
 			const reading = read(el);
 			const previous = lastTop.current;
 			lastTop.current = reading.scrollTop;
@@ -230,15 +319,23 @@ export function useFollowBottom({
 			 * Skipped while gliding: every frame of the ride writes `scrollTop`, and only some of
 			 * those writes are still holding `written` by the time their event lands.
 			 */
-			if (state.current !== "returning" && reading.scrollTop !== previous) {
+			/*
+			 * 只有确实有人在操作时，位置差才说明方向。
+			 *
+			 * 没有这个前提，浏览器的滚动锚定就会冒充读者：它挪一次 scrollTop，这里读成「往上滚」，
+			 * 跟随立刻断掉——而收起一个工具组就足以触发。见上面 `lastInput` 那段。
+			 */
+			const byHand = dragging.current || performance.now() - lastInput.current < INPUT_GRACE_MS;
+			if (state.current !== "returning" && reading.scrollTop !== previous && byHand) {
 				const direction: Direction = reading.scrollTop < previous ? "up" : "down";
 				state.current = nextState(state.current, { kind: "user-scroll", direction }, reading);
 			}
 
 			publish(reading);
 		},
-		[publish],
+		[publish, ready, surfaceId],
 	);
+
 
 	/**
 	 * The box or its contents changed size.
@@ -250,13 +347,18 @@ export function useFollowBottom({
 	 */
 	const onResize = useCallback(
 		(el: HTMLDivElement) => {
+			if (!ready || selectedSurface.current !== surfaceId) return;
 			const reading = read(el);
 			if (isDegenerate(reading)) return;
+			if (restoredSurface.current !== surfaceId) {
+				restoredSurface.current = surfaceId;
+				if (state.current === "detached" && restore.current) write(el, restore.current.scrollTop);
+			}
 			const target = targetScrollTop(state.current, reading);
 			if (target !== null) write(el, target);
 			publish(read(el));
 		},
-		[publish, write],
+		[publish, write, ready, surfaceId],
 	);
 
 	// ---------------------------------------------------------------------------
@@ -309,7 +411,10 @@ export function useFollowBottom({
 		setAway(false);
 	}, [publish, write]);
 
-	useEffect(() => () => cancelAnimationFrame(glide.current), []);
+	useEffect(() => () => {
+		cancelAnimationFrame(glide.current);
+		cancelAnimationFrame(clearWritten.current);
+	}, []);
 
 	// ---------------------------------------------------------------------------
 	// Catching up
@@ -356,36 +461,24 @@ export function useFollowBottom({
 	 * request view does to the whole transcript.
 	 */
 	useLayoutEffect(() => {
-		const el = scrollRef.current;
-		// The marker for this commit, taken from props rather than the ref: the swap effect runs
-		// before the content effect below has had a chance to update it.
+		cancelAnimationFrame(glide.current);
+		cancelAnimationFrame(clearWritten.current);
+		written.current = null;
+		dragging.current = false;
+		lastInput.current = -Infinity;
+		restoredSurface.current = undefined;
+		selectedSurface.current = surfaceId;
 		current.current = makeMarker(count, tail);
-
-		if (!surfaceId) {
-			state.current = "following";
-			seen.current = null;
-			setUnread(0);
-			setAway(false);
-			return;
-		}
-
-		const snapshot = readFollow(namespace, surfaceId);
-		state.current = snapshot?.following === false ? "detached" : "following";
-		seen.current = snapshot?.seen ?? null;
-
-		if (el && !isDegenerate(read(el))) {
-			// Following means "the end", whatever the end is now — a conversation that ran while you
-			// were away has a different one, and going there is the point of having followed it.
-			if (state.current === "following") write(el, visualBottom(read(el)));
-			else if (snapshot) write(el, snapshot.scrollTop);
-			setUnread(unreadSince(seen.current, current.current));
-			publish(read(el));
-		} else {
-			setUnread(0);
-			setAway(false);
-		}
+		restore.current = surfaceId ? readFollow(namespace, surfaceId) : undefined;
+		state.current = restore.current?.following === false ? "detached" : "following";
+		seen.current = restore.current?.seen ?? null;
+		setUnread(0);
+		setAway(false);
 
 		return () => {
+			// A glide belongs to the outgoing surface. Its intention is saved below, while its frames
+			// must stop before the incoming surface reuses the same state and element refs.
+			cancelAnimationFrame(glide.current);
 			/*
 			 * The position comes from `lastTop`, not from the element.
 			 *
@@ -397,8 +490,10 @@ export function useFollowBottom({
 			 * opened it. `lastTop` is written by every scroll and every write we make, and never by a
 			 * degenerate measurement, so it is the last position this surface was actually at.
 			 */
+			// A loading placeholder must never replace a real reading position.
+			if (!surfaceId || restoredSurface.current !== surfaceId) return;
 			writeFollow(namespace, surfaceId, {
-				following: state.current === "following",
+				following: followsAfterRestore(state.current),
 				scrollTop: lastTop.current,
 				seen: seen.current,
 			} satisfies FollowSnapshot);
@@ -421,9 +516,13 @@ export function useFollowBottom({
 	useLayoutEffect(() => {
 		current.current = makeMarker(count, tail);
 		const el = scrollRef.current;
-		if (!el) return;
+		if (!el || !ready) return;
 		const reading = read(el);
 		if (isDegenerate(reading)) return;
+		if (restoredSurface.current !== surfaceId) {
+			restoredSurface.current = surfaceId;
+			if (state.current === "detached" && restore.current) write(el, restore.current.scrollTop);
+		}
 
 		if (state.current === "following") {
 			const target = targetScrollTop("following", reading);
@@ -434,7 +533,33 @@ export function useFollowBottom({
 			setUnread(unreadSince(seen.current, current.current));
 		}
 		publish(read(el));
-	}, [count, tail, publish, write]);
+	}, [count, tail, publish, write, ready, surfaceId]);
 
-	return { scrollRef, tailRef, away, unread, returnToBottom, onScroll, onResize };
+	const detach = useCallback(() => {
+		cancelAnimationFrame(glide.current);
+		state.current = "detached";
+	}, []);
+	const scrollTo = useCallback((top: number, instant = false) => {
+		detach();
+		const el = scrollRef.current;
+		if (!el) return;
+		const target = Math.max(0, Math.min(top, el.scrollHeight - el.clientHeight));
+		if (instant || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+			write(el, target);
+			publish(read(el));
+			return;
+		}
+		// Native smooth scroll takes over a second across long answers; navigation shares the
+		// app's bounded glide and its cancellation on input, unmount and session selection.
+		const from = el.scrollTop;
+		const started = performance.now();
+		const step = (now: number) => {
+			const progress = Math.min(1, (now - started) / GLIDE_MS);
+			write(el, from + (target - from) * (1 - (1 - progress) ** 3));
+			publish(read(el));
+			if (progress < 1) glide.current = requestAnimationFrame(step);
+		};
+		glide.current = requestAnimationFrame(step);
+	}, [detach, publish, write]);
+	return { scrollRef, tailRef, away, unread, returnToBottom, onScroll, onResize, detach, scrollTo };
 }

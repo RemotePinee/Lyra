@@ -76,6 +76,69 @@ test("groups consecutive tool calls across multi-turn assistant messages", () =>
 	}
 	assert.equal(runs[2].kind, "message");
 });
+test("places leading thinking above tool run without duplicating calls", () => {
+	const messages: Message[] = [
+		{
+			role: "user",
+			content: [{ type: "text", text: "check files" }],
+			timestamp: 1,
+		},
+		{
+			role: "assistant",
+			content: [
+				{ type: "thinking", thinking: "I should inspect the directory" },
+				{ type: "toolCall", id: "call_ls", name: "ls", arguments: {} },
+			],
+			stopReason: "toolUse",
+			usage: { input: 10, output: 10, total: 20, cost: { total: 0 } },
+			timestamp: 2,
+		},
+		{
+			role: "toolResult",
+			toolCallId: "call_ls",
+			toolName: "ls",
+			content: [{ type: "text", text: "file1.ts\nfile2.ts" }],
+			isError: false,
+			timestamp: 3,
+		},
+		{
+			role: "assistant",
+			content: [
+				{ type: "thinking", thinking: "Wrap up results" },
+				{ type: "text", text: "Found two files." },
+			],
+			stopReason: "endTurn",
+			usage: { input: 10, output: 10, total: 20, cost: { total: 0 } },
+			timestamp: 4,
+		},
+	];
+
+	const runs = groupMessages(messages);
+	// 0: user message
+	// 1: thinking message (upTo: 1)
+	// 2: tools (call_ls)
+	// 3: assistant final response (from: 1, upTo: 2)
+	assert.equal(runs.length, 4);
+	assert.equal(runs[0].kind, "message");
+	assert.equal(runs[1].kind, "message");
+	if (runs[1].kind === "message") {
+		assert.equal(runs[1].upTo, 1);
+		assert.equal(runs[1].message.content[0].type, "thinking");
+	}
+	assert.equal(runs[2].kind, "tools");
+	if (runs[2].kind === "tools") {
+		assert.equal(runs[2].calls.length, 1);
+		assert.equal(runs[2].calls[0].block.name, "ls");
+	}
+	assert.equal(runs[3].kind, "message");
+	if (runs[3].kind === "message") {
+		assert.equal(runs[3].from, 1);
+		assert.equal(runs[3].upTo, 2);
+		const own = runs[3].message.content.slice(runs[3].from, runs[3].upTo);
+		assert.equal(own[0].type, "text");
+	}
+});
+
 
 test("groupByProject prioritizes latest project name from settings and preserves historical ones", () => {
 	const sessions: SessionMeta[] = [

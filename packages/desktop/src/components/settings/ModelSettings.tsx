@@ -15,6 +15,7 @@ import { GhostButton } from "./controls.tsx";
 import { FetchModelsModal } from "./FetchModelsModal.tsx";
 import { ModelEditor } from "./ModelEditor.tsx";
 import { ProviderEditor } from "./ProviderEditor.tsx";
+import { ModelRoles } from "./ModelRoles.tsx";
 import { useProviders } from "./useProviders.ts";
 
 export function ModelSettings() {
@@ -25,7 +26,7 @@ export function ModelSettings() {
   } | null>(null);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <Scroller className="flex-1" contentClassName="flex flex-col">
       <header className="flex shrink-0 items-start justify-between pt-8 pb-6">
         <div>
           <h1 className="text-display leading-tight font-semibold tracking-tight text-ink">
@@ -61,9 +62,8 @@ export function ModelSettings() {
        */}
       {/* The query element and the queried element cannot be the same one: a container is
 				    sized by its contents, so it is only ever asked about by its descendants. */}
-      <div className="@container flex min-h-0 flex-1">
+      <div className="@container flex min-h-[340px] flex-1">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-card/30 @2xl:flex-row">
-          {/* Each pane scrolls on its own, so a long provider list never moves the editor. */}
           <Scroller
             className="max-h-[168px] shrink-0 border-b border-line @2xl:max-h-none @2xl:w-[268px] @2xl:border-r @2xl:border-b-0"
             contentClassName="p-2.5"
@@ -147,6 +147,11 @@ export function ModelSettings() {
         </div>
       </div>
 
+      {p.providers.length > 0 && (
+        <div className="shrink-0 pt-8 pb-2">
+          <ModelRoles />
+        </div>
+      )}
       {editingModel && (
         <ModelEditor
           providerId={editingModel.providerId}
@@ -168,6 +173,6 @@ export function ModelSettings() {
           onImport={(selectedIds) => void p.importDiscoveredModels(selectedIds)}
         />
       )}
-    </div>
+    </Scroller>
   );
 }

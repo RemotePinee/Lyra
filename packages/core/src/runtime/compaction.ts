@@ -26,7 +26,7 @@
 import type { CompactionStrategy } from "../kernel/services.ts";
 import { streamAssistant } from "../ai/index.ts";
 import { estimateTokens } from "../tokens.ts";
-import { pruneToolResults } from "./prune.ts";
+import { dropUneventful, pruneToolResults, type ArtifactSink } from "./prune.ts";
 import { measureTotal } from "./context.ts";
 import type { AssistantMessage, Message, ModelConfig, ProviderConfig } from "../types.ts";
 
@@ -208,9 +208,10 @@ export function compactWith(
 	provider: ProviderConfig,
 	streamFn?: typeof streamAssistant,
 	overhead = 0,
+	artifacts?: ArtifactSink,
 ): Promise<Compaction | null> {
 	if (strategy) return strategy.compact(messages, model, provider, streamFn);
-	return compactIfNeeded(messages, model, provider, streamFn ?? streamAssistant, overhead);
+	return compactIfNeeded(messages, model, provider, streamFn ?? streamAssistant, overhead, false, artifacts);
 }
 
 export async function compactIfNeeded(
@@ -242,6 +243,14 @@ export async function compactIfNeeded(
 	 * the new work along with the old.
 	 */
 	force = false,
+	/**
+	 * 剪掉的原文往哪儿存，让 `artifact://` 能取回。
+	 *
+	 * 可选：不给的时候剪枝的行为跟以前完全一样，剪掉就是没了。给了之后，占位标记里那句
+	 * 「完整结果留在会话里」才第一次对模型成立——它读不到转录，读得到地址。
+	 */
+	artifacts?: ArtifactSink,
+	manual?: { instructions?: string; signal?: AbortSignal },
 ): Promise<Compaction | null> {
 	/*
 	 * The provider's own count, not our estimate of it.
@@ -269,8 +278,20 @@ export async function compactIfNeeded(
 	 * already been cut — so an estimate over the uncut text and a measurement of cut text are not
 	 * comparable, and subtracting one from the other books a saving that was banked turns ago.
 	 */
-	const pruned = pruneToolResults(messages);
-	if (pruned !== messages) {
+	/*
+	 * Results with nothing in them go first, before anything with content is touched.
+	 *
+	 * A search that matched nothing and a listing of an empty directory take up room and answer no
+	 * question that will be asked again. Emptying them is free in a way that cutting a real result
+	 * is not — nothing is lost, so there is no judgement about what the model might need later.
+	 *
+	 * `worthPruning` is bypassed here on purpose: by the time compaction runs, the window is nearly
+	 * full and the alternative is a model call. The prefix cache is worth protecting against
+	 * routine per-turn tidying, not against the thing that stops the conversation ending.
+	 */
+	const tidied = dropUneventful(messages, { lastRequestAt: 0, now: Number.MAX_SAFE_INTEGER });
+	const pruned = pruneToolResults(tidied, undefined, artifacts);
+	if (pruned !== tidied || tidied !== messages) {
 		const rawPruned = estimateTokens(pruned);
 		const factor = measured.measured && rawPruned > 0 ? Math.max(0, used - overhead) / rawPruned : 1;
 		const next = rawPruned * factor + overhead;
@@ -311,7 +332,8 @@ export async function compactIfNeeded(
 
 	// Keep recent turns until their budget is spent, then cut — never between an assistant
 	// message and the tool results answering it, which both APIs reject.
-	const keepBudget = model.contextWindow * KEEP_BUDGET;
+	// A manual request retires completed work even when it fits comfortably in a large window.
+	const keepBudget = force ? Math.min(model.contextWindow * KEEP_BUDGET, conversation * KEEP_BUDGET) : model.contextWindow * KEEP_BUDGET;
 	let cut = messages.length;
 	let kept = 0;
 	while (cut > 1) {
@@ -326,7 +348,7 @@ export async function compactIfNeeded(
 	const older = messages.slice(0, cut);
 	const recent = messages.slice(cut);
 
-	let summary = await summarize(older, model, provider, streamFn);
+	let summary = await summarize(older, model, provider, streamFn, force ? manual ?? {} : undefined);
 	if (!summary) {
 		summary = fallbackSummary(older);
 	}
@@ -477,6 +499,7 @@ async function summarize(
 	model: ModelConfig,
 	provider: ProviderConfig,
 	streamFn: typeof streamAssistant,
+	manual?: { instructions?: string; signal?: AbortSignal },
 ): Promise<string | null> {
 	/*
 	 * Which instruction to use depends on whether there is already a summary in there.
@@ -500,13 +523,14 @@ async function summarize(
 				...condense(messages, model.contextWindow * SUMMARY_INPUT),
 				{
 					role: "user",
-					content: [{ type: "text", text: iterative ? UPDATE_SUMMARY : FIRST_SUMMARY }],
+					content: [{ type: "text", text: [iterative ? UPDATE_SUMMARY : FIRST_SUMMARY,
+						manual?.instructions?.trim() ? `User-requested summary focus (preserve the required handover structure and outstanding tasks):\n${manual.instructions.trim()}` : ""].filter(Boolean).join("\n\n") }],
 					timestamp: Date.now(),
 				},
 			],
 			tools: [],
 		},
-		{ thinking: "off", maxTokens: Math.min(8000, model.maxOutputTokens) },
+		{ thinking: "off", maxTokens: Math.min(8000, model.maxOutputTokens), signal: manual?.signal },
 	);
 
 	/*
@@ -525,17 +549,24 @@ async function summarize(
 		do {
 			final = await stream.next();
 		} while (!final.done);
-	} catch {
+	} catch (cause) {
+		// Manual commands report failure; automatic compaction may still salvage an overfull turn.
+		if (manual) throw cause;
 		return null;
 	}
 
 	const message = final.value;
-	if (message.stopReason === "error" || message.stopReason === "aborted") return null;
+	if (manual?.signal?.aborted) throw new Error("压缩已取消。");
+	if (message.stopReason === "error" || message.stopReason === "aborted") {
+		if (manual) throw new Error(message.errorMessage || "摘要生成失败，请检查模型连接后重试。");
+		return null;
+	}
 	const text = message.content
 		.filter((c) => c.type === "text")
 		.map((c) => c.text)
 		.join("\n")
 		.trim();
+	if (manual && !text) throw new Error("模型返回的摘要为空，原上下文保持不变。");
 	return text || null;
 }
 

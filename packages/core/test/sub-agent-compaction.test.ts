@@ -159,7 +159,7 @@ test("what comes back replaces the history the sub-agent carries on with", async
 test("compacting does not derail the run — it still answers", async () => {
 	const { answer, registry } = await dispatch([callsNoop(), says("在 auth.ts:42")], { squash: true });
 
-	assert.equal(answer, "在 auth.ts:42");
+	assert.equal(answer.text, "在 auth.ts:42");
 	assert.equal(registry.list()[0].status, "done");
 });
 
@@ -168,6 +168,10 @@ test("what it compacts is its own history, not the parent's", async () => {
 	// callback was built against this run rather than handed down from the session.
 	const { seen } = await dispatch([says("好")], { squash: false });
 
-	const texts = seen[0].messages.flatMap((m) => m.content.filter((c) => c.type === "text").map((c) => c.text));
+	// Synthetic messages are the runtime talking, not this dispatch: the trailing `<env>` block
+	// carries the date and is appended at request time (see `prompt/environment.ts`).
+	const texts = seen[0].messages
+		.filter((m) => !m.synthetic)
+		.flatMap((m) => m.content.filter((c) => c.type === "text").map((c) => c.text));
 	assert.deepEqual(texts, ["去找"]);
 });

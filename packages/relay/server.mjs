@@ -34,9 +34,9 @@ const server = createServer((req, res) => {
 });
 
 server.on("upgrade", (req, socket) => {
+	socket.setNoDelay(true);
 	const key = req.headers["sec-websocket-key"];
 	if (!key) return socket.destroy();
-
 	socket.write(
 		[
 			"HTTP/1.1 101 Switching Protocols",
@@ -51,13 +51,16 @@ server.on("upgrade", (req, socket) => {
 		id: randomUUID().slice(0, 8),
 		socket,
 		room: null,
+		role: null,
 		/** Bytes not yet forming a whole frame. */
 		buffer: Buffer.alloc(0),
+		alive: true,
 	};
 
 	socket.on("data", (chunk) => onData(client, chunk));
 	socket.on("error", () => leave(client));
 	socket.on("close", () => leave(client));
+	socket.on("end", () => leave(client));
 	/*
 	 * A socket that says nothing is a socket that will hold a room forever.
 	 *
@@ -68,6 +71,27 @@ server.on("upgrade", (req, socket) => {
 		if (!client.room) socket.destroy();
 	}, 10_000).unref?.();
 });
+
+/** Heartbeat check: reap sockets that died silently without sending FIN/RST */
+setInterval(() => {
+	for (const [room, members] of rooms) {
+		for (const m of members) {
+			if (m.socket.destroyed || m.socket.closed || !m.socket.writable) {
+				leave(m);
+				continue;
+			}
+			if (!m.alive) {
+				m.socket.destroy();
+				leave(m);
+				continue;
+			}
+			m.alive = false;
+			// Send WS ping (opcode 0x9)
+			m.socket.write(encode(Buffer.alloc(0), 0x9));
+		}
+		if (members.size === 0) rooms.delete(room);
+	}
+}, 30_000).unref?.();
 
 /** Decode as many whole frames as `chunk` completes, and act on each. */
 function onData(client, chunk) {
@@ -84,7 +108,10 @@ function onData(client, chunk) {
 			client.socket.write(encode(frame.payload, 0xa));
 			continue;
 		}
-		if (frame.opcode === 0xa) continue;
+		if (frame.opcode === 0xa) {
+			client.alive = true;
+			continue;
+		}
 
 		if (!client.room) {
 			join(client, frame.payload);
@@ -114,21 +141,33 @@ function join(client, payload) {
 	if (hello?.type !== "hello" || typeof hello.room !== "string" || !/^[a-f0-9]{64}$/.test(hello.room)) {
 		return refuse(client, "bad-hello");
 	}
-
 	const members = rooms.get(hello.room) ?? new Set();
-	/*
-	 * Two is the whole room.
-	 *
-	 * The id is derived from the pairing token, so a third arrival means that token is known to
-	 * someone it should not be. Refusing the newcomer is the safer half of a bad situation:
-	 * evicting a member would let whoever holds the leaked token displace the real device.
-	 * If existing member is destroyed or closed, purge it first.
-	 */
 	for (const m of members) {
-		if (m.socket.destroyed || m.socket.readyState > 1) members.delete(m);
+		if (m.socket.destroyed || m.socket.closed || !m.socket.writable) members.delete(m);
 	}
-	if (members.size >= 2) return refuse(client, "room-full");
 
+	// Role recognition:
+	// - "host": desktop
+	// - "guest": mobile
+	// Default fallback: if not specified or unrecognized, treated as "guest"
+	const requestedRole = hello.role === "host" ? "host" : "guest";
+
+	// Eviction / Handover Policy:
+	// If a client with the same role arrives, disconnect the older client of that role ("kicked" reason).
+	// This allows mobile reconnects or device switches to seamlessly take over without room-full errors.
+	for (const existing of members) {
+		if (existing.role === requestedRole) {
+			refuse(existing, "kicked");
+			members.delete(existing);
+		}
+	}
+
+	// Safety check: a room holds at most 2 members (1 host, 1 guest)
+	if (members.size >= 2) {
+		return refuse(client, "room-full");
+	}
+
+	client.role = requestedRole;
 	client.room = hello.room;
 	members.add(client);
 	rooms.set(hello.room, members);

@@ -66,7 +66,7 @@ export { prepareTurn, useTurnPipeline, type TurnContext, type TurnMiddleware } f
 export { registeredSkills, useSkillRegistry } from "./skills/registry.ts";
 export { loadCapabilityPlugins, type LoadedCapabilityPlugins } from "./plugins/capability.ts";
 export { API_FORMATS, getProvider, streamAssistant, useLlmRegistry } from "./ai/index.ts";
-export type { AgentEvent, AgentEventSink, QueuedTask } from "./agent/events.ts";
+export type { AgentEvent, AgentEventSink, CommandRun, QueuedTask } from "./agent/events.ts";
 export type { TodoItem } from "./tools/todo.ts";
 export { runAgent, type AgentRunConfig, type AgentRunResult } from "./agent/loop.ts";
 export { errorResult, textResult } from "./agent/tool-run.ts";
@@ -156,12 +156,12 @@ export {
 	type MemoryStore,
 } from "./runtime/memory.ts";
 export { compactIfNeeded, compactWith, useCompaction } from "./runtime/compaction.ts";
-export type { ContextBreakdown, ContextSegment, ContextSegmentKey } from "./runtime/context.ts";
+export type { ContextBreakdown, ContextSegment, ContextSegmentKey, MemoryFileItem } from "./runtime/context.ts";
 export { estimateTokens } from "./tokens.ts";
 export { hooksFor, makeAfterToolCall, makeBeforeToolCall, runHook } from "./runtime/hooks.ts";
 export type { SessionStatus } from "./runtime/reporting.ts";
 export { AgentSession, type AgentSessionOptions,  } from "./runtime/session.ts";
-export { SideChat, type SideChatOptions, type SideChatState } from "./runtime/sidechat.ts";
+export { SideChat, restoredSideChatMessages, type SideChatOptions, type SideChatState, type SideChatEvent } from "./runtime/sidechat.ts";
 export {
 	lyraHome,
 	projectIdFor,
@@ -169,6 +169,7 @@ export {
 	type SessionMeta,
 	type SessionRecord,
 } from "./session/store.ts";
+export { builtinCommandsFor, BUILTIN_COMMANDS, type BuiltinCommand, type CommandAction } from "./commands/builtin.ts";
 export {
 	commandSources,
 	loadCommands,
@@ -212,7 +213,16 @@ export {
 } from "./runtime/previews.ts";
 
 export type { SubAgentDetail, SubAgentStatus, SubAgentSummary } from "./runtime/sub-agents.ts";
-export { collectSkills } from "./runtime/session-setup.ts";
+export { collectRules, collectSkills, type RuleEntry } from "./runtime/session-setup.ts";
+export { FOREIGN_USER_SOURCES } from "./capability/providers/foreign.ts";
+export {
+	approveSkill,
+	managedSkillsDir,
+	pendingSkills,
+	proposeSkill,
+	rejectSkill,
+	type SkillCandidate,
+} from "./runtime/managed-skills.ts";
 export {
 	resolveModelThinkingOptions,
 	resolveReasoningEffort,
@@ -222,3 +232,24 @@ export {
 	GPT_5_6_SOL_OPTIONS,
 	FAST_3_LEVEL_OPTIONS,
 } from "./ai/thinking-options.ts";
+export { lastPassAt, PASS_INTERVAL_MS, runMemoryPass, shouldRunPass } from "./runtime/memory-pass.ts";
+export {
+	MODEL_ROLES,
+	ROLE_DESCRIPTIONS,
+	parseModelRef,
+	resolveModelRef,
+	roleStatus,
+	type ModelRole,
+} from "./config/model-roles.ts";
+export { renderRuleFile, type CorrectionSuggestion } from "./rules/from-correction.ts";
+export { ruleDir, saveRule, type RuleDestination } from "./rules/save.ts";
+export { BUILTIN_RULES } from "./rules/builtin.ts";
+export { FOREIGN_CONFIGS_NOTICE, foreignConfigsIn, markNoticed, noticed, type ForeignConfigLine } from "./runtime/foreign-configs.ts";
+export { layerOverrides, loadProjectLayer, projectConfigPath, type LayerOverride } from "./config/layers.ts";
+export { extensionDirs } from "./runtime/session-capabilities.ts";
+export { validateManifest, type ExtensionDiagnostic, type ExtensionEventStats, type ExtensionStats } from "./extensions/types.ts";
+export { annotateInjected, EXTRACTED_KEY, projectInjectedPath, readInjected, userInjectedPath } from "./runtime/memory-injected.ts";
+export { readLessons } from "./runtime/project-memory.ts";
+export { readExtractedMemory } from "./runtime/memory-extract.ts";
+export { projectMemoryDir } from "./runtime/project-memory.ts";
+export { computeDiff } from "./tools/diff.ts";

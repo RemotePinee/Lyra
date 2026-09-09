@@ -396,6 +396,11 @@ const api: LyraApi = {
 		remove: (id) => ipcRenderer.invoke("memory:remove", id),
 		clear: () => ipcRenderer.invoke("memory:clear"),
 	},
+	projectMemory: {
+		list: (cwd) => ipcRenderer.invoke("memory:projectList", cwd),
+		status: (cwd) => ipcRenderer.invoke("memory:projectStatus", cwd),
+		extract: (cwd) => ipcRenderer.invoke("memory:projectExtract", cwd),
+	},
 	diff: {
 		workspaceDiff: (cwd, target) => ipcRenderer.invoke("diff:workspace", cwd, target),
 		blob: (cwd, path, side) => ipcRenderer.invoke("diff:blob", cwd, path, side),

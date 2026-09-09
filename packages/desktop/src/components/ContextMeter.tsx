@@ -171,6 +171,7 @@ const SEGMENT_LABEL: Record<ContextSegmentKey, string> = {
 	skills: "技能目录",
 	systemPrompt: "系统提示词",
 	memory: "项目指令",
+	projectMemory: "项目记忆",
 };
 
 /**

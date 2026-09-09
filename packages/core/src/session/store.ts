@@ -13,7 +13,7 @@ import { appendFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile }
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
-import type { AgentEvent } from "../agent/events.ts";
+import type { AgentEvent, CommandRun } from "../agent/events.ts";
 import type { Message, ThinkingLevel, Usage } from "../types.ts";
 import type { SessionStorage } from "./storage.ts";
 import { addUsage, emptyUsage } from "../types.ts";
@@ -30,6 +30,10 @@ export interface SessionMeta {
 	messageCount: number;
 	usage: Usage;
 	archived?: boolean;
+	/** A submitted opening message is durable before its runtime is initialized. */
+	pendingPrompt?: boolean;
+	/** Desktop workspace preparation is deferred until execution, never transcript reading. */
+	workspaceSetup?: "worktree";
 	/**
 	 * How many messages were already written when the model was last changed mid-conversation.
 	 *
@@ -97,6 +101,8 @@ export type SessionRecord =
  * tell the model, and so a difference worth storing.
  */
 export interface Boundary {
+	/** Stable rewrite time; retained replies describe the old request until a newer reply arrives. */
+	at?: number;
 	summary: string;
 	keptFrom: number;
 }
@@ -259,7 +265,7 @@ export class SessionStore implements SessionStorage {
 	async load(
 		projectId: string,
 		sessionId: string,
-	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[]; compaction: Boundary | null } | null> {
+	): Promise<{ meta: SessionMeta; messages: Message[]; compactions: number[]; commandRuns?: CommandRun[]; compaction: Boundary | null } | null> {
 		let meta: SessionMeta | null = null;
 		// Kept with their sequence numbers so a truncate record can drop the right tail.
 		let entries: { seq: number; message: Message }[] = [];
@@ -271,6 +277,7 @@ export class SessionStore implements SessionStorage {
 		 * divider at each of these.
 		 */
 		const compactions: number[] = [];
+		const commandRuns = new Map<string, { seq: number; run: CommandRun }>();
 		/*
 		 * And the newest of them in full, which is what the *model* is given.
 		 *
@@ -282,6 +289,10 @@ export class SessionStore implements SessionStorage {
 		let compaction: Boundary | null = null;
 		for await (const record of this.read(projectId, sessionId)) {
 			if (record.type === "meta") meta = record.meta;
+			else if (record.type === "event" && record.event.type === "command_status") {
+				const run = record.event.command;
+				commandRuns.set(run.id, { seq: record.seq, run: run.status === "running" ? { ...run, status: "cancelled", detail: "压缩中断，未完成的操作没有自动重试。" } : run });
+			}
 			else if (record.type === "event" && record.event.type === "compacted") {
 				compactions.push(entries.length);
 				/*
@@ -291,13 +302,15 @@ export class SessionStore implements SessionStorage {
 				 */
 				const { summary, kept } = record.event;
 				if (kept !== undefined) {
-					compaction = { summary: summary ?? "", keptFrom: Math.max(0, entries.length - kept) };
+					compaction = { at: record.ts, summary: summary ?? "", keptFrom: Math.max(0, entries.length - kept) };
 				}
 			} else if (record.type === "message") entries.push({ seq: record.seq, message: record.message });
 			else if (record.type === "title" && meta) meta.title = record.title;
 			else if (record.type === "archive" && meta) meta.archived = record.archived;
 			else if (record.type === "truncate") {
 				entries = entries.filter((e) => e.seq <= record.afterSeq);
+				for (const [id, entry] of commandRuns) if (entry.seq > record.afterSeq) commandRuns.delete(id);
+				while (compactions.length && compactions[compactions.length - 1] > entries.length) compactions.pop();
 				// A rewind past the boundary retires it: the tail it was paired with is gone.
 				if (compaction && compaction.keptFrom > entries.length) compaction = null;
 			}
@@ -318,7 +331,7 @@ export class SessionStore implements SessionStorage {
 		}
 		// Seed the append queue's view so a reopened session keeps numbering where it left off.
 		this.latestMeta.set(this.keyFor(meta), meta);
-		return { meta, messages, compactions, compaction };
+		return { meta, messages, compactions, compaction, commandRuns: [...commandRuns.values()].map((entry) => entry.run) };
 	}
 
 	// -------------------------------------------------------------------------

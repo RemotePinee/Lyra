@@ -10,19 +10,24 @@
  * the boundary is visible at every call site.
  */
 
-import type { AgentEvent, AgentEventSink, QueuedTask } from "../agent/events.ts";
+import { randomUUID } from "node:crypto";
+import type { AgentEvent, AgentEventSink, CommandRun, QueuedTask } from "../agent/events.ts";
 import type { AgentRunConfig } from "../agent/loop.ts";
 import type { Settings } from "../config/settings.ts";
-import { resolveModel } from "../config/settings.ts";
+import { layerProjectSettings, resolveModel } from "../config/settings.ts";
+import { SESSIONS_KEY, type SessionLookup } from "../resources/more-handlers.ts";
+import { saveRule, type RuleDestination } from "../rules/save.ts";
 import type { Boundary, SessionMeta } from "../session/store.ts";
 import type { SessionStorage } from "../session/storage.ts";
 import type { ApprovalDecision, ApprovalRequest, Message, ThinkingLevel, Tool, UserContent } from "../types.ts";
 import { ApprovalGate, sessionApprovalGate } from "./approvals.ts";
 import type { ContextBreakdown } from "./context.ts";
 import { describeContext, describeSession, type SessionFacts, type SessionStatus } from "./reporting.ts";
+import { CapabilityWatcher } from "./capability-watch.ts";
 import { SessionCapabilities } from "./session-capabilities.ts";
 import { scratchDir, sessionFacts } from "./session-facts.ts";
 import { SessionLog } from "./session-log.ts";
+import { PROJECT_MEMORY_ENABLED_KEY, projectMemoryEnabled } from "./project-memory.ts";
 import { compactIfNeeded } from "./compaction.ts";
 import { driveTurn, modelHistory, summaryStream } from "./session-turn.ts";
 import { SubAgentRegistry } from "./sub-agents.ts";
@@ -49,6 +54,28 @@ export interface AgentSessionOptions {
 	streamFn?: AgentRunConfig["streamFn"];
 }
 
+/**
+ * 一条消息渲染成一行给人读的文本。
+ *
+ * 转录里工具调用占绝大多数，而对「上次我们怎么解决这个的」这个问题，有用的是**说过的话**。
+ * 工具调用留一行名字：完全不提会让对话看起来像凭空得出结论，而把参数和结果都铺开，
+ * 读一次别人的会话就要花掉这次会话的上下文。
+ */
+function renderMessage(message: Message): string {
+	const text = message.content
+		.filter((block): block is { type: "text"; text: string } => block.type === "text")
+		.map((block) => block.text)
+		.join("\n")
+		.trim();
+
+	if (message.role === "user") return message.synthetic ? "" : `用户：${text}`;
+	if (message.role !== "assistant") return "";
+
+	const calls = message.content.flatMap((block) => (block.type === "toolCall" ? [block.name] : []));
+	const parts = [text && `助手：${text}`, calls.length > 0 && `（调用了 ${calls.join("、")}）`].filter(Boolean);
+	return parts.join("\n");
+}
+
 export class AgentSession {
 	readonly store: SessionStorage;
 	readonly log: SessionLog;
@@ -56,9 +83,29 @@ export class AgentSession {
 	cwd: string;
 
 	private settings: Settings;
+	/**
+	 * 应用给的那一份，没有叠过项目层。
+	 *
+	 * 留着它，是因为项目层要能重新叠：设置一变，主进程推下来的是全局的那一份，
+	 * 拿已经叠过的结果再叠一次，项目的值会被当成全局的值固化下来。
+	 */
+	private globalSettings: Settings;
+	/** 盯着技能和规则目录的那个，没有可听的目录时是 null。 */
+	private watcher: CapabilityWatcher | null = null;
 	private streamFn?: AgentRunConfig["streamFn"];
 	private controller: AbortController | null = null;
+	private compactionTask: Promise<{ ok: boolean; reason?: string; before?: number; after?: number }> | null = null;
+	private pendingResume: Promise<void> | null = null;
+	private acceptingPrompt = false;
+	private abortEpoch = 0;
 	private steering: Message[] = [];
+	/**
+	 * 说了「等这一轮做完再说」的那些消息。
+	 *
+	 * 跟 `steering` 分开的理由就是它们的区别：`steering` 会被塞进正在跑的那一轮，而这些要等
+	 * 那一轮结束。合成一个队列的话，两种意思里必然有一种表达不出来。
+	 */
+	private readonly pending: { message: Message; thinking?: ThinkingLevel }[] = [];
 	/**
 	 * Every sub-agent this session has dispatched, live and finished.
 	 *
@@ -79,6 +126,7 @@ export class AgentSession {
 	constructor(options: AgentSessionOptions) {
 		this.cwd = options.cwd;
 		this.settings = options.settings;
+		this.globalSettings = options.settings;
 		this.store = options.store;
 		this.streamFn = options.streamFn;
 		this.log = new SessionLog(options.store, options.emit, options.meta);
@@ -120,7 +168,7 @@ export class AgentSession {
 	}
 
 	get running(): boolean {
-		return this.controller !== null;
+		return this.acceptingPrompt || this.controller !== null;
 	}
 
 	/** Load skills, agents and MCP tools. Safe to call again after settings change. */
@@ -128,7 +176,125 @@ export class AgentSession {
 		if (!this.log.meta) {
 			this.log.meta = await this.store.create(this.cwd, this.settings.defaultModelId ?? "");
 		}
+		await this.applyProjectConfig();
 		await this.can.load(this.cwd, this.settings);
+		/*
+		 * `session://` 的数据源。
+		 *
+		 * 在这里而不是 `SessionCapabilities` 里，因为它要的是 store——而能力层刻意不知道会话
+		 * 是怎么存的。给的是两个方法而不是整个 store：这个地址要读转录，不该顺手获得删除会话
+		 * 的能力。
+		 */
+		this.can.state.set(SESSIONS_KEY, {
+			recent: async (limit) =>
+				(await this.store.listSessions())
+					.filter((meta) => !meta.archived)
+					.sort((a, b) => b.updatedAt - a.updatedAt)
+					.slice(0, limit)
+					.map((meta) => ({ id: meta.id, title: meta.title ?? "", updatedAt: meta.updatedAt })),
+			transcript: async (id) => {
+				const meta = (await this.store.listSessions()).find((entry) => entry.id === id);
+				if (!meta) return null;
+				const messages = await this.store.messages(meta.projectId, id);
+				return { title: meta.title ?? "", lines: messages.map(renderMessage).filter(Boolean) };
+			},
+		} satisfies SessionLookup);
+		/*
+		 * 扩展的 `session_start`。
+		 *
+		 * 在 `can.load` 之后：这时扩展自己才刚被加载起来，而一个还没起来的 worker 收不到事件。
+		 * 不 await——一个扩展在启动时慢，不该让打开一个对话跟着慢。
+		 */
+		void this.can.extensions.dispatch("session_start", { cwd: this.cwd, sessionId: this.log.meta.id }).catch(() => {});
+		this.startWatching();
+	}
+
+	/**
+	 * 盯着那些真的放了东西的目录，改了就重读。
+	 *
+	 * 编辑技能和规则是这套系统里最高频的动作之一：写一条、试一句、再改一版。要求每一版都重启
+	 * 窗口，等于要求每一版都重新加载全部插件、重连全部 MCP、丢掉正在看的那个对话。
+	 *
+	 * `watched` 这份名单一直被收集着——每个 provider 都老实报了，注册表也合并了——只是从来
+	 * 没有人接。
+	 */
+	private startWatching(): void {
+		this.watcher?.close();
+		if (this.can.watched.length === 0) return;
+		this.watcher = new CapabilityWatcher({
+			dirs: this.can.watched,
+			// 一轮跑到一半绝不换：模型正按当前那份清单做决策。
+			idle: () => !this.running,
+			reload: () => this.reloadCapabilities(),
+		});
+	}
+
+	/**
+	 * 重读一遍，然后说清楚变了什么。
+	 *
+	 * 「能力已更新」对着一次 `git checkout` 说了等于没说——那会换掉半个目录。所以报的是数量差
+	 * 和新出现的名字。三个数都是 0 也是一个诚实的答案：有人改了某个规则的正文，而名单没变。
+	 */
+	/**
+	 * 重新发现能力，并把变化说出来。
+	 *
+	 * 公开的，因为它是监听器的动作本身——而测试要验的是「重载会更新 `can` 并且发出通知」，
+	 * 不是「`fs.watch` 在这台机器上多久发一次事件」。后者是 Node 的事，在负载高时要等十几秒，
+	 * 而一条等它的测试是在赌延迟：`capability-watch.test.ts` 为此把超时调大过三次。
+	 */
+	async reloadCapabilities(): Promise<void> {
+		const before = {
+			skills: this.can.skills.length,
+			rules: this.can.rules.always.length + this.can.rules.book.length + this.can.rules.stream.length,
+			agents: this.can.agents.length,
+			names: new Set([...this.can.skills.map((s) => s.name), ...this.can.agents.map((a) => a.name)]),
+		};
+
+		await this.can.load(this.cwd, this.settings);
+		// 目录名单本身也会变——新建了 `.lyra/rules/` 之后，它才第一次出现在 `watched` 里。
+		this.startWatching();
+
+		const rules = this.can.rules.always.length + this.can.rules.book.length + this.can.rules.stream.length;
+		await this.emit({
+			type: "capabilities_changed",
+			skills: this.can.skills.length - before.skills,
+			rules: rules - before.rules,
+			agents: this.can.agents.length - before.agents,
+			added: [...this.can.skills.map((s) => s.name), ...this.can.agents.map((a) => a.name)]
+				.filter((name) => !before.names.has(name))
+				.slice(0, 4),
+		});
+	}
+
+	/**
+	 * 把 `<cwd>/.lyra/config.json` 叠到全局设置上。
+	 *
+	 * 这一层以前只有一个模块和一份测试，产品里没有任何东西读那个文件——「A 项目用便宜模型加
+	 * 严格审批、B 项目用强模型加宽松审批」在这个分支上一直只是一段注释。
+	 *
+	 * 在会话上叠而不是在应用上叠，是因为项目本来就是会话的属性：一个窗口可以同时开着两个项目的
+	 * 对话，而设置页只有一个。
+	 */
+	private async applyProjectConfig(): Promise<void> {
+		const layered = await layerProjectSettings(this.globalSettings, this.cwd).catch(() => null);
+		if (!layered) return;
+		this.settings = layered.settings;
+		this.can.state.set(PROJECT_MEMORY_ENABLED_KEY, projectMemoryEnabled(this.settings));
+
+		/*
+		 * 被拒的键要说出来，而且要说得像一次拒绝。
+		 *
+		 * `.lyra/config.json` 是要提交进仓库的，落在里面的凭证就是已公开的凭证。安静地忽略它，
+		 * 写的人会以为它生效了——那正是「能正常工作、只是把密钥共享了」的那种错误。
+		 */
+		if (layered.refused.length > 0) {
+			await this.emit({
+				type: "notice",
+				level: "warn",
+				message: `.lyra/config.json 里的 ${layered.refused.join("、")} 被忽略了——这个文件会进仓库，凭证和供应商只能写在全局设置里。`,
+			});
+		}
+		if (layered.error) await this.emit({ type: "notice", level: "warn", message: layered.error });
 	}
 
 	async status(): Promise<SessionStatus> {
@@ -136,7 +302,9 @@ export class AgentSession {
 	}
 
 	async contextBreakdown(): Promise<ContextBreakdown | null> {
-		return describeContext(this.facts());
+		const resolved = resolveModel(this.settings, this.log.meta.modelId || this.settings.defaultModelId);
+		if (!resolved) return null;
+		return describeContext({ ...this.facts(), messages: modelHistory(this.log, resolved.provider, resolved.model) });
 	}
 
 	private facts(): SessionFacts {
@@ -154,8 +322,37 @@ export class AgentSession {
 	 * Refused mid-turn: the running loop is holding its own copy of the history and would write its
 	 * own boundary at the end of the turn, over this one.
 	 */
-	async compact(): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }> {
-		if (this.running) return { ok: false, reason: "对话正在进行中，等它结束再压缩。" };
+	compact(instructions = ""): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }> {
+		if (this.compactionTask) return this.compactionTask;
+		if (this.running) return Promise.resolve({ ok: false, reason: "对话正在进行中，等它结束再压缩。" });
+		const controller = new AbortController();
+		this.controller = controller;
+		this.compactionTask = this.reportCompaction(instructions, controller.signal).finally(() => {
+			this.controller = null;
+			this.compactionTask = null;
+			void this.watcher?.resume();
+			void this.tasks.drain();
+		});
+		return this.compactionTask;
+	}
+
+	private async reportCompaction(instructions: string, signal: AbortSignal) {
+		const command: CommandRun = { id: randomUUID(), name: "compact", timestamp: Date.now(), input: `/compact${instructions.trim() ? ` ${instructions.trim()}` : ""}`,
+			at: this.messages.length, status: "running", detail: "正在压缩会话…" };
+		await this.emit({ type: "command_status", command });
+		try {
+			const result = await this.compactHistory(instructions, signal);
+			await this.emit({ type: "command_status", command: { ...command, status: result.ok ? "done" : "skipped",
+				detail: result.ok ? `已压缩上下文：${result.before} 条消息整理为 ${result.after} 条，完整对话仍可查看。` : result.reason ?? "无需进一步压缩。" } });
+			return result;
+		} catch (cause) {
+			const reason = signal.aborted ? "压缩已取消，原上下文保持不变。" : `压缩失败：${cause instanceof Error ? cause.message : String(cause)}`;
+			await this.emit({ type: "command_status", command: { ...command, status: signal.aborted ? "cancelled" : "failed", detail: reason } });
+			return { ok: false, reason };
+		}
+	}
+
+	private async compactHistory(instructions: string, signal: AbortSignal): Promise<{ ok: boolean; reason?: string; before?: number; after?: number }> {
 
 		const resolved = resolveModel(this.settings, this.log.meta.modelId || this.settings.defaultModelId);
 		if (!resolved) return { ok: false, reason: "还没有配置模型。" };
@@ -170,6 +367,9 @@ export class AgentSession {
 			summaryStream(this.streamFn, resolved.provider, resolved.model),
 			0,
 			true,
+			// 剪掉的原文存下来，占位标记里给出 `artifact://` 地址。
+			{ keep: (tool, content) => this.can.keepArtifact(tool, content) },
+			{ instructions, signal },
 		);
 		/*
 		 * Two different outcomes, and they used to say the same thing.
@@ -186,6 +386,7 @@ export class AgentSession {
 		if (!compaction) return { ok: false, reason: "已经够紧凑了，这次压缩不会更小。" };
 		if (compaction.kept === undefined) return { ok: false, reason: "只裁掉了几段过长的工具输出，没有需要总结的历史。" };
 
+		if (signal.aborted) throw new Error("压缩已取消。");
 		this.log.markCompaction(compaction.summary, compaction.kept);
 		await this.emit({
 			type: "compacted",
@@ -202,9 +403,40 @@ export class AgentSession {
 		this.can.invalidateSymbolIndex();
 	}
 
+	/**
+	 * Keep a suggested rule, and make it apply from the next turn on.
+	 *
+	 * The reload is the part that must not be skipped. Writing the file and leaving the session
+	 * with the rules it loaded at startup gives the worst version of this feature: somebody accepts
+	 * the offer, watches the same mistake happen in the very next message, and concludes the whole
+	 * thing does nothing.
+	 *
+	 * Accepting also clears the refusal streak — they want these, they just did not want those two.
+	 */
+	async keepSuggestedRule(scope: RuleDestination, name: string, content: string): Promise<{ path: string; renamed?: string }> {
+		const saved = await saveRule(scope, this.cwd, name, content);
+		this.can.correctionBudget.recordAcceptance();
+		await this.can.reloadRules(this.cwd, this.settings);
+		return saved;
+	}
+
+	/** They said no. Two in a row and this session stops asking. */
+	declineSuggestedRule(): void {
+		this.can.correctionBudget.recordRefusal();
+	}
+
 	updateSettings(settings: Settings): void {
+		this.globalSettings = settings;
 		this.settings = settings;
+		this.can.state.set(PROJECT_MEMORY_ENABLED_KEY, projectMemoryEnabled(settings));
 		for (const subject of settings.alwaysAllow) this.approvals.allow(subject);
+		/*
+		 * 项目层重新叠一遍，不等这次调用。
+		 *
+		 * 它要读一次盘，而这个方法是同步的（每一个改设置的路径都在调它）。不重新叠的话，
+		 * 在设置页改任何一项，都会把这个会话的项目配置默默清掉——而屏幕上没有任何东西说这件事。
+		 */
+		void this.applyProjectConfig();
 	}
 
 	/**
@@ -311,6 +543,28 @@ export class AgentSession {
 		return this.subAgents.dismissFinished();
 	}
 
+	/** Consume a durable opening message once, without appending a second copy. */
+	resumePendingPrompt(): Promise<void> {
+		if (this.pendingResume) return this.pendingResume;
+		if (!this.log.meta.pendingPrompt) return Promise.resolve();
+		this.acceptingPrompt = true;
+		const epoch = this.abortEpoch;
+		const resume = async () => {
+			await this.cancelPendingPrompt();
+			if (this.abortEpoch !== epoch) return;
+			await this.run();
+			await this.drainPending();
+		};
+		this.pendingResume = resume().finally(() => { this.pendingResume = null; this.acceptingPrompt = false; void this.tasks.drain(); });
+		return this.pendingResume;
+	}
+
+	async cancelPendingPrompt(): Promise<void> {
+		if (!this.log.meta.pendingPrompt) return;
+		this.log.meta = { ...this.log.meta, pendingPrompt: undefined };
+		await this.log.append({ type: "meta", meta: this.log.meta });
+	}
+
 	async prompt(
 		content: UserContent[],
 		options: {
@@ -326,8 +580,20 @@ export class AgentSession {
 			 * see past it to the request it is continuing.
 			 */
 			synthetic?: boolean;
+			/**
+			 * 会话正忙时怎么办。默认 `steer`——插进正在跑的那一轮。
+			 *
+			 * `followUp` 是另一种意思：**不打断，排到这一轮后面**。「跑完之后顺手把测试也跑一遍」
+			 * 属于后者，而现在说出来跟等五分钟再说出来的区别，是要不要一直守在这儿。
+			 *
+			 * 空闲时两者一样，都是开一个新回合——差别只存在于有东西正在跑的时候，而这正是它
+			 * 唯一需要被区分的时候。
+			 */
+			deliver?: "steer" | "followUp";
 		} = {},
 	): Promise<void> {
+		// A prompt waits for the manual boundary before creating a turn against that history.
+		if (this.compactionTask) await this.compactionTask;
 		const message: Message = {
 			role: "user",
 			content,
@@ -337,10 +603,23 @@ export class AgentSession {
 		};
 
 		if (this.running) {
-			this.steering.push(message);
+			/*
+			 * 插话，还是排队。
+			 *
+			 * 插话是默认，因为绝大多数在回合中途说的话都是「等等，不是那样」——那种话晚说
+			 * 五分钟就白说了。而 `followUp` 说的是「这一轮做完再说」，把它插进去反而会打断
+			 * 那件本来就该先做完的事。
+			 */
+			if (options.deliver === "followUp") this.pending.push({ message, thinking: options.thinking });
+			else this.steering.push(message);
 			return;
 		}
 
+		// Reserve the turn before the first disk write; another submission must queue during it.
+		this.acceptingPrompt = true;
+		const epoch = this.abortEpoch;
+		try {
+		await this.cancelPendingPrompt();
 		await this.log.commit(message);
 		await this.emit({ type: "message_start", message });
 		await this.emit({ type: "message_end", message });
@@ -351,7 +630,30 @@ export class AgentSession {
 			await this.setTitleFromPrompt(content);
 		}
 
+		if (this.abortEpoch !== epoch) return;
 		await this.run(options.thinking);
+		await this.drainPending();
+		} finally { this.acceptingPrompt = false; void this.tasks.drain(); }
+	}
+
+	/**
+	 * 排在这一轮后面的那些，按进来的顺序发。
+	 *
+	 * 一条 `followUp` 跑完可能又带出下一条，所以是循环而不是一次——而 `run` 本身在跑的时候
+	 * `this.running` 为真，所以循环里不会有第二个回合同时开始。
+	 */
+	private async drainPending(): Promise<void> {
+		while (this.pending.length > 0) {
+			const next = this.pending.shift();
+			if (!next) break;
+			if (this.controller?.signal.aborted) break;
+			const epoch = this.abortEpoch;
+			await this.log.commit(next.message);
+			await this.emit({ type: "message_start", message: next.message });
+			await this.emit({ type: "message_end", message: next.message });
+			if (epoch !== this.abortEpoch) break;
+			await this.run(next.thinking);
+		}
 	}
 
 	/**
@@ -383,6 +685,7 @@ export class AgentSession {
 			await driveTurn({
 				cwd: this.cwd,
 				settings: this.settings,
+				getSettings: () => this.settings,
 				log: this.log,
 				can: this.can,
 				provider: resolved.provider,
@@ -402,13 +705,24 @@ export class AgentSession {
 			this.approvals.rejectAll();
 		}
 
+		/*
+		 * 这一轮跑的时候磁盘上改过的东西，现在换进来。
+		 *
+		 * 「流式中不替换」那条约束的另一半：排了队就得有人放出来，否则那次改动会一直等到下一次
+		 * 文件事件——而人保存完文件就等着看效果，不会再去动它一次。
+		 */
+		void this.watcher?.resume();
+
 		// The queue moves the moment the workspace is free again. Skipped while draining,
 		// because that loop is already the thing calling us.
 		void this.tasks.drain();
 	}
 
 	abort(): void {
+		this.abortEpoch++;
+		if (this.acceptingPrompt && !this.controller) void this.emit({ type: "agent_end", reason: "aborted" });
 		this.controller?.abort();
+		this.steering.length = 0;
 		/*
 		 * Explicitly, as well as through the chain.
 		 *
@@ -419,7 +733,13 @@ export class AgentSession {
 		 */
 		this.subAgents.abortAll();
 		this.approvals.rejectAll();
-		this.steering.length = 0;
+		/*
+		 * 排队等着的那些也一并取消。
+		 *
+		 * 「停止」说的是这个对话现在停下，而不是「停下当前这一轮，然后把我排的三条接着跑完」
+		 * ——后者会在人按下按钮之后继续花钱，而屏幕上刚刚显示了已停止。
+		 */
+		this.pending.length = 0;
 		// Stop means stop. Letting the queue carry on after the button was pressed would be
 		// the opposite of what pressing it asks for.
 		void this.tasks.cancelAll();
@@ -539,6 +859,9 @@ export class AgentSession {
 
 	async dispose(): Promise<void> {
 		this.abort();
+		// 没人关的 fs.watch 会一直拿着描述符，而一天里会开关几十个会话。
+		this.watcher?.close();
+		this.watcher = null;
 		await this.can.dispose();
 	}
 }

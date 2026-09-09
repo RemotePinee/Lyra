@@ -21,6 +21,9 @@ import { SkeletonList } from "../Skeleton.tsx";
 import type { SyncPlan } from "./syncPlan.ts";
 import type { Act } from "./types.ts";
 
+const STAGED_COLLAPSED_KEY = "lyra:git:staged-collapsed";
+const UNSTAGED_COLLAPSED_KEY = "lyra:git:unstaged-collapsed";
+const TREE_VIEW_KEY = "lyra:git:tree-view";
 /**
  * Staged above unstaged, with the commit box under both.
  *
@@ -49,9 +52,13 @@ export function ChangesView({
   onPush: () => void;
   onPull: () => void;
 }) {
-  const [treeView, setTreeView] = useState(false);
-  const [stagedCollapsed, setStagedCollapsed] = useState(false);
-  const [unstagedCollapsed, setUnstagedCollapsed] = useState(false);
+  const [treeView, setTreeView] = useState(() => localStorage.getItem(TREE_VIEW_KEY) === "true");
+  const [stagedCollapsed, setStagedCollapsed] = useState(
+    () => localStorage.getItem(STAGED_COLLAPSED_KEY) === "true",
+  );
+  const [unstagedCollapsed, setUnstagedCollapsed] = useState(
+    () => localStorage.getItem(UNSTAGED_COLLAPSED_KEY) === "true",
+  );
   const confirm = useConfirmer();
   /** The hunks, once they arrive. The rows themselves do not wait for them — see `rowsFor`. */
   const [hunks, setHunks] = useState<{ staged: WorkspaceDiffFile[]; unstaged: WorkspaceDiffFile[] }>({
@@ -160,7 +167,13 @@ export function ChangesView({
               action="取消全部"
               disabled={busy}
               collapsed={stagedCollapsed}
-              onToggleCollapse={() => setStagedCollapsed((v) => !v)}
+              onToggleCollapse={() =>
+                setStagedCollapsed((v) => {
+                  const next = !v;
+                  localStorage.setItem(STAGED_COLLAPSED_KEY, String(next));
+                  return next;
+                })
+              }
               onAction={() =>
                 void act(() => window.lyra.git.unstage(cwd, stagedPaths))
               }
@@ -168,7 +181,13 @@ export function ChangesView({
             <button
               type="button"
               data-ly-tip={treeView ? "切换为扁平列表" : "切换为树状视图"}
-              onClick={() => setTreeView((v) => !v)}
+              onClick={() =>
+                setTreeView((v) => {
+                  const next = !v;
+                  localStorage.setItem(TREE_VIEW_KEY, String(next));
+                  return next;
+                })
+              }
               className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
             >
               {treeView ? <List size={13} strokeWidth={1.9} /> : <FolderTree size={13} strokeWidth={1.9} />}
@@ -219,7 +238,13 @@ export function ChangesView({
               action="全部暂存"
               disabled={busy}
               collapsed={unstagedCollapsed}
-              onToggleCollapse={() => setUnstagedCollapsed((v) => !v)}
+              onToggleCollapse={() =>
+                setUnstagedCollapsed((v) => {
+                  const next = !v;
+                  localStorage.setItem(UNSTAGED_COLLAPSED_KEY, String(next));
+                  return next;
+                })
+              }
               onAction={() =>
                 void act(() => window.lyra.git.stage(cwd, unstagedPaths))
               }
@@ -228,7 +253,13 @@ export function ChangesView({
               <button
                 type="button"
                 data-ly-tip={treeView ? "切换为扁平列表" : "切换为树状视图"}
-                onClick={() => setTreeView((v) => !v)}
+                onClick={() =>
+                  setTreeView((v) => {
+                    const next = !v;
+                    localStorage.setItem(TREE_VIEW_KEY, String(next));
+                    return next;
+                  })
+                }
                 className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-card-hover hover:text-ink"
               >
                 {treeView ? <List size={13} strokeWidth={1.9} /> : <FolderTree size={13} strokeWidth={1.9} />}

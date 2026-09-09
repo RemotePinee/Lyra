@@ -131,28 +131,29 @@ test("a message larger than one TCP segment arrives whole", async () => {
 	guest.close();
 });
 
-test("a third client is refused rather than displacing anyone", async () => {
+test("a new client of the same role kicks out the older one", async () => {
 	/*
-	 * The room id is derived from the pairing token, so a third arrival means the token is known
-	 * to someone it should not be. Refusing the newcomer is the safer half of that: evicting a
-	 * member would let whoever holds a leaked token push the real device out.
+	 * Eviction policy:
+	 * When a new guest (mobile) connects with the correct pairing token, the prior
+	 * guest is kicked with 'kicked' reason, and the new guest takes over the tunnel.
 	 */
 	const room = roomFor("t4");
 	const host = client(room, "host");
-	const guest = client(room, "guest");
-	await Promise.all([host.ready, guest.ready]);
-	await guest.until((lines) => lines.some((l) => l.includes("ready")), "ready");
+	const guest1 = client(room, "guest");
+	await Promise.all([host.ready, guest1.ready]);
+	await guest1.until((lines) => lines.some((l) => l.includes("ready")), "guest1 ready");
 
-	const third = client(room, "guest");
-	await third.ready;
-	await third.until((lines) => lines.some((l) => l.includes("room-full")), "room-full");
+	const guest2 = client(room, "guest");
+	await guest2.ready;
+	await guest1.until((lines) => lines.some((l) => l.includes("kicked")), "guest1 kicked");
+	await guest2.until((lines) => lines.some((l) => l.includes("ready")), "guest2 ready");
 
-	// And the two that were already talking are undisturbed.
-	host.send("还在");
-	await guest.until((lines) => lines.includes("还在"), "转发仍然通");
+	// Host and guest2 communicate smoothly
+	host.send("与新移动端通信");
+	await guest2.until((lines) => lines.includes("与新移动端通信"), "guest2 收到消息");
 
 	host.close();
-	guest.close();
+	guest2.close();
 });
 
 test("two rooms do not hear each other", async () => {

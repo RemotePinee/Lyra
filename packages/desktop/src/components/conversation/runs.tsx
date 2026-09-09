@@ -94,9 +94,8 @@ export function LiveToolCard({
        * A card with no run used to default to running, so any call whose record was lost — an id
        * the provider never supplied, a session reloaded mid-command — sat there counting up
        * forever. If the turn that produced it has finished, the call is over too, whatever
-       * became of its record.
        */
-      status={run?.status ?? (stopReason === "pending" ? "running" : "error")}
+      status={run?.status ?? (stopReason === "pending" || stopReason === "toolUse" ? "running" : "error")}
       result={run?.result}
     />
   );

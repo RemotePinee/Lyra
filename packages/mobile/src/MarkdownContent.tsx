@@ -1,7 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import React, { memo, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-
+import { useThemeColors } from "./theme";
 export type Align = "left" | "center" | "right";
 
 export interface TableBlock {
@@ -232,11 +232,41 @@ export function parseBlocks(source: string): MobileBlock[] {
 	return blocks;
 }
 
+const blockCache = new Map<string, MobileBlock[]>();
+const MAX_BLOCK_CACHE = 200;
+
+export function getCachedBlocks(content: string): MobileBlock[] {
+	const cached = blockCache.get(content);
+	if (cached) return cached;
+	const parsed = parseBlocks(content);
+	if (blockCache.size >= MAX_BLOCK_CACHE) {
+		const firstKey = blockCache.keys().next().value;
+		if (firstKey !== undefined) blockCache.delete(firstKey);
+	}
+	blockCache.set(content, parsed);
+	return parsed;
+}
+
+const inlineTokenCache = new Map<string, InlineToken[]>();
+const MAX_INLINE_CACHE = 400;
+
+export function getCachedInlineTokens(text: string): InlineToken[] {
+	const cached = inlineTokenCache.get(text);
+	if (cached) return cached;
+	const tokens = parseInlineTokens(text);
+	if (inlineTokenCache.size >= MAX_INLINE_CACHE) {
+		const firstKey = inlineTokenCache.keys().next().value;
+		if (firstKey !== undefined) inlineTokenCache.delete(firstKey);
+	}
+	inlineTokenCache.set(text, tokens);
+	return tokens;
+}
+
 /**
  * Render inline tokens into Text elements
  */
-export function RenderInline({ text }: { text: string }) {
-	const tokens = parseInlineTokens(text);
+export const RenderInline = memo(function RenderInline({ text }: { text: string }) {
+	const tokens = getCachedInlineTokens(text);
 
 	return (
 		<>
@@ -280,7 +310,7 @@ export function RenderInline({ text }: { text: string }) {
 			})}
 		</>
 	);
-}
+});
 
 /**
  * High-performance mobile code card with copy button & horizontal scroll
@@ -292,6 +322,7 @@ export const MobileCodeBlock = memo(function MobileCodeBlock({
 	language: string;
 	code: string;
 }) {
+	const { colors, isDark } = useThemeColors();
 	const [copied, setCopied] = useState(false);
 
 	const handleCopy = async () => {
@@ -303,20 +334,41 @@ export const MobileCodeBlock = memo(function MobileCodeBlock({
 	const langLabel = (language || "CODE").toUpperCase();
 
 	return (
-		<View className="my-2.5 overflow-hidden rounded-xl border border-white/10 bg-[#121212]">
-			<View className="flex-row items-center justify-between border-b border-white/5 bg-[#1c1c1e] px-3.5 py-2">
+		<View
+			style={{
+				backgroundColor: isDark ? "#121212" : colors.card,
+				borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : colors.line,
+			}}
+			className="my-2.5 overflow-hidden rounded-xl border"
+		>
+			<View
+				style={{
+					backgroundColor: isDark ? "#1c1c1e" : colors.elevated,
+					borderColor: isDark ? "rgba(255, 255, 255, 0.05)" : colors.lineSoft,
+				}}
+				className="flex-row items-center justify-between border-b px-3.5 py-2"
+			>
 				<View className="flex-row items-center gap-2">
 					<View className="h-2 w-2 rounded-full bg-accent/80" />
-					<Text className="font-mono text-[11px] font-semibold tracking-wider text-[#d4d4d8]">
+					<Text
+						style={{ color: isDark ? "#d4d4d8" : colors.inkMuted }}
+						className="font-mono text-[11px] font-semibold tracking-wider"
+					>
 						{langLabel}
 					</Text>
 				</View>
 				<Pressable
 					onPress={handleCopy}
 					hitSlop={8}
-					className="flex-row items-center gap-1 rounded-md bg-white/10 px-2.5 py-1 active:bg-white/20"
+					style={{
+						backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : colors.cardHover,
+					}}
+					className="flex-row items-center gap-1 rounded-md px-2.5 py-1 active:opacity-75"
 				>
-					<Text className="text-[11px] font-medium text-[#e4e4e7]">
+					<Text
+						style={{ color: isDark ? "#e4e4e7" : colors.ink }}
+						className="text-[11px] font-medium"
+					>
 						{copied ? "已复制" : "复制"}
 					</Text>
 				</Pressable>
@@ -327,7 +379,11 @@ export const MobileCodeBlock = memo(function MobileCodeBlock({
 				nestedScrollEnabled
 				contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 12 }}
 			>
-				<Text className="font-mono text-[12px] leading-5 text-[#e5e5e5]" selectable>
+				<Text
+					style={{ color: isDark ? "#e5e5e5" : colors.ink }}
+					className="font-mono text-[12px] leading-5"
+					selectable
+				>
 					{code}
 				</Text>
 			</ScrollView>
@@ -339,12 +395,26 @@ export const MobileCodeBlock = memo(function MobileCodeBlock({
  * Mobile-optimized Table with horizontal scroll, distinct header, and bordered grid
  */
 export const MobileTable = memo(function MobileTable({ block }: { block: TableBlock }) {
+	const { colors, isDark } = useThemeColors();
+
 	return (
-		<View className="my-3 overflow-hidden rounded-xl border border-white/10 bg-[#141416]">
+		<View
+			style={{
+				backgroundColor: isDark ? "#141416" : colors.card,
+				borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : colors.line,
+			}}
+			className="my-3 overflow-hidden rounded-xl border"
+		>
 			<ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
 				<View className="min-w-full">
 					{/* Table Header */}
-					<View className="flex-row border-b border-white/10 bg-[#1c1c1f]">
+					<View
+						style={{
+							backgroundColor: isDark ? "#1c1c1f" : colors.elevated,
+							borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : colors.line,
+						}}
+						className="flex-row border-b"
+					>
 						{block.header.map((cell, idx) => {
 							const align = block.align[idx] ?? "left";
 							const alignClass =
@@ -356,7 +426,10 @@ export const MobileTable = memo(function MobileTable({ block }: { block: TableBl
 							return (
 								<View
 									key={idx}
-									className="min-w-[90px] max-w-[200px] border-r border-white/5 px-3.5 py-2.5 last:border-r-0"
+									style={{
+										borderColor: isDark ? "rgba(255, 255, 255, 0.05)" : colors.lineSoft,
+									}}
+									className="min-w-[90px] max-w-[200px] border-r px-3.5 py-2.5 last:border-r-0"
 								>
 									<Text className={`font-semibold text-[12px] text-ink ${alignClass}`}>
 										<RenderInline text={cell} />
@@ -370,9 +443,16 @@ export const MobileTable = memo(function MobileTable({ block }: { block: TableBl
 					{block.rows.map((row, rowIdx) => (
 						<View
 							key={rowIdx}
-							className={`flex-row border-b border-white/5 last:border-b-0 ${
-								rowIdx % 2 === 1 ? "bg-white/[0.02]" : ""
-							}`}
+							style={{
+								backgroundColor:
+									rowIdx % 2 === 1
+										? isDark
+											? "rgba(255, 255, 255, 0.02)"
+											: colors.cardHover
+										: "transparent",
+								borderColor: isDark ? "rgba(255, 255, 255, 0.05)" : colors.lineSoft,
+							}}
+							className="flex-row border-b last:border-b-0"
 						>
 							{row.map((cell, cellIdx) => {
 								const align = block.align[cellIdx] ?? "left";
@@ -380,12 +460,15 @@ export const MobileTable = memo(function MobileTable({ block }: { block: TableBl
 									align === "center"
 										? "text-center"
 										: align === "right"
-											? "text-right"
-											: "text-left";
+										? "text-right"
+										: "text-left";
 								return (
 									<View
 										key={cellIdx}
-										className="min-w-[90px] max-w-[200px] border-r border-white/5 px-3.5 py-2 last:border-r-0"
+										style={{
+											borderColor: isDark ? "rgba(255, 255, 255, 0.05)" : colors.lineSoft,
+										}}
+										className="min-w-[90px] max-w-[200px] border-r px-3.5 py-2 last:border-r-0"
 									>
 										<Text className={`text-[12px] leading-5 text-ink-muted ${alignClass}`}>
 											<RenderInline text={cell} />
@@ -400,7 +483,6 @@ export const MobileTable = memo(function MobileTable({ block }: { block: TableBl
 		</View>
 	);
 });
-
 /**
  * Mobile-rendered list with custom bullet or numeric pill
  */
@@ -437,7 +519,7 @@ export const MobileMarkdownView = memo(function MobileMarkdownView({
 }: {
 	content: string;
 }) {
-	const blocks = useMemo(() => parseBlocks(content), [content]);
+	const blocks = useMemo(() => getCachedBlocks(content), [content]);
 
 	return (
 		<View className="w-full gap-2">

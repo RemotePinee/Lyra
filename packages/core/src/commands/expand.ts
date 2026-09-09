@@ -39,6 +39,26 @@ export function parseInvocation(text: string): Invocation | null {
  * `C:\Users\x` that silently lost its separators would be a worse failure than a quote that has
  * to be typed twice.
  */
+/**
+ * `/skill:<name>` embedded in prose — 「帮我 /skill:pdf 处理一下这个文件」 (07 §4).
+ *
+ * The token is lifted out and the rest of the sentence is the ask. Only when the draft does not
+ * itself start with a slash: `/commit 用了 /skill:x 的产物` is a `/commit`, and the mention inside
+ * it is part of that command's arguments, not a second invocation.
+ */
+export function parseSkillMention(text: string): Invocation | null {
+	if (text.trimStart().startsWith("/")) return null;
+	const match = /(^|\s)\/skill:([a-z0-9:-]+)(?=\s|$)/i.exec(text);
+	if (!match) return null;
+	const rest = `${text.slice(0, match.index)} ${text.slice(match.index + match[0].length)}`.replace(/\s+/g, " ").trim();
+	return { name: `skill:${match[2].toLowerCase()}`, rest };
+}
+
+/** The skill a `/skill:<name>` names, or the name itself when it was written bare (`/pdf`). */
+export function skillNameOf(invocation: Invocation): string {
+	return invocation.name.replace(/^skill:/, "");
+}
+
 export function splitArguments(rest: string): string[] {
 	const out: string[] = [];
 	let current = "";
@@ -138,4 +158,27 @@ export function rankCommands<T extends { name: string; description: string }>(co
 	return scored
 		.sort((a, b) => a.rank - b.rank || a.command.name.localeCompare(b.command.name))
 		.map((entry) => entry.command);
+}
+
+/**
+ * 按名字找命令：精确命中优先，否则**唯一**的末段匹配。
+ *
+ * `git/commit.md` 的名字是 `git:commit`，而人打的是 `/commit`。菜单那边 `rankCommands` 早就
+ * 让末段能匹配到——于是列表里看得见 `git:commit`，回车却找不到：分派用的是精确匹配。
+ * 「菜单里有、按下去没反应」是这个项目里反复出现的一种断线。
+ *
+ * 唯一才算。`git:commit` 和 `svn:commit` 同时在，`/commit` 不该悄悄选一个——它原样发给
+ * 模型，跟任何不认识的 `/xxx` 一样。歧义时不猜，是这里唯一的规则。
+ */
+export function resolveCommand<T extends { name: string }>(commands: T[], name: string): T | undefined {
+	const wanted = name.toLowerCase();
+	const exact = commands.find((c) => c.name.toLowerCase() === wanted);
+	if (exact) return exact;
+	if (wanted.includes(":")) return undefined;
+
+	const byTail = commands.filter((c) => {
+		const segments = c.name.toLowerCase().split(":");
+		return segments.length > 1 && segments[segments.length - 1] === wanted;
+	});
+	return byTail.length === 1 ? byTail[0] : undefined;
 }

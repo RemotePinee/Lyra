@@ -46,7 +46,7 @@ export const grepTool: Tool<GrepArgs> = {
 	},
 	summarize: (args) => {
 		const raw = args as unknown as Record<string, unknown>;
-		const term = String(raw.pattern ?? raw.query ?? raw.search ?? raw.description ?? "");
+		const term = String(raw.pattern ?? raw.query ?? raw.search ?? extractGrepPattern(raw.description) ?? "");
 		return term ? `Search "${term}"` : "Search";
 	},
 
@@ -59,13 +59,9 @@ export const grepTool: Tool<GrepArgs> = {
 					? raw.query
 					: typeof raw.search === "string" && raw.search
 						? raw.search
-						: "";
-
-		if (!pattern && typeof raw.description === "string") {
-			const desc = raw.description.trim();
-			const match = desc.match(/^(?:pattern|query|regex|search):\s*(.+)$/i);
-			pattern = match ? match[1] : desc;
-		}
+						: typeof raw.description === "string"
+							? extractGrepPattern(raw.description)
+							: "";
 
 		if (!pattern) return errorResult("`pattern` is required.");
 		const normalizedArgs: GrepArgs = {
@@ -236,6 +232,8 @@ function formatMatches(lines: string[], args: GrepArgs, limit: number, literal =
 		return {
 			content: [{ type: "text", text }],
 			details: { kind: "grep", pattern: args.pattern, count: 0, literal },
+			/* A search that found nothing says nothing that will be asked again. */
+			uneventful: true,
 		};
 	}
 	const shown = lines.slice(0, limit);
@@ -245,4 +243,14 @@ function formatMatches(lines: string[], args: GrepArgs, limit: number, literal =
 		content: [{ type: "text", text: header + shown.join("\n") + footer }],
 		details: { kind: "grep", pattern: args.pattern, count: lines.length, matches: shown, literal },
 	};
+}
+
+/** Extract a grep regex pattern when the model embeds it in a description string. */
+export function extractGrepPattern(desc: unknown): string {
+	if (typeof desc !== "string" || !desc.trim()) return "";
+	const labeled = desc.match(/(?:pattern|regex|query|search)[:=]\s*[`'"]?([^`'")\s]+)/i);
+	if (labeled?.[1]) return labeled[1].replace(/[`'"]+$/, "").trim();
+	const quoted = desc.match(/[`'"]([^`'"]+)['`"]/);
+	if (quoted?.[1]) return quoted[1].trim();
+	return desc.trim();
 }

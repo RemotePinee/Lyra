@@ -101,7 +101,7 @@ test("a directory holding skills is a plugin, and stays one", async () => {
 test("a bundle claiming to be both is loaded as a plugin and told off for it", async () => {
 	await withRoot(async (root) => {
 		await bundle(root, "mixed", {
-			skills: { review: "审代码时用。" },
+			skills: { review: "审代码时用，包括检查类型、检查安全与风格规范等各种内容，保证发布质量满足团队要求。" },
 			mcp: CONTEXT7,
 			manifest: { mcpServers: ".mcp.json" },
 		});
@@ -111,9 +111,11 @@ test("a bundle claiming to be both is loaded as a plugin and told off for it", a
 		assert.equal(plugins.length, 1, "the skills are what it is");
 		assert.equal(mcpBundles.length, 0);
 		// Silence here would be the ambiguity the split exists to remove: the servers are not
-		// loaded, and the only way anyone finds that out is being told.
-		assert.equal(diagnostics.length, 1);
-		assert.match(diagnostics[0].message, /MCP/);
+		// loaded, and the only way anyone finds that out is being told. Warnings ride in the same
+		// list (the fixture's one-line skill description earns one) and are not that telling.
+		const problems = diagnostics.filter((diagnostic) => diagnostic.severity !== "warning");
+		assert.equal(problems.length, 1, JSON.stringify(diagnostics));
+		assert.match(problems[0].message, /MCP/);
 	});
 });
 

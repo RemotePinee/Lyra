@@ -12,6 +12,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { decodeProcessOutput, systemShell } from "../platform.ts";
+import type { ExtensionHost } from "../extensions/host.ts";
 import type { HookConfig } from "../config/settings.ts";
 import type { ToolResult } from "../types.ts";
 
@@ -132,8 +133,20 @@ export async function runHook(
 }
 
 /** Build the loop's `beforeToolCall` from the configured hooks. */
-export function makeBeforeToolCall(hooks: HookConfig[], cwd: string, signal?: AbortSignal) {
+export function makeBeforeToolCall(hooks: HookConfig[], cwd: string, signal?: AbortSignal, extensions?: ExtensionHost) {
 	return async ({ toolName, args }: { toolName: string; args: Record<string, unknown> }) => {
+		/*
+		 * Extensions are asked before shell hooks, and the order is deliberate.
+		 *
+		 * A hook is a command the user wrote for this machine; an extension is code somebody else
+		 * wrote and they installed. If both would stop a call, the one whose reason is worth showing
+		 * is the one the user did not write — they already know what their own hook does.
+		 */
+		if (extensions) {
+			const verdict = await extensions.intercept("tool_call", { toolName, args, cwd });
+			if (verdict.block) return { block: true, reason: `一个扩展拦下了 "${toolName}"：${verdict.block}` };
+		}
+
 		for (const hook of hooksFor(hooks, "before-tool", toolName)) {
 			const result = await runHook(hook, cwd, { toolName, args, event: "before-tool" }, signal);
 			if (result.spawnError) {
@@ -159,7 +172,7 @@ export function makeBeforeToolCall(hooks: HookConfig[], cwd: string, signal?: Ab
 }
 
 /** Build the loop's `afterToolCall`. Hook stdout is appended to what the model sees. */
-export function makeAfterToolCall(hooks: HookConfig[], cwd: string, signal?: AbortSignal) {
+export function makeAfterToolCall(hooks: HookConfig[], cwd: string, signal?: AbortSignal, extensions?: ExtensionHost) {
 	return async ({
 		toolName,
 		args,
@@ -169,6 +182,15 @@ export function makeAfterToolCall(hooks: HookConfig[], cwd: string, signal?: Abo
 		args: Record<string, unknown>;
 		result: ToolResult;
 	}) => {
+		/*
+		 * 扩展的 `tool_result`。
+		 *
+		 * 观察，不是拦截——`dispatch` 而不是 `intercept`。工具已经跑完了，这时候能「否决」的
+		 * 只有那份结果，而一个能改写工具结果的观察者，跟一个能凭空编造事实的扩展是同一个东西。
+		 * 要改结果得在清单里声明 `intercepts`，那是工具调用**之前**的事。
+		 */
+		void extensions?.dispatch("tool_result", { toolName, args, ok: !result.isError }).catch(() => {});
+
 		const notes: string[] = [];
 		for (const hook of hooksFor(hooks, "after-tool", toolName)) {
 			const run = await runHook(hook, cwd, { toolName, args, event: "after-tool" }, signal);

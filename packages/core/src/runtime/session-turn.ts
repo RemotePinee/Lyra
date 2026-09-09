@@ -10,16 +10,17 @@
  * something you can reason about after the fact rather than only watch happen.
  */
 
+import { PROJECT_MEMORY_ENABLED_KEY, projectMemoryEnabled } from "./project-memory.ts";
+import { gatherMemory } from "./memory-inject.ts";
 import { platform } from "node:os";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentEvent } from "../agent/events.ts";
 import type { AgentRunConfig } from "../agent/loop.ts";
 import { runTurn } from "../agent/runner.ts";
-import type { streamAssistant } from "../ai/index.ts";
+import { streamAssistant } from "../ai/index.ts";
 import type { Settings } from "../config/settings.ts";
 import { buildSystemPrompt, loadProjectInstructions } from "../prompt/system.ts";
-import { formatMemoryForPrompt, loadMemory } from "./memory.ts";
 import { TODOS_KEY, type TodoItem } from "../tools/todo.ts";
 import { continueWhileWorkRemains } from "./continuation.ts";
 import type {
@@ -36,6 +37,11 @@ import { droppedMessage, lastRequest, summaryMessages } from "./compaction.ts";
 import { makeAfterToolCall, makeBeforeToolCall } from "./hooks.ts";
 import type { SessionCapabilities } from "./session-capabilities.ts";
 import type { SessionLog } from "./session-log.ts";
+import { SUBAGENTS_KEY } from "../resources/handlers.ts";
+import { DEFAULT_MAX_DEPTH } from "./dispatch-guard.ts";
+import { withEnvironment } from "../prompt/environment.ts";
+import { readPromptOverride } from "../prompt/overrides.ts";
+import { offerRuleFromCorrection } from "./rule-offer.ts";
 import { prepareTurn } from "./turn.ts";
 import { buildTurnConfig } from "./turn-config.ts";
 import type { SubAgentRegistry } from "./sub-agents.ts";
@@ -43,6 +49,8 @@ import type { SubAgentRegistry } from "./sub-agents.ts";
 export interface TurnInputs {
 	cwd: string;
 	settings: Settings;
+	/** Resolve preferences at dispatch time without altering an already running model request. */
+	getSettings?: () => Settings;
 	log: SessionLog;
 	can: SessionCapabilities;
 	provider: ProviderConfig;
@@ -66,13 +74,27 @@ export interface TurnInputs {
  * request in any sense the log or the user would recognise.
  */
 export async function driveTurn(input: TurnInputs): Promise<void> {
+	const { cwd, can, log } = input;
 	const onEvent = (event: AgentEvent) => recordTurnEvent(input.log, event);
 	const { config, systemPrompt } = await assembleTurn(input);
+
+	/*
+	 * 扩展的 `turn_start` / `turn_end`。
+	 *
+	 * 这两个事件（连同 `tool_result`、`session_start`）在清单里认得、校验过、存下来了，
+	 * **而从来没有被派发过**——扩展宿主此前只有一个调用点，就是工具调用前的那次拦截。
+	 * 一个声明了 `events: ["turn_end"]` 的扩展装上去、加载成功、然后什么也收不到。
+	 *
+	 * `dispatch` 不是 `intercept`：这两个事件是观察，不接受 `block`。一个能否决整轮开始的
+	 * 扩展，跟一个能让会话卡住的扩展是同一个东西。
+	 */
+	void can.extensions.dispatch("turn_start", { cwd, sessionId: log.meta.id }).catch(() => {});
 
 	const first = await runTurn(config, onEvent);
 	await continueWhileWorkRemains(first, {
 		run: (messages) => runTurn({ ...config, messages, systemPrompt }, onEvent),
-		messages: () => modelHistory(input.log, input.provider, input.model),
+		// 续跑重建历史时也要带上——少了末尾那条，前缀就跟上一次不一样，缓存反而白丢一次。
+		messages: () => withEnvironment(modelHistory(input.log, input.provider, input.model)),
 		todos: () => (input.can.state.get(TODOS_KEY) as TodoItem[] | undefined) ?? [],
 		aborted: () => input.signal.aborted,
 		notify: (message) => input.emit({ type: "notice", level: "info", message }),
@@ -80,6 +102,26 @@ export async function driveTurn(input: TurnInputs): Promise<void> {
 		resuming: (info) => input.emit({ type: "retry", ...info, resume: true }),
 		// So that pressing stop during a minute-long wait is felt immediately.
 		signal: input.signal,
+	});
+
+	void can.extensions.dispatch("turn_end", { cwd, sessionId: log.meta.id, messages: log.messages.length }).catch(() => {});
+
+	/*
+	 * After the work, never during it.
+	 *
+	 * A choice presented in the middle of an action is one people dismiss to get it out of the way,
+	 * and this one is worth reading. It is also the reason this is awaited rather than left running:
+	 * an offer that arrives after the next prompt has started would be about the wrong exchange.
+	 */
+	await offerRuleFromCorrection({
+		messages: input.log.messages,
+		settings: input.settings,
+		provider: input.provider,
+		model: input.model,
+		stream: summaryStream(input.streamFn, input.provider, input.model) ?? streamAssistant,
+		budget: input.can.correctionBudget,
+		signal: input.signal,
+		emit: input.emit,
 	});
 }
 
@@ -134,40 +176,60 @@ export function modelHistory(log: SessionLog, provider: ProviderConfig, model: M
 		return [droppedMessage(standing), ...tail];
 	}
 
-	return [...summaryMessages(boundary.summary, lastRequest(older), provider, model), ...tail];
+	const head = summaryMessages(boundary.summary, lastRequest(older), provider, model);
+	const at = boundary.at ?? Math.max(0, ...tail.map((message) => message.timestamp));
+	return [...head.map((message) => ({ ...message, timestamp: at })), ...tail];
 }
 
 async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig; systemPrompt: string }> {
 	const { cwd, can, log, settings } = input;
+	const memoryEnabled = projectMemoryEnabled(settings);
+	can.state.set(PROJECT_MEMORY_ENABLED_KEY, memoryEnabled);
+	const tools = can.tools.filter((tool) => tool.name !== "learn" || memoryEnabled);
 
-	let memorySnippet = "";
-	if (settings.personalization?.enableMemory !== false) {
-		try {
-			const memoryStore = await loadMemory();
-			memorySnippet = formatMemoryForPrompt(memoryStore.entries);
-		} catch {
-			// Memory loading is resilient and silent
-		}
-	}
+	/*
+	 * Where `agent://` finds the sub-agents this session dispatched.
+	 *
+	 * Put in the state map rather than handed to the router, because the router is built once per
+	 * session while the registry arrives per turn — and a session with no registry (the CLI, a
+	 * test) should leave `agent://` resolving to "this session has no sub-agents" rather than to
+	 * a stale one.
+	 */
+	if (input.subAgents) can.state.set(SUBAGENTS_KEY, input.subAgents);
+
+	// Both memories, read from disk this turn, and each entry stamped as having reached the model.
+	const { memorySnippet, projectMemory } = await gatherMemory(cwd, settings.personalization?.enableMemory !== false, Date.now(), memoryEnabled);
 
 	const turn = await prepareTurn({
 		cwd,
-		tools: can.tools,
-		messages: modelHistory(log, input.provider, input.model),
+		tools,
+		/*
+		 * 日期接在末尾，而不是写在 system prompt 里。
+		 *
+		 * 前缀缓存从最前面逐段匹配，system prompt 正是最前面那一段——里面放一个每天变一次的
+		 * 字符串，等于每天头一次请求要为整个对话重付一次全额。放末尾，跨天时只失效这一小块。
+		 * 见 `prompt/environment.ts`。
+		 */
+		messages: withEnvironment(modelHistory(log, input.provider, input.model)),
 		systemPrompt: await buildSystemPrompt({
 			cwd,
-			tools: can.tools,
+			tools,
 			skills: can.skills,
 			agents: can.agents,
 			projectInstructions: await loadProjectInstructions(cwd),
 			customInstructions: settings.personalization?.customInstructions,
 			tone: settings.personalization?.tone,
 			memorySnippet,
+			projectMemory,
 			platform: platform(),
 			modelName: input.model.name,
 			isGitRepo: await pathExists(join(cwd, ".git")),
-			today: new Date().toISOString().slice(0, 10),
 			scratchDir: input.scratchDir,
+				rules: can.rules,
+				resources: can.resources.schemes(),
+				dispatchLimits: { maxConcurrent: settings.maxConcurrentSubAgents, maxDepth: DEFAULT_MAX_DEPTH },
+				identityOverride: await readPromptOverride(cwd, "identity"),
+				guidelinesOverride: await readPromptOverride(cwd, "guidelines"),
 		}),
 	});
 
@@ -184,10 +246,14 @@ async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig
 			provider: input.provider,
 			model: input.model,
 			settings,
+			getSettings: input.getSettings,
 			state: can.state,
-			tools: can.tools,
+			tools,
 			skills: can.skills,
 			agents: can.agents,
+			ruleMonitor: can.ruleMonitor,
+			resources: can.resources,
+			scratchDir: input.scratchDir,
 			// Where anything this turn delegates registers itself, so it can be watched and steered.
 			subAgents: input.subAgents,
 			signal: input.signal,
@@ -195,8 +261,10 @@ async function assembleTurn(input: TurnInputs): Promise<{ config: AgentRunConfig
 			requestApproval: input.requestApproval,
 			emit: input.emit,
 			summaryStream: (provider) => summaryStream(input.streamFn, provider, input.model),
-			beforeToolCall: makeBeforeToolCall(settings.hooks, cwd, input.signal),
-			afterToolCall: makeAfterToolCall(settings.hooks, cwd, input.signal),
+			// 压缩剪掉的大块输出存进会话，占位标记里给出 `artifact://` 地址。
+			artifacts: { keep: (tool, content) => can.keepArtifact(tool, content) },
+			beforeToolCall: makeBeforeToolCall(settings.hooks, cwd, input.signal, can.extensions),
+			afterToolCall: makeAfterToolCall(settings.hooks, cwd, input.signal, can.extensions),
 			drainSteering: input.drainSteering,
 		},
 		turn,

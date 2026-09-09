@@ -86,6 +86,17 @@ test("a conversation below the threshold is left alone", async () => {
 	assert.equal(await compact(messages, MODEL, PROVIDER, fakeStream("summary") as never), null);
 });
 
+test("manual compaction summarizes a modest history even in a large model window", async () => {
+	const messages = Array.from({ length: 20 }, (_, index) => index % 2 ? reply(`Details ${index} ${"context ".repeat(150)}`) : user(`Task ${index} ${"requirements ".repeat(80)}`));
+	const large = { ...MODEL, contextWindow: 1_000_000 };
+	let requests = 0;
+	const stream = async function* () { requests++; yield { type: "start" as const, partial: reply("") }; return reply("Tasks and decisions preserved."); };
+	const result = await compactIfNeeded(messages, large, PROVIDER, stream, 0, true);
+	assert.equal(requests, 1);
+	assert.ok(result && result.kept !== undefined && result.messages.length < messages.length);
+	assert.deepEqual(result.messages.at(-1), messages.at(-1));
+});
+
 test("a conversation over the threshold is replaced by a summary plus the recent turns", async () => {
 	const messages = conversation(20, 900);
 	const before = estimateTokens(messages);

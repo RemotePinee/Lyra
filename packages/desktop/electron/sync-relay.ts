@@ -117,7 +117,7 @@ export class RelayLink {
 		socket.on("open", () => {
 			// The room, and nothing else: the relay refuses anything that is not a well-formed hello,
 			// and closes a socket that says nothing within ten seconds.
-			socket.send(JSON.stringify({ type: "hello", room: roomFor(this.token) }));
+			socket.send(JSON.stringify({ type: "hello", room: roomFor(this.token), role: "host" }));
 			this.retry = FIRST_RETRY;
 		});
 

@@ -798,6 +798,14 @@ export interface LyraApi {
 		remove(id: string): Promise<boolean>;
 		clear(): Promise<void>;
 	};
+	projectMemory: {
+		list(cwd: string): Promise<{
+			lessons: { text: string; at: number; context?: string; lastInjectedAt?: number }[];
+			extracted: { text: string; updatedAt?: number; lastInjectedAt?: number } | null;
+		}>;
+		status(cwd: string): Promise<{ run: boolean; reason?: string }>;
+		extract(cwd: string): Promise<{ memory: string; sessions: number; skipped?: string }>;
+	};
 	diff: {
 		/** Uncommitted changes for the review panel. */
 		workspaceDiff(cwd: string, target?: "workspace" | "unstaged"): Promise<{ files: WorkspaceDiffFile[]; added: number; removed: number; branch: string | null }>;

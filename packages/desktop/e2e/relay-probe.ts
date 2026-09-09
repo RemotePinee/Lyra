@@ -97,7 +97,7 @@ async function phone(): Promise<{ socket: WebSocket; seen: Record<string, unknow
 		socket.once("open", () => resolve());
 		socket.once("error", reject);
 	});
-	socket.send(JSON.stringify({ type: "hello", room }));
+	socket.send(JSON.stringify({ type: "hello", room, role: "guest" }));
 	return { socket, seen };
 }
 

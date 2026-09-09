@@ -488,7 +488,7 @@ export class SyncClient {
 			if (this.isRelay) {
 				// Announce zero-knowledge room to relay server
 				const room = sha256(this.connection.token);
-				socket.send(JSON.stringify({ type: "hello", room }));
+				socket.send(JSON.stringify({ type: "hello", room, role: "guest" }));
 				// Relay will reply { type: "waiting" } or { type: "ready" }
 			} else {
 				this.emitState("open");
@@ -506,9 +506,19 @@ export class SyncClient {
 			// 1. Relay status frames
 			if (this.isRelay) {
 				if (payload.type === "error") {
-					// Relay explicitly refused the connection (e.g. room-full, bad-hello)
-					this.lastCloseError = `中继服务拒绝: ${String(payload.reason || "未知原因")}`;
+					const reason = String(payload.reason || "未知原因");
+					if (reason === "kicked") {
+						this.lastCloseError = "已在其他设备连接，当前连接已断开";
+						this.closedByUser = true; // Stop auto-reconnecting loop if kicked
+					} else {
+						this.lastCloseError = `中继服务拒绝: ${reason}`;
+					}
 					this.emitState("closed");
+					return;
+				}
+				if (payload.type === "peer-left") {
+					// Far-end disconnected from relay; revert to waiting state
+					this.emitState("connecting");
 					return;
 				}
 				if (payload.type === "waiting") {

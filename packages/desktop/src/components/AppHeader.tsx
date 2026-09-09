@@ -8,8 +8,6 @@
  */
 
 import { PanelLeft } from "lucide-react";
-import { useApp } from "../store.ts";
-import { PanelMenu } from "./WindowToolbar.tsx";
 import { WindowActionButtons } from "./WindowActionButtons.tsx";
 import { SessionTabBar } from "./SessionTabBar.tsx";
 
@@ -24,7 +22,6 @@ export function AppHeader({
 	compact?: boolean;
 	onToggleNav: () => void;
 }) {
-	const activeSessionId = useApp((s) => s.activeSessionId);
 
 	return (
 		<header
@@ -44,11 +41,6 @@ export function AppHeader({
 				>
 					<PanelLeft size={15} strokeWidth={1.8} />
 				</button>
-				{activeSessionId && (
-					<div className="flex items-center">
-						<PanelMenu />
-					</div>
-				)}
 			</div>
 
 			{/* Center-left section: Tabs Bar */}

@@ -9,6 +9,8 @@
  * nothing that could change one.
  */
 
+import { projectMemoryEnabled } from "./project-memory.ts";
+import { gatherMemory } from "./memory-inject.ts";
 import { access } from "node:fs/promises";
 import { platform } from "node:os";
 import { join } from "node:path";
@@ -79,7 +81,9 @@ export async function describeContext(session: SessionFacts): Promise<ContextBre
 	const resolved = resolveModel(session.settings, session.meta.modelId || session.settings.defaultModelId);
 	if (!resolved) return null;
 
+	const { memorySnippet, projectMemory } = await gatherMemory(session.cwd, session.settings.personalization?.enableMemory !== false, Date.now(), projectMemoryEnabled(session.settings), false);
 	const projectInstructions = await loadProjectInstructions(session.cwd);
+	const tools = session.tools.filter((tool) => tool.name !== "learn" || projectMemoryEnabled(session.settings));
 	const mcpNames = new Set(session.mcp.allTools().map((tool) => tool.name));
 
 	return buildContextBreakdown({
@@ -87,20 +91,24 @@ export async function describeContext(session: SessionFacts): Promise<ContextBre
 		messages: session.messages,
 		systemPrompt: await buildSystemPrompt({
 			cwd: session.cwd,
-			tools: session.tools,
+			tools,
 			skills: session.skills,
 			agents: session.agents,
 			projectInstructions,
+			memorySnippet,
+			projectMemory,
+			customInstructions: session.settings.personalization?.customInstructions,
+			tone: session.settings.personalization?.tone,
 			platform: platform(),
 			modelName: resolved.model.name,
 			isGitRepo: await pathExists(join(session.cwd, ".git")),
-			today: new Date().toISOString().slice(0, 10),
 			scratchDir: session.scratchDir(),
 		}),
-		builtinTools: session.tools.filter((tool) => !mcpNames.has(tool.name)),
-		mcpTools: session.tools.filter((tool) => mcpNames.has(tool.name)),
+		builtinTools: tools.filter((tool) => !mcpNames.has(tool.name)),
+		mcpTools: tools.filter((tool) => mcpNames.has(tool.name)),
 		skillCatalogue: formatSkillCatalogue(session.skills),
 		projectInstructions,
+		projectMemory,
 	});
 }
 

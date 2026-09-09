@@ -45,10 +45,28 @@ export interface SlashCommand {
 	 * Worth surfacing rather than hiding: someone who cannot find the file they are looking at is
 	 * usually looking in the wrong one of two directories that both exist.
 	 */
-	origin: "lyra" | "claude";
+	origin: "lyra" | "claude" | "agents";
 	/** From frontmatter `argument-hint`. Shown as a placeholder once the command is chosen. */
 	argumentHint?: string;
+	/**
+	 * 展开后的文本怎么送出去。默认 `prompt`。
+	 *
+	 * 三种投递方式对应三个真实的场景，而在此之前只有第一种：
+	 *
+	 *   `prompt`   开一个新回合。绝大多数命令是这个——「帮我审一下这个 diff」。
+	 *   `steer`    插进正在跑的那个回合。`/focus 只看 src/` 是在模型已经跑偏的时候说的，
+	 *              等它停下来再说，那一轮的钱已经花完了。
+	 *   `followUp` 排在当前回合之后。「跑完之后顺手把测试也跑一遍」——不打断，但也不用人守着。
+	 *
+	 * 会话空闲时三者等价（都是开一个新回合），差别只在有东西正在跑的时候。
+	 */
+	deliver?: CommandDelivery;
 }
+
+/** 一条命令展开后怎么送出去。 */
+export type CommandDelivery = "prompt" | "steer" | "followUp";
+
+const DELIVERIES: CommandDelivery[] = ["prompt", "steer", "followUp"];
 
 export interface CommandDiagnostic {
 	path: string;
@@ -99,7 +117,8 @@ export async function loadCommands(
 ): Promise<{ commands: SlashCommand[]; diagnostics: CommandDiagnostic[] }> {
 	const commands: SlashCommand[] = [];
 	const diagnostics: CommandDiagnostic[] = [];
-	const seen = new Set<string>();
+	/** name → the file that won it, so a shadowing diagnostic can name the winner. */
+	const seen = new Map<string, string>();
 
 	for (const source of sources) {
 		for (const file of await walk(source.dir, MAX_DEPTH)) {
@@ -111,6 +130,7 @@ export async function loadCommands(
 				diagnostics.push({ path: file, message: "文件开头的 YAML 无法解析。" });
 				continue;
 			}
+			if (parsed.problem) diagnostics.push({ path: file, message: "开头的 `---` 没有闭合，整个文件都被当成了正文。" });
 			const { frontmatter, body } = parsed;
 
 			const name =
@@ -136,9 +156,34 @@ export async function loadCommands(
 					: firstLine(body);
 			const description = described.length > MAX_DESCRIPTION ? `${described.slice(0, MAX_DESCRIPTION - 1)}…` : described;
 
-			// Earlier sources win; a later file of the same name is shadowed rather than an error.
-			if (seen.has(name)) continue;
-			seen.add(name);
+			/*
+			 * 写错的投递方式当没写，并且说出来。
+			 *
+			 * 静默退回 `prompt` 的话，一条写着 `deliver: steering`（少个 -ing 的拼法）的命令
+			 * 会安静地变成普通命令——而它跟正确的那条唯一的区别，是在模型跑偏时不起作用，
+			 * 那正是写它的人最不会去测的时刻。
+			 */
+			const rawDeliver = frontmatter.deliver ?? frontmatter["delivery"];
+			let deliver: CommandDelivery | undefined;
+			if (typeof rawDeliver === "string" && rawDeliver.trim()) {
+				const value = rawDeliver.trim() as CommandDelivery;
+				if (DELIVERIES.includes(value)) deliver = value;
+				else diagnostics.push({ path: file, message: `\`deliver\` 只能是 ${DELIVERIES.join("、")}；当前是“${rawDeliver}”，已按 prompt 处理。` });
+			}
+
+			/*
+			 * Earlier sources win; a later file of the same name is shadowed rather than an error.
+			 *
+			 * The shadowing is right and stays. Doing it in silence was not: someone whose `/deploy`
+			 * started behaving like someone else's had nothing to look at — the command list showed
+			 * exactly one `/deploy`, and it was not theirs.
+			 */
+			const winner = seen.get(name);
+			if (winner) {
+				diagnostics.push({ path: file, message: `命令“${name}”已由 ${winner} 定义，这一个被遮蔽了。` });
+				continue;
+			}
+			seen.set(name, file);
 
 			const hint = frontmatter["argument-hint"];
 			commands.push({
@@ -149,6 +194,7 @@ export async function loadCommands(
 				scope: source.scope,
 				origin: source.origin,
 				argumentHint: typeof hint === "string" && hint.trim() ? hint.trim() : undefined,
+				deliver,
 			});
 		}
 	}

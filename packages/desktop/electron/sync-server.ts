@@ -94,11 +94,13 @@ export class SyncServer {
 		this.wss = new WebSocketServer({ noServer: true });
 
 		server.on("upgrade", (request, socket, head) => {
+			if ("setNoDelay" in socket && typeof socket.setNoDelay === "function") {
+				socket.setNoDelay(true);
+			}
 			const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 			if (url.pathname !== "/ws" || !this.authorize(url.searchParams.get("token"))) {
 				/*
 				 * The refusal is a courtesy, and the socket may already be gone.
-				 *
 				 * A client that gave up between opening the connection and this line leaves a pipe
 				 * with nothing at the far end, and writing to one throws `EPIPE` — which, on a raw
 				 * socket from `upgrade`, has no listener and reaches the top of the main process.
@@ -217,6 +219,7 @@ export class SyncServer {
 			gitSwitch: async (cwd: string, branch: string) => (this.deps.gitSwitch ? this.deps.gitSwitch(cwd, branch) : { ok: false }),
 			listFiles: async (dir: string) => (this.deps.listFiles ? this.deps.listFiles(dir) : []),
 			readFile: async (path: string) => (this.deps.readFile ? this.deps.readFile(path) : null),
+			broadcast: (sessionId, event) => this.broadcast(sessionId, event),
 		};
 	}
 
@@ -441,30 +444,50 @@ export class SyncServer {
 						allRecords.push(record);
 					}
 
-					// If tail is requested, ensure we retain dialogue turns instead of pure tool result flood
+					// If tail is requested, count user prompts (dialogue groups).
+					// Tool calls and intermediate iterations do NOT count as dialogue units.
 					if (tail && tail > 0) {
-						let turns = 0;
-						let cutIndex = Math.max(0, allRecords.length - tail);
+						let userTurnCount = 0;
+						let cutIndex = 0;
 						for (let i = allRecords.length - 1; i >= 0; i--) {
-							const rec = allRecords[i] as { type?: string; message?: { role?: string } };
-							if (rec.type === "message" && (rec.message?.role === "user" || rec.message?.role === "assistant")) {
-								turns++;
+							const rec = allRecords[i] as { type?: string; message?: { role?: string; synthetic?: boolean } };
+							if (rec.type === "message" && rec.message) {
+								const m = rec.message;
+								const isUserPrompt = m.role === "user" && !m.synthetic;
+								if (isUserPrompt) {
+									userTurnCount++;
+									if (userTurnCount >= tail) {
+										cutIndex = i;
+										break;
+									}
+								}
 							}
-							if (allRecords.length - i >= tail && turns >= 12) {
-								cutIndex = i;
-								break;
-							}
-							if (allRecords.length - i >= 500) {
-								cutIndex = i;
-								break;
-							}
-							if (i === 0) cutIndex = 0;
 						}
-						const records = allRecords.slice(cutIndex);
+						const records = allRecords.slice(cutIndex).map((r) => {
+							const rec = r as { type?: string; message?: { role?: string; content?: unknown; toolName?: string; details?: unknown } };
+							if (rec.type === "message" && rec.message && rec.message.role === "toolResult") {
+								let sanitizedContent = rec.message.content;
+								if (Array.isArray(rec.message.content)) {
+									sanitizedContent = rec.message.content.map((item: { type?: string; text?: string }) => {
+										if (item?.type === "image") return { type: "text", text: "[图片]" };
+										if (item?.type === "text" && typeof item.text === "string" && item.text.length > 4000) {
+											return { type: "text", text: item.text.slice(0, 4000) + "\n... [已截断]" };
+										}
+										return item;
+									});
+								}
+								let details = rec.message.details;
+								if (details && rec.message.toolName !== "todo_write") {
+									details = undefined;
+								}
+								return { ...rec, message: { ...rec.message, content: sanitizedContent, details } };
+							}
+							return r;
+						});
 						send(200, {
 							records,
 							total: allRecords.length,
-							hasEarlier: cutIndex > 0 || typeof beforeSeq === "number",
+							hasEarlier: cutIndex > 0,
 						});
 						return;
 					}
@@ -472,7 +495,7 @@ export class SyncServer {
 					send(200, {
 						records: allRecords,
 						total: allRecords.length,
-						hasEarlier: typeof beforeSeq === "number",
+						hasEarlier: false,
 					});
 					return;
 				}
@@ -529,8 +552,12 @@ export class SyncServer {
 				}
 
 				if (req.method === "POST" && action === "abort") {
+				if (req.method === "POST" && action === "abort") {
 					session.abort();
+					this.broadcast(session.meta.id, { type: "agent_end", reason: "aborted" });
 					send(200, { aborted: true });
+					return;
+				}
 					return;
 				}
 
