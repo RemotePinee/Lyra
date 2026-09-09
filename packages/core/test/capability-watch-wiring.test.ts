@@ -9,7 +9,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -26,8 +26,8 @@ const META = { id: "s1", projectId: "p", cwd: "", modelId: "m", title: "", creat
 const STORE = { append: async (meta: SessionMeta) => meta, create: async () => META } as unknown as SessionStorage;
 
 before(async () => {
-	home = await mkdtemp(join(tmpdir(), "ly-hot-home-"));
-	root = await mkdtemp(join(tmpdir(), "ly-hot-"));
+	home = await realpath(await mkdtemp(join(tmpdir(), "ly-hot-home-")));
+	root = await realpath(await mkdtemp(join(tmpdir(), "ly-hot-")));
 	process.env.LYRA_HOME = home;
 });
 

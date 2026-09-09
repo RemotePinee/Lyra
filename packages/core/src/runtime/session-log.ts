@@ -10,7 +10,7 @@
  * arrives twice by design rather than by accident.
  */
 
-import type { AgentEvent, AgentEventSink } from "../agent/events.ts";
+import type { AgentEvent, AgentEventSink, CommandRun } from "../agent/events.ts";
 import type { SessionMeta, SessionRecordInput } from "../session/store.ts";
 import type { SessionStorage } from "../session/storage.ts";
 import type { Message } from "../types.ts";
@@ -22,7 +22,7 @@ import type { Message } from "../types.ts";
  * the run — so anything that changes the model's input, or that happened out of view, is kept.
  * Everything else is live-only: progress chatter, rendered once and gone.
  */
-const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["compacted", "context", "subagent", "subagent_done"]);
+const PERSISTED_EVENTS = new Set<AgentEvent["type"]>(["command_status", "compacted", "context", "subagent", "subagent_done"]);
 
 export class SessionLog {
 	/**
@@ -33,6 +33,7 @@ export class SessionLog {
 	 * searches all of it, and a later replay of the log is unaffected.
 	 */
 	messages: Message[] = [];
+	commandRuns: CommandRun[] = [];
 	meta!: SessionMeta;
 
 	/**
@@ -87,6 +88,10 @@ export class SessionLog {
 	 * none of it can be recovered from the messages alone, so it is written as it happens.
 	 */
 	async emit(event: AgentEvent): Promise<void> {
+		if (event.type === "command_status") {
+			const at = this.commandRuns.findIndex((run) => run.id === event.command.id);
+			if (at < 0) this.commandRuns.push(event.command); else this.commandRuns[at] = event.command;
+		}
 		if (PERSISTED_EVENTS.has(event.type) && this.meta) {
 			this.meta = await this.store.append(this.meta, { type: "event", event });
 		}
@@ -163,6 +168,7 @@ export class SessionLog {
 		 * next time the window fills.
 		 */
 		const boundary = this.compaction && index > this.compaction.keptFrom ? this.compaction : null;
+		this.commandRuns = this.commandRuns.filter((run) => run.at <= index);
 		this.restore(truncated.messages, boundary);
 		return true;
 	}

@@ -16,7 +16,7 @@
  *   **防抖。** 保存一个文件在 macOS 上能产生三四个事件，`git checkout` 一个分支能产生几百个。
  */
 
-import { watch, type FSWatcher } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 
 /** 攒事件的窗口。一次保存产生的那几个事件要合成一次重载。 */
 export const DEBOUNCE_MS = 300;
@@ -64,6 +64,7 @@ export class CapabilityWatcher {
 			 * 会出现在 `watched` 里）。为一个可能永远不出现的目录去监听它的父目录，代价是
 			 * 监听整个项目根。
 			 */
+			if (!existsSync(dir)) continue;
 			try {
 				const watcher = (options.watchFactory ?? watch)(dir, { recursive: true }, () => this.touched());
 				watcher.on("error", () => {});

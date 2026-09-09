@@ -53,21 +53,29 @@ test("manual commands carry focus instructions, are single-flight, and persist a
 		assert.equal(loaded.commandRuns?.[0].status, "done");
 		assert.equal(loaded.commandRuns?.[0].input, "/compact 保留当前决策和待办");
 		const reopened = new AgentSession({ cwd: root, store, meta: loaded.meta, settings: { ...DEFAULT_SETTINGS, providers: [provider], defaultModelId: model.id }, emit: () => {} });
-		reopened.restore(loaded.messages, loaded.compaction);
-		const restored = await reopened.contextBreakdown();
-		assert.equal(restored?.used, after.used, "cold restore must retain the compacted reading");
-		assert.equal(restored?.measured, false);
-		assert.ok(loaded.compaction.at);
-		const freshReply = reply("A reply measured after compaction.");
-		freshReply.timestamp = loaded.compaction.at + 1;
-		freshReply.usage = { ...emptyUsage(), input: 20_000, output: 300 };
-		await reopened.log.commit(freshReply);
-		for (let read = 0; read < 2; read++) {
-			const measured = await reopened.contextBreakdown();
-			assert.equal(measured?.used, 20_300, "new usage must replace the estimate on every read");
-			assert.equal(measured?.measured, true);
+		try {
+			reopened.restore(loaded.messages, loaded.compaction);
+			const restored = await reopened.contextBreakdown();
+			assert.equal(restored?.used, after.used, "cold restore must retain the compacted reading");
+			assert.equal(restored?.measured, false);
+			assert.ok(loaded.compaction.at);
+			const freshReply = reply("A reply measured after compaction.");
+			freshReply.timestamp = loaded.compaction.at + 1;
+			freshReply.usage = { ...emptyUsage(), input: 20_000, output: 300 };
+			await reopened.log.commit(freshReply);
+			for (let read = 0; read < 2; read++) {
+				const measured = await reopened.contextBreakdown();
+				assert.equal(measured?.used, 20_300, "new usage must replace the estimate on every read");
+				assert.equal(measured?.measured, true);
+			}
+		} finally {
+			await reopened.dispose();
 		}
-	} finally { finish?.(reply("stop")); await rm(root, { recursive: true, force: true }); }
+	} finally {
+		finish?.(reply("stop"));
+		await session.dispose();
+		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+	}
 });
 
 test("cancellation and provider failure keep the previous history boundary and end the busy state", async () => {
@@ -91,7 +99,10 @@ test("cancellation and provider failure keep the previous history boundary and e
 			assert.equal(session.running, false);
 			assert.equal(session.log.commandRuns[0].status, outcome === "cancelled" ? "cancelled" : "failed");
 			assert.match(session.log.commandRuns[0].detail, outcome === "cancelled" ? /取消/ : outcome === "empty" ? /摘要.*空/ : /provider unavailable/);
-		} finally { await rm(root, { recursive: true, force: true }); }
+		} finally {
+			await session.dispose();
+			await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+		}
 	}
 });
 
@@ -115,7 +126,10 @@ test("interrupted command replay settles once and rewind removes only records af
 		const loaded = await store.load(meta.projectId, meta.id);
 		assert.deepEqual(loaded?.commandRuns, session.log.commandRuns);
 		assert.deepEqual(loaded?.commandRuns?.map((run) => [run.id, run.status]), [["manual-1", "done"], ["manual-2", "done"]]);
-	} finally { await rm(root, { recursive: true, force: true }); }
+	} finally {
+		await session.dispose();
+		await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 });
+	}
 });
 
 test("a prompt submitted during manual compaction waits for the new boundary and is delivered once", async () => {
